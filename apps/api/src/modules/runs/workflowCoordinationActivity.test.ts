@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { publicRunActivity, type ActivityReadRow } from './activityProjection.js'
 
 function fixture(form: 'single' | 'repeat' = 'single') {

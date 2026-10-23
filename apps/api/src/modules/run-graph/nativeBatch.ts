@@ -1,4 +1,5 @@
-import { beforeGraphCommit, beforeGraphCommitChecks, isGraphTransactionFinalizing, type GraphSqlClient, type GraphTransactionSql } from './connection.js'
+import { beforeGraphCommit, beforeGraphCommitChecks, isGraphTransactionFinalizing } from './connection.js'
+import type { SqlQuery, SqlTransaction } from '../../infrastructure/transaction.js'
 import { RunGraphError } from './errors.js'
 
 /** Authority and projection state for ONE native batch transaction.
@@ -6,7 +7,7 @@ import { RunGraphError } from './errors.js'
  * before finalization. Finalizers never use this state: once the batch closes, every
  * COMMIT check reads live and each distinct check runs exactly once. */
 export interface NativeBatch {
-  readonly sql: GraphTransactionSql
+  readonly sql: SqlTransaction
   readonly runId: string
   /** Native appends made once for the whole group, in frame order, keyed by source identity. */
   readonly appended: Map<string, { inserted: boolean; rejected: boolean; sequence: string }>
@@ -20,47 +21,47 @@ export interface NativeBatch {
  * `value` is the latest state; `dirty` rows still have to reach the database in one flush. */
 export interface StagedNativeRow { kind: 'correlation' | 'activity' | 'checkpoint'; expected: string | null; value: unknown; dirty: boolean }
 
-const batches = new WeakMap<GraphSqlClient, NativeBatch>()
+const batches = new WeakMap<SqlQuery, NativeBatch>()
 export const WORKFLOW_CORRELATION_READ_PREFIX = 'latest-workflow-correlation:'
 
-export function openNativeBatch(sql: GraphTransactionSql, runId: string): NativeBatch {
+export function openNativeBatch(sql: SqlTransaction, runId: string): NativeBatch {
   if (batches.has(sql)) throw new RunGraphError('GRAPH_TRANSACTION_NESTED')
   const batch: NativeBatch = { sql, runId, appended: new Map(), reads: new Map(), staged: new Map(), commitChecks: new Map(), collected: new Map(), closed: false }
   batches.set(sql, batch)
   return batch
 }
 
-export function hasNativeBatch(sql: GraphSqlClient): boolean { return batches.has(sql) }
+export function hasNativeBatch(sql: SqlQuery): boolean { return batches.has(sql) }
 
 /** Only an open batch on a live (non-finalizing) transaction may serve memoized state. */
-export function activeNativeBatch(sql: GraphSqlClient): NativeBatch | undefined {
+export function activeNativeBatch(sql: SqlQuery): NativeBatch | undefined {
   const batch = batches.get(sql)
-  return batch && !batch.closed && !isGraphTransactionFinalizing(sql as GraphTransactionSql) ? batch : undefined
+  return batch && !batch.closed && !isGraphTransactionFinalizing(sql as SqlTransaction) ? batch : undefined
 }
 
 function appendKey(event: { executionId: string; connectionId?: string | undefined; sequence: number }): string {
   return JSON.stringify([event.executionId, event.connectionId ?? null, event.sequence])
 }
 
-export function rememberNativeAppend(sql: GraphSqlClient, event: { executionId: string; connectionId?: string | undefined; sequence: number },
+export function rememberNativeAppend(sql: SqlQuery, event: { executionId: string; connectionId?: string | undefined; sequence: number },
   result: { inserted: boolean; rejected: boolean; sequence: string }): void {
   const batch = activeNativeBatch(sql)
   if (batch) batch.appended.set(appendKey(event), result)
 }
 
 /** The group's native append result for this frame, when the batch already performed it. */
-export function prefetchedNativeAppend(sql: GraphSqlClient, event: { executionId: string; connectionId?: string | undefined; sequence: number }) {
+export function prefetchedNativeAppend(sql: SqlQuery, event: { executionId: string; connectionId?: string | undefined; sequence: number }) {
   return activeNativeBatch(sql)?.appended.get(appendKey(event))
 }
 
 /** Seeds a read that the batch already performed for a group, so per-frame callers hit the memo. */
-export function seedNativeRead<T>(sql: GraphSqlClient, key: string, value: T): void {
+export function seedNativeRead<T>(sql: SqlQuery, key: string, value: T): void {
   const batch = activeNativeBatch(sql)
   if (batch && !batch.reads.has(key)) batch.reads.set(key, Promise.resolve(value))
 }
 
 /** Read once per batch. Outside an active batch the read is performed directly. */
-export function memoizeNativeRead<T>(sql: GraphSqlClient, key: string, read: () => Promise<T>): Promise<T> {
+export function memoizeNativeRead<T>(sql: SqlQuery, key: string, read: () => Promise<T>): Promise<T> {
   const batch = activeNativeBatch(sql)
   if (!batch) return read()
   let value = batch.reads.get(key)
@@ -85,7 +86,7 @@ export function forgetNativeRow(batch: NativeBatch, id: string): void {
 }
 
 /** Per-frame COMMIT verifications collapse to one live check per key at finalization. */
-export function nativeCommitCheck(sql: GraphTransactionSql, key: string, verify: () => Promise<void>): void {
+export function nativeCommitCheck(sql: SqlTransaction, key: string, verify: () => Promise<void>): void {
   const batch = activeNativeBatch(sql)
   if (!batch) {
     beforeGraphCommit(sql, verify)
@@ -97,7 +98,7 @@ export function nativeCommitCheck(sql: GraphTransactionSql, key: string, verify:
 const identityTokens = new Map<string, object>()
 
 /** Per-call expectations for one COMMIT check share a single live verification that sees all of them. */
-export function nativeCommitCollect<T>(sql: GraphTransactionSql, key: string | object, expected: T,
+export function nativeCommitCollect<T>(sql: SqlTransaction, key: string | object, expected: T,
   verify: (expected: readonly T[]) => Promise<void>): void {
   const batch = activeNativeBatch(sql)
   if (!batch) {

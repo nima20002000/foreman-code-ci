@@ -10,7 +10,7 @@ import type { NativeHarnessSessionManager, NativeHistory, NativeResponseIdentity
 import type { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
 import { matchingDeliveryEvidence, responseValueDigest, type InteractionDeliveryClaim, type NativeDeliveryOutcome, type NativeResponseDeliveryEvidence } from '../src/modules/interactions/delivery.js'
 import type { GraphResumeClaim } from '../src/modules/interactions/deliveryPostgres.js'
-import { Wave25InteractionRepository } from '../src/modules/interactions/wave25/repository.js'
+import { Wave25InteractionRepository } from '../src/modules/interactions/current/repository.js'
 import { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
 import { nativeLanes } from './helpers/memorySessionCoordination.js'
 import type { InteractionNativeRuntime } from '../src/modules/interactions/runtimePorts.js'
@@ -507,13 +507,15 @@ async function checkpointFixture(interaction: DurableInteraction) {
     if (query.startsWith('begin')) { staged = checkpointValues; return rows() }
     if (query === 'commit') { checkpointValues = staged; return rows() }
     if (query === 'rollback') return rows()
-    if (query.startsWith('select checkpoint_id')) return rows([{ checkpoint_id: 'saved-checkpoint' }])
-    if (query.startsWith('select task_id,channel,type,blob')) return rows(writes)
-    if (query.startsWith('insert into')) {
+    // Statements are told apart by their bound values: the latest checkpoint read binds a thread and namespace, the
+    // saved writes read adds the checkpoint and channels, and the write binds the type and blob it stores.
+    if (values.length === 2 && values[1] === '') return rows([{ checkpoint_id: 'saved-checkpoint' }])
+    if (values.length === 4) return rows(writes)
+    if (values.length >= 8) {
       staged = await saver.serde.loadsTyped(String(values[6]), values[7] as Buffer)
       return rows()
     }
-    throw new Error(`Unexpected checkpoint query: ${query}`)
+    throw new Error(`Unexpected checkpoint query binding ${values.length} values`)
   } } as unknown as pg.ClientBase
   const connection = new ExclusiveGraphConnection(client, () => {})
   return { values: () => checkpointValues, close: () => connection.close(),

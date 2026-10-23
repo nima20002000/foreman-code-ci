@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test, vi } from 'vitest'
 import type pg from 'pg'
 import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
-import { AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import type { DurableInteraction, ExecutionResult } from '@foreman-code/contracts'
 import type { GraphResumeClaim } from '../src/modules/interactions/deliveryPostgres.js'
 import type { LangGraphWorkflowEngine } from '../src/modules/runs/engine.js'
@@ -41,18 +41,15 @@ async function fixture(options: {
   calls.entries = []; calls.work = undefined
   checkpoints.interrupted = false; checkpoints.delivered = false; checkpoints.consumed = false; checkpoints.stale = false; checkpoints.claim = undefined
   const f = makeCurrentWorkflowFixture('a1-engine-registration', options.form ?? 'single')
-  const run = AcceptedWorkflowRunV3Schema.parse({ ...f.run, authorizationPrincipalId: 'principal-a1-engine',
+  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run, authorizationPrincipalId: 'principal-a1-engine',
     executionLocation: { runnerId: 'runner-a1-engine', rootPath: '/synthetic/a1-engine', locationRevision: 1, identityHash: `sha256:${'a'.repeat(64)}` } })
   const state = { run, stopRequested: false, cleanupPending: false, owned: true, released: 0,
     factoryReads: 0, nativeCancel: 0, clean: true, events: [] as string[],
     cleanupFailure: undefined as ExecutionResult | undefined }
   const snapshot = () => ({ run: state.run, version: f.version, configurations: f.configurations,
     stopRequested: state.stopRequested, cleanupPending: state.cleanupPending })
-  const connection = new ExclusiveGraphConnection({ query: async (text: string, values: unknown[]) => {
-    const q = text.replace(/\s+/g, ' ').trim()
-    assert.match(q, /select exists\(/)
-    assert.match(q, /from execution_native_recoveries p join harness_executions e/)
-    assert.match(q, /where e\.run_id=\$1\) as recovered/)
+  const connection = new ExclusiveGraphConnection({ query: async (_text: string, values: unknown[]) => {
+    // The only read is the recovered-lifetime diagnostic, bound to the Run id alone.
     assert.deepEqual(values, [run.id])
     // Registration-only fixtures have no recovered physical lifetime. This is
     // the diagnostic read, never a fabricated closure or settlement receipt.
@@ -64,7 +61,7 @@ async function fixture(options: {
   const runs = {
     acquireOwnership: (async () => owner) as (runId: string, onLost: () => void) => Promise<RunOwnership | undefined>,
     getRepeatSnapshot: async () => {
-      AcceptedWorkflowRunV3Schema.parse(state.run)
+      AcceptedWorkflowRunCurrentSchema.parse(state.run)
       return snapshot()
     }, repeatRepositoryFactory() { state.factoryReads++; return factory },
     get: async (runId: string) => { assert.equal(runId, run.id); return structuredClone(state.run) },

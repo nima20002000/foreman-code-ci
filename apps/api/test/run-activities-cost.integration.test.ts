@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { describe, expect, it } from 'vitest'
-import { AcceptedWorkflowRunV3Schema, CurrentWorkflowSaveResultSchema, RunActivitiesPageSchema,
-  RUN_ACTIVITIES_PAGE_BYTES } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, CurrentWorkflowSaveResultSchema, RunActivitiesPageSchema,
+  RUN_ACTIVITIES_PAGE_BYTES } from '@foreman-code/contracts/current'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { buildApp } from '../src/app.js'
 import { RunActivitiesService } from '../src/modules/runs/activities.js'
@@ -14,7 +14,7 @@ import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPubl
 import { randomUUID } from 'node:crypto'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import type { currentDatabase } from './helpers/database.js'
-import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { withTaskDatabase } from './helpers/taskDatabase.js'
 import { graphFixture, graphHeaders, graphRpc, graphRpcValue,
   type GraphFixture } from './graph-composition-fixture.js'
 import { postgresEnabled } from './helpers/database.js'
@@ -66,7 +66,7 @@ function measuredActivities(pool: pg.Pool) {
 
 describe.skipIf(!postgresEnabled)('public Activities response and query cost', () => {
   it('pages large audit rows in both directions without omissions over HTTP and authenticated MCP', async () => {
-    await nim2691TaskDatabase(async (pool, directory) => {
+    await withTaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       const db = { pool, directory, schema: 'public', close: async () => {} } as Awaited<ReturnType<typeof currentDatabase>>
       const fixture = await graphFixture(db, { form: 'sequential', insert: false, qualifiedReads: true })
@@ -166,7 +166,7 @@ describe.skipIf(!postgresEnabled)('public Activities response and query cost', (
   }, 120000)
 
   it('keeps all retained public history pageable after the normalized snapshot exceeds the response budget', async () => {
-    await nim2691TaskDatabase(async (pool, directory) => {
+    await withTaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       const db = { pool, directory, schema: 'public', close: async () => {} } as Awaited<ReturnType<typeof currentDatabase>>
       const fixture = await graphFixture(db, { form: 'sequential', qualifiedReads: true, maxNodeExecutions: 300 })
@@ -251,12 +251,12 @@ describe.skipIf(!postgresEnabled)('public Activities response and query cost', (
   }, 120000)
 
   it.each(['running', 'completed'] as const)('does constant query work for unchanged short and long %s Runs', async (state) => {
-    await nim2691TaskDatabase(async (pool, directory) => {
+    await withTaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       const db = { pool, directory, schema: 'public', close: async () => {} } as Awaited<ReturnType<typeof currentDatabase>>
       const fixture = await graphFixture(db, { form: 'sequential', qualifiedReads: true, maxNodeExecutions: 300 })
       try {
-        const run = AcceptedWorkflowRunV3Schema.parse({ ...fixture.run, executionState: state,
+        const run = AcceptedWorkflowRunCurrentSchema.parse({ ...fixture.run, executionState: state,
           ...(state === 'completed' ? { outcome: 'succeeded', result: { outcome: 'succeeded' }, finishedAt: occurredAt } : {}) })
         await pool.query('update runs set execution_state=$2,record=$3::jsonb where id=$1',
           [run.id, state, JSON.stringify(run)])

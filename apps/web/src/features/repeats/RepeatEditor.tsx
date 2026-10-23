@@ -1,6 +1,6 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { useMemo } from 'react'
-import type { RepeatBlockV1, WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import type { RepeatBlockV1, WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { Button, Checkbox, Select, TextField } from '../../shared/ui/nocturne'
 import { blockOutcomeOptions, localDraftFromPlan, targetLabel, validateRepeatDraft } from './repeatModel'
 import './repeats.css'
@@ -8,8 +8,8 @@ import './repeats.css'
 /** Fields in the existing Board draft, not a second editor or publication path.
  * Partial input is local-only. The common Save validates the complete V3 version. */
 export function RepeatEditor({ graph, change, disabled = false }: {
-  graph: WorkflowDefinitionV3
-  change(update: (graph: WorkflowDefinitionV3) => WorkflowDefinitionV3): void
+  graph: WorkflowDefinitionCurrent
+  change(update: (graph: WorkflowDefinitionCurrent) => WorkflowDefinitionCurrent): void
   disabled?: boolean
 }) {
   const options = useMemo(() => graph.nodes.map((node) => ({ value: node.id, label: node.name ?? node.label ?? node.id })), [graph.nodes])

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, memoryBoardTools } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/database.js'
 
@@ -48,8 +48,12 @@ it.runIf(postgresEnabled).each([false, true])('applies result board effects only
     expect(details?.run.outcome).toBe('succeeded')
     expect(details?.executions[0]?.result).toEqual({ outcome: 'succeeded', output: original! })
     const done = await read({ boardId, view: 'cards', status: 'done' })
-    if (pinned) expect(done.items).toEqual([expect.objectContaining({ title: 'Result task', status: 'done', completionKind: 'completed' })])
-    else expect(done.items).toEqual([])
+    expect(done.items).toHaveLength(pinned ? 2 : 1)
+    expect(done.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ assignee: expect.objectContaining({ workflowNodeId: fixture.version.entryNodeId }),
+        status: 'done', completionKind: 'completed' }),
+      ...(pinned ? [expect.objectContaining({ title: 'Result task', status: 'done', completionKind: 'completed' })] : []),
+    ]))
     await runtime.engine.start(runId)
     expect(await read({ boardId, view: 'cards', status: 'done' })).toEqual(done)
   } finally { await runtime.close() }

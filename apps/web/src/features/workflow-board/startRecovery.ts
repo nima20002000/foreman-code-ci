@@ -1,4 +1,4 @@
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
 import { boardStartClient, type BoardStartInput } from './startClient'
 import { acknowledgeBoardStart, readBoardStart } from './startOutbox'

@@ -9,7 +9,7 @@ import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connec
 import type { PostgresAccessService } from '../access/postgres.js'
 import type { AcceptedHarnessProfileAdmission } from '../harnesses/instanceSettings/acceptedProfile.js'
 import type { ClaudeProfileOwner } from '../harnesses/claudeSdk/production.js'
-import type { SelectedMainMcpForward } from '../placement/workerMcpRelay.js'
+import type { SelectedMainMcpForward } from '../placement/index.js'
 import type { MainWorkerConversationBridge } from './workerBridge.js'
 import type { PostgresOperatorConversationRepository } from './operatorChatRepository.js'
 import { DomainError } from '../errors.js'

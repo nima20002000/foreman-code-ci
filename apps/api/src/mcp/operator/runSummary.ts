@@ -1,7 +1,7 @@
 import {
   OperatorRunCompactSchema, OperatorRunSummarySchema, OperatorExecutionSummarySchema,
 } from '@foreman-code/contracts/operator-mcp'
-import type { SavedRunDetails } from '@foreman-code/contracts/wave25'
+import type { SavedRunDetails } from '@foreman-code/contracts/current'
 
 export function compactRunDetails(details: SavedRunDetails) {
   const activities = [...(details.activitySnapshot?.activities ?? [])]

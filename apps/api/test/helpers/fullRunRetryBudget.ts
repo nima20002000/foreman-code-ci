@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
+import { RunStartCurrentResultSchema } from '@foreman-code/contracts/current'
 import { attempts, describeRetryBudget, occurrences, sameSlot } from './retryBudget.js'
 import {
   executionRows, fullRunInput, readback, recoveryFixture, toolValue, assertOriginalFailure,
@@ -20,13 +20,13 @@ export function describeFullRunRetryBudget(
           await f.restart()
           const input = await fullRunInput(f)
           const start = async () => {
-            if (via === 'mcp') return RunStartV3ResultSchema.parse(toolValue(await f.transport.client.callTool({ name: 'run_start', arguments: input })))
+            if (via === 'mcp') return RunStartCurrentResultSchema.parse(toolValue(await f.transport.client.callTool({ name: 'run_start', arguments: input })))
             const response = await f.transport.app.inject({ method: 'POST',
               url: `/api/management/workspaces/${input.workspaceId}/workflows/${input.workflowId}/runs`,
               headers: { authorization: `Bearer ${f.base.writer.token}` }, payload: input })
             expect(response.statusCode, response.body).toBeGreaterThanOrEqual(200)
             expect(response.statusCode, response.body).toBeLessThan(300)
-            return RunStartV3ResultSchema.parse(response.json())
+            return RunStartCurrentResultSchema.parse(response.json())
           }
           const accepted = await start(), replayed = await start()
           expect(accepted.accepted).toBe(true); expect(accepted.replayed).toBe(false)

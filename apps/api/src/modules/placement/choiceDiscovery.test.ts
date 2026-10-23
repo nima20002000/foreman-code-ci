@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { expect, it, vi } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { ManagementPrincipalSchema } from '@foreman-code/contracts/management'
 import { HostHarnessOverrideSchema } from '@foreman-code/contracts/harness-registry'
 import { SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
@@ -57,9 +57,10 @@ function fixture(options: { driver?: 'codex' | 'claude'; host?: 'main' | 'device
     presetId: `${driver}-default`, enabled: true, driverId: driver, configuration: configuration.harness,
     configurationFingerprint: digest, qualification: 'qualified' })
   const sourceRoots = vi.fn(async () => [root])
-  const query = vi.fn(async (sql: string) => {
-    if (sql.includes('from agent_configuration_versions')) return { rows: [{ record: configuration }] }
-    if (sql.includes('from source_root_catalog')) return { rows: (await sourceRoots()).map(record => ({ record })) }
+  // The configuration read binds the version id and the workspace id; the source root read binds the workspace id alone.
+  const query = vi.fn(async (_sql: string, values: unknown[] = []) => {
+    if (values.length === 2 && values[0] === configuration.id) return { rows: [{ record: configuration }] }
+    if (values.length === 1 && values[0] === configuration.workspaceId) return { rows: (await sourceRoots()).map(record => ({ record })) }
     return { rows: [] }
   })
   const pool = { connect: async () => ({ query, release: vi.fn() }) } as unknown as pg.Pool

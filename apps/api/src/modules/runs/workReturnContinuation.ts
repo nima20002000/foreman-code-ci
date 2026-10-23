@@ -1,9 +1,9 @@
 import { ExecutionResultSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
 import {
   AcceptedCurrentNodeResultSchema, WorkActivationIdentitySchema, WorkRequestSchema,
-  canonicalGraphJson, type WorkRequest, type WorkflowVersionV3,
-} from '@foreman-code/contracts/wave25'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+  canonicalGraphJson, type WorkRequest, type WorkflowVersionCurrent,
+} from '@foreman-code/contracts/current'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { RepeatLockedHooks } from './repeatPostgres.js'
 import { assertWorkflowExecutionCapacityLocked } from './workflowExecutionBudget.js'
 import { repeatConflict, repeatId, sameRepeatValue, type RepeatScope } from './repeatResolution.js'
@@ -11,7 +11,7 @@ import { hierarchyContinuationForRequestLocked } from './hierarchyGroupSettlemen
 import { parseWorkflowWorkResult } from './workflowCoordinationResult.js'
 
 export interface WorkReturnContext {
-  sql: GraphTransactionSql; scope: RepeatScope; version: WorkflowVersionV3
+  sql: SqlTransaction; scope: RepeatScope; version: WorkflowVersionCurrent
   hooks: RepeatLockedHooks; now: string
   assertActive(): void
 }

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { HarnessExecutionSchema, type ExecutionResult } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, CurrentWorkflowSaveResultSchema, type CurrentFixtureForm,
-  type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, CurrentWorkflowSaveResultSchema, type CurrentFixtureForm,
+  type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { RunOwnership } from '../../src/modules/runs/ownership.js'
 import { RepeatRunRepository, type RepeatRepositoryHost } from '../../src/modules/runs/repeatPostgres.js'
 import { openRepeatCanonicalPublicationLocked } from '../../src/modules/run-graph/repeatPublication.js'
@@ -24,7 +24,7 @@ import { createWorkflowCollaborationHooks } from '../../src/modules/collaboratio
 /** Actual typed Save, canonical publication, owner, repository and completion
  * writer. The test supplies native terminals and doubles physical closure only. */
 export async function workflowSettlementFixture(db: Awaited<ReturnType<typeof currentDatabase>>,
-  configure: (graph: WorkflowDefinitionV3, writer: WriterFixture) => WorkflowDefinitionV3 | Promise<WorkflowDefinitionV3>,
+  configure: (graph: WorkflowDefinitionCurrent, writer: WriterFixture) => WorkflowDefinitionCurrent | Promise<WorkflowDefinitionCurrent>,
   form: CurrentFixtureForm = 'sequential', options: Parameters<typeof writerFixture>[2] = {}) {
   const writer = await writerFixture(db, form, options)
   let owner: RunOwnership | undefined
@@ -53,7 +53,7 @@ export async function workflowSettlementFixture(db: Awaited<ReturnType<typeof cu
     await markRepeatRunRunning(owner, locations, { executionState: 'running', outcome: 'pending' })
     let retryPolicy: 'single_retry' | 'production' = 'single_retry'
     const host: RepeatRepositoryHost = { openLocked: async (sql, lockedScope, record) => {
-      const storedRun = AcceptedWorkflowRunV3Schema.parse(record)
+      const storedRun = AcceptedWorkflowRunCurrentSchema.parse(record)
       const publication = await openRepeatCanonicalPublicationLocked(sql, lockedScope, owner!)
       return {
         run: storedRun,
@@ -72,7 +72,7 @@ export async function workflowSettlementFixture(db: Awaited<ReturnType<typeof cu
       }
     } }
     let store = new RepeatRunRepository(owner, host, version)
-    const readRun = async () => AcceptedWorkflowRunV3Schema.parse(
+    const readRun = async () => AcceptedWorkflowRunCurrentSchema.parse(
       (await db.pool.query('select record from runs where id=$1', [run.id])).rows[0]?.record)
     let failureSettlements = 0
     const lifecycle: RepeatRuntimeLifecycle = {

@@ -7,17 +7,17 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { CiRuntimeProvisioner } from '@foreman-code/ci/ciRuntimeProvisioner'
 import { buildComputerTarget, buildComputerKey } from '../src/modules/settings/buildComputers.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import type { AppInteractionService } from '../src/modules/interactions/app.js'
 import { ciPreparationFixture, builder, mainId } from './helpers/ciPreparationFixture.js'
 import { mainCiContext } from '../src/modules/ci/context.js'
 
 export function useCiRuntimePreparationFixture() {
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
   let fixture: Awaited<ReturnType<typeof ciPreparationFixture>>
   const provisioners: CiRuntimeProvisioner[] = []
   const apps: ReturnType<typeof Fastify>[] = []
-  beforeEach(async () => { database = await agent3Database() }, 60_000)
+  beforeEach(async () => { database = await migratedDatabase() }, 60_000)
   afterEach(async () => {
     await Promise.allSettled(provisioners.splice(0).map(service => service.close()))
     await Promise.allSettled(apps.splice(0).map(app => app.close()))

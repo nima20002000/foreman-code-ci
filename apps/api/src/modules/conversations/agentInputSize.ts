@@ -5,7 +5,7 @@ import type { AgentConversationRow } from './agentChatRepository.js'
 import { agentMessagePrompt } from './agentMessagePrompt.js'
 import { assertWorkerChatInputSize } from './chatInputSize.js'
 import { assertAgentWorkerRequests } from './agentWorkerInput.js'
-import { readExecutionPlacement, readNativePlacement } from '../placement/persistence.js'
+import { readExecutionPlacement, readNativePlacement } from '../placement/index.js'
 
 export async function assertAgentChatInputSize(sql: Pick<pg.PoolClient, 'query'>, input: {
   row: AgentConversationRow; configuration: AgentConfigurationVersion; nextConfiguration?: AgentConfigurationVersion

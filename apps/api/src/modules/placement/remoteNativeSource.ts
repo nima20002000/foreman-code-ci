@@ -1,10 +1,10 @@
 import type { HarnessExecution } from '@foreman-code/contracts'
-import { canonicalGraphJson, sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, sameWorkflowValue } from '@foreman-code/contracts/current'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import { VerifiedRemoteEvidence } from '../runs/remote/resultBridge.js'
 import type { RunOwnership } from '../runs/ownership.js'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
-import { beforeGraphCommit, isGraphTransactionFinalizing } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { beforeGraphCommit, isGraphTransactionFinalizing } from '../run-graph/index.js'
 import type { WorkflowOriginalNativeSource } from '../interactions/workflowNativeCapture.js'
 import { DomainError } from '../errors.js'
 import { sha256Hex } from '../../shared/hash.js'
@@ -22,10 +22,10 @@ export interface RemoteNativePhysicalVerification {
    * and W09 result/artifact attestations. A receipt digest or main control lane
    * is not physical proof; an absent verifier cannot authorize publication.
    * It locks the current dispatch and requires it to equal the original receipt's intent. */
-  assertOriginal(sql: GraphTransactionSql, owner: RunOwnership, original: VerifiedRemoteOriginalSource): Promise<void>
+  assertOriginal(sql: SqlTransaction, owner: RunOwnership, original: VerifiedRemoteOriginalSource): Promise<void>
 }
 export interface RemoteNativeBatchPhysicalVerification extends RemoteNativePhysicalVerification {
-  assertOriginals(sql: GraphTransactionSql, owner: RunOwnership,
+  assertOriginals(sql: SqlTransaction, owner: RunOwnership,
     originals: readonly VerifiedRemoteOriginalSource[]): Promise<void>
 }
 
@@ -90,16 +90,24 @@ export function createRemoteNativeSourceChannel(): {
   }
 }
 
-/** Existing canonical writer calls this alongside its actual main coordinator
- * and control-lane checks, not instead of them. Remote physical provenance is
- * separately mandatory and remains branded; no local native capture cast. */
-export async function assertRemoteNativeSourceLocked(sql: GraphTransactionSql, owner: RunOwnership,
-  execution: HarnessExecution, source: WorkflowOriginalNativeSource, evidence: RemoteNativeSourceEvidence,
-  verification: RemoteNativeSourceVerification, physical: RemoteNativePhysicalVerification, registerCommitFence = true): Promise<void> {
-  const original = verification.read(evidence), receipt = original.verified.receipt
+/** The verified original for this capture, only if it belongs to this Run, execution, node, source and native session. */
+function readOriginal(verification: RemoteNativeSourceVerification, owner: RunOwnership,
+  capture: { execution: HarnessExecution; source: WorkflowOriginalNativeSource; evidence: RemoteNativeSourceEvidence }) {
+  const { execution, source } = capture
+  const original = verification.read(capture.evidence), receipt = original.verified.receipt
   if (owner.runId !== execution.runId || receipt.intent.runId !== owner.runId || receipt.intent.executionId !== execution.id
     || receipt.intent.nodeId !== execution.workflowNodeId || !sameWorkflowValue(original.source, source)
     || receipt.native?.sessionId !== execution.nativeSessionId && source.type !== 'session_created') return conflict()
+  return original
+}
+
+/** Existing canonical writer calls this alongside its actual main coordinator
+ * and control-lane checks, not instead of them. Remote physical provenance is
+ * separately mandatory and remains branded; no local native capture cast. */
+export async function assertRemoteNativeSourceLocked(sql: SqlTransaction, owner: RunOwnership,
+  execution: HarnessExecution, source: WorkflowOriginalNativeSource, evidence: RemoteNativeSourceEvidence,
+  verification: RemoteNativeSourceVerification, physical: RemoteNativePhysicalVerification, registerCommitFence = true): Promise<void> {
+  const original = readOriginal(verification, owner, { execution, source, evidence })
   const fence = await owner.readOneShotFence(sql)
   // assertOriginal reads the locked current dispatch and requires it to equal this original receipt's intent.
   const verify = async () => {
@@ -116,24 +124,16 @@ export async function assertRemoteNativeSourceLocked(sql: GraphTransactionSql, o
   fenced.add(original)
   beforeGraphCommit(sql, verify)
 }
-const commitFences = new WeakMap<GraphTransactionSql, WeakSet<VerifiedRemoteOriginalSource>>()
+const commitFences = new WeakMap<SqlTransaction, WeakSet<VerifiedRemoteOriginalSource>>()
 
 
 /** Share the owner read and original-source readback across one native frame group. */
-export async function assertRemoteNativeSourcesLocked(sql: GraphTransactionSql, owner: RunOwnership,
+export async function assertRemoteNativeSourcesLocked(sql: SqlTransaction, owner: RunOwnership,
   captures: readonly { execution: HarnessExecution; source: WorkflowOriginalNativeSource;
     evidence: RemoteNativeSourceEvidence }[], verification: RemoteNativeSourceVerification,
   physical: RemoteNativeBatchPhysicalVerification): Promise<void> {
   if (!captures.length) return
-  const originals = captures.map(({ execution, source, evidence }) => {
-    const original = verification.read(evidence)
-    const receipt = original.verified.receipt
-    if (owner.runId !== execution.runId || receipt.intent.runId !== owner.runId
-      || receipt.intent.executionId !== execution.id || receipt.intent.nodeId !== execution.workflowNodeId
-      || !sameWorkflowValue(original.source, source)
-      || receipt.native?.sessionId !== execution.nativeSessionId && source.type !== 'session_created') return conflict()
-    return original
-  })
+  const originals = captures.map(capture => readOriginal(verification, owner, capture))
   const fence = await owner.readOneShotFence(sql)
   const verify = async (sources: readonly VerifiedRemoteOriginalSource[]) => {
     owner.assertOwned()

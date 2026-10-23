@@ -1,18 +1,18 @@
 import type pg from 'pg'
 import type { ChatSendRequest } from '@foreman-code/contracts'
 import { fileStateAt } from '@foreman-code/contracts/files'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import { PostgresFileRepository } from '../files/postgres.js'
-import { PostgresFileReferenceAuthorization } from '../files/references/authorization.js'
-import { validateMessageAttachments } from '../conversations/messageAttachments.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
+import { PostgresFileRepository } from '../files/index.js'
+import { PostgresFileReferenceAuthorization } from '../files/index.js'
+import { validateMessageAttachments } from '../conversations/index.js'
 import { DomainError } from '../errors.js'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { authorizeWorkflowChat } from './workflowChatRead.js'
 import { asWorkflowChatTarget, workflowTargetRunId } from './workflowControlRecords.js'
 
 export function workflowChatAttachmentAuthorization(pool: pg.Pool) {
   const files = new PostgresFileRepository(pool)
-  return async (sql: GraphSqlClient, principalId: string, request: ChatSendRequest) => {
+  return async (sql: SqlQuery, principalId: string, request: ChatSendRequest) => {
     if (!request.attachments.length) return
     const target = asWorkflowChatTarget(request.target)
     const principal = await readLiveManagementPrincipal(sql, principalId)

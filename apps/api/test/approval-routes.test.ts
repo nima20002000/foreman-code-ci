@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolveImmutableApprovalRoute, usesNativeSelfReview } from '../src/modules/workflows/approvalRoutes.js'
-import { ExecutableWorkflowV3Schema } from '@foreman-code/contracts/wave25'
+import { ExecutableWorkflowCurrentSchema } from '@foreman-code/contracts/current'
 import { validateReviewerBootstrap } from '../src/modules/workflows/reviewerBootstrap.js'
 import { approvalFixture, routeDenialCases } from './helpers/approvalFixture.js'
 
@@ -55,7 +55,7 @@ describe('Wave 2.5 immutable approval routing', () => {
     version.definition.edges = []
     version.agentConfigurationVersionIds = { 'agent-reviewer': 'cfg-reviewer' }
     expect(usesNativeSelfReview(configurations[0]!.harness)).toBe(true)
-    expect(() => ExecutableWorkflowV3Schema.parse({ version, configurations: configurations.slice(0, 1) })).not.toThrow()
+    expect(() => ExecutableWorkflowCurrentSchema.parse({ version, configurations: configurations.slice(0, 1) })).not.toThrow()
     expect(resolveImmutableApprovalRoute(version, 'node-reviewer', 'agent-reviewer')).toBeUndefined()
   })
   it('keeps unsafe or missing native bootstrap configuration rejected', () => {
@@ -65,26 +65,26 @@ describe('Wave 2.5 immutable approval routing', () => {
   })
   it('validates immutable configurations and routes at executable acceptance', () => {
     const { version, configurations } = approvalFixture()
-    expect(() => ExecutableWorkflowV3Schema.parse({ version, configurations })).not.toThrow()
+    expect(() => ExecutableWorkflowCurrentSchema.parse({ version, configurations })).not.toThrow()
     const wrong = structuredClone(configurations)
     wrong[0]!.workspaceId = 'different-workspace'
-    expect(() => ExecutableWorkflowV3Schema.parse({ version, configurations: wrong })).toThrow()
+    expect(() => ExecutableWorkflowCurrentSchema.parse({ version, configurations: wrong })).toThrow()
     const stale = structuredClone(configurations)
     stale[0]!.id = 'stale-configuration'
-    expect(() => ExecutableWorkflowV3Schema.parse({ version, configurations: stale })).toThrow()
+    expect(() => ExecutableWorkflowCurrentSchema.parse({ version, configurations: stale })).toThrow()
     const wrongRole = structuredClone(configurations)
     wrongRole[0]!.productRole = 'coder'
-    expect(() => ExecutableWorkflowV3Schema.parse({ version, configurations: wrongRole })).toThrow()
+    expect(() => ExecutableWorkflowCurrentSchema.parse({ version, configurations: wrongRole })).toThrow()
   })
   it('accepts a native self-review Worker without inventing an App assignment (G1 conflict)', () => {
     const { version, configurations } = approvalFixture()
     configurations[1]!.harness = structuredClone(configurations[0]!.harness)
     version.definition.edges = version.definition.edges.filter((e) => e.kind === 'execution')
-    expect(() => ExecutableWorkflowV3Schema.parse({ version, configurations })).not.toThrow()
+    expect(() => ExecutableWorkflowCurrentSchema.parse({ version, configurations })).not.toThrow()
   })
   it('rejects recursive approval snapshots before dispatch', () => {
     const { version, configurations } = approvalFixture()
     version.definition.edges.push({ id: 'cycle', kind: 'approval', source: 'node-worker', target: 'node-reviewer' })
-    expect(() => ExecutableWorkflowV3Schema.parse({ version, configurations })).toThrow()
+    expect(() => ExecutableWorkflowCurrentSchema.parse({ version, configurations })).toThrow()
   })
 })

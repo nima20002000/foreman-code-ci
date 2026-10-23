@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from 'node:util'
 
 import { afterEach, test, vi } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS, HarnessExecutionSchema, NATIVE_INTERACTION_FIXTURES, type DurableInteraction, type NativeHarnessEvent, type NativeSessionLane, type NativeSessionReference, type ReviewJob } from '@foreman-code/contracts'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { freezePlacement, deriveDispatch } from '../src/modules/placement/binding.js'
 import { RemoteExecutionHost, type RemoteExecutionHostPorts } from '../src/modules/runs/remote/executionHost.js'
 import { RemoteOperationJournal } from '../src/modules/runs/remote/operationJournal.js'
@@ -1254,7 +1254,7 @@ test('Stop can acquire cancellation after the streaming owner aborts without fak
     await new Promise<void>((resolve) => signal!.addEventListener('abort', () => resolve(), { once: true }))
   }
   const task = (async () => { for await (const _event of owner.startTurn(session, { clientCorrelationId: 'normal', prompt: '' }, stop.signal)) { void _event } })()
-  const result = task.catch(() => undefined)
+  const result = task.catch(() => { /* ignore: The test deliberately aborts the streaming owner before checking cancellation. */ })
   await started; stop.abort()
   assert.equal(await owner.cancel(session), true)
   await result

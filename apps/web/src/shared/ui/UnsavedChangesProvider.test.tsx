@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ScheduleClockButton } from '../../features/schedules/ScheduleClockButton'
+import { ScheduleClockButton } from '../../features/schedules'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../mocks/server'
 import { afterEach, expect, it, vi } from 'vitest'

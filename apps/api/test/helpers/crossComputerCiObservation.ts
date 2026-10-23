@@ -4,7 +4,7 @@ import { CiGetOutputSchema, CiListOutputSchema, type CiListOutput, type CiRunRec
   type CiLogsOutputSchema } from '@foreman-code/contracts'
 import type { RunPlacementGetResult } from '@foreman-code/contracts/placement-readback'
 import { RunActivitiesPageSchema, SavedRunDetailsSchema, WorkHandoffResultSchema,
-  type RunActivityPublic, type SavedRunDetails, type RunExecutionsPage } from '@foreman-code/contracts/wave25'
+  type RunActivityPublic, type SavedRunDetails, type RunExecutionsPage } from '@foreman-code/contracts/current'
 import { z } from 'zod'
 import { callCiTool, type PreparedCiWorkflow } from './crossComputerCiSetup.js'
 import { ciGroupRequestedBy, ciTerminal, type CiReadback } from './crossComputerCiReadback.js'

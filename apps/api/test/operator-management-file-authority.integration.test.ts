@@ -20,7 +20,7 @@ import type { NativeManagerResolver } from '../src/modules/conversations/operato
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { WorkspaceSchema, CreateOperatorConversationResponseSchema, SendOperatorMessageResponseSchema, GetOperatorConversationResponseSchema } from '@foreman-code/contracts'
 import { SavedManagedWorkflowCommandResultSchema, SavedManagedWorkflowSchema,
-  SavedManagedWorkflowPageSchema } from '@foreman-code/contracts/wave25'
+  SavedManagedWorkflowPageSchema } from '@foreman-code/contracts/current'
 import { calls, emit, finish, fixtureQualification, input, until, type Fixture } from './fixtures/codex-test-helpers.js'
 import { fileRuntimeFixture } from './fixtures/codex-file-runtime-helpers.js'
 

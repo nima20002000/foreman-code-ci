@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 
 /** Canonical S3-01..04 candidates shared by contract and runtime regression tests.
  * Static data only: callers must use real Save/Start for publication proof. */

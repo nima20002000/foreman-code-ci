@@ -7,7 +7,7 @@ import { AgentMutationResultSchema, AgentVersionResultSchema, ManagedAgentDetail
 import { HostHarnessProfileEvidenceSchema, HostHarnessOverrideSaveResultSchema,
   HostHarnessInstanceCheckResultSchema } from '@foreman-code/contracts/harness-registry'
 import { CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, CurrentWorkflowReadResultSchema }
-  from '@foreman-code/contracts/wave25'
+  from '@foreman-code/contracts/current'
 import { HarnessQualificationRepository } from '../src/modules/harnesses/qualification/repository.js'
 import { remoteReviewProduction, waitForRemoteReview } from './helpers/remoteReviewProduction.js'
 

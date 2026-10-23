@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { OperatorToolSchemaResultSchema } from '@foreman-code/contracts/operator-mcp'
 import {
   RUN_INSPECTION_TOOLS, RunExecutionDetailSchema, RunExecutionsPageSchema, RunExecutionBindingsPageSchema, RunRecordDetailSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/database.js'
 import {
@@ -32,7 +32,7 @@ describe.skipIf(!postgresEnabled)('PostgreSQL authenticated Run inspection: fork
         expect(tool?.inputSchema.type).toBe('object')
         expect(tool).not.toHaveProperty('outputSchema')
         const schema = OperatorToolSchemaResultSchema.parse(value(await r.client.callTool({
-          name: 'operator_tool_schema_get', arguments: { name, includeOutputSchema: true },
+          name: 'tool_schema', arguments: { name, includeOutputSchema: true },
         })))
         expect(schema.name).toBe(name)
         expect(compactJsonSchema(schema.inputSchema)).toEqual(tool?.inputSchema)

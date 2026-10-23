@@ -1,4 +1,3 @@
-import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import {
   AcceptedWorkflowApprovalConfigurationSchema,
   CodexSessionCompatibilitySchema,
@@ -9,6 +8,7 @@ import {
 } from '@foreman-code/contracts'
 
 import { DomainError } from '../errors.js'
+import { retiredHarnessError } from './retiredHarness.js'
 import { CLAUDE_FULL_ACCESS_REQUIRED, CLAUDE_EXTERNAL_MCP_UNSUPPORTED,
   ClaudeSupportedMcpServersSchema } from '@foreman-code/contracts/claude'
 
@@ -29,8 +29,7 @@ export function assertNativeWorkflowConfiguration(
   designatedOrchestrator = false,
 ): void {
   const configuration = withAdvancedDefaults(savedConfiguration)
-  if (configuration.harness === 'opencode') throw new DomainError('HARNESS_RETIRED',
-    RETIRED_OPENCODE_MESSAGE, 409)
+  if (configuration.harness === 'opencode') throw retiredHarnessError()
   assertClaudeFullAccess(configuration)
   if (approval && !AcceptedWorkflowApprovalConfigurationSchema.safeParse(approval).success) {
     throw new DomainError('WORKFLOW_APPROVAL_INCOMPLETE', 'Complete the selected workflow approval settings before starting it.', 409)

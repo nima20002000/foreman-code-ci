@@ -5,7 +5,7 @@ import { RunPlacementGetResultSchema } from '@foreman-code/contracts/placement-r
 import {
   canonicalGraphJson, CurrentEditReadResultSchema, CurrentWorkflowReadResultSchema, CurrentWorkflowCapabilitiesSchema,
   CurrentWorkflowSavedSchema, CurrentWorkflowSaveInputSchema,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { postgresEnabled } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { fixture, startInput, toolError } from './helpers/nodePlacementStartFixture.js'

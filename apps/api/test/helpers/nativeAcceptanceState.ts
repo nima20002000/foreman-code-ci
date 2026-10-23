@@ -1,7 +1,7 @@
 import { timeRuntimeOperation } from '../../src/infrastructure/runtimeTiming.js'
-import type { Eng03NativeControl } from './nativeAcceptanceScenario.js'
+import type { NativeAcceptanceControl } from './nativeAcceptanceScenario.js'
 
-export async function waitForStartedBranches({ pool, runId, nodeIds, runs, publicationChanged }: Eng03NativeControl) {
+export async function waitForStartedBranches({ pool, runId, nodeIds, runs, publicationChanged }: NativeAcceptanceControl) {
   const deadline = Date.now() + 120_000
   let timer: ReturnType<typeof setTimeout> | undefined
   const expired = new Promise<void>((resolve) => { timer = setTimeout(resolve, 120_000) })

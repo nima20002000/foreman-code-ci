@@ -1,10 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
-import type { CurrentWorkspaceDetails } from '@foreman-code/contracts/wave25'
+import type { CurrentWorkspaceDetails } from '@foreman-code/contracts/current'
 import { apiClient } from '../../shared/api/client'
 import { queryKeys } from '../../shared/api/query'
 import { nextDraftApi } from '../graph/nextDraft/transport'
 import { runSummariesQuery, runsSelectorApi } from '../runs-selector'
-import { boardDraftContextKey, boardLiveRunSnapshotKey } from './keys'
+import { boardDraftContextKey, boardLiveRunSnapshotKey } from '../board-core'
 import { isActiveRun } from './runFacts'
 
 /** Hover/focus prefetch of what a Board shows first, in parallel and under the keys the

@@ -13,12 +13,12 @@ import { ApiError } from '../../../shared/api/client'
 import { createStreamReadback } from '../../../shared/api/streamReadback'
 import { committedMessage, createCommittedMessageBuffer, patchCommittedMessages } from '../delivery/committedMessageStream'
 import { subscribeAgentChat, type AgentChatConnection } from '../../../shared/api/agentChatStream'
-import { sameDeliveryTarget } from '../../workflow-chat/draft'
+import { sameDeliveryTarget } from '../../workflow-chat'
 import { assertSession, sessionGeneration, sessionIsSwitching } from '../../../shared/api/sessionBoundary'
 import { useLocalHumanAccessQuery } from '../../../shared/api/settingsExperience'
 import { isApiAccessError } from '../../../shared/api/accessError'
 import { useProtectedAccessError } from '../../../shared/api/useProtectedAccessError'
-import { canUseBoardAction } from '../../workflow-board/permissions'
+import { canUseBoardAction } from '../../workflow-board'
 import { useConversationDraftStore } from '../conversationDraftStore'
 import { messageAttachmentRefs, sameAttachmentRefs, type ChatAttachmentAttempt } from '../chatAttachmentAttempt'
 import { markChatTurnCompleted } from '../chatTurnCompletion'
@@ -28,7 +28,7 @@ import { claimDeliveryDraftReadback, claimDraftReadback, receiptForCommand } fro
 import { acceptPendingDelivery, forgetPendingCommand, rememberPendingCommand, restorePendingCommands } from './pendingCommands'
 import { agentChatContextKey, approvalReplyAvailable, intentUnavailable, stateBelongsToContext } from './model'
 
-import { agentChatCommandOrder, agentChatReadbacksKey, compactAgentChatResult, confirmedCommandReceipt, currentCommandReceipt, rememberAgentChatReadback, retireAgentChatAcknowledgements, type AgentChatReadbacks, type AgentChatCommand as Command, type AgentChatCommandResult as Result, type AgentChatCommandRecord } from './commandRecords'
+import { agentChatCommandOrder, compactAgentChatResult, confirmedCommandReceipt, currentCommandReceipt, rememberAgentChatReadback, retireAgentChatAcknowledgements, useAgentChatReadbacks, type AgentChatCommand as Command, type AgentChatCommandResult as Result, type AgentChatCommandRecord } from './commandRecords'
 export type { AgentChatCommandRecord } from './commandRecords'
 
 function reconcileDraftReadback(state: AgentChatState | undefined, commands: AgentChatCommandRecord[], draftKey: string) {
@@ -127,12 +127,12 @@ export function useAgentChat(inputContext: AgentChatContext,
     && !access.isError && !!access.data && Date.parse(access.data.principal.expiresAt) > Date.now()
     && canUseBoardAction(access.data.principal.grants, action, context)
   const canRead = permits('agent_chat:read')
-  const readbacks = useQuery<AgentChatReadbacks>({ queryKey: agentChatReadbacksKey, enabled: false, gcTime: Infinity })
+  const readbacks = useAgentChatReadbacks(client)
   const records = useMutationState<AgentChatCommandRecord & { mutationId: number; order: number }>({ filters: commandFilters, select: (mutation) => ({
     mutationId: mutation.mutationId, order: agentChatCommandOrder(mutation), command: mutation.state.variables as Command | undefined, result: mutation.state.data as Result | undefined,
     error: mutation.state.error, status: mutation.state.status, submittedAt: mutation.state.submittedAt,
   }) })
-  const commands = useMemo(() => [...records].sort((left, right) => left.order - right.order).map((record) => ({ ...record, readback: readbacks.data?.[record.mutationId] })), [records, readbacks.data])
+  const commands = useMemo(() => [...records].sort((left, right) => left.order - right.order).map((record) => ({ ...record, readback: readbacks[record.mutationId] })), [records, readbacks])
   const latestCommand = commands.at(-1)
   const pending = useIsMutating(commandFilters) > 0
   const [localError, setLocalError] = useState<string>()

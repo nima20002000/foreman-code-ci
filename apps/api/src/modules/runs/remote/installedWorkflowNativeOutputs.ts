@@ -11,7 +11,7 @@ import { WorkerNativeOutputReadinessSchema } from '@foreman-code/contracts/worke
 import { sameCodexNativeOutputSandbox, type CodexNativeOutputQualificationInput } from '../../harnesses/codexNativeOutput.js'
 import { codexOutputProtectionIdentity, qualifyCodexOutputProtection } from '../../harnesses/codexOutputProtection.js'
 import type { NativeProcessRegistry } from '../../harnesses/recovery/processRegistry.js'
-import { createChannelTransferClient } from '../../byte-transfer/carrier.js'
+import { createChannelTransferClient } from '../../byte-transfer/index.js'
 import { DomainError } from '../../errors.js'
 import { createNativeOutputBudgetLedger, assertNativeOutputRootExcluded } from './installedNativeOutputStorage.js'
 import type { InstalledNativeOutputProviders } from './installedNativeOutput.js'

@@ -2,9 +2,7 @@ import type { AgentChatContext } from '@foreman-code/contracts/agent-chat'
 import { EmptyState } from '../../shared/ui/nocturne'
 import { useHarnessSessionEpoch } from '../../shared/api/harnessSettings'
 import { sessionIsSwitching } from '../../shared/api/sessionBoundary'
-import { AgentConversation } from '../conversations/agentChat/AgentConversation'
-import { AgentChatHeader } from '../conversations/agentChat/AgentChatHeader'
-import { agentChatContextKey } from '../conversations/agentChat/model'
+import { AgentConversation, AgentChatHeader, agentChatContextKey } from '../conversations'
 import '../conversations/agentChat/agentChat.css'
 
 export function AgentChatPanel({ name, role, activity, running, runLabel, context, onClose, onNewConversation }: {

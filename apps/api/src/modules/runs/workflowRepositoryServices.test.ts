@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
-import type { AcceptedWorkflowRunV3, WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import type { AcceptedWorkflowRunCurrent, WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import * as transactions from '../run-graph/connection.js'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import * as snapshots from './repeatStartRead.js'
 import * as executions from './repeatPostgres.js'
 import * as capacity from './workflowExecutionBudget.js'
 import { allowTechnicalRetryLocked } from './workflowRepositoryServices.js'
 
 const startedAt = Date.parse('2026-10-01T00:00:00.000Z')
-const run = { id: 'run', executionState: 'running' } as AcceptedWorkflowRunV3
-const version = { definition: { executionPolicy: { maxNodeExecutions: 20 } } } as WorkflowVersionV3
+const run = { id: 'run', executionState: 'running' } as AcceptedWorkflowRunCurrent
+const version = { definition: { executionPolicy: { maxNodeExecutions: 20 } } } as WorkflowVersionCurrent
 
 function failedAttempt(attempt: number, code: string, elapsedMs = 0): HarnessExecution {
   return HarnessExecutionSchema.parse({
@@ -31,7 +31,7 @@ function retryStore(attempts: HarnessExecution[], infrastructureIds = attempts.m
   const query = vi.fn(async () => ({ rows: attempts.map(record => ({
     record, failure_result: infrastructureIds.includes(record.id) ? record.result : null,
   })) }))
-  return { sql: { query, transaction: true } as unknown as GraphTransactionSql, execution }
+  return { sql: { query, transaction: true } as unknown as SqlTransaction, execution }
 }
 
 beforeEach(() => {

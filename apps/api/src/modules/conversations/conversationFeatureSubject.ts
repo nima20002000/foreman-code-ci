@@ -1,6 +1,6 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { AgentSubjectSchema, type AgentConfigurationVersion, type AgentSubject } from '@foreman-code/contracts'
-import { PostgresWorkflowRepository } from '../workflows/postgres.js'
+import { PostgresWorkflowRepository } from '../workflows/index.js'
 import { DomainError } from '../errors.js'
 import type { AgentConversationRow } from './agentChatRepository.js'
 

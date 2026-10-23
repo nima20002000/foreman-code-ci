@@ -8,6 +8,7 @@ import { AgentChatService } from '../src/modules/conversations/agentChat.js'
 import { ExecutionActivityFold, type ExecutionEventRow } from '../src/modules/conversations/executionActivity.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { executionProjectionRows } from './agent-chat-execution-activity.testSupport.js'
+import { liveAuthorityQuery, livePrincipalRow } from './helpers/livePrincipal.js'
 
 const at = '2026-01-01T00:00:00.000Z'
 let sequence = 0
@@ -124,22 +125,22 @@ function service() {
     { id: 'execution-check-1', tick: 1, state: 'running', createdAt: new Date('2026-01-01T00:02:00Z'), events: liveRun(), recordRevision: 0 },
   ]
   executions[0]!.events = [event('final', 'item.completed', { item: { id: 'final', type: 'agentMessage', text: 'Initial work finished' } })]
-  const query = vi.fn(async (sql: string, values: unknown[] = []) => {
-    if (sql.includes('management_principals')) return { rows: [{ id: principal.id, name: principal.name, audience: 'operator',
-      grants: principal.grants, expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] }
-    if (sql.includes('from harness_executions e join runs r')) {
+  // The statements are told apart by their bound values: the live principal read binds only an id, the execution list the
+  // six scope values, and the execution activity page fourteen.
+  const query = vi.fn(liveAuthorityQuery(() => livePrincipalRow(principal), async (_sql, values) => {
+    if (values.length === 6) {
       if (values[0] !== runId || values[1] !== workflowNodeId || values[2] !== agentId || values[3] !== workspaceId || values[4] !== workflowId) return { rows: [] }
       return { rows: [...executions].reverse().map((execution) => ({ id: execution.id, attempt: 1, tick_index: execution.tick,
         occurrence_index: null, state: execution.state, native_session_id: 'thread', created_at: execution.createdAt,
         started_at: execution.createdAt.toISOString(), finished_at: null,
         revision: String(execution.events.at(-1)?.sequence ?? 0), record_revision: String(execution.recordRevision) })) }
     }
-    if (sql.includes('from harness_native_events n')) {
+    if (values.length === 14) {
       const execution = executions.find((entry) => entry.id === values[0])
       return { rows: executionProjectionRows(execution?.events ?? [], values) }
     }
-    throw new Error(`Unexpected SQL: ${sql}`)
-  })
+    throw new Error(`Unexpected statement binding ${values.length} values`)
+  }))
   const pool = { query, connect: async () => ({ query, release: vi.fn() }) } as unknown as pg.Pool
   const unused = new Proxy({}, { get: () => { throw new Error('Execution activity must not use chat storage or native sessions') } })
   const chat = new AgentChatService(pool, unused as never, unused as never, unused as never, unused as never, unused as never, '/fixture')

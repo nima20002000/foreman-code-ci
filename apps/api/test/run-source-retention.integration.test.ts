@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
+import { RunStartCurrentResultSchema } from '@foreman-code/contracts/current'
 import { sourceWorktreeMcpFixture } from './helpers/sourceWorktreeMcpFixture.js'
 import { deferred } from './helpers/deferred.js'
 import { fixtureGit } from './helpers/workspaceRepository.js'
@@ -84,7 +84,7 @@ it.each(['attestation', 'admission'] as const)(
       resume.resolve()
       const reply = await start
       expect(reply.isError, JSON.stringify(reply)).not.toBe(true)
-      const run = RunStartV3ResultSchema.parse(decodeMcpToolResult(reply)).run
+      const run = RunStartCurrentResultSchema.parse(decodeMcpToolResult(reply)).run
       const placements = await f.base.db.pool.query<{ snapshot_id: string }>(
         "select record#>>'{source,snapshotId}' as snapshot_id from run_node_placements where run_id=$1", [run.id])
       expect(placements.rows).toHaveLength(2)

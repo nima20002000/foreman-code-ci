@@ -1,5 +1,5 @@
 import { MemoryCardSchema, type AgentNodeRef, type MemoryBoard, type MemoryCard } from '@foreman-code/contracts'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { SubjectAccess } from './types.js'
 import { canonicalJson, nodeKey } from './identity.js'
 
@@ -10,7 +10,7 @@ function workflowNodeKey(node: Pick<AgentNodeRef, 'workflowId' | 'workflowNodeId
 }
 
 /** Open-card memberships are updated in the same transaction as the canonical card. */
-export async function saveDigestTargets(tx: GraphTransactionSql, card: MemoryCard): Promise<void> {
+export async function saveDigestTargets(tx: SqlTransaction, card: MemoryCard): Promise<void> {
   await tx.query('delete from memory_card_targets where card_id=$1', [card.id])
   if (card.status === 'done') return
   const nodes = [...card.linkedNodes, ...(card.assignee ? [card.assignee] : [])]
@@ -21,7 +21,7 @@ export async function saveDigestTargets(tx: GraphTransactionSql, card: MemoryCar
   [card.boardId, card.id, targets, card.updatedAt])
 }
 
-export async function readDigestCards(tx: GraphTransactionSql, board: MemoryBoard, access: SubjectAccess): Promise<DigestCard[]> {
+export async function readDigestCards(tx: SqlTransaction, board: MemoryBoard, access: SubjectAccess): Promise<DigestCard[]> {
   const agent = access.subject.agent
   const nodeIds = agent.productRole === 'orchestrator'
     ? [...new Set([agent.workflowNodeId, ...access.branchNodeIds])] : [agent.workflowNodeId]

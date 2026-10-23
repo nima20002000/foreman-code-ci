@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { RepeatRunRepository, type RepeatRepositoryHost } from '../src/modules/runs/repeatPostgres.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
 import { text, transaction } from './repeat-migration-fixtures.js'
-import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { withTaskDatabase } from './helpers/taskDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 // Only the physical provider close is doubled. This test proves real SQL
@@ -18,11 +18,11 @@ vi.mock('../src/modules/interactions/repeatNativeSettlement.js', async (importOr
 
 describe.skipIf(!postgresEnabled)('NIM-2691 technical attempt accounting', () => {
   it('keeps a retry in one activation and charges only its later business request', async () => {
-    await nim2691TaskDatabase(async (pool) => {
+    await withTaskDatabase(async (pool) => {
       await applyApplicationMigrations(pool)
       const fixture = makeCurrentWorkflowFixture('nim2691-retry-sql')
       const source = fixture.version.definition.nodes[0]!, edge = fixture.version.definition.edges[0]!
-      const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
+      const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
         ...fixture.version.definition, handoffs: { contractVersion: 1 },
         executionPolicy: { maxParallelism: 1, maxNodeExecutions: 3 },
         nodes: [{ ...source, choice: { outcomes: [

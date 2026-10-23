@@ -1,12 +1,12 @@
 import { afterAll, beforeAll } from 'vitest'
-import { agent3Database } from './workflowDatabase.js'
+import { migratedDatabase } from './migratedDatabase.js'
 
 /** Register a migrated database shared by cases with independent workflow identities. */
 export function approvalOrchestrationDatabase() {
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
 
   beforeAll(async () => {
-    database = await agent3Database()
+    database = await migratedDatabase()
   }, 60000)
   afterAll(async () => {
     await database?.close()

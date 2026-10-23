@@ -3,7 +3,7 @@ import { expect, it, vi } from 'vitest'
 import type { NativeSessionLane, HarnessExecution } from '@foreman-code/contracts'
 import type { DispatchIntent, NativeExecutionPlacement } from '@foreman-code/contracts/node-placement'
 import type { SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { readAcceptedPlacement, readDispatchIntent, readNativePlacement } from '../placement/persistence.js'
 import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
 import { readNativeExecutionBinding } from '../placement/executionBinding.js'
@@ -44,7 +44,7 @@ function fixture() {
     if (text.includes('execution_dispatch_owner_grants')) return { rows: [], ...grant }
     throw new Error(`unexpected SQL: ${text}`)
   })
-  return { execution, capture, record, intent, entry, lane, session, grant, query, sql: { query } as unknown as GraphSqlClient }
+  return { execution, capture, record, intent, entry, lane, session, grant, query, sql: { query } as unknown as SqlQuery }
 }
 it('allows a running execution before terminal acceptance using its entered placement, live session and grant', async () => {
   const f = fixture(), proof = await readSourceActiveNativeSession(f.sql, f.record, f.capture)

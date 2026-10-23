@@ -8,8 +8,7 @@ import { FileWithRevisionSchema, type TemporaryFileScope } from '@foreman-code/c
 import { server } from '../../mocks/server'
 import { settingsExperienceKeys } from '../../shared/api/settingsExperience'
 import { finishSessionChange, sessionGeneration, sessionIsSwitching } from '../../shared/api/sessionBoundary'
-import type { AttachmentClient, AttachmentUploadInput } from '../attachments/attachmentClient'
-import { useConversationAttachments, type ConversationAttachments } from '../attachments/useConversationAttachments'
+import { type AttachmentClient, type AttachmentUploadInput, useConversationAttachments, type ConversationAttachments } from '../attachments'
 import { AppConnectionBoundary } from '../../app/AppConnectionBoundary'
 
 const transport = vi.hoisted(() => ({ upload: vi.fn<AttachmentClient['upload']>(), cancel: vi.fn<AttachmentClient['cancel']>() }))

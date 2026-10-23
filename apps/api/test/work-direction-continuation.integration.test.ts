@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, expect, it, vi } from 'vitest'
 import { CanonicalRunGraphCurrentSchema, CANONICAL_RUN_GRAPH_MCP_TOOLS,
-  type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+  type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { graphRpcValue } from './graph-composition-fixture.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { requestRepeatRunStop } from '../src/modules/runs/repeatLifecycle.js'
@@ -40,7 +40,7 @@ async function stopAndCleanUp(f: Fixture, api: Awaited<ReturnType<typeof directi
 
 describe.skipIf(!postgresEnabled)('work direction continuation and Stop', () => {
   const withFixture = useSettlementFixtures()
-  const graph = (value: WorkflowDefinitionV3): WorkflowDefinitionV3 => ({
+  const graph = (value: WorkflowDefinitionCurrent): WorkflowDefinitionCurrent => ({
     ...handoffs(1)(value), executionPolicy: { maxParallelism: 1, maxNodeExecutions: 1 },
   })
 

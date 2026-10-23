@@ -1,15 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture, RunExecutionsListInputSchema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, RunExecutionsListInputSchema } from '@foreman-code/contracts/current'
 import { inspectionExecutionsQuery } from '../src/modules/runs/inspectionPageQuery.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('inspection database page bounds', () => {
   it('returns only one page plus its lookahead across limits, node filters and cursor positions', async () => {
-    const database = await agent3Database()
+    const database = await migratedDatabase()
     try {
-      const fixture = await seedAgent3(database.pool, database.directory,
+      const fixture = await seedWorkflowFixture(database.pool, database.directory,
         makeCurrentWorkflowFixture(randomUUID(), 'sequential'))
       const nodes = fixture.version.definition.nodes
       const history = Array.from({ length: 360 }, (_, index) => {

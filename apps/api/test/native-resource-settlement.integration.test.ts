@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { settleRepeatNativeExecutionLocked } from '../src/modules/interactions/repeatNativeSettlement.js'
 import { PostgresWorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
@@ -12,7 +12,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
 import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -22,8 +22,8 @@ describe('Native resource settlement', () => {
   afterAll(async () => { await database?.close() })
 
   async function setup() {
-    const fixture = await seedAgent3(database.pool, database.directory, makeCurrentWorkflowFixture(randomUUID(), 'single'))
-    const run = WorkflowRunV3Schema.parse({ ...fixture.run, executionState: 'running', startedAt: fixture.createdAt })
+    const fixture = await seedWorkflowFixture(database.pool, database.directory, makeCurrentWorkflowFixture(randomUUID(), 'single'))
+    const run = WorkflowRunCurrentSchema.parse({ ...fixture.run, executionState: 'running', startedAt: fixture.createdAt })
     await database.pool.query('update runs set execution_state=$2,record=$3::jsonb where id=$1', [run.id, run.executionState, JSON.stringify(run)])
     const identity = fixture.identities[0]!
     const execution = HarnessExecutionSchema.parse({ id: randomUUID(), runId: run.id, workflowNodeId: identity.workflowNodeId,

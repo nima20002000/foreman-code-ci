@@ -5,10 +5,11 @@ import { constants } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { ComputerAccountsSchema, type ComputerAccount, type ComputerAccounts } from '@foreman-code/contracts/computer-accounts'
-import { fallbackOnMissing } from '../diagnostics/ignoredError.js'
+import { fallbackOnMissing } from '../diagnostics/index.js'
 import { DomainError } from '../errors.js'
 import { executableUnavailable } from './executableError.js'
-import { runProcessSettled } from '../../shared/process.js'
+import { runProcessSettled, hostEnvironment } from '../../shared/process.js'
+import { claudeConfigDir, codexHome, credentialFileName, parseClaudeAuthStatus, parseCodexAuthFile } from '../provider-accounts/accountStatus.js'
 
 export interface AccountProbePorts {
   /** Absolute executable path, or null when the tool is not installed. */
@@ -93,22 +94,10 @@ async function cachedAccount(ports: AccountProbePorts, tool: 'claude' | 'github'
 
 async function codex(ports: AccountProbePorts): Promise<ComputerAccount> {
   if (!await ports.find('codex')) return missing('codex')
-  const home = ports.environment.CODEX_HOME ?? join(ports.environment.HOME ?? homedir(), '.codex')
-  const text = await ports.readText(join(home, 'auth.json'))
+  const text = await ports.readText(join(codexHome(ports.environment), credentialFileName('codex')))
   // Codex can store credentials in the keyring without an auth.json file.
   if (text === null) return unknown('codex')
-  const auth = JSON.parse(text) as { auth_mode?: unknown; OPENAI_API_KEY?: unknown; tokens?: { id_token?: unknown } | null }
-  const email = typeof auth.tokens?.id_token === 'string' ? jwtEmail(auth.tokens.id_token) : null
-  const apiKey = typeof auth.OPENAI_API_KEY === 'string' && auth.OPENAI_API_KEY.length > 0
-  return { tool: 'codex', installed: true, signedIn: Boolean(email || auth.tokens || apiKey), account: email,
-    details: [apiKey && !auth.tokens ? 'API key' : auth.tokens ? 'ChatGPT' : null].filter((value): value is string => Boolean(value)) }
-}
-
-function jwtEmail(token: string): string | null {
-  const payload = token.split('.')[1]
-  if (!payload) return null
-  const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { email?: unknown }
-  return typeof claims.email === 'string' ? claims.email.slice(0, 320) : null
+  return { tool: 'codex', installed: true, ...parseCodexAuthFile(text) }
 }
 
 async function claude(ports: AccountProbePorts, signal: AbortSignal): Promise<ComputerAccount> {
@@ -119,20 +108,18 @@ async function claude(ports: AccountProbePorts, signal: AbortSignal): Promise<Co
   if (result.code === null && !result.stdout && !result.stderr) {
     throw new Error('Claude account inspection could not start.')
   }
-  let status: { loggedIn?: unknown; email?: unknown; authMethod?: unknown }
-  try { status = JSON.parse(result.stdout) as typeof status } catch {
-    // Signed-out releases print a login prompt instead of JSON.
-    if (result.code !== 0 && /\/login|not logged in|invalid api key/iu.test(`${result.stdout}\n${result.stderr}`)) {
-      return { tool: 'claude', installed: true, signedIn: false, account: null, details: [] }
-    }
+  const status = parseClaudeAuthStatus(result)
+  if (status.kind === 'unreadable') {
+    if (status.signedOutNotice) return { tool: 'claude', installed: true, signedIn: false, account: null, details: [] }
     throw new Error('Unreadable Claude sign-in status.')
   }
-  if (!status || typeof status.loggedIn !== 'boolean' || result.code !== 0 && status.loggedIn !== false) {
+  if (status.kind === 'malformed' || result.code !== 0 && status.loggedIn) {
     throw new Error(`Claude account inspection failed (exit ${result.code}).`)
   }
+  const { email, authMethod } = status.fields
   return { tool: 'claude', installed: true, signedIn: status.loggedIn,
-    account: typeof status.email === 'string' ? status.email.slice(0, 320) : null,
-    details: typeof status.authMethod === 'string' ? [status.authMethod.slice(0, 200)] : [] }
+    account: typeof email === 'string' ? email.slice(0, 320) : null,
+    details: typeof authMethod === 'string' ? [authMethod.slice(0, 200)] : [] }
 }
 
 const githubStatusSchema = z.object({
@@ -186,7 +173,7 @@ function parseJson(value: string): unknown {
 }
 
 /** Explicit installer selections must be usable; PATH discovery applies only to unconfigured commands. */
-export function systemPorts(environment: NodeJS.ProcessEnv = process.env,
+export function systemPorts(environment: NodeJS.ProcessEnv = hostEnvironment(),
   binaries: Readonly<Partial<Record<string, string>>> = {}): AccountProbePorts {
   const home = environment.HOME ?? homedir()
   const directories = [...(environment.PATH ?? '').split(delimiter), join(home, '.local', 'bin'), '/usr/local/bin', '/usr/bin', '/bin']
@@ -199,9 +186,9 @@ export function systemPorts(environment: NodeJS.ProcessEnv = process.env,
       const config = environment.XDG_CONFIG_HOME ?? join(home, '.config')
       let files: string[]
       if (tool === 'codex') {
-        files = ['auth.json', 'config.toml'].map(name => join(environment.CODEX_HOME ?? join(home, '.codex'), name))
+        files = [credentialFileName('codex'), 'config.toml'].map(name => join(codexHome(environment), name))
       } else if (tool === 'claude') {
-        files = [join(environment.CLAUDE_CONFIG_DIR ?? join(home, '.claude'), '.credentials.json'), join(home, '.claude.json')]
+        files = [join(claudeConfigDir(environment), credentialFileName('claude')), join(home, '.claude.json')]
       } else {
         files = ['hosts.yml', 'config.yml'].map(name => join(environment.GH_CONFIG_DIR ?? join(config, 'gh'), name))
       }

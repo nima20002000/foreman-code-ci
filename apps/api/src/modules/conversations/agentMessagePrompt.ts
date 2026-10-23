@@ -1,6 +1,6 @@
 import type { AgentConfigurationVersion } from '@foreman-code/contracts'
 import type { AgentConversationRow } from './agentChatRepository.js'
-import { legacySkillPrompt } from '../skills/instructions.js'
+import { legacySkillPrompt } from '../skills/index.js'
 
 /** Used by admission and dispatch so saved startup/handoff text has the same byte budget. */
 export function agentMessagePrompt(record: AgentConversationRow['record'],

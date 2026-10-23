@@ -1,10 +1,10 @@
 import { useRef } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { RepeatGraphScopeV3, RunExecutionSummary } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent, RunExecutionSummary } from '@foreman-code/contracts/current'
 import { runActionsClient } from './client'
 import { actionKey, useDisclosure } from './state'
 
-function ExecutionReport({ scope, row }: { scope: RepeatGraphScopeV3; row: RunExecutionSummary }) {
+function ExecutionReport({ scope, row }: { scope: RepeatGraphScopeCurrent; row: RunExecutionSummary }) {
   const [open, setOpen] = useDisclosure()
   const detail = useQuery({ queryKey: actionKey(scope, 'report', row.executionId), enabled: open,
     queryFn: ({ signal }) => runActionsClient.execution(scope, row.executionId, { signal }, row),
@@ -35,7 +35,7 @@ function ExecutionReport({ scope, row }: { scope: RepeatGraphScopeV3; row: RunEx
   </details></li>
 }
 
-function RunResultReport({ scope }: { scope: RepeatGraphScopeV3 }) {
+function RunResultReport({ scope }: { scope: RepeatGraphScopeCurrent }) {
   const [open, setOpen] = useDisclosure()
   const report = useQuery({ queryKey: actionKey(scope, 'run-result'), enabled: open,
     queryFn: ({ signal }) => runActionsClient.runResult(scope, { signal }), gcTime: 0,
@@ -54,7 +54,7 @@ function RunResultReport({ scope }: { scope: RepeatGraphScopeV3 }) {
   </details>
 }
 
-export function FailureDetails({ scope }: { scope: RepeatGraphScopeV3 }) {
+export function FailureDetails({ scope }: { scope: RepeatGraphScopeCurrent }) {
   const [open, setOpen] = useDisclosure(), cache = useQueryClient(), pageHeading = useRef<HTMLHeadingElement>(null)
   const page = useInfiniteQuery({ queryKey: actionKey(scope, 'reports'), enabled: open,
     initialPageParam: null as string | null,
@@ -81,7 +81,7 @@ export function FailureDetails({ scope }: { scope: RepeatGraphScopeV3 }) {
   </details>
 }
 
-export function SavedRepeatPolicy({ scope }: { scope: RepeatGraphScopeV3 }) {
+export function SavedRepeatPolicy({ scope }: { scope: RepeatGraphScopeCurrent }) {
   const [open, setOpen] = useDisclosure()
   const pinned = useQuery({ queryKey: actionKey(scope, 'repeat-policy'), enabled: open,
     queryFn: ({ signal }) => runActionsClient.version(scope, { signal }), gcTime: 0,

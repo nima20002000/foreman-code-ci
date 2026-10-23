@@ -8,9 +8,9 @@ import { systemGitWorktreePorts } from '../../src/modules/sources/gitWorktree.js
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { expect, vi } from 'vitest'
 import {
-  CurrentWorkflowSaveResultSchema, RunStartV3InputSchema, RunStartV3ResultSchema,
+  CurrentWorkflowSaveResultSchema, RunStartCurrentInputSchema, RunStartCurrentResultSchema,
   makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import { buildApp } from '../../src/app.js'
 import { DomainError } from '../../src/modules/errors.js'
@@ -120,15 +120,15 @@ export async function fixture(options: { gitSource?: boolean; deviceCount?: 1 | 
         expect(response.statusCode).toBe(200)
         return CurrentWorkflowSaveResultSchema.parse(response.json()).value
       },
-      async start(via: 'http' | 'mcp', input: ReturnType<typeof RunStartV3InputSchema.parse>) {
+      async start(via: 'http' | 'mcp', input: ReturnType<typeof RunStartCurrentInputSchema.parse>) {
         if (via === 'mcp') {
           const result = await client.callTool({ name: 'run_start', arguments: input })
           expect(result.isError, JSON.stringify(result)).not.toBe(true)
-          return RunStartV3ResultSchema.parse(decodeMcpToolResult(result))
+          return RunStartCurrentResultSchema.parse(decodeMcpToolResult(result))
         }
         const response = await app!.inject({ method: 'POST', url: `${path}/runs`, headers, payload: input })
         expect(response.statusCode).toBe(202)
-        return RunStartV3ResultSchema.parse(response.json())
+        return RunStartCurrentResultSchema.parse(response.json())
       },
       async close() {
         await Promise.allSettled(clients.map(client => client.close()))
@@ -148,7 +148,7 @@ export async function fixture(options: { gitSource?: boolean; deviceCount?: 1 | 
 
 type Fixture = Awaited<ReturnType<typeof fixture>>
 export function startInput(f: Fixture, saved: Awaited<ReturnType<Fixture['save']>>) {
-  return RunStartV3InputSchema.parse({ workspaceId: saved.version.workspaceId, workflowId: saved.version.workflowId,
+  return RunStartCurrentInputSchema.parse({ workspaceId: saved.version.workspaceId, workflowId: saved.version.workflowId,
     workflowVersionId: saved.currentVersionId, executionSemanticsVersion: 3, commandId: randomUUID(),
     expectedWorkflowRevision: saved.revision, expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
     expectedLocationRevision: f.placement.locationRevision, input: {} })

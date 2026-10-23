@@ -1,10 +1,10 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, expect, it, vi } from 'vitest'
-import { GraphEditIntentV3Schema, type GraphEditReadResultV3 } from '@foreman-code/contracts/wave25'
+import { GraphEditIntentCurrentSchema, type GraphEditReadResultCurrent } from '@foreman-code/contracts/current'
 import { useGraphDraftStore } from '../store'
 import { fixture } from './core.cases'
-import { nextDraftDirty, nextDraftKey } from './state'
+import { nextDraftDirty, nextDraftKey } from '../../board-core'
 import { nextDraftApi } from './transport'
 import { readEditOutbox, readEditSnapshot, readEditSubmission } from './editIntentStorage'
 import { useGraphEditIntent } from './useGraphEditIntent'
@@ -28,7 +28,7 @@ function remote() {
   // Exact private readback of an intent submitted elsewhere (e.g. authenticated
   // MCP by this principal). Transport is mocked; this is Board reconciliation,
   // not a second backend authentication or atomic-publication test.
-  const staged = GraphEditIntentV3Schema.parse({ kind: 'current', id: 'remote-intent', ownerPrincipalId: 'same-principal',
+  const staged = GraphEditIntentCurrentSchema.parse({ kind: 'current', id: 'remote-intent', ownerPrincipalId: 'same-principal',
     workspaceId: 'workspace', workflowId: 'workflow', draftId: 'draft', expectedRevision: 7,
     expectedWorkflowVersionId: 'workflow-version-1', savedWorkflowRevision: 7,
     stageCommandId: 'stage-remote', stageInputHash: hash, advanceCommandId: 'advance-remote', advanceInputHash: hash,
@@ -41,12 +41,12 @@ function remote() {
       configurationVersionId: item.agent.configurationVersionId })),
     affected: [], stops: [], state: 'staged', saveAttempted: false, createdAt: now, updatedAt: now })
   const persisted = { agent: { ...agent, configurationVersionId: 'configuration-saved' }, metadataRevision: 4 }
-  const saved = GraphEditIntentV3Schema.parse({ ...staged, state: 'saved', saveAttempted: true,
+  const saved = GraphEditIntentCurrentSchema.parse({ ...staged, state: 'saved', saveAttempted: true,
     result: { workspaceId: 'workspace', workflowId: 'workflow', revision: 8, currentVersionId: 'workflow-version-2', agents: [persisted],
       version: { id: 'workflow-version-2', workspaceId: 'workspace', workflowId: 'workflow', version: 2,
         executionSemanticsVersion: 3, entryNodeId: graph.entryNodeId, definition: { ...graph, version: 2 },
         approval: graph.approval, agentConfigurationVersionIds: resultantPins, contentHash: hash, createdAt: now } } })
-  const data = (intent: typeof staged): GraphEditReadResultV3 => ({ intent, current: [], canStop: false, affectedSetChanged: false })
+  const data = (intent: typeof staged): GraphEditReadResultCurrent => ({ intent, current: [], canStop: false, affectedSetChanged: false })
   useGraphDraftStore.getState().installNextDraft(key, context)
   const read = vi.spyOn(nextDraftApi, 'editRead').mockResolvedValue(data(staged))
   const advance = vi.spyOn(nextDraftApi, 'editAdvance')
@@ -105,7 +105,7 @@ it.each(['before', 'after'] as const)('does not acknowledge a dirty local Agent 
 it.each(['ownerPrincipalId', 'id', 'stageCommandId', 'stageInputHash'] as const)('rejects a different remote lineage %s', async (field) => {
   const t = remote(), hook = mount(); await hydrated()
   const before = current()
-  const other = GraphEditIntentV3Schema.parse({ ...t.saved, [field]: field === 'stageInputHash' ? 'sha256:' + '2'.repeat(64) : 'other-identity' })
+  const other = GraphEditIntentCurrentSchema.parse({ ...t.saved, [field]: field === 'stageInputHash' ? 'sha256:' + '2'.repeat(64) : 'other-identity' })
   t.read.mockResolvedValue(t.data(other))
   await act(async () => { await hook.result.current.query.refetch() })
   expect(current()).toBe(before)
@@ -113,7 +113,7 @@ it.each(['ownerPrincipalId', 'id', 'stageCommandId', 'stageInputHash'] as const)
 it('does not broaden Discard acknowledgement without local submission evidence', async () => {
   const t = remote(), hook = mount(); await hydrated()
   const before = current()
-  t.read.mockResolvedValue(t.data(GraphEditIntentV3Schema.parse({ ...t.staged, state: 'discarded' })))
+  t.read.mockResolvedValue(t.data(GraphEditIntentCurrentSchema.parse({ ...t.staged, state: 'discarded' })))
   await act(async () => { await hook.result.current.query.refetch() })
   expect(current()).toBe(before); expect(t.advance).not.toHaveBeenCalled()
 })

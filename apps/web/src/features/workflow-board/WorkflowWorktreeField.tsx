@@ -3,7 +3,7 @@ import { useRef, useState } from 'react'
 import {
   WorkflowWorktreeSettingsSchema, type WorkflowWorktreeSettings,
 } from '@foreman-code/contracts/worktree-settings'
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { useWorktreeChoices, type WorktreeOption } from '../../shared/api/worktreeChoices'
 import { useWorkspaceRepository } from '../../shared/api/workspaceGit'
 import { Alert, Button, Dialog, Select, TextField } from '../../shared/ui/nocturne'

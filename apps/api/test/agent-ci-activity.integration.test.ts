@@ -7,7 +7,7 @@ import { HarnessExecutionSchema, CiGetOutputSchema, CiLogsOutputSchema, CiCancel
   type CiHostRun, type CiRunInput, type CiTestResults } from '@foreman-code/contracts'
 import { RunBoardSnapshotGetResultSchema } from '@foreman-code/contracts/run-snapshots'
 import { AcceptedRepeatStartV1Schema, RunActivitiesPageSchema, makeCurrentWorkflowFixture,
-  type AcceptedRepeatStartV1, type CurrentFixtureForm } from '@foreman-code/contracts/wave25'
+  type AcceptedRepeatStartV1, type CurrentFixtureForm } from '@foreman-code/contracts/current'
 import { BugReportPageSchema } from '@foreman-code/contracts/management'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
@@ -27,15 +27,14 @@ import { PostgresReferenceReadRepository } from '../src/modules/files/references
 import { PostgresFileRepository } from '../src/modules/files/postgres.js'
 import { FileByteStorage } from '../src/modules/files/storage.js'
 import { BugReportService } from '../src/modules/bug-reports/service.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { measuredCiPages } from './helpers/measuredCiPages.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
-import { hostCiActivityMigration } from '../src/infrastructure/hostCiActivityMigration.js'
-import { ciActivityRunLockMigration } from '../src/infrastructure/ciActivityRunLockMigration.js'
+import { hostCiActivityMigration, ciActivityRunLockMigration, ciSharedActivityMigration,
+  ciActivityRequesterLookupMigration, ciActivityEventsMigration } from '../src/modules/ci/migrations.js'
+import { ciActivityConsumerMigration } from '../src/modules/runs/ciActivityConsumerMigration.js'
 import { runActivityCommitLockMigration } from '../src/infrastructure/runActivityCommitLockMigration.js'
-import { ciSharedActivityMigration } from '../src/infrastructure/ciSharedActivityMigration.js'
-import { ciActivityRequesterLookupMigration } from '../src/infrastructure/ciActivityRequesterLookupMigration.js'
 import { changeRunState, graphFixture, graphRpc, graphRpcValue, ownedGraph } from './graph-composition-fixture.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { insertCurrentRunFixture } from './helpers/currentRunFixture.js'
@@ -393,6 +392,8 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
       const history = await f.activity()
       expect(history.items.filter(item => item.refs.ciTicketId === ticket.ticketId).map(item => item.ci?.state))
         .toEqual(['queued', 'starting', 'running', 'passed'])
+      // CI hands its events to Run activity, which consumes them in the same transaction.
+      expect((await f.database.pool.query('select count(*)::int as count from ci_activity_events')).rows[0]!.count).toBe(0)
       const finishedBoard = await f.board()
       expect(finishedBoard.snapshot).toEqual(initialBoard.snapshot)
       expect(finishedBoard.activitySnapshot?.active.some(work => work.ref.kind === 'ci')).toBe(false)
@@ -757,7 +758,8 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
     // Defer activity function replacements with the migrations that define those functions.
     const f = await fixture({ deferMigration: [hostCiActivityMigration.version, ciActivityRunLockMigration.version,
       databaseHotQueriesMigration.version, ciSharedActivityMigration.version, runActivityCommitLockMigration.version,
-      ciActivityRequesterLookupMigration.version] })
+      ciActivityRequesterLookupMigration.version, ciActivityEventsMigration.version,
+      ciActivityConsumerMigration.version] })
     try {
       const ticket = await f.submit()
       expect((await f.activity()).items.filter(item => item.kind === 'job_work')).toEqual([])

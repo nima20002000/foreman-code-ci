@@ -1,6 +1,6 @@
 import { checkOutput, documentText, fail, FORMAT_LIMITS, TextBudget } from "./policy.js";
 import type { DocumentEdit, DocumentText, TextSection } from "./types.js";
-import { ignoreError } from '../../diagnostics/ignoredError.js'
+import { ignoreError } from '../../diagnostics/index.js'
 
 function envelope(bytes: Uint8Array): void {
   const header = Buffer.from(bytes.subarray(0, 12)).toString("latin1");

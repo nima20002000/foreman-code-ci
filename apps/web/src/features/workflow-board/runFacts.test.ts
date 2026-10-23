@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest'
 import {
-  makeCurrentWorkflowFixture, repeatGraphTopologyV3, RepeatWorkflowVersionV1Schema,
-  RepeatGraphExecutionV3Schema, RepeatGraphResolutionV3Schema,
-} from '@foreman-code/contracts/wave25'
+  makeCurrentWorkflowFixture, repeatGraphTopologyCurrent, RepeatWorkflowVersionV1Schema,
+  RepeatGraphExecutionCurrentSchema, RepeatGraphResolutionCurrentSchema,
+} from '@foreman-code/contracts/current'
 import { pinnedNodeStates, type PinnedNodeDisplayCut } from './inspect/pinnedTopology'
 import { runNodeView } from './runFacts'
 
@@ -30,7 +30,7 @@ function branchingRepeat() {
         nodeIds: [entry!.id, branch!.id, branchB.id, exit.id], exitNodeId: exit.id }] },
     },
   })
-  return { fixture, topology: repeatGraphTopologyV3(version) }
+  return { fixture, topology: repeatGraphTopologyCurrent(version) }
 }
 
 it('shows the later skipped repeat occurrence on both the popover and canvas', () => {
@@ -38,11 +38,11 @@ it('shows the later skipped repeat occurrence on both the popover and canvas', (
   const identity = fixture.identities[1]!
   const occurrence = (index: number) => ({ scope: fixture.scope, blockId: 'repair',
     occurrenceId: `occ-${index}`, occurrenceIndex: index })
-  const execution = RepeatGraphExecutionV3Schema.parse({
+  const execution = RepeatGraphExecutionCurrentSchema.parse({
     identity: { ...identity, occurrence: occurrence(1) }, state: 'completed', resultOutcome: 'succeeded',
     previousExecutionId: null, inputDigest: `sha256:${'1'.repeat(64)}`,
   })
-  const resolution = RepeatGraphResolutionV3Schema.parse({
+  const resolution = RepeatGraphResolutionCurrentSchema.parse({
     ref: { nodeId: identity.workflowNodeId, occurrence: occurrence(2) },
     value: { workflowNodeId: identity.workflowNodeId, resolution: 'skipped', branchEnded: false,
       selectedRelationshipIds: [], unselectedRelationshipIds: ['a-exit'], resolvedAt: fixture.createdAt },

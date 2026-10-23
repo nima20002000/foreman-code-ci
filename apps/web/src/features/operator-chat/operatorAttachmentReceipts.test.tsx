@@ -12,10 +12,8 @@ import { FileWithRevisionSchema, type FileWithRevision, type TemporaryFileScope 
 import { server } from '../../mocks/server'
 import { sendOperatorMessage } from '../../shared/api/client'
 import { protectedKey } from '../../shared/api/protectedChatStorage'
-import { AttachmentDraftProvider } from '../attachments/AttachmentDraftProvider'
-import type { AttachmentClient } from '../attachments/attachmentClient'
-import { useConversationAttachments, type ConversationAttachments } from '../attachments/useConversationAttachments'
-import { prepareChatAttachments } from '../conversations/chatAttachmentAttempt'
+import { AttachmentDraftProvider, type AttachmentClient, useConversationAttachments, type ConversationAttachments } from '../attachments'
+import { prepareChatAttachments } from '../conversations'
 import {
   acknowledgeOperatorMessage, beginOperatorMessageAttempt, readPendingOperatorMessage,
   recordOperatorMessageFailure, reserveOperatorMessage,

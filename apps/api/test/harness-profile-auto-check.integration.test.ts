@@ -4,7 +4,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { HostHarnessOverrideSaveResultSchema } from '@foreman-code/contracts/harness-registry'
 import { NodePlacementChoicesResultSchema } from '@foreman-code/contracts/placement-readback'
 import { CurrentWorkflowReadResultSchema, CURRENT_WORKFLOW_TOOLS, ManualRunStartResultSchema }
-  from '@foreman-code/contracts/wave25'
+  from '@foreman-code/contracts/current'
 import { remoteReviewProduction, waitForRemoteReview } from './helpers/remoteReviewProduction.js'
 import { heldCall, profiles } from './helpers/harnessInstallationUpdate.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'

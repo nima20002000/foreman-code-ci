@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { ExclusiveGraphConnection } from '../run-graph/connection.js'
 import type { StoredRepeatExecution } from './repeatPostgres.js'
 import type { AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
@@ -17,7 +17,7 @@ function fixture() {
   // Original SQL source and receipt ports are unit doubles. They do not create
   // native qualification or physical closure; restart tests exercise the engine.
   const f = makeCurrentWorkflowFixture('terminal-receipt', 'single')
-  const run = AcceptedWorkflowRunV3Schema.parse({ ...f.run, authorizationPrincipalId: 'unit-principal',
+  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run, authorizationPrincipalId: 'unit-principal',
     executionLocation: { runnerId: 'unit-runner', rootPath: '/workspace', locationRevision: 1,
       identityHash: `sha256:${'0'.repeat(64)}` } })
   const node = f.version.definition.nodes[0]!
@@ -39,8 +39,9 @@ function fixture() {
   } as WorkflowNativeProofRecord
   const row = { record: proof, source_digest: repeatDigest(proof, 4 * 1024 * 1024) }
   const state = { repairAttempt: 0, rows: [row] }
-  const connection = new ExclusiveGraphConnection({ query: async (text: string) => ({
-    rows: text.includes('from execution_work_result_repairs') ? [{ attempt: state.repairAttempt }] : state.rows,
+  // The repair attempt read binds only the execution id; the stored proof read binds the run and the execution.
+  const connection = new ExclusiveGraphConnection({ query: async (_text: string, values: unknown[] = []) => ({
+    rows: values.length === 1 ? [{ attempt: state.repairAttempt }] : state.rows,
     rowCount: state.rows.length,
   }) } as unknown as pg.ClientBase, () => {})
   const snapshot = { run, version: f.version, configurations: f.configurations,

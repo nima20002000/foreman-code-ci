@@ -12,6 +12,7 @@ import { HostHarnessProfileEvidenceRepository } from '../src/modules/harnesses/i
 import { describe, expect, it, vi } from 'vitest'
 import { inspectInstalledCodex, readInstalledCodexQualification, retainInstalledHarnessInventory } from '../src/modules/harnesses/installedCodexInspection.js'
 import { harnessConnectionGeneration } from '../src/modules/harnesses/hostConnectionGeneration.js'
+import { livePrincipalRow } from './helpers/livePrincipal.js'
 
 import type { HarnessQualification } from '@foreman-code/contracts/harness-qualification'
 
@@ -158,12 +159,15 @@ describe('passive installed worker Codex evidence producer', () => {
       expiresAt: '9999-01-01T00:00:00.000Z', grants: [{ actions: ['harnesses:read'], scope: {} }] }
     const registration = { mainId: binding.mainId, deviceId: binding.deviceId, workerInstallationId: binding.workerInstallationId,
       publicKeyFingerprint: 'a'.repeat(64), keyRevision: 1, authorizationRevision: 1, status: 'paired', scopes: ['connect', 'heartbeat'] }
-    const client = { release: () => undefined, query: async (sql: string) => {
-      if (sql.includes('worker_installation_id::text')) return { rows: [{ id: binding.workerInstallationId }] }
-      if (sql.includes('management_principals')) return { rows: [{ id: principal.id, name: principal.name, audience: 'operator',
-        grants: permitted ? principal.grants : [], expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] }
-      if (sql.includes('application_installation')) return { rows: [{ id: binding.mainId }] }
-      if (sql.includes('device_registrations')) return { rows: [{ record: registration }] }
+    // Reads are told apart by their bound values: the principal id is the live authority read, the device and Main ids
+    // are the registration reads (one row answers both the worker installation and the record readers), and no value is
+    // the Main installation read.
+    const client = { release: () => undefined, query: async (_sql: string, values: unknown[] = []) => {
+      if (values.length === 1 && values[0] === principal.id) return { rows: [livePrincipalRow({ ...principal, grants: permitted ? principal.grants : [] })] }
+      if (values.length === 2 && values[0] === binding.deviceId && values[1] === binding.mainId) {
+        return { rows: [{ id: binding.workerInstallationId, record: registration }] }
+      }
+      if (values.length === 0) return { rows: [{ id: binding.mainId }] }
       return { rows: [] }
     } }
     const pool = { connect: async () => client } as unknown as pg.Pool

@@ -2,7 +2,7 @@ import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { ActivityNativeIdentitySchema, OperatorActivitySchema, type ActivityNativeIdentity, type OperatorActivity } from '@foreman-code/contracts'
 import type { OperatorActivityChange } from './operatorActivity.js'
-import { nativePersistenceRedactor, type NativePersistenceRedactor } from '../interactions/nativePersistence.js'
+import { nativePersistenceRedactor, type NativePersistenceRedactor } from '../interactions/index.js'
 import { DomainError } from '../errors.js'
 
 /** A known independent child/item may settle after its parent. This never inserts work or changes the current native owner. */

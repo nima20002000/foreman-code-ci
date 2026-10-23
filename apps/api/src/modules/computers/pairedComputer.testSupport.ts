@@ -2,7 +2,7 @@ import pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import { vi } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { PostgresCommandCoordinator } from '../commands/postgres.js'
+import { PostgresCommandCoordinator } from '../commands/index.js'
 
 export function pairedComputerFixture() {
   const mainId = randomUUID()

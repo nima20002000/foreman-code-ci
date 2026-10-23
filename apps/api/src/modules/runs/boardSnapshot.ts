@@ -1,7 +1,8 @@
 import { RunBoardSnapshotSchema, RunDropdownTriggerSchema, type RunDropdownTrigger } from '@foreman-code/contracts/run-snapshots'
-import type { AcceptedRepeatStartV1 } from '@foreman-code/contracts/wave25'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
-import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import type { AcceptedRepeatStartV1 } from '@foreman-code/contracts/current'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
+import { assertGraphTransaction } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
 import { projectRunBoardSnapshot } from './boardSnapshotProjection.js'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
@@ -10,7 +11,7 @@ import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/pro
  * canonical publication or dispatch. It has no upsert/rebuild/repair path.
  * A duplicate or invalid capture aborts admission rather than changing history.
  * Scheduled admission must supply 'schedule' here through insertRepeatRun. */
-export async function insertRunBoardSnapshot(sql: GraphTransactionSql, accepted: AcceptedRepeatStartV1,
+export async function insertRunBoardSnapshot(sql: SqlTransaction, accepted: AcceptedRepeatStartV1,
   trigger: RunDropdownTrigger, providerAccountBindings?: Record<string, AcceptedProviderAccountBinding>): Promise<void> {
   assertGraphTransaction(sql)
   const snapshot = RunBoardSnapshotSchema.parse({ ...projectRunBoardSnapshot(accepted),

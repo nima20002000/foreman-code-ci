@@ -2,7 +2,7 @@ import { createHash,randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import type pg from 'pg'
 import { describe,expect,it,vi } from 'vitest'
-import { WorkflowRunV3Schema,WorkflowVersionV3Schema,canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { WorkflowRunCurrentSchema,WorkflowVersionCurrentSchema,canonicalGraphJson } from '@foreman-code/contracts/current'
 import type { RemoteWorkflowPhysicalReadout } from '@foreman-code/contracts/remote-workflow-physical'
 import { workflowArtifactTransferManifestDigest } from '@foreman-code/contracts/workflow-artifact-transfer-node'
 import { workflowArtifactDigestsByOutputKey } from '@foreman-code/contracts/workflow-artifact-result'
@@ -14,7 +14,8 @@ import { DistributedArtifactPublicationService,type AcceptedArtifactPublication 
 import type { DistributedPublicationLink } from '../../files/distributed/publicationLedger.js'
 import { bindingIdentity } from '../../files/tools/context.js'
 import { transferContextForBinding } from '../../byte-transfer/carrier.js'
-import { ExclusiveGraphConnection,type GraphTransactionSql } from '../../run-graph/connection.js'
+import { ExclusiveGraphConnection } from '../../run-graph/connection.js'
+import type { SqlTransaction } from '../../../infrastructure/transaction.js'
 import { repeatDigest } from '../repeatResolution.js'
 import { NativeArtifactOutputSchema,type NativeArtifactOutput } from './nativeArtifactOutputs.js'
 import { PostgresWorkflowPhysicalArtifacts } from './workflowPhysicalArtifacts.js'
@@ -35,13 +36,13 @@ async function fixture(aliases=false) {
   const keys=['z-last','a-first'],commands=aliases?[randomUUID()]:[randomUUID(),randomUUID()]
   const artifactOutputs={version:1 as const,outputs:keys.map((outputKey,index)=>({outputKey,commandId:commands[aliases?0:index]!}))}
   const result={outcome:'succeeded' as const,output:{text:JSON.stringify({data:{original:true},artifactOutputs})}}
-  const version=WorkflowVersionV3Schema.parse({id:'version',workspaceId:'workspace-a',workflowId:'workflow-a',version:1,
+  const version=WorkflowVersionCurrentSchema.parse({id:'version',workspaceId:'workspace-a',workflowId:'workflow-a',version:1,
     executionSemanticsVersion:3,entryNodeId:'producer',definition:{id:'workflow-a',workspaceId:'workspace-a',name:'Original',version:1,
       executionSemanticsVersion:3,entryNodeId:'producer',executionCondition:{kind:'manual'},approval:{handler:'user'},
       executionPolicy:{maxParallelism:1,maxNodeExecutions:1},nodes:[{id:'producer',agentId:'agent-a',name:'Original',
         artifactOutputs:{version:1,outputKeys:keys}}],edges:[]},agentConfigurationVersionIds:{'agent-a':'configuration'},
     approval:{handler:'user'},contentHash:repeatDigest('original saved version'),createdAt:f.clock().toISOString()})
-  const run=WorkflowRunV3Schema.parse({id:'run-a',workspaceId:'workspace-a',workflowId:'workflow-a',workflowVersionId:version.id,
+  const run=WorkflowRunCurrentSchema.parse({id:'run-a',workspaceId:'workspace-a',workflowId:'workflow-a',workflowVersionId:version.id,
     executionSemanticsVersion:3,agentConfigurationVersionIds:version.agentConfigurationVersionIds,approval:{handler:'user'},
     executionCondition:{kind:'manual'},executionState:'running',outcome:'pending',input:{},createdAt:f.clock().toISOString()})
   const links=new Map<string,DistributedPublicationLink>(),receipts=new Map<string,VerifiedTransferReceipt>(),bodies=new Map<string,Buffer>()
@@ -90,7 +91,7 @@ async function fixture(aliases=false) {
     return {rows,rowCount:rows.length,fields:[],command:'',oid:0}
   })
   const connection=new ExclusiveGraphConnection({query} as unknown as pg.ClientBase,()=>{})
-  const files={read:vi.fn(async(id:string,revision:string,sql?:GraphTransactionSql)=>{
+  const files={read:vi.fn(async(id:string,revision:string,sql?:SqlTransaction)=>{
     expect(sql).toBeDefined();const stored=await f.repository.read(id,revision)
     if(stored&&!state.scope)stored.value.file.scope=f.foreign
     return stored

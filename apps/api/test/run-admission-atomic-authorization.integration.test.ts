@@ -2,7 +2,7 @@ import { readUntil } from './helpers/observableCondition.js'
 import { randomUUID } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
-import { RepeatGraphBatchV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { RepeatGraphBatchCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
@@ -15,14 +15,15 @@ import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPubl
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import { currentRepositoryServices } from './helpers/currentRepository.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
-import { agent3Database, seedAgent3, candidateFor, graphHead } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture, candidateFor, graphHead } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 /** Tests transactional admission and the public application service in isolated fixtures. */
 describe.skipIf(!postgresEnabled)('Agent 3 atomic Run admission and live authorization', () => {
-  let db: Awaited<ReturnType<typeof agent3Database>>
-  beforeAll(async () => { db = await agent3Database() }, 60000)
+  let db: Awaited<ReturnType<typeof migratedDatabase>>
+  beforeAll(async () => { db = await migratedDatabase() }, 60000)
   afterAll(async () => { await db?.close() })
   afterEach(async () => {
     vi.restoreAllMocks()
@@ -30,7 +31,7 @@ describe.skipIf(!postgresEnabled)('Agent 3 atomic Run admission and live authori
   })
   async function fixture() {
     const candidate = makeCurrentWorkflowFixture(randomUUID())
-    const f = await seedAgent3(db.pool, db.directory, candidate, { run: false })
+    const f = await seedWorkflowFixture(db.pool, db.directory, candidate, { run: false })
     const access = new PostgresAccessService(db.pool)
     const issued = await access.issue({ name: 'Synthetic Run authority', audience: 'operator',
       grants: [{ actions: ManagementActionSchema.options, scope: { workspaceIds: [f.scope.workspaceId] } }], expiresAt: new Date(Date.now() + 300_000) })
@@ -68,7 +69,7 @@ describe.skipIf(!postgresEnabled)('Agent 3 atomic Run admission and live authori
     const result = await admit(db.pool, locations, issued.principal, 'mcp', input)
     const sequence = await graphHead(db.pool, result.value.id)
     const body = (await db.pool.query<{ payload: string }>('select payload from run_graph_batches where run_id=$1 and sequence=$2::bigint', [result.value.id, sequence])).rows[0]!.payload
-    const batch = RepeatGraphBatchV3Schema.parse(JSON.parse(body))
+    const batch = RepeatGraphBatchCurrentSchema.parse(JSON.parse(body))
     expect(batch.events.map((event) => event.fact.type)).toEqual(['repeat.run.state', 'workflow.presentation'])
     expect(body).not.toContain('synthetic private input')
     expect((await db.pool.query('select 1 from run_authority_principals where run_id=$1', [result.value.id])).rowCount).toBe(1)

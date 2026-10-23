@@ -1,23 +1,24 @@
 import { WorkDirectionRequestSchema, WorkDirectionResponseSchema, withInteractionResponse,
   type DurableInteraction, type InteractionResponseValue } from '@foreman-code/contracts'
-import { canonicalGraphJson, RunStartV3InputSchema, type RunStartV3Input } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, RunStartCurrentInputSchema, type RunStartCurrentInput } from '@foreman-code/contracts/current'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type pg from 'pg'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../access/policy.js'
-import { beforeGraphCommit, type GraphTransactionSql } from '../run-graph/connection.js'
+import { beforeGraphCommit } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { openRunGraphPublication } from '../run-graph/publication.js'
 import { readPublicProjectionLocked } from '../run-graph/compactSnapshot.js'
 import { readAcceptedRepeatRunLocked } from '../runs/repeatStartRead.js'
 import type { RepeatStartOptions } from '../runs/repeatStartAdmission.js'
 import { requestWorkflowStopLocked } from '../runs/repeatLifecycle.js'
-import { fail, lockInteraction, readContext, scopeForRun } from './wave25/context.js'
-import { transact } from './wave25/transaction.js'
-import { nextInteraction, publishInteraction } from './wave25/publication.js'
+import { fail, lockInteraction, readContext, scopeForRun } from './current/context.js'
+import { transact } from './current/transaction.js'
+import { nextInteraction, publishInteraction } from './current/publication.js'
 import { assertInteractionResponseActive, type InteractionResponseOptions } from './cancellation.js'
 
 export interface WorkDirectionActions {
-  start(principal: ManagementPrincipal, source: 'http' | 'mcp', input: RunStartV3Input,
+  start(principal: ManagementPrincipal, source: 'http' | 'mcp', input: RunStartCurrentInput,
     options: Pick<RepeatStartOptions, 'continuation'>): Promise<{ run: { id: string } }>
   wake(): Promise<void>
 }
@@ -39,7 +40,7 @@ export class WorkDirectionRepository {
     [interaction.runId])).rowCount === 1
   }
 
-  private async authorize(sql: GraphTransactionSql, principalId: string, interaction: DurableInteraction) {
+  private async authorize(sql: SqlTransaction, principalId: string, interaction: DurableInteraction) {
     const live = await readLiveManagementPrincipal(sql, principalId)
     requireAuthorization(live, 'interactions:read', interaction)
     requireAuthorization(live, 'interactions:respond', interaction)
@@ -52,8 +53,8 @@ export class WorkDirectionRepository {
     return live
   }
 
-  private async continuationInput(sql: GraphTransactionSql, interaction: DurableInteraction,
-    response: InteractionResponseValue | undefined): Promise<RunStartV3Input> {
+  private async continuationInput(sql: SqlTransaction, interaction: DurableInteraction,
+    response: InteractionResponseValue | undefined): Promise<RunStartCurrentInput> {
     if (!this.actions) return fail('WORK_DIRECTION_START_UNAVAILABLE', 'Continue is unavailable until Run Start is configured.')
     const direction = WorkDirectionResponseSchema.parse(response).direction
     const { run } = await readAcceptedRepeatRunLocked(sql, interaction.runId)
@@ -62,7 +63,7 @@ export class WorkDirectionRepository {
     if (!workflow || workflow.current_version_id !== run.workflowVersionId) {
       return fail('REVISION_CONFLICT', 'The saved workflow changed. Finish or stop this Run before starting the updated workflow.')
     }
-    return RunStartV3InputSchema.parse({ workspaceId: run.workspaceId, workflowId: run.workflowId,
+    return RunStartCurrentInputSchema.parse({ workspaceId: run.workspaceId, workflowId: run.workflowId,
       workflowVersionId: run.workflowVersionId, commandId: interaction.id, executionSemanticsVersion: 3,
       expectedWorkflowRevision: Number(workflow.revision),
       expectedAgentConfigurationVersionIds: run.agentConfigurationVersionIds,
@@ -127,14 +128,14 @@ export class WorkDirectionRepository {
     return { interaction, replayed: decision.replayed }
   }
 
-  private async audit(sql: GraphTransactionSql, principalId: string, source: 'http' | 'mcp',
+  private async audit(sql: SqlTransaction, principalId: string, source: 'http' | 'mcp',
     interaction: DurableInteraction, replayed: boolean): Promise<void> {
     await sql.query(`insert into management_audit(principal_id,source,action,target_key,outcome,details)
       values($1,$2,'interaction_respond',$3,'succeeded',$4::jsonb)`,
     [principalId, source, `interaction:${interaction.id}`, JSON.stringify({ replayed, optionId: interaction.selectedOptionId })])
   }
 
-  private async lockContinuation(sql: GraphTransactionSql, interaction: DurableInteraction,
+  private async lockContinuation(sql: SqlTransaction, interaction: DurableInteraction,
     principalId: string): Promise<(runId: string) => Promise<void>> {
     const scope = await scopeForRun(sql, interaction.runId)
     const publication = await openRunGraphPublication(sql, scope, readPublicProjectionLocked)
@@ -169,7 +170,7 @@ export class WorkDirectionRepository {
       await readContext(publication.sql, current, true)
       return this.authorize(publication.sql, saved.principal_id, current)
     })
-    const started = await this.actions.start(principal, saved.source, RunStartV3InputSchema.parse(saved.start_input), {
+    const started = await this.actions.start(principal, saved.source, RunStartCurrentInputSchema.parse(saved.start_input), {
       continuation: { lock: (sql) => this.lockContinuation(sql, interaction, saved.principal_id) },
     })
     return transact(this.pool, interaction.runId, async (publication) => {

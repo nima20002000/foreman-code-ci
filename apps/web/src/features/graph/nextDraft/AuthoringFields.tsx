@@ -1,26 +1,26 @@
 import { JOB_WORKFLOW_OUTCOMES } from '@foreman-code/contracts/job-workflow'
 import { isHierarchyReportingRoute, withBrowserToolDefaults } from '@foreman-code/contracts'
 import { useId, useState } from 'react'
-import type { WorkflowDefinitionV3, WorkflowRelationship } from '@foreman-code/contracts/wave25'
-import type { DraftAgentEdits } from './agentEdits'
-import { changeApprovalHandler, entryChoices, nodeTitle, putRelationship,
-  removeRelationship, roleEvidence, setWorkConnectionLimit, type DraftNode, type NextDraftContext } from './model'
+import type { WorkflowDefinitionCurrent, WorkflowRelationship } from '@foreman-code/contracts/current'
+import {
+  type DraftAgentEdits, changeApprovalHandler, entryChoices, nodeTitle, putRelationship, removeRelationship,
+  roleEvidence, setWorkConnectionLimit, type DraftNode, type NextDraftContext, useBoardAuthoring,
+} from '../../board-core'
 import { WorkConnectionLimitEditor } from './WorkConnectionLimitEditor'
 import { IntervalFields } from './IntervalFields'
 import { Button, Icon, IconButton, SegmentedControl, Select, Switch, TextField, type SelectOption } from '../../../shared/ui/nocturne'
 import { InfoHint } from '../../../shared/ui'
-import { useBoardAuthoring } from '../../workflow-board/context'
 import { useCollaborationUISlots } from '../../../shared/ui/collaborationSlots'
 
-export type EditGraph = (update: (graph: WorkflowDefinitionV3) => WorkflowDefinitionV3) => void
-function nodeOptions(graph: WorkflowDefinitionV3, except?: string): SelectOption[] {
+export type EditGraph = (update: (graph: WorkflowDefinitionCurrent) => WorkflowDefinitionCurrent) => void
+function nodeOptions(graph: WorkflowDefinitionCurrent, except?: string): SelectOption[] {
   return graph.nodes.filter((node) => node.id !== except).map((node) => ({ value: node.id, label: nodeTitle(graph, node.id) }))
 }
 function changeNode(change: EditGraph, nodeId: string, update: (node: DraftNode) => DraftNode) {
   change((graph) => ({ ...graph, nodes: graph.nodes.map((node) => node.id === nodeId ? update(node) : node) }))
 }
 
-export function EntryFields({ graph, context, change, agentEdits }: { graph: WorkflowDefinitionV3; context: NextDraftContext; change: EditGraph; agentEdits?: DraftAgentEdits }) {
+export function EntryFields({ graph, context, change, agentEdits }: { graph: WorkflowDefinitionCurrent; context: NextDraftContext; change: EditGraph; agentEdits?: DraftAgentEdits }) {
   const choices = entryChoices(graph, context, agentEdits), id = useId()
   return <section aria-labelledby={id} className="next-draft-section">
     <h3 id={id}>Start</h3>
@@ -35,7 +35,7 @@ export function EntryFields({ graph, context, change, agentEdits }: { graph: Wor
   </section>
 }
 
-export function ApprovalFields({ graph, context, change, report, agentEdits }: { graph: WorkflowDefinitionV3; context: NextDraftContext; change: EditGraph; report: (error: unknown) => void; agentEdits?: DraftAgentEdits }) {
+export function ApprovalFields({ graph, context, change, report, agentEdits }: { graph: WorkflowDefinitionCurrent; context: NextDraftContext; change: EditGraph; report: (error: unknown) => void; agentEdits?: DraftAgentEdits }) {
   let hint = 'Agents ask you before sensitive actions. Requests appear in the approval inbox.'
   if (graph.approval?.handler === 'orchestrator') {
     hint = 'The starting Master or Orchestrator reviews requests from agents connected to it by an approval line.'
@@ -66,7 +66,7 @@ export function ApprovalFields({ graph, context, change, report, agentEdits }: {
 
 /** The node's place in this workflow: whether it starts it and where its result goes. */
 /** The node's browser switch and profile. */
-export function NodeBrowserField({ graph, node, change }: { graph: WorkflowDefinitionV3; node: DraftNode; change: EditGraph }) {
+export function NodeBrowserField({ graph, node, change }: { graph: WorkflowDefinitionCurrent; node: DraftNode; change: EditGraph }) {
   const sharedFields = useCollaborationUISlots()
   const fields = useBoardAuthoring()?.collaborationFields ?? sharedFields
   if (node.kind === 'job') return null
@@ -78,7 +78,7 @@ export function NodeBrowserField({ graph, node, change }: { graph: WorkflowDefin
     }) }) ?? null
 }
 
-export function NodeWorkflowFields({ graph, node, context, change, agentEdits, browser = true }: { graph: WorkflowDefinitionV3; node: DraftNode; context: NextDraftContext; change: EditGraph; agentEdits?: DraftAgentEdits
+export function NodeWorkflowFields({ graph, node, context, change, agentEdits, browser = true }: { graph: WorkflowDefinitionCurrent; node: DraftNode; context: NextDraftContext; change: EditGraph; agentEdits?: DraftAgentEdits
   /** False when the browser field is shown elsewhere. */
   browser?: boolean }) {
   const choices = entryChoices(graph, context, agentEdits)
@@ -105,7 +105,7 @@ export function NodeWorkflowFields({ graph, node, context, change, agentEdits, b
   </section>
 }
 
-export function ChoiceFields({ graph, node, change, coordinator = false }: { graph: WorkflowDefinitionV3; node: DraftNode; change: EditGraph; coordinator?: boolean }) {
+export function ChoiceFields({ graph, node, change, coordinator = false }: { graph: WorkflowDefinitionCurrent; node: DraftNode; change: EditGraph; coordinator?: boolean }) {
   const hierarchyRequests = !!graph.hierarchy && !!graph.handoffs && node.kind !== 'job'
   const outgoing = graph.edges.filter((edge) => edge.kind === 'execution'
     && (edge.source === node.id || graph.hierarchy && graph.handoffs && edge.workRequestDirection === 'both' && edge.target === node.id))
@@ -145,7 +145,7 @@ export function ChoiceFields({ graph, node, change, coordinator = false }: { gra
   </fieldset>
 }
 
-export function RelationshipFields({ graph, relationship, change, report }: { graph: WorkflowDefinitionV3; relationship: WorkflowRelationship; change: EditGraph; report: (error: unknown) => void }) {
+export function RelationshipFields({ graph, relationship, change, report }: { graph: WorkflowDefinitionCurrent; relationship: WorkflowRelationship; change: EditGraph; report: (error: unknown) => void }) {
   const put = (update: Partial<WorkflowRelationship>) => {
     try { change((value) => putRelationship(value, { ...relationship, ...update })) } catch (error) { report(error) }
   }
@@ -165,7 +165,7 @@ export function RelationshipFields({ graph, relationship, change, report }: { gr
 }
 
 /** Connections to and from one agent, with a keyboard way to add one (dragging from the rim port also works). */
-export function NodeConnections({ graph, nodeId, change, report }: { graph: WorkflowDefinitionV3; nodeId: string; change: EditGraph; report: (error: unknown) => void }) {
+export function NodeConnections({ graph, nodeId, change, report }: { graph: WorkflowDefinitionCurrent; nodeId: string; change: EditGraph; report: (error: unknown) => void }) {
   const [target, setTarget] = useState(''), [kind, setKind] = useState<WorkflowRelationship['kind']>('execution')
   const related = graph.edges.filter((edge) => edge.source === nodeId || edge.target === nodeId)
   return <section className="next-draft-section" aria-label="Connections">

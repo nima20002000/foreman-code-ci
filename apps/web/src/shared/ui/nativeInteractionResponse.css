@@ -4,4 +4,4 @@
 .native-interaction-response label:has(input[type="checkbox"]) { display: block; }
 .native-interaction-response input:not([type="checkbox"]),
 .native-interaction-response select, .native-interaction-response textarea { width: 100%; max-width: 100%; }
-.native-interaction-response small { display: block; color: var(--color-text-muted); }
+.native-interaction-response small { display: block; color: var(--text-muted); }

@@ -1,11 +1,12 @@
 import type pg from 'pg'
 import { afterEach, expect, it, vi } from 'vitest'
-import { didGraphTransactionCommit, ExclusiveGraphConnection, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
+import { didGraphTransactionCommit, ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
+import type { SqlTransaction } from '../src/infrastructure/transaction.js'
 import { workflowNativeReservation, type NativeEntryRow } from '../src/modules/runs/workflowNativeEntry.js'
 import * as snapshots from '../src/modules/runs/repeatStartRead.js'
 import * as executions from '../src/modules/runs/repeatPostgres.js'
 import { repeatDigest } from '../src/modules/runs/repeatResolution.js'
-import type { AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
+import type { AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
 import { WorkflowNativeProofServices } from '../src/modules/runs/workflowNativeProof.js'
 import type { StoredRepeatExecution } from '../src/modules/runs/repeatPostgres.js'
 import type { WorkflowNativeCapture } from '../src/modules/interactions/workflowNativeCapture.js'
@@ -29,7 +30,7 @@ function fixture() {
     lane: { id: 'original-lane', token: 'original-token', connectionGeneration: 1, providerId: 'original-turn' },
     assertCurrent() {} } as unknown as WorkflowNativeCapture
   const run = { id: scope.runId, workspaceId: scope.workspaceId, workflowId: scope.workflowId,
-    workflowVersionId: scope.workflowVersionId } as AcceptedWorkflowRunV3
+    workflowVersionId: scope.workflowVersionId } as AcceptedWorkflowRunCurrent
   vi.spyOn(snapshots, 'readAcceptedRepeatRunLocked').mockResolvedValue({ run } as
     Awaited<ReturnType<typeof snapshots.readAcceptedRepeatRunLocked>>)
   vi.spyOn(executions, 'readRepeatExecutionLocked').mockResolvedValue(stored)
@@ -49,9 +50,11 @@ function fixture() {
       generation: '1', token: 'original-token', correlation: `execution:${execution.id}`, provider_id: 'original-turn',
       held: true, ...lease } }
   const reads: unknown[][] = []
-  const connection = new ExclusiveGraphConnection({ query: async (sql: string, values?: unknown[]) => {
-    if (sql.startsWith('with current_entry')) { reads.push(values!); return { rows: [structuredClone(records)], rowCount: 1 } }
-    if (sql.startsWith('update native_session_lanes')) {
+  // The physical read binds six values (execution, configuration, agent, workspace, lane and Run) and the lane renewal
+  // binds nine (lane, token, generation, lease, owner, agent, harness, session and expiry).
+  const connection = new ExclusiveGraphConnection({ query: async (sql: string, values: unknown[] = []) => {
+    if (values.length === 6) { reads.push(values); return { rows: [structuredClone(records)], rowCount: 1 } }
+    if (values.length === 9) {
       const matches = values?.[0] === capture.lane!.id && values[1] === records.lane.token
         && values[2] === records.lane.generation && values[4] === lease.lease_owner
         && values[5] === records.lane.owner_agent_id && values[6] === records.lane.harness
@@ -59,11 +62,11 @@ function fixture() {
       return { rows: matches ? [{ expires_at: lease.expires_at }] : [], rowCount: matches ? 1 : 0 }
     }
     if (sql.startsWith('begin') || ['commit', 'rollback'].includes(sql)) return { rows: [], rowCount: 0 }
-    throw new Error(`Unexpected guard SQL: ${sql}`)
+    throw new Error(`Unexpected guard statement binding ${values.length} values`)
   } } as unknown as pg.ClientBase, () => owner.assertOwned())
   const additional = vi.fn(async () => undefined)
   const service = new WorkflowNativeProofServices({ read: () => capture }, additional)
-  const check = (sql: GraphTransactionSql) => service.assertNativeBoundaryLocked(sql, run,
+  const check = (sql: SqlTransaction) => service.assertNativeBoundaryLocked(sql, run,
     execution, stored.ref, { kind: 'live', session, evidence: {} }, owner)
   return { records, connection, check, reads, additional }
 }
@@ -114,7 +117,7 @@ it('rejects an expired lane at commit after the original boundary passed', async
 
 it('commits an unchanged native boundary with its publication lease held', async () => {
   const f = fixture()
-  let transaction: GraphTransactionSql | undefined
+  let transaction: SqlTransaction | undefined
   await f.connection.transaction(async sql => {
     transaction = sql
     await f.check(sql)

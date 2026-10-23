@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
   canonicalGraphJson, CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { commandInputHash } from '../src/modules/commands/postgres.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { currentDatabase } from './helpers/database.js'

@@ -5,11 +5,11 @@ import type { AgentConfigurationVersion } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { SourceRootRecordSchema, type SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import type { SourceRootReference, WorkflowWorktreeSettings, WorktreeComputerSelection } from '@foreman-code/contracts/worktree-settings'
-import { sameWorkflowValue, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { sameWorkflowValue, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import type { PostgresSourceService } from '../sources/service.js'
 import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
 import { requireAuthorization } from '../access/policy.js'
-import { requiredLocationAccess } from '../workspaces/locationAccess.js'
+import { requiredLocationAccess } from '../workspaces/index.js'
 import { DomainError } from '../errors.js'
 import { assertWorktreeComputers } from './worktreeComputers.js'
 
@@ -20,13 +20,13 @@ export interface WorkflowWorktreeServices {
   roots: Pick<WorkspaceRootPolicyPort, 'resolve'>
 }
 
-export function workflowHasWorktreeSettings(definition: WorkflowDefinitionV3): boolean {
+export function workflowHasWorktreeSettings(definition: WorkflowDefinitionCurrent): boolean {
   return Boolean(definition.defaultWorktree) || definition.nodes.some(node => node.kind !== 'job'
     && Boolean(node.worktree || node.placement?.source || node.placement?.rootBinding))
 }
 
 export function authorizeWorkflowWorktreeContent(principal: ManagementPrincipal,
-  input: { workspaceId: string; graph?: WorkflowDefinitionV3 | undefined }): void {
+  input: { workspaceId: string; graph?: WorkflowDefinitionCurrent | undefined }): void {
   if (input.graph && workflowHasWorktreeSettings(input.graph)) {
     requireWorkflowWorktreeReads(principal, input.workspaceId)
   }
@@ -77,8 +77,8 @@ async function validateRoot(input: {
 export async function validateWorkflowWorktrees(input: {
   sql: pg.PoolClient
   principal: ManagementPrincipal
-  definition: WorkflowDefinitionV3
-  previous?: WorkflowDefinitionV3
+  definition: WorkflowDefinitionCurrent
+  previous?: WorkflowDefinitionCurrent
   configurations?: readonly AgentConfigurationVersion[]
   services?: WorkflowWorktreeServices | undefined
 }): Promise<void> {

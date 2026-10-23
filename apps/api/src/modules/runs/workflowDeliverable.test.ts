@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type pg from 'pg'
 import type { HarnessExecution } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { ExclusiveGraphConnection } from '../run-graph/connection.js'
 import { deliverableRepairPrompt, deliverableVerdict } from '../interactions/deliverable.js'
 import { referencesCreatedByExecution, workflowDeliverableContract, workflowDeliverableFailure } from './workflowDeliverable.js'

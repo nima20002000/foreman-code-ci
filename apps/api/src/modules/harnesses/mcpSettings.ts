@@ -9,7 +9,7 @@ import { HarnessMcpManagedInputSchema, HarnessMcpPlanInputSchema, HarnessMcpPlan
   type HarnessMcpManagedInput, type HarnessMcpManagedPreset, type HarnessMcpPlan, type HarnessMcpPlanInput,
   type HarnessMcpReconcileInput, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../access/policy.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import { assertChange, assertManagedChange, expectedMcpUserFingerprint, managedChange, managedEnableChange, managedStatus, mcpUserFingerprint,
   publicMcpList, type NativeMcpAdapter } from './nativeMcpCommon.js'
@@ -17,7 +17,8 @@ import { NativeMcpNotSubmittedError } from './nativeMcpDelivery.js'
 import { qualificationError } from './qualificationErrors.js'
 import { assertNoUnresolvedPluginWrites, lockNativeConfigurationFile } from './nativeSettingsWrites.js'
 import { MCP_INSPECTION_TIMEOUT_MS } from './mcpDetection.js'
-import { ignoreError, logIgnoredError } from '../diagnostics/ignoredError.js'
+import { ignoreError, logIgnoredError } from '../diagnostics/index.js'
+import { retiredHarnessError } from './retiredHarness.js'
 
 type Harness = 'codex'
 type RecordedMcpHarness = Harness | 'claude' | 'opencode'
@@ -39,7 +40,7 @@ const projection = (row: Row): HarnessMcpPlan => HarnessMcpPlanSchema.parse({ id
 
 function assertSupportedHarness(harness: RecordedMcpHarness): asserts harness is Harness {
   if (harness === 'claude') throw new DomainError('MCP_HOST_REQUIRED', 'Claude MCP management requires a paired device hostRef.', 409)
-  if (harness === 'opencode') throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+  if (harness === 'opencode') throw retiredHarnessError()
 }
 
 /** Preserve the byte-for-byte legacy command payload shape for generic plans. */

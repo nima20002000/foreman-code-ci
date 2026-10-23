@@ -7,19 +7,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { type WorkflowDefinitionV3, WorkflowVersionV3Schema, CurrentWorkflowCreateInputSchema, RunStartV3InputSchema } from '@foreman-code/contracts/wave25'
+import { type WorkflowDefinitionCurrent, WorkflowVersionCurrentSchema, CurrentWorkflowCreateInputSchema, RunStartCurrentInputSchema } from '@foreman-code/contracts/current'
 import { routeTree } from '../../app/router'
 import { server } from '../../mocks/server'
 import { currentWorkflowFixture } from '../../shared/mocks/currentWorkflow'
 import { createCurrentBoardMock } from '../../shared/mocks/currentBoard'
-import { useGraphDraftStore } from '../graph/store'
-import { nextDraftKey, nextDraftDirty } from '../graph/nextDraft/state'
+import { useGraphDraftStore, readEditOutbox } from '../graph'
+import { nextDraftKey, nextDraftDirty, boardDraftContextKey } from '../board-core'
 import { readBoardStart } from './startOutbox'
 import { readBoardStop } from './stopOutbox'
-import { readEditOutbox } from '../graph/nextDraft/editIntentStorage'
 import { queryKeys } from '../../shared/api/query'
 import { readLocalHumanAccess } from '../../shared/api/settingsExperience'
-import { boardDraftContextKey } from './keys'
 import { clickConnectionHandles } from '../graph/testConnectionHandles'
 import { worktreeFixture } from './worktree.fixtures'
 
@@ -110,14 +108,14 @@ async function create(mock: Mock, user: ReturnType<typeof userEvent.setup>) {
   expect(mock.workflows.get(id)).not.toHaveProperty('repeat')
   return { id, key }
 }
-function shapeGraph(base: WorkflowDefinitionV3, shape: Shape, mock: Mock): WorkflowDefinitionV3 {
+function shapeGraph(base: WorkflowDefinitionCurrent, shape: Shape, mock: Mock): WorkflowDefinitionCurrent {
   const count = shape === 'single' ? 1 : shape === 'parallel' ? 5 : shape === 'conditional' ? 3 : 2
   const nodes = mock.agents.slice(0, count).map((agent, i) => ({ id: `node-${agent.id}`, agentId: agent.id, name: agent.name,
     position: { x: i * 250, y: i % 2 * 180 }, ...(shape === 'parallel' && i === 4 ? { join: { mode: 'all' as const } } : {}) }))
   const pairs = shape === 'single' ? [] : shape === 'parallel' ? [[0, 1], [0, 2], [2, 3], [1, 4], [3, 4]]
     : shape === 'conditional' ? [[0, 1], [0, 2]] : [[0, 1]]
   const edges = pairs.map(([from, to], i) => ({ id: `handoff-${i}`, source: nodes[from!]!.id, target: nodes[to!]!.id, kind: 'execution' as const }))
-  const graph: WorkflowDefinitionV3 = { ...base, nodes, edges, entryNodeId: nodes[0]!.id, approval: { handler: 'user' },
+  const graph: WorkflowDefinitionCurrent = { ...base, nodes, edges, entryNodeId: nodes[0]!.id, approval: { handler: 'user' },
     executionPolicy: { maxParallelism: 4, maxNodeExecutions: 40 } }
   if (shape === 'conditional') nativeNode(graph.nodes[0]!).choice = { outcomes: edges.map((edge, i) => ({ outcome: i ? 'right' : 'left', target: { kind: 'edge', relationshipId: edge.id } })) }
   if (shape === 'repeat-ready') nativeNode(graph.nodes[1]!).choice = { outcomes: [
@@ -141,7 +139,7 @@ async function save(mock: Mock, user: ReturnType<typeof userEvent.setup>, expect
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Save workflow' })).not.toBeInTheDocument())
   expect(within(authoring()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
   const version = [...mock.versions.values()].at(-1)!
-  expect(WorkflowVersionV3Schema.parse(version).executionSemanticsVersion).toBe(3)
+  expect(WorkflowVersionCurrentSchema.parse(version).executionSemanticsVersion).toBe(3)
   return version
 }
 async function start(mock: Mock, user: ReturnType<typeof userEvent.setup>, expectedRuns = 1) {
@@ -497,7 +495,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(requests).toHaveLength(1)
     expect(requests[0]!.body).not.toHaveProperty('draftId')
     expect(requests[0]!.body).not.toHaveProperty('expectedDraftRevision')
-    const request = RunStartV3InputSchema.parse(requests[0]!.body)
+    const request = RunStartCurrentInputSchema.parse(requests[0]!.body)
     expect(request.expectedAgentConfigurationVersionIds).toEqual(version.agentConfigurationVersionIds)
     expect(request.workflowVersionId).toBe(version.id); expect(request.expectedLocationRevision).toBe(1)
     expect(run).not.toHaveProperty('repeat'); expect(mock.currents.get(run.id)!.topology).not.toHaveProperty('repeat')

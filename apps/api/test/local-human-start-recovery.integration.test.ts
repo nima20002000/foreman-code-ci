@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { CurrentWorkflowSaveResultSchema, makeCurrentWorkflowFixture, RunStartV3InputSchema } from '@foreman-code/contracts/wave25'
+import { CurrentWorkflowSaveResultSchema, makeCurrentWorkflowFixture, RunStartCurrentInputSchema } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -41,7 +41,7 @@ describe.skipIf(!postgresEnabled)('local human Start recovery', { timeout: 60_00
       const savedBody = await save.json()
       expect(save.status, JSON.stringify(savedBody)).toBe(200)
       const saved = CurrentWorkflowSaveResultSchema.parse(savedBody).value
-      const input = RunStartV3InputSchema.parse({
+      const input = RunStartCurrentInputSchema.parse({
         workspaceId: saved.version.workspaceId,
         workflowId: saved.version.workflowId,
         workflowVersionId: saved.currentVersionId,

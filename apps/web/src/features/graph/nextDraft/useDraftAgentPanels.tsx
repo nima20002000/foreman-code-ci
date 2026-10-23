@@ -2,21 +2,17 @@ import { InfoHint } from '../../../shared/ui/InfoHint'
 import type { PinnedPanelNode } from './DraftCanvas'
 import { JobNodePanel } from '../../jobs'
 import { AgentFacts, Button, EmptyState, type AgentPanel } from '../../../shared/ui/nocturne'
-import { nodeTitle, removeNode, roleEvidence } from './model'
-import { editorAgents } from './agentEdits'
-import { type NextDraftEdit } from './state'
+import {
+  nodeTitle, removeNode, roleEvidence, editorAgents, type NextDraftEdit, agentSettingRows, useWorkflowBoard,
+  rebaseAgentFormTools,
+} from '../../board-core'
 import { useGraphEditIntent } from './useGraphEditIntent'
 import { NodeBrowserField, NodeConnections, NodeWorkflowFields } from './AuthoringFields'
-import { AgentInfoTabs } from '../../workflow-board/AgentInfoTabs'
+import { AgentInfoTabs, runNodeView, useSelectedRunRecord, BoardAgentSettings } from '../../workflow-board'
 import { type AgentPanels } from './DraftCanvas'
 import { AgentChatPanel } from '../AgentPanels'
-import { agentSettingRows } from '../signalEdge'
-import { runNodeView, useSelectedRunRecord } from '../../workflow-board/runFacts'
-import { useWorkflowBoard } from '../../workflow-board/context'
-import { BoardAgentSettings } from '../../workflow-board/AgentControls'
 import type { DraftEditorCore } from './useDraftEditorCore'
 import { useGraphDraftStore } from '../store'
-import { rebaseAgentFormTools } from './agentForm'
 
 export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, reloading, agents, saveWorkflow }: {
   draftKey: string

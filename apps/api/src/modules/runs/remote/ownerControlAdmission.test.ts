@@ -3,14 +3,14 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { NATIVE_INTERACTION_FIXTURES } from '@foreman-code/contracts'
 import { RemoteOwnerControlSchema } from '@foreman-code/contracts/remote-execution'
 import type { InteractionDeliveryClaim } from '../../interactions/delivery.js'
-import { assertInteractionNativeDispatchLocked } from '../../interactions/wave25/delivery.js'
+import { assertInteractionNativeDispatchLocked } from '../../interactions/current/delivery.js'
 import type { AcceptedExecutionBinding } from '../../placement/nativeComposition.js'
 import { ExclusiveGraphConnection } from '../../run-graph/connection.js'
 import type { RunOwnership } from '../ownership.js'
 import { prepareRemoteOwnerControl } from './ownerControl.js'
 import { admitRemoteOwnerControl } from './ownerControlAdmission.js'
 
-vi.mock('../../interactions/wave25/delivery.js', () => ({
+vi.mock('../../interactions/current/delivery.js', () => ({
   assertInteractionNativeDispatchLocked: vi.fn(), assertInteractionReservedRetryLocked: vi.fn(),
 }))
 vi.mock('./ownerControl.js', () => ({ prepareRemoteOwnerControl: vi.fn() }))
@@ -29,9 +29,10 @@ function fixture(generation: string, fence = '1') {
     correlationId: 'original-correlation', mode: 'submit', deliveryFence: fence, approvalConnectionGeneration: generation }
   let stored: unknown = null
   let storedGeneration: unknown
-  const connection = new ExclusiveGraphConnection({ query: async (text: string, values: unknown[] = []) => {
-    if (text.startsWith('select remote_owner_control')) return { rows: [{ remote_owner_control: stored }], rowCount: 1 }
-    if (text.startsWith('update interaction_delivery_attempts')) {
+  const connection = new ExclusiveGraphConnection({ query: async (_text: string, values: unknown[] = []) => {
+    // The stored control read binds the interaction id and attempt; the admission update binds six values.
+    if (values.length === 2) return { rows: [{ remote_owner_control: stored }], rowCount: 1 }
+    if (values.length === 6) {
       stored = JSON.parse(values[2] as string)
       storedGeneration = values[5]
       return { rows: [], rowCount: 1 }

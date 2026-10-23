@@ -15,5 +15,5 @@
 .job-dialog .n-dialog-header h2, .job-dialog .n-dialog-header p { overflow-wrap: anywhere; }
 .job-dialog .n-dialog-header > button { flex-shrink: 0; }
 .job-command { display: block; max-width: 100%; max-height: 8em; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-.job-log-window:focus-visible { outline: 2px solid var(--focus, currentColor); outline-offset: 2px; }
+.job-log-window:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 @media (max-width: 640px) { .jobs-page { padding: 12px; } .job-facts { grid-template-columns: minmax(0, 1fr); gap: 4px; } .job-facts dd { margin-bottom: 8px; } .job-log-chunk { grid-template-columns: minmax(0, 1fr); gap: 2px; } }

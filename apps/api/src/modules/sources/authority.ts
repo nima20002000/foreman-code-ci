@@ -1,4 +1,4 @@
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { SourceAction } from '@foreman-code/contracts/source-admission'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
@@ -9,7 +9,7 @@ import { authorizationReadSnapshot } from '../access/authorizationReadSnapshot.j
 /** The authenticated caller's accepted grants are a ceiling, even if its owner
  * later gets broader grants. Existing live delegation validation holds the chain.
  */
-export async function authorizeSource(sql: GraphSqlClient, principal: ManagementPrincipal,
+export async function authorizeSource(sql: SqlQuery, principal: ManagementPrincipal,
   action: SourceAction, workspaceId: string): Promise<{ principal: ManagementPrincipal; ownerId: string }> {
   requireAuthorization(principal, action, { workspaceId })
   const live = await readLiveManagementPrincipal(sql, principal.id)

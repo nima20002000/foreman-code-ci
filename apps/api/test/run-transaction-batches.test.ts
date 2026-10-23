@@ -10,7 +10,8 @@ import { graphSourceDigest } from '../src/modules/run-graph/publication.js'
 import { nativeGraphSource } from '../src/modules/run-graph/nativeIngestion.js'
 import { appendNormalizedNativeEvents } from '../src/modules/runs/nativeEventBatch.js'
 import { normalizeNativeProducerEvent } from '../src/modules/run-graph/nativeProducerNormalization.js'
-import { beforeGraphCommit, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
+import { beforeGraphCommit } from '../src/modules/run-graph/connection.js'
+import type { SqlTransaction } from '../src/infrastructure/transaction.js'
 import { appendNativeEvent, appendNormalizedNativeEvent } from '../src/modules/runs/nativeEvents.js'
 
 let db: Awaited<ReturnType<typeof currentDatabase>>
@@ -36,7 +37,7 @@ async function measure<T>(work: () => Promise<T>) {
 }
 
 async function fixture(size: number, live = false, closed = false,
-  checkPhysical?: (sql: GraphTransactionSql) => Promise<void>) {
+  checkPhysical?: (sql: SqlTransaction) => Promise<void>) {
   const f = await nativeStreamFixture(db, size, live, closed, checkPhysical)
   owners.push(f.owner)
   return f

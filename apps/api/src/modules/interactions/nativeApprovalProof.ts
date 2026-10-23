@@ -1,9 +1,10 @@
 import { DurableInteractionSchema, type DurableInteraction } from '@foreman-code/contracts'
 import { canonicalGraphJson, GraphEvidenceSchema, GraphExecutionIdentitySchema, GraphIdSchema,
   GraphDigestSchema, RepeatOccurrenceIdentityV1Schema, RunGraphScopeSchema, type GraphEvidence,
-  type GraphExecutionIdentity } from '@foreman-code/contracts/wave25'
+  type GraphExecutionIdentity } from '@foreman-code/contracts/current'
 import { z } from 'zod'
-import { beforeGraphCommit, poisonGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import { beforeGraphCommit, poisonGraphTransaction } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { currentRunGraphPublication, graphSourceDigest } from '../run-graph/publication.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import type { WorkflowNativeProofRecord } from '../runs/workflowNativeProof.js'
@@ -13,7 +14,7 @@ import { repeatExecutionIdentity, sameRepeatValue } from '../runs/repeatResoluti
 import { matchingDeliveryEvidence } from './delivery.js'
 import { nativeApprovalContext } from './nativeApprovalContext.js'
 import { pendingOnLaneTurn } from './pendingLaneTurn.js'
-import { decisionDigest } from './wave25/publication.js'
+import { decisionDigest } from './current/publication.js'
 import { DomainError } from '../errors.js'
 import { APPROVAL_SETTLEMENT_PENDING_MESSAGE } from './repeatNativeEvidence.js'
 import { assertWorkflowCorrelation } from '../runs/workResultRepair.js'
@@ -31,7 +32,7 @@ function pending(): never { throw new DomainError('APPROVAL_SETTLEMENT_PENDING',
 /** The pending request is anchored in a coordinator-minted ORIGINAL history,
  * not in a body supplied to an interaction endpoint. Caller identity fields,
  * request/options/context and the pinned handler must all match that source. */
-export async function assertPendingApprovalOriginalLocked(sql: GraphTransactionSql, i: DurableInteraction,
+export async function assertPendingApprovalOriginalLocked(sql: SqlTransaction, i: DurableInteraction,
   proofId: string): Promise<WorkflowNativeProofRecord> {
   GraphIdSchema.parse(proofId)
   const row = (await sql.query<{ record: WorkflowNativeProofRecord; source_digest: string }>(
@@ -66,7 +67,7 @@ export async function assertPendingApprovalOriginalLocked(sql: GraphTransactionS
 
 /** Once an interaction is saved, its first ORIGINAL pending source cannot be
  * replaced by another turn, repetition, native request or recovery generation. */
-export async function assertSavedPendingApprovalOriginalLocked(sql: GraphTransactionSql,
+export async function assertSavedPendingApprovalOriginalLocked(sql: SqlTransaction,
   i: DurableInteraction): Promise<WorkflowNativeProofRecord> {
   const row = (await sql.query<{ approval_native_request_proof_id: string | null }>(
     'select approval_native_request_proof_id from durable_interactions where id=$1 and execution_id=$2 for share',
@@ -78,7 +79,7 @@ export async function assertSavedPendingApprovalOriginalLocked(sql: GraphTransac
 /** Private original-source verification. The proof row was minted solely by the
  * paired coordinator capture channel, with owner/session/lease/input checks.
  * Neither a delivered status nor the native acknowledgement ID is the proof. */
-export async function readApprovalOriginalLocked(sql: GraphTransactionSql, i: DurableInteraction, proofId: string,
+export async function readApprovalOriginalLocked(sql: SqlTransaction, i: DurableInteraction, proofId: string,
   source: GraphEvidence, requester: GraphExecutionIdentity) {
   GraphIdSchema.parse(proofId)
   const row = (await sql.query<{ record: WorkflowNativeProofRecord; source_digest: string }>(
@@ -117,7 +118,7 @@ export async function readApprovalOriginalLocked(sql: GraphTransactionSql, i: Du
 
 /** Compose the immutable ACK descriptor with the existing Worker-resumption
  * source. Its private provenance never enters public graph facts. */
-export async function approvalAckRecord(sql: GraphTransactionSql, i: DurableInteraction, input: {
+export async function approvalAckRecord(sql: SqlTransaction, i: DurableInteraction, input: {
   proofId: string; source: GraphEvidence; requester: GraphExecutionIdentity; acknowledgementId: string;
   publication: WorkflowApprovalAck['publication'];
 }): Promise<WorkflowApprovalAck> {
@@ -129,7 +130,7 @@ export async function approvalAckRecord(sql: GraphTransactionSql, i: DurableInte
     nativeSourceDigest: original.nativeSourceDigest, publication: input.publication })
 }
 
-export async function assertWorkflowApprovalAckLocked(sql: GraphTransactionSql, supplied: DurableInteraction,
+export async function assertWorkflowApprovalAckLocked(sql: SqlTransaction, supplied: DurableInteraction,
   retain = true): Promise<WorkflowApprovalAck> {
   try {
     const current = DurableInteractionSchema.parse(supplied)

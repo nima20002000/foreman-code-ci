@@ -3,8 +3,8 @@ import type pg from 'pg'
 import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
 import { workHandoffNodeAction } from '../../src/modules/runs/workHandoffNode.js'
 import { ExecutionLimiter } from '../../src/modules/runs/limiter.js'
-import { WorkActivationInputSchema, type WorkHandoffResult, type WorkflowVersionV3,
-  makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { WorkActivationInputSchema, type WorkHandoffResult, type WorkflowVersionCurrent,
+  makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { RunOwnership } from '../../src/modules/runs/ownership.js'
 import { RepeatRunRepository, type RepeatRepositoryHost } from '../../src/modules/runs/repeatPostgres.js'
 import { repeatId } from '../../src/modules/runs/repeatResolution.js'
@@ -12,9 +12,9 @@ import { markWorkNoticeDeliveredLocked } from '../../src/modules/runs/workHandof
 import { digest, text, transaction } from '../repeat-migration-fixtures.js'
 
 export async function workHandoffFixture(pool: pg.Pool, suffix: string,
-  configure: (version: ReturnType<typeof makeCurrentWorkflowFixture>['version']) => WorkflowVersionV3) {
+  configure: (version: ReturnType<typeof makeCurrentWorkflowFixture>['version']) => WorkflowVersionCurrent) {
   const fixture = makeCurrentWorkflowFixture(suffix, 'parallel')
-  const version = WorkflowVersionV3Schema.parse(configure(fixture.version))
+  const version = WorkflowVersionCurrentSchema.parse(configure(fixture.version))
   const run = { ...fixture.run, executionState: 'running' as const }
   await transaction(pool, async (sql) => {
     await sql.query('insert into workspaces(id,record) values($1,$2::jsonb)',

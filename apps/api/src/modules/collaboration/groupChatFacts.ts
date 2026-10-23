@@ -1,7 +1,7 @@
 import { canonicalJson } from '@foreman-code/contracts'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { TransactionSql } from '../../infrastructure/transaction.js'
-import type { CommittedWorkflowChatFact } from '../workflow-chat/projection.js'
+import type { CommittedWorkflowChatFact } from '../workflow-chat/index.js'
 import { DomainError } from '../errors.js'
 
 export async function enqueueGroupChatFact(sql: TransactionSql, fact: CommittedWorkflowChatFact) {

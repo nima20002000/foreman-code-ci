@@ -7,7 +7,7 @@ import { JobAdmissionResultSchema, JobPendingAdmissionSchema } from '@foreman-co
 import { PreparedJobSpecSchema, JobDefinitionSchema, type JobDefinitionSpec, type JobExecution } from '@foreman-code/contracts/jobs'
 import { RemoteJobOperationReceiptSchema, type RemoteJobDispatchPort } from '@foreman-code/contracts/remote-job-execution'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -23,7 +23,7 @@ import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.j
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { jobSpec } from './helpers/jobFixture.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { buildQueueFixture } from './helpers/buildComputerFixture.js'
 import { JobComputerSelection } from '../src/modules/jobs/computerSelection.js'
 
@@ -366,7 +366,7 @@ describe.skipIf(!postgresEnabled)('Worker execution startup gates', () => {
           instanceId: 'instance', instanceRevision: '1', harnessInstallationId: 'installation' }
       }
     }
-    const saved = await seedAgent3(database.pool, database.directory, candidate, { run: false })
+    const saved = await seedWorkflowFixture(database.pool, database.directory, candidate, { run: false })
     const access = new PostgresAccessService(database.pool)
     const writer = await access.issue({ name: 'Run gate writer', audience: 'operator',
       expiresAt: new Date(Date.now() + 300_000), grants: [{ actions: ManagementActionSchema.options,

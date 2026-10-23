@@ -3,7 +3,7 @@ import { BROWSER_DEVICE_EXTENSION, BrowserPrivateCommandSchema, BrowserPrivateEn
   BrowserKeyRequestSchema, BrowserKeyEnvelopeSchema, BrowserPrivateResultSchema } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { BrowserDeviceCodecs, BrowserDeviceCommand, BrowserDeviceUpload, BrowserDeviceDownload } from '../browser-runtime/deviceExtension.js'
-import type { BrowserInstallationBinding } from '../browser-profiles/keys.js'
+import type { BrowserInstallationBinding } from '../browser-profiles/index.js'
 import { DomainError } from '../errors.js'
 
 export type BrowserInvocation = z.infer<typeof BrowserPrivateEnvelopeSchema>

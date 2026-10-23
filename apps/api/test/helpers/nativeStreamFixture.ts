@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { HarnessExecutionSchema, type HarnessNativeEvent } from '@foreman-code/contracts'
-import { canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import type { currentDatabase } from './database.js'
 import { currentRepositoryFixture, currentRepositoryServices } from './currentRepository.js'
 import { RunOwnership } from '../../src/modules/runs/ownership.js'
@@ -11,13 +11,13 @@ import type { SingleWriterSessionManager, SessionWriteLease } from '../../src/mo
 import { openWorkflowLifecycleLocked } from '../../src/modules/runs/repeatLifecycle.js'
 import { canonicalRepeatEffectReceipt } from '../../src/modules/run-graph/repeatEffects.js'
 import { graphSourceDigest } from '../../src/modules/run-graph/publication.js'
-import type { GraphTransactionSql } from '../../src/modules/run-graph/connection.js'
+import type { SqlTransaction } from '../../src/infrastructure/transaction.js'
 import { repeatDigest, repeatExecutionIdentity, repeatId, tickSlotId } from '../../src/modules/runs/repeatResolution.js'
 import { repeatLaunchClaim } from '../../src/modules/runs/repeatNativeRepository.js'
 import { reserveWorkflowNativeEntryLocked, workflowNativeReservation } from '../../src/modules/runs/workflowNativeEntry.js'
 
 export async function nativeStreamFixture(db: Awaited<ReturnType<typeof currentDatabase>>, size: number, live = false, closed = false,
-  checkPhysical?: (sql: GraphTransactionSql) => Promise<void>) {
+  checkPhysical?: (sql: SqlTransaction) => Promise<void>) {
   const base = makeCurrentWorkflowFixture(randomUUID(), 'single')
   base.version.approval = { handler: 'native' }
   base.version.definition.approval = base.version.approval

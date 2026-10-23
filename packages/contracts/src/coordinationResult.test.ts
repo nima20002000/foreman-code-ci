@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { COORDINATION_RESULT_PROTOCOL, CoordinationResultSchema, ResultProtocolSchema,
   parseCoordinationResult, type CoordinationResultContext } from './coordinationResult.js';
-import { WorkflowDefinitionV3Schema, type WorkflowDefinitionV3 } from './wave25/workflowShape.js';
+import { WorkflowDefinitionCurrentSchema, type WorkflowDefinitionCurrent } from './current/workflowShape.js';
 
 const board = { kind: 'none', reason: 'no_changes' } as const;
 const envelope = { data: { answer: 'complete' }, summary: 'Completed the requested work.', board };
@@ -11,7 +11,7 @@ const choice = { outcomes: [{ outcome: 'done', target: { kind: 'branch_end' } }]
 
 function context(node: Record<string, unknown> = {}, extra: Record<string, unknown> = {}): CoordinationResultContext {
   return { resultProtocol: COORDINATION_RESULT_PROTOCOL, workflowNodeId: 'worker',
-    definition: WorkflowDefinitionV3Schema.parse({ id: 'workflow', workspaceId: 'workspace', name: 'Saved workflow',
+    definition: WorkflowDefinitionCurrentSchema.parse({ id: 'workflow', workspaceId: 'workspace', name: 'Saved workflow',
       executionSemanticsVersion: 3, entryNodeId: 'worker', executionCondition: { kind: 'manual' },
       nodes: [{ id: 'worker', agentId: 'agent', name: 'Worker', ...node }], edges: [], ...extra }) };
 }
@@ -103,7 +103,7 @@ describe('saved-node coordination result parsing', () => {
   });
 
   it('resolves direct-child delegation and preserves valid Master findings for the direction boundary', () => {
-    const definition: WorkflowDefinitionV3 = WorkflowDefinitionV3Schema.parse({
+    const definition: WorkflowDefinitionCurrent = WorkflowDefinitionCurrentSchema.parse({
       ...context().definition, entryNodeId: 'master', handoffs: { contractVersion: 1 },
       hierarchy: { version: 1, masterNodeId: 'master', parents: [
         { workflowNodeId: 'coordinator', parentNodeId: 'master' }, { workflowNodeId: 'worker', parentNodeId: 'coordinator' },

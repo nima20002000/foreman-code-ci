@@ -1,17 +1,18 @@
 import { NativeSessionReferenceSchema, type HarnessExecution } from '@foreman-code/contracts'
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
 import type { AcceptedNodePlacement } from '@foreman-code/contracts/node-placement'
-import { beforeGraphCommit, type GraphSqlClient, type GraphTransactionSql } from '../run-graph/connection.js'
+import { beforeGraphCommit } from '../run-graph/connection.js'
+import type { SqlQuery, SqlTransaction } from '../../infrastructure/transaction.js'
 import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
-import { readExecutionPlacement, readExecutionPlacements } from '../placement/persistence.js'
-import { remoteReviewerPolicy, assertRemoteReviewerReceipt } from '../placement/remoteReviewerAuthority.js'
+import { readExecutionPlacement, readExecutionPlacements } from '../placement/index.js'
+import { remoteReviewerPolicy, assertRemoteReviewerReceipt } from '../placement/index.js'
 import { requireReviewerCredential } from './reviewerCredential.js'
 import { DomainError } from '../errors.js'
 import { isRunInProgress } from '../runs/runState.js'
 
 /** Resource ownership only: expiry does not prove that the native process released its source. */
-export async function hasRetainedRemoteReviewerSource(sql: GraphSqlClient, execution: HarnessExecution): Promise<boolean> {
+export async function hasRetainedRemoteReviewerSource(sql: SqlQuery, execution: HarnessExecution): Promise<boolean> {
   if (execution.state !== 'completed' || execution.result?.outcome !== 'succeeded' || !execution.nativeSessionId) return false
   const row = (await sql.query<{ owned: boolean }>(`select exists(
     select 1 from remote_execution_receipts r
@@ -31,13 +32,13 @@ export async function hasRetainedRemoteReviewerSource(sql: GraphSqlClient, execu
   return row?.owned === true
 }
 
-export async function readRetainedRemoteReviewer(sql: GraphSqlClient, execution: HarnessExecution) {
+export async function readRetainedRemoteReviewer(sql: SqlQuery, execution: HarnessExecution) {
   const retained = await readRemoteReviewer(sql, execution, 'live')
   if (!retained) return undefined
   return { generation: retained.generation, principalId: retained.principalId, session: retained.session }
 }
 
-export async function readRetainedRemoteReviewers(sql: GraphSqlClient, executions: readonly HarnessExecution[]) {
+export async function readRetainedRemoteReviewers(sql: SqlQuery, executions: readonly HarnessExecution[]) {
   const placements = await readExecutionPlacements(sql, executions.map(execution => execution.id))
   const retained = []
   for (const execution of executions) {
@@ -48,16 +49,16 @@ export async function readRetainedRemoteReviewers(sql: GraphSqlClient, execution
 }
 
 /** A saved candidate grants no review access until authenticated Worker attachment refreshes its lease. */
-export function readRecoverableRemoteReviewer(sql: GraphSqlClient, execution: HarnessExecution) {
+export function readRecoverableRemoteReviewer(sql: SqlQuery, execution: HarnessExecution) {
   return readRemoteReviewer(sql, execution, 'recovery')
 }
 
-async function readRemoteReviewer(sql: GraphSqlClient, execution: HarnessExecution, purpose: 'live' | 'recovery') {
+async function readRemoteReviewer(sql: SqlQuery, execution: HarnessExecution, purpose: 'live' | 'recovery') {
   const placement = await readExecutionPlacement(sql, execution.id)
   return readRemoteReviewerWithPlacement(sql, execution, purpose, placement)
 }
 
-async function readRemoteReviewerWithPlacement(sql: GraphSqlClient, execution: HarnessExecution,
+async function readRemoteReviewerWithPlacement(sql: SqlQuery, execution: HarnessExecution,
   purpose: 'live' | 'recovery', placement: AcceptedNodePlacement | undefined) {
   if (placement?.hostRef.kind !== 'device') return undefined
   const row = (await sql.query<{ receipt: unknown }>(`select r.receipt from remote_execution_receipts r
@@ -117,7 +118,7 @@ async function readRemoteReviewerWithPlacement(sql: GraphSqlClient, execution: H
 }
 
 /** Completion and credential retention commit together so terminal cleanup cannot revoke the original token. */
-export async function finalizeRetainedRemoteReviewerLocked(sql: GraphTransactionSql,
+export async function finalizeRetainedRemoteReviewerLocked(sql: SqlTransaction,
   execution: HarnessExecution): Promise<void> {
   const retained = await readRetainedRemoteReviewer(sql, execution)
   if (!retained) return
@@ -136,7 +137,7 @@ export async function finalizeRetainedRemoteReviewerLocked(sql: GraphTransaction
   })
 }
 
-export async function retainRemoteReviewerCredential(sql: GraphSqlClient, execution: HarnessExecution,
+export async function retainRemoteReviewerCredential(sql: SqlQuery, execution: HarnessExecution,
   retained: NonNullable<Awaited<ReturnType<typeof readRetainedRemoteReviewer>>>) {
   const lane = (await sql.query<{ generation: string }>(`select record->>'connectionGeneration' as generation
     from native_session_lanes where harness=$1 and native_session_id=$2 and owner_agent_id=$3 for share`,

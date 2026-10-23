@@ -7,7 +7,7 @@ import { apiClient, ApiError } from '../../shared/api/client'
 import {
   apiErrorFromResponse, apiUrl, beginFencedOperation, installationHeaders, sendRaw, type FencedOperation,
 } from '../../shared/api/transport'
-import { inspectAttachment } from '../attachments/attachmentFiles'
+import { inspectAttachment } from '../attachments'
 import { readExactBytes, readUploadBytes, sha256Hex } from '../../shared/api/bytes'
 
 export interface ProjectFileUploadInput { workspaceId: string; requestId: string; file: File }

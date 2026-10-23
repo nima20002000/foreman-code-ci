@@ -1,5 +1,5 @@
 import { MemorySaver } from '@langchain/langgraph'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { expect, it, vi } from 'vitest'
 import { DomainError } from '../src/modules/errors.js'
 import { LangGraphWorkflowEngine } from '../src/modules/runs/engine.js'

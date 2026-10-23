@@ -1,15 +1,15 @@
 import { afterAll, afterEach, beforeAll, expect, vi } from 'vitest'
 import type { DurableInteraction } from '@foreman-code/contracts'
 import { checkpointRuntimeFixture } from './checkpointRuntime.js'
-import { agent3Database } from './workflowDatabase.js'
+import { migratedDatabase } from './migratedDatabase.js'
 
 type Fixture = Awaited<ReturnType<typeof checkpointRuntimeFixture>>
 
 export function productionFixtures() {
-  let database: Awaited<ReturnType<typeof agent3Database>> | undefined
+  let database: Awaited<ReturnType<typeof migratedDatabase>> | undefined
   const fixtures: Fixture[] = []
   beforeAll(async () => {
-    database = await agent3Database()
+    database = await migratedDatabase()
   }, 60000)
   afterEach(async () => {
     try {

@@ -2,14 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { expect } from 'vitest'
 import { parseCoordinationResult } from '@foreman-code/contracts'
 import {
-  CurrentWorkflowReadResultSchema, CURRENT_WORKFLOW_TOOLS, RepeatGraphSnapshotV3Schema,
-  RunStartV3InputSchema, type WorkflowDefinitionV3,
-} from '@foreman-code/contracts/wave25'
+  CurrentWorkflowReadResultSchema, CURRENT_WORKFLOW_TOOLS, RepeatGraphSnapshotCurrentSchema,
+  RunStartCurrentInputSchema, type WorkflowDefinitionCurrent,
+} from '@foreman-code/contracts/current'
 import { scenarioFixture, type Scenario } from './scenarioFixtures.js'
 import { scenarioHarness, type Harness, type Saved, type Started, type Via } from './scenarioHarness.js'
 import { assertScenarioEvidence } from './scenarioEvidence.js'
 
-function withoutRepeat(graph: WorkflowDefinitionV3) {
+function withoutRepeat(graph: WorkflowDefinitionCurrent) {
   const { repeat: _repeat, ...ordinary } = graph
   void _repeat
   return { ...ordinary, nodes: ordinary.nodes.map(({ choice: _choice, ...node }) => { void _choice; return node }) }
@@ -100,7 +100,7 @@ export async function assertHistoricalVersionPins(via: Via) {
       data: { marker: `ordinary:${node}:${round}`, exact: [0, false, '', 'λ'] },
       summary: 'Completed the assigned work.', board: { kind: 'none', reason: 'no_access' },
     } }) }
-  const completed: Array<{ started: Started; initial: ReturnType<typeof RepeatGraphSnapshotV3Schema.parse>; expected: Scenario;
+  const completed: Array<{ started: Started; initial: ReturnType<typeof RepeatGraphSnapshotCurrentSchema.parse>; expected: Scenario;
     evidence: Awaited<ReturnType<typeof assertScenarioEvidence>> }> = []
   try {
     let previous: Saved | undefined
@@ -121,7 +121,7 @@ export async function assertHistoricalVersionPins(via: Via) {
       f.setOracle(expected.result)
       const release = f.hold(expected.nodes[0]!.id), started = await f.start(via, saved)
       await f.waitUntilParked(started.scope, expected.nodes[0]!.id)
-      const initial = RepeatGraphSnapshotV3Schema.parse(await f.graph(started.scope, 'snapshot'))
+      const initial = RepeatGraphSnapshotCurrentSchema.parse(await f.graph(started.scope, 'snapshot'))
       release(); await settledWithDiagnosis(f, started)
       const evidence = await assertScenarioEvidence(f, started, initial, expected)
       completed.push({ started, initial, expected, evidence }); previous = saved
@@ -150,7 +150,7 @@ export async function assertRejectedExecutionTag(f: Harness, tag: number) {
     { ...next, executionSemanticsVersion: tag }, ['executionSemanticsVersion'])
   await rejectedTag(f, 'PUT', definition, CURRENT_WORKFLOW_TOOLS.save,
     { ...next, commandId: randomUUID(), graph: { ...next.graph, executionSemanticsVersion: tag } }, ['graph', 'executionSemanticsVersion'])
-  const start = RunStartV3InputSchema.parse({ workspaceId: saved.version.workspaceId, workflowId: saved.version.workflowId,
+  const start = RunStartCurrentInputSchema.parse({ workspaceId: saved.version.workspaceId, workflowId: saved.version.workflowId,
     workflowVersionId: saved.version.id, executionSemanticsVersion: 3, commandId: randomUUID(),
     expectedWorkflowRevision: saved.revision, expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
     expectedLocationRevision: f.locationRevision, input: f.scenario.runInput })

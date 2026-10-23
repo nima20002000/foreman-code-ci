@@ -6,7 +6,7 @@ import {
   CurrentWorkflowSaveInputSchema,
   SavedManagedWorkflowCommandResultSchema, makeCurrentWorkflowFixture,
   type CurrentFixtureForm,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'

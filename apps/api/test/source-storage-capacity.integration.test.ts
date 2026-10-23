@@ -2,15 +2,15 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it } from 'vitest'
 import { PostgresSourceReservations } from '../src/modules/sources/reservations.js'
 import { sourceStorageCapacityFixture } from './helpers/sourceStorageCapacityFixture.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 
-let database: Awaited<ReturnType<typeof agent3Database>> | undefined
+let database: Awaited<ReturnType<typeof migratedDatabase>> | undefined
 afterEach(async () => { await database?.close(); database = undefined })
 
 it.each(['owned', 'uncertain'] as const)(
   'admits another source using free memory without charging the %s materialization twice', async state => {
-    database = await agent3Database()
+    database = await migratedDatabase()
     const pool = database.pool
     const scopeId = randomUUID()
     let availableMemoryBytes = 4 * 2 ** 30
@@ -44,7 +44,7 @@ it.each(['owned', 'uncertain'] as const)(
 )
 
 it('shares a measured host budget across many ordinary Agents and retains it after restart', async () => {
-  database = await agent3Database()
+  database = await migratedDatabase()
   const pool = database.pool
   const scopeId = randomUUID()
   const readCapacity = async () => sourceStorageCapacityFixture({ totalBytes: 64 * 2 ** 30,
@@ -75,7 +75,7 @@ it('shares a measured host budget across many ordinary Agents and retains it aft
 })
 
 it('serializes competing reservations and counts every outstanding writer against real free space', async () => {
-  database = await agent3Database()
+  database = await migratedDatabase()
   const pool = database.pool
   const scopeId = randomUUID()
   const reservations = new PostgresSourceReservations(async () => sourceStorageCapacityFixture({
@@ -94,7 +94,7 @@ it('serializes competing reservations and counts every outstanding writer agains
 })
 
 it('fails closed without a current host measurement and leaves no new reservation', async () => {
-  database = await agent3Database()
+  database = await migratedDatabase()
   const request = { scopeId: randomUUID(), ownerKind: 'capture' as const, ownerId: randomUUID(), reservedBytes: 1 }
   await expect(new PostgresSourceReservations().reserve(database.pool, request))
     .rejects.toMatchObject({ code: 'SOURCE_CAPACITY_UNAVAILABLE' })

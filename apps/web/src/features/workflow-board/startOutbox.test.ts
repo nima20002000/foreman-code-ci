@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../shared/api/client'
-import { nextDraftKey } from '../graph/nextDraft/state'
+import { nextDraftKey } from '../board-core'
 import { parseBoardStart } from './startClient'
 import { acknowledgeBoardStart, boardStartJournalKey, readBoardStart, rejectBoardStart, reserveBoardStart } from './startOutbox'
 

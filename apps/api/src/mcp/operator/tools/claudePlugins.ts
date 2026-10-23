@@ -20,7 +20,7 @@ export const claudePluginTools = [
     requires: [['harnesses:update', 'global'], ['harnesses:read', 'global']],
     enabled: s => !!s.harnessSettings?.claudePlugins,
     description: 'Install, uninstall, enable or disable a user-scope Claude Code plugin on Main for new Claude sessions. A command_review result needs review of the shown marketplace command; accept its hash with a new commandId.',
-    detail: 'An uncertain result is checked again with the same commandId without repeating the native command. Use computers_maintenance_start sync-plugins to copy Main plugins to paired computers.',
+    detail: 'An uncertain result is checked again with the same commandId without repeating the native command. The Computers screen's sync-plugins task copies Main plugins to paired computers.',
     inputSchema: ClaudePluginChangeInputSchema, outputSchema: ClaudePluginChangeResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     run: (context, input) => context.services.harnessSettings!.claudePlugins!.change(context.principal, input, 'mcp'),

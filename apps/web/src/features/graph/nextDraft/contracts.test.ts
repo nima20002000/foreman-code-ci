@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { GraphDraftV3Schema, GraphDraftOperationV3Schema, WorkflowChoiceSchema,
-  WorkflowVersionV3Schema, ChoiceResultEnvelopeSchema } from '@foreman-code/contracts/wave25'
+import { GraphDraftCurrentSchema, GraphDraftOperationCurrentSchema, WorkflowChoiceSchema,
+  WorkflowVersionCurrentSchema, ChoiceResultEnvelopeSchema } from '@foreman-code/contracts/current'
 import { fixture } from './core.cases'
-import { draftOperations, removeRelationship } from './model'
+import { draftOperations, removeRelationship } from '../../board-core'
 
 function version() {
   const { draft } = fixture()
@@ -14,10 +14,10 @@ function version() {
 describe('Agent 6 consumes frozen S2 schemas without a private contract', () => {
   it('fixture draft and generated typed removal operations round-trip', () => {
     const context = fixture()
-    GraphDraftV3Schema.parse(context.draft)
+    GraphDraftCurrentSchema.parse(context.draft)
     const graph = removeRelationship(context.draft.graph, 'execution-1')
     const operations = draftOperations(context, graph)
-    expect(operations.map((operation) => GraphDraftOperationV3Schema.parse(operation))).toEqual(operations)
+    expect(operations.map((operation) => GraphDraftOperationCurrentSchema.parse(operation))).toEqual(operations)
   })
   it('accepts an explicit branch end but rejects an incomplete or duplicate outcome', () => {
     expect(WorkflowChoiceSchema.safeParse({ outcomes: [{ outcome: 'done', target: { kind: 'branch_end' } }] }).success).toBe(true)
@@ -32,12 +32,12 @@ describe('Agent 6 consumes frozen S2 schemas without a private contract', () => 
     expect(ChoiceResultEnvelopeSchema.safeParse({ routing: { outcome: 'approved' }, data: {}, expression: 'true' }).success).toBe(false)
   })
   it('entry dependency, cycle and dangling choice targets fail immutable acceptance', () => {
-    expect(WorkflowVersionV3Schema.safeParse(version()).success).toBe(true)
+    expect(WorkflowVersionCurrentSchema.safeParse(version()).success).toBe(true)
     const dependency = version()
     dependency.definition.edges.push({ id: 'cycle', source: 'node-1', target: 'node-0', kind: 'execution' })
-    expect(WorkflowVersionV3Schema.safeParse(dependency).success).toBe(false)
+    expect(WorkflowVersionCurrentSchema.safeParse(dependency).success).toBe(false)
     const dangling = version()
     dangling.definition.nodes[0]!.choice = { outcomes: [{ outcome: 'selected', target: { kind: 'edge', relationshipId: 'missing' } }] }
-    expect(WorkflowVersionV3Schema.safeParse(dangling).success).toBe(false)
+    expect(WorkflowVersionCurrentSchema.safeParse(dangling).success).toBe(false)
   })
 })

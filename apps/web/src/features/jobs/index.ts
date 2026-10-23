@@ -1,1 +1,7 @@
 export { JobNodePanel, JobNodePicker } from './JobNodePanel'
+export { jobsClient } from './client'
+export { JobResult } from './JobResult'
+export { JobRunResult } from './JobRunResult'
+export { JobQueueFacts } from './JobSpecFacts'
+export { jobError } from './model'
+export { useWorkflowJobHistory, useWorkflowJobQueue } from './query'

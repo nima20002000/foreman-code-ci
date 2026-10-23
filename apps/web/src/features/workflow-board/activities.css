@@ -23,8 +23,8 @@
 .board-activities-list small, .board-activity-detail { color: var(--text-muted); font: var(--type-caption); }
 .board-activity-detail { margin-top: 2px; }
 .board-activity-status { flex: none; color: var(--text-muted); font: var(--type-caption); }
-.board-activity-status.is-warning { color: var(--warning, var(--text-strong)); }
-.board-activity-status.is-error { color: var(--danger, var(--text-strong)); }
+.board-activity-status.is-warning { color: var(--warning); }
+.board-activity-status.is-error { color: var(--danger); }
 @media (max-width: 640px) { .board-activities-filters { grid-template-columns: 1fr; gap: 3px; } }
 
 .board-activity-work-result pre { white-space: pre-wrap; overflow-wrap: anywhere; }

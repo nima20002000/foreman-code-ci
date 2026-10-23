@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { postgresEnabled } from './helpers/database.js'
 import { approvalAtomicSetup, decision } from './helpers/approvalAtomic.js'
-import { br1002Ack, br1002Batches } from './helpers/continuationCuts.js'
+import { continuationAck, continuationBatches } from './helpers/continuationCuts.js'
 import { graphParity } from './helpers/graphParity.js'
-import { deliverApproval } from '../src/modules/interactions/wave25/service.js'
+import { deliverApproval } from '../src/modules/interactions/current/service.js'
 
 const setup = approvalAtomicSetup()
 
@@ -21,13 +21,13 @@ describe.skipIf(!postgresEnabled)('approval delivery', { timeout: 60000 }, () =>
     expect(delivered).toMatchObject({ nativeRequestId: f.interaction.nativeRequestId,
       nativeSessionId: f.interaction.nativeSessionId, request: f.interaction.request })
     expect(await f.receipts()).toHaveLength(0)
-    expect((await br1002Ack(f, f.interaction.id))?.approval_native_ack_id ?? null).toBeNull()
+    expect((await continuationAck(f, f.interaction.id))?.approval_native_ack_id ?? null).toBeNull()
     await f.engine.resumeInteraction(delivered)
     expect((await f.runs.get(f.run.id))?.outcome).toBe('succeeded')
     expect(await f.repository.delivery.claim(f.interaction.id, 'duplicate')).toBeUndefined()
     expect(await f.receipts()).toHaveLength(1)
-    expect((await br1002Ack(f, f.interaction.id))?.approval_native_ack_id).toMatch(/^native-approval-ack-/)
-    expect((await br1002Batches(f)).flatMap((batch) => batch.facts).filter((fact) => fact.type === 'worker.resumed')).toHaveLength(1)
+    expect((await continuationAck(f, f.interaction.id))?.approval_native_ack_id).toMatch(/^native-approval-ack-/)
+    expect((await continuationBatches(f)).flatMap((batch) => batch.facts).filter((fact) => fact.type === 'worker.resumed')).toHaveLength(1)
     await compare()
   })
 })

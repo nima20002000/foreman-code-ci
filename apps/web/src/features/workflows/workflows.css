@@ -89,13 +89,13 @@
 .workflow-navigation-state {
   margin: 0;
   padding: 0.25rem 0.625rem 0.25rem 1.375rem;
-  color: var(--color-text-faint);
+  color: var(--text-faint);
   font-size: 12px;
   line-height: 1.4;
 }
 
 .workflow-navigation-state-error {
-  color: var(--color-text-muted);
+  color: var(--text-muted);
 }
 
 .workflow-navigation .workflow-navigation-add {
@@ -165,8 +165,8 @@
   justify-content: flex-end;
   gap: var(--space-3);
   padding: 0.5rem 1rem;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .workspace-board-run-location {
@@ -177,9 +177,9 @@
   gap: var(--space-1);
   margin-right: auto;
   padding: 0.2rem 0.4rem;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   font-size: 11px;
   line-height: 1;
 }

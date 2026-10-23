@@ -1,8 +1,8 @@
 import { parseCoordinationResult, type AgentSubject, type ExecutionResult, type HarnessExecution,
   type LogicalWorkRef, type ResultProtocol } from '@foreman-code/contracts'
-import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { repeatDigest, repeatExecutionIdentity, repeatTickIndex, sameRepeatValue } from './repeatResolution.js'
 import { readWorkResultRepairAttempt } from './workResultRepair.js'
 
@@ -61,8 +61,8 @@ export function verifiedWorkflowResultEffectFailure(token: WorkflowResultEffectF
     message: 'The complete result still conflicts with the supplied board revision after two corrective turns.', retryable: false } }
 }
 
-export async function readWorkflowResultEffectFailureLocked(sql: GraphSqlClient,
-  version: WorkflowVersionV3, execution: HarnessExecution, resultProtocol: ResultProtocol | undefined,
+export async function readWorkflowResultEffectFailureLocked(sql: SqlQuery,
+  version: WorkflowVersionCurrent, execution: HarnessExecution, resultProtocol: ResultProtocol | undefined,
   token?: WorkflowResultEffectFailure): Promise<ExecutionResult | undefined> {
   if (!token) return undefined
   const failure = verifiedWorkflowResultEffectFailure(token, execution)

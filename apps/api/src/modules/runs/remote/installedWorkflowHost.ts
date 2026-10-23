@@ -3,16 +3,15 @@ import { burstRead } from './burstRead.js'
 import type { ResultProtocol } from '@foreman-code/contracts'
 import { workflowPreparationExtension } from './preparationExtension.js'
 import type { ProviderAccountResolver, ResolvedProviderAccount } from '../../provider-accounts/service.js'
-import { assertWorkerProviderAccountBinding } from '../../provider-accounts/workerOperations.js'
+import { assertWorkerProviderAccountBinding } from '../../provider-accounts/index.js'
 import { managedProviderEnvironment, resolveRuntimeProviderAccount } from '../../harnesses/providerAccountRuntime.js'
 import { constants } from 'node:fs'
-import { componentLogger } from '../../diagnostics/logger.js'
+import { componentLogger } from '../../diagnostics/index.js'
 import { appLauncherPath } from '../../harnesses/appMcpLauncher.js'
 import { open, realpath } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import { ExecutionResultSchema, RETIRED_OPENCODE_MESSAGE,
-  type HarnessExecutionRequest, type NativeSessionReference } from '@foreman-code/contracts'
+import { ExecutionResultSchema, type HarnessExecutionRequest, type NativeSessionReference } from '@foreman-code/contracts'
 import { randomUUID } from 'node:crypto'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
@@ -48,12 +47,12 @@ import { NativeProcessRegistry, type NativeLaunchObservation, type NativeProcess
 import { bootIdentity } from '../../harnesses/recovery/linuxIdentity.js'
 import { ExecutionScopedNativeSessionManagerResolver, type NativeManagerResolutionContext } from '../../interactions/runtimePorts.js'
 import { workerExecutionAuthorizer, workerExecutionFactsReader, workerReviewerAuthorizer } from '../../placement/executionAuthorityClient.js'
-import { sourceMaterializationDigest } from '../../sources/bindingHash.js'
+import { sourceMaterializationDigest } from '../../sources/index.js'
 import { readNativeExecutionBinding } from '../../placement/executionBinding.js'
 import { readPlacement } from '../../placement/binding.js'
-import { anchored, identity, openPrivateRoot, openChildDirectory } from '../../sources/privateFilesystem.js'
-import type { SourceOperationWorkerService, SourceOperationWorkerContext } from '../../sources/operationWorker.js'
-import type { SourceInstalledNativeOwner } from '../../sources/executionHosts.js'
+import { anchored, identity, openPrivateRoot, openChildDirectory } from '../../sources/index.js'
+import type { SourceOperationWorkerService, SourceOperationWorkerContext } from '../../sources/index.js'
+import type { SourceInstalledNativeOwner } from '../../sources/index.js'
 import { RemoteOperationJournal } from './operationJournal.js'
 import { RemoteExecutionHost } from './executionHost.js'
 import { createRemoteExecutionHandler, executionExtension } from './executionRouter.js'
@@ -78,7 +77,9 @@ import { recoverInstalledWorkflowReply } from './installedWorkflowRecoveryHandle
 import { InstalledWorkflowResponsePages } from './installedWorkflowResponsePages.js'
 import { hasPositiveRemoteEntryClosure, remoteNonEntryClosureDigest } from '@foreman-code/contracts/remote-execution-entry-closure-node'
 import { deviceRequestTimeoutMs, retryDeviceRequest } from '../../devices/deviceRequestRetry.js'
+import { hostEnvironment } from '../../../shared/process.js'
 import { deviceReconnectTimeoutMs, isDeviceLinkDrop, sameDeviceInstallation, waitForDeviceReconnect } from '../../devices/deviceReconnect.js'
+import { retiredHarnessError } from '../../harnesses/retiredHarness.js'
 
 function unavailableError(reason:string) {return new DomainError('WORKER_WORKFLOW_UNAVAILABLE','The original installed workflow authority is unavailable.',409,{reason})}
 function unavailable(reason:string):never {throw unavailableError(reason)}
@@ -98,7 +99,7 @@ export interface InstalledWorkflowNativeOwner {
 export function captureInstalledWorkflowNativeOwner(registry:NativeProcessRegistry,connection:DeviceConnectionIdentity,
   intent:DispatchIntent,session:NativeSessionReference):InstalledWorkflowNativeOwner {
   if (session.harness === 'opencode') {
-    throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+    throw retiredHarnessError()
   }
   if(session.harness !== 'codex'||intent.mainId!==connection.mainId)unavailable('native_binding_conflict')
   const owner=`execution:${intent.executionId}`
@@ -523,7 +524,7 @@ class InstalledWorkflowHostRuntime {
       assertWorkerProviderAccountBinding(binding, context.binding)
       const account = await resolveRuntimeProviderAccount(this.input.accounts, 'codex', undefined,
         this.registry.scope(`execution:${intent.executionId}`), undefined, binding)
-      const environment = account ? managedProviderEnvironment(process.env, account, 'codex') : process.env
+      const environment = account ? managedProviderEnvironment(hostEnvironment(), account, 'codex') : hostEnvironment()
       const suiteRevision = this.input.codexSuiteRevision
       const readerInput: Parameters<typeof createInstalledCodexQualificationReader>[0] = {intent,placement,signal: this.signal,
         trustedCurrentBinding:()=>this.input.currentBinding()??null,

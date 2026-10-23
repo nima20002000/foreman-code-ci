@@ -1,7 +1,7 @@
 import { readRunJobCleanup,requestRunJobCleanup } from './runCleanup.js'
 import type { JobRunCleanup } from '@foreman-code/contracts/job-run-cleanup'
 import type { RunOwnership } from '../runs/ownership.js'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import {
@@ -11,7 +11,7 @@ import {
   type RemoteJobOperationReceiptRecord,
   type RemoteJobOperationStatusRecord,
 } from '@foreman-code/contracts/remote-job-execution'
-import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
+import { WorkerExecutionPolicy } from '../settings/index.js'
 import { JobExecutionRecordSchema, type JobAcceptedSpecRecord, type JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
@@ -58,7 +58,7 @@ export class PostgresJobDispatch implements JobDispatchPort,JobRuntimeAuthority 
   async cancel(sql:JobSql,execution:JobExecutionRecord,commandId:string,principal:ManagementPrincipal,action:'jobs:cancel'|'runs:stop'='jobs:cancel'):Promise<void> {
     await sql.query('update job_dispatch_intents set cancel_command_id=coalesce(cancel_command_id,$2),cancel_principal_id=coalesce(cancel_principal_id,$3),cancel_action=coalesce(cancel_action,$4) where execution_id=$1',[execution.id,commandId,principal.id,action])
   }
-  cancelForRunCleanup(sql:GraphTransactionSql,execution:JobExecutionRecord,owner:RunOwnership,reason:JobRunCleanup['reason']) {return requestRunJobCleanup(sql,execution,owner,reason)}
+  cancelForRunCleanup(sql:SqlTransaction,execution:JobExecutionRecord,owner:RunOwnership,reason:JobRunCleanup['reason']) {return requestRunJobCleanup(sql,execution,owner,reason)}
   /** The accepted Run association is immutable. Acquire Run before Job, as workflow polling does. */
   private async readExecutionLocked(sql:JobSql,workspaceId:string,executionId:string):Promise<JobExecutionRecord> {
     const accepted=await this.repository.execution(sql,workspaceId,executionId)
@@ -267,7 +267,7 @@ export class PostgresJobDispatch implements JobDispatchPort,JobRuntimeAuthority 
     if(terminal)await this.settle(executionId)
   }
   async importCancellationClosure(workspaceId: string, executionId: string, receipt: RemoteJobOperationReceiptRecord,
-    authorizeAndRelease: (sql: GraphTransactionSql, execution: JobExecutionRecord) => Promise<void>): Promise<void> {
+    authorizeAndRelease: (sql: SqlTransaction, execution: JobExecutionRecord) => Promise<void>): Promise<void> {
     let active = this.owners.get(executionId)
     if (!active) {
       const abort = new AbortController()

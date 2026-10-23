@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest'
 import type { NativeSessionReference } from '@foreman-code/contracts'
 import { DomainError } from '../src/modules/errors.js'
-import { native2Fixture } from './native-reviewer-fixtures.js'
+import { nativeReviewerFixture } from './native-reviewer-fixtures.js'
 
 it('closes an abandoned attempt whose cleanup was unconfirmed when Main shuts down for restart', async () => {
-  const f = native2Fixture(false)
+  const f = nativeReviewerFixture(false)
   const execution = f.get()
   f.installResident()
   let workerAvailable = false

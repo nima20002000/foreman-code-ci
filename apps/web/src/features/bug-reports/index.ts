@@ -1,0 +1,1 @@
+export { BugsSettings } from './BugsSettings'

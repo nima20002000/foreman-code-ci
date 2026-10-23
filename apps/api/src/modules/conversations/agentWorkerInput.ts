@@ -8,7 +8,7 @@ import { agentChatCorrelation, type AgentConversationRow } from './agentChatRepo
 import { agentConfigurationTransition, agentConfigurationDirectory, agentConfigurationHandoff } from './agentConfigurationTransition.js'
 import { agentMessagePrompt } from './agentMessagePrompt.js'
 import { assertWorkerChatRequestSize } from './chatInputSize.js'
-import { legacyProviderAccountBinding } from '../provider-accounts/acceptedBindings.js'
+import { legacyProviderAccountBinding } from '../provider-accounts/index.js'
 
 export async function assertAgentWorkerRequests(sql: Pick<pg.PoolClient, 'query'>, input: {
   row: AgentConversationRow; configuration: AgentConfigurationVersion; nextConfiguration?: AgentConfigurationVersion

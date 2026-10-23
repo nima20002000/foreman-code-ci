@@ -1,10 +1,10 @@
-import { DEFAULT_WORKFLOW_EXECUTION_POLICY } from '@foreman-code/contracts/wave25'
+import { DEFAULT_WORKFLOW_EXECUTION_POLICY } from '@foreman-code/contracts/current'
 import { InfoHint } from '../../../shared/ui'
 import { Button, Icon, IconButton, TextField } from '../../../shared/ui/nocturne'
 import { AgentActiveTimeField } from './AgentActiveTimeField'
 import { ApprovalFields, EntryFields, type EditGraph } from './AuthoringFields'
-import type { NextDraftEdit } from './state'
-import { HierarchyEditor } from '../../workflow-hierarchy/HierarchyEditor'
+import type { NextDraftEdit } from '../../board-core'
+import { HierarchyEditor } from '../../workflow-hierarchy'
 
 export function WorkflowSettings({ draftKey, edit, change, report, defaultMs, locationReady, locationMessage,
   onChangeFolder, onReload }: {

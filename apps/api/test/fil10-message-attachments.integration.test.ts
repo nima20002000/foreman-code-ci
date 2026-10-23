@@ -9,12 +9,12 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { NativeHarnessEventSchema, type HarnessExecution, type NativeSessionReference } from '@foreman-code/contracts'
+import { NativeHarnessEventSchema, OperatorConversationStateSchema, type HarnessExecution, type NativeSessionReference } from '@foreman-code/contracts'
 import { ClaudeHarnessConfigurationSchema } from '@foreman-code/contracts/claude'
 import { AgentChatStateSchema, type AgentChatContext, type AgentChatQuery, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import { FileWithRevisionSchema, MAX_FILE_BYTES, type FileWithRevision, type MessageAttachmentRef } from '@foreman-code/contracts/files'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
-import { AcceptedRepeatStartV1Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { AcceptedRepeatStartV1Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 
 import { buildApp } from '../src/app.js'
 import { fileStorageMigration } from '../src/infrastructure/fileStorageMigration.js'
@@ -45,7 +45,8 @@ import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js
 import { registerAgentChatRoutes } from '../src/routes/agentChat.js'
 import { registerFileRoutes } from '../src/routes/files.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
@@ -94,7 +95,7 @@ async function waitFor(check: () => Promise<boolean>) {
 }
 
 describe.skipIf(!postgresEnabled)('FIL-10 real chat attachments', { timeout: 60_000 }, () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>, root: string, app: FastifyInstance
+  let database: Awaited<ReturnType<typeof migratedDatabase>>, root: string, app: FastifyInstance
   let access: PostgresAccessService, owner: Awaited<ReturnType<PostgresAccessService['issue']>>
   let reader: Awaited<ReturnType<PostgresAccessService['issue']>>
   let operator: OperatorChatService, agent: AgentChatService
@@ -130,7 +131,7 @@ describe.skipIf(!postgresEnabled)('FIL-10 real chat attachments', { timeout: 60_
   })
 
   beforeAll(async () => {
-    database = await agent3Database()
+    database = await migratedDatabase()
     const present = await database.pool.query('select 1 from application_migrations where version=$1', [fileStorageMigration.version])
     if (!present.rowCount) {
       const client = await database.pool.connect()
@@ -140,7 +141,7 @@ describe.skipIf(!postgresEnabled)('FIL-10 real chat attachments', { timeout: 60_
       } catch (error) { await rollbackTransaction(client); throw error } finally { client.release() }
     }
     root = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT!, '.fil10-test-'))
-    fixture = await seedAgent3(database.pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'))
+    fixture = await seedWorkflowFixture(database.pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'))
     access = new PostgresAccessService(database.pool)
     owner = await access.issue({ name: 'FIL-10 owner', audience: 'operator', expiresAt: new Date(Date.now() + 600_000),
       grants: [{ actions: [...ManagementActionSchema.options], scope: {} }] })
@@ -211,6 +212,40 @@ describe.skipIf(!postgresEnabled)('FIL-10 real chat attachments', { timeout: 60_
 
   async function ensureAgent() {
     return (await agent.read(owner.principal, fixture.scope.workspaceId, query())).conversation?.id ?? startAgent()
+  }
+
+  for (const kind of ['agent', 'operator'] as const) {
+    for (const change of ['removed', 'clock_expired'] as const) it(`${kind} reads current ${change} attachment metadata without rewriting the message or chat`, async () => {
+      const id = kind === 'agent' ? await ensureAgent() : (await operator.create(owner.principal)).id
+      const file = await upload(id, Buffer.from('# readback'), kind), requestId = randomUUID()
+      const sent = kind === 'agent' ? await agentSend(request(id, { requestId, attachments: [pin(file)] }))
+        : await operatorSend(id, { requestId, content: 'review', attachments: [pin(file)] })
+      expect(sent.statusCode, sent.body).toBe(202)
+      if (kind === 'agent') await settleAgent(id)
+      else await settleOperator(id)
+      const read = async () => {
+        const response = await app.inject({ method: 'GET', headers: headers(), url: kind === 'agent'
+          ? `${agentPath()}?${new URLSearchParams(query() as Record<string, string>)}` : operatorPath(id) })
+        expect(response.statusCode, response.body).toBe(200)
+        return kind === 'agent' ? AgentChatStateSchema.parse(response.json()) : OperatorConversationStateSchema.parse(response.json())
+      }
+      const previous = await read(), message = previous.messages.find(entry => entry.requestId === requestId)!
+      expect(message.attachments).toEqual([file])
+      if (change === 'removed') await database.pool.query("update files set state='removed' where file_id=$1", [file.file.fileId])
+      else await database.pool.query(`update files set created_at=statement_timestamp()-interval '2 hours',
+        retention_duration_seconds=3600,expires_at=statement_timestamp()-interval '1 hour' where file_id=$1`, [file.file.fileId])
+      const storedFile = async () => (await database.pool.query<{ state: string; revision: string }>(
+        'select state,activity_record_revision::text as revision from files where file_id=$1', [file.file.fileId])).rows[0]!
+      const beforeRead = await storedFile(), incoming = await read()
+      const refreshed = incoming.messages.find(entry => entry.id === message.id)!
+      expect(refreshed.attachments?.[0]?.file.state).toBe(change === 'removed' ? 'removed' : 'expired')
+      expect(refreshed.revision).toBe(message.revision)
+      expect(incoming.revision).toBe(previous.revision)
+      expect(incoming.activitySnapshot?.sourceRevisions).toContainEqual({ source: 'file', id: file.file.fileId, revision: beforeRead.revision })
+      expect(beforeRead.state).toBe(change === 'removed' ? 'removed' : 'ready')
+      expect(await storedFile()).toEqual(beforeRead)
+      expect((await read()).activitySnapshot?.sourceRevisions).toEqual(incoming.activitySnapshot?.sourceRevisions)
+    })
   }
 
   it('resolves the persisted Codex sender, message, session and pinned attachment', async () => {

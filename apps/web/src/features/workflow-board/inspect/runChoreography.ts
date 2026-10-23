@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { RepeatGraphCurrentV3, RunHandoffsRead, WorkflowRelationship } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphCurrentState, RunHandoffsRead, WorkflowRelationship } from '@foreman-code/contracts/current'
 import type { AgentNodeState, AgentNodeTransition } from '../../../shared/ui/nocturne'
-import type { EdgeSignal } from '../../graph/signalEdge'
+import type { EdgeSignal } from '../../board-core'
 import { lifecycleView } from '../runFacts'
 import { pinnedNodeStates } from './pinnedTopology'
 
@@ -27,7 +27,7 @@ const ACTIONS: Partial<Record<string, string>> = {
 }
 
 /** Node words from the canonical cut: lifecycle first, then (unless `lifecycleOnly`) the exact current activity. */
-export function runNodeDisplays(record: RepeatGraphCurrentV3, lifecycleOnly = false): Map<string, RunNodeDisplay> {
+export function runNodeDisplays(record: RepeatGraphCurrentState, lifecycleOnly = false): Map<string, RunNodeDisplay> {
   const views = new Map<string, RunNodeDisplay>()
   for (const [nodeId, fact] of pinnedNodeStates(record)) {
     const [state, label] = lifecycleView(fact.label)
@@ -35,7 +35,7 @@ export function runNodeDisplays(record: RepeatGraphCurrentV3, lifecycleOnly = fa
   }
   const live = !lifecycleOnly && record.state.run.executionState !== 'completed'
   // A waiting requester follows its newest approval: asked, answered, delivered, and resumed by the harness.
-  const newest = new Map<string, RepeatGraphCurrentV3['state']['interactions'][number]>()
+  const newest = new Map<string, RepeatGraphCurrentState['state']['interactions'][number]>()
   for (const interaction of record.state.interactions) {
     const id = interaction.requester.workflowNodeId, other = newest.get(id)
     if (!other || other.status !== 'pending' && (interaction.status === 'pending' || BigInt(interaction.revision) > BigInt(other.revision))) newest.set(id, interaction)
@@ -61,7 +61,7 @@ export function runNodeDisplays(record: RepeatGraphCurrentV3, lifecycleOnly = fa
 }
 
 /** Every edge crossing the cut records, in the direction the fact travelled. */
-export function runHandoffs(record: RepeatGraphCurrentV3, edges: readonly RunEdge[], transfers: readonly RunTransfer[] = []): Handoff[] {
+export function runHandoffs(record: RepeatGraphCurrentState, edges: readonly RunEdge[], transfers: readonly RunTransfer[] = []): Handoff[] {
   const handoffs: Handoff[] = []
   // A work hand-off starts the receiver's work directly; it crosses once that work is in the cut.
   for (const transfer of transfers) {
@@ -144,7 +144,7 @@ function causes(handoff: Handoff, all: Iterable<Handoff>): Handoff[] {
  * carrying it arrives, and a sender's pulse leaves only after its own input landed.
  * Nothing here changes a fact; it only orders what is already recorded.
  */
-export function useRunChoreography(record: RepeatGraphCurrentV3 | undefined, edges: readonly RunEdge[] | undefined,
+export function useRunChoreography(record: RepeatGraphCurrentState | undefined, edges: readonly RunEdge[] | undefined,
   transfers?: readonly RunTransfer[]): RunChoreography {
   const memory = useRef<Memory>({ primed: false, displayed: false, starts: new Map(), handoffs: new Map(), shown: new Map(), transitions: new Map(), landed: new Set() })
   const [tick, setTick] = useState(0)

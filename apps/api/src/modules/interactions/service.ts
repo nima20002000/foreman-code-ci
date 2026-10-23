@@ -7,11 +7,12 @@ import { DomainError } from '../errors.js'
 import type { InteractionResponder } from './responder.js'
 import type { PostgresApprovalBudgetRepository } from './budget.js'
 import type { InteractionNativeRuntime } from './runtimePorts.js'
-import { Wave25InteractionRepository } from './wave25/repository.js'
+import { Wave25InteractionRepository } from './current/repository.js'
 import type { InteractionResponseOptions } from './cancellation.js'
 import type { WorkDirectionActions } from './workDirection.js'
+import { bindApprovalCheckpointEngine, type ApprovalCheckpointConsumers } from '../runs/approvalCheckpointRegistration.js'
 import { deliverApproval, respondToApproval, resumeApproval,
-  type ApprovalRuntimeDependencies, type AtomicApprovalResumeConsumer } from './wave25/service.js'
+  type ApprovalRuntimeDependencies, type AtomicApprovalResumeConsumer } from './current/service.js'
 
 export type { InteractionResponder }
 const message = (error: unknown) => error instanceof DomainError ? error.code : 'APPROVAL_RECOVERY_UNCERTAIN'
@@ -43,10 +44,17 @@ export class InteractionService {
     _resumeGraph: (interaction: DurableInteraction) => Promise<void>, private readonly responseJournal?: NativeResponseJournal,
     private readonly activityEvidence?: (interaction: DurableInteraction) => Promise<InteractionActivityEvidence>,
     /** Starts the continuation Run a work-direction answer asks for. */
-    workDirections?: WorkDirectionActions) {
+    workDirections?: WorkDirectionActions,
+    /** Resumes approvals from the engine's checkpoint; absent for services bound later by registerApprovalCheckpointResume. */
+    approvalCheckpoint?: ApprovalCheckpointConsumers) {
     if (!(interactions instanceof Wave25InteractionRepository)) throw new DomainError(
       'APPROVAL_REPOSITORY_REQUIRED', 'The current original-source approval repository is required.', 503)
     if (workDirections) interactions.directions.useActions(workDirections)
+    if (approvalCheckpoint) {
+      this.prepareRequester = approvalCheckpoint.prepare
+      this.atomicApprovalResume = approvalCheckpoint.resume
+      bindApprovalCheckpointEngine(this, approvalCheckpoint.engine)
+    }
   }
   private resumeDelivered(interaction: DurableInteraction): Promise<void> {
     return resumeApproval(this.approvalDependencies(), interaction)

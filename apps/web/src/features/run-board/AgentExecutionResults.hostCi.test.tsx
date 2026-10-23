@@ -2,13 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { expect, it } from 'vitest'
-import type { RepeatGraphScopeV3, RunExecutionSummary } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent, RunExecutionSummary } from '@foreman-code/contracts/current'
 import { server } from '../../mocks/server'
-import type { SelectedRunState } from '../runs-selector/useSelectedRun'
+import type { SelectedRunState } from '../runs-selector'
 import { ciResultJob, ciResultTests } from '../workflow-board/inspect/ciResults.testSupport'
 import { AgentExecutionResults } from './AgentExecutionResults'
 
-const scope: RepeatGraphScopeV3 = { workspaceId: 'workspace-a', workflowId: 'workflow-a', runId: 'run-a',
+const scope: RepeatGraphScopeCurrent = { workspaceId: 'workspace-a', workflowId: 'workflow-a', runId: 'run-a',
   workflowVersionId: 'version-a', executionSemanticsVersion: 3 }
 const selection = { identity: scope, generation: { id: 1 }, active: true, invalid: false,
   isCurrent: () => true } as unknown as SelectedRunState

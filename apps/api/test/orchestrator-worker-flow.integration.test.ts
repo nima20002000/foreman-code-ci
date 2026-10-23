@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, expect, it, vi } from 'vitest'
 import type { ExecutionResult } from '@foreman-code/contracts'
-import { WorkActivationInputSchema, type WorkActivationInput, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { WorkActivationInputSchema, type WorkActivationInput, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { hasWorkDirectionWait } from '../src/modules/runs/workflowLifecycle.js'
 import { RunHandoffReadService } from '../src/modules/runs/handoffRead.js'
 import { handoffs, runtime, timeout, useSettlementFixtures } from './helpers/workflowSettlementTestSupport.js'
@@ -18,7 +18,7 @@ const result = (routing: Record<string, unknown>, latestDeliverable: unknown, re
   ({ outcome: 'succeeded', output: { routing, data: { latestDeliverable, remainingFindings } } }) as ExecutionResult
 
 /** The owner's saved shape: an Orchestrator connected to one Worker, no named routes, no hierarchy. */
-const team = (graph: WorkflowDefinitionV3): WorkflowDefinitionV3 => ({ ...handoffs(10)(graph),
+const team = (graph: WorkflowDefinitionCurrent): WorkflowDefinitionCurrent => ({ ...handoffs(10)(graph),
   nodes: graph.nodes.map((node, index) => ({ ...node, name: index === 0 ? 'Orchestrator' : 'Worker' })) })
 
 describe.skipIf(!postgresEnabled)('Orchestrator and Worker workflow', () => {
@@ -68,7 +68,7 @@ describe.skipIf(!postgresEnabled)('Orchestrator and Worker workflow', () => {
   }, timeout)
 
   it('sends every Worker result back even when the connection allows only one handoff', async () => {
-    const once = (graph: WorkflowDefinitionV3): WorkflowDefinitionV3 => {
+    const once = (graph: WorkflowDefinitionCurrent): WorkflowDefinitionCurrent => {
       const shaped = team(graph)
       return { ...shaped, edges: shaped.edges.map((edge) => ({ ...edge, maxWorkHandoffsPerRun: 1 })) }
     }

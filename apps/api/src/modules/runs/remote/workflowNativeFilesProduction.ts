@@ -1,6 +1,6 @@
 import type { TransferContext } from '@foreman-code/contracts/byte-transfer'
 import type { WorkflowNativeCapture } from '../../interactions/workflowNativeCapture.js'
-import type { GraphTransactionSql } from '../../run-graph/connection.js'
+import type { SqlTransaction } from '../../../infrastructure/transaction.js'
 import type { RepeatNativeEvidence } from '../repeatNativeRepository.js'
 import type { WorkflowNativeProofRecord } from '../workflowNativeProof.js'
 import { WorkflowNativeFileContextAdmission, type WorkflowNativeFileContextPorts } from './workflowNativeFileContext.js'
@@ -10,7 +10,7 @@ export function createProductionWorkflowFileContexts(mainId: string, ports: Work
   transferContext(capture: WorkflowNativeCapture): TransferContext | undefined
 }) {
   const admission = new WorkflowNativeFileContextAdmission(mainId, ports)
-  return async (sql: GraphTransactionSql, evidence: RepeatNativeEvidence, proof: WorkflowNativeProofRecord): Promise<void> => {
+  return async (sql: SqlTransaction, evidence: RepeatNativeEvidence, proof: WorkflowNativeProofRecord): Promise<void> => {
     const capture = ports.captures.read(evidence)
     if (capture.session.harness !== 'codex' || !capture.lane?.providerId
       || !['running', 'waiting'].includes(capture.execution.state)

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { createBrowserHttp, type BrowserWireCodec } from '../features/agent-browser/http'
+import { createBrowserHttp, type BrowserWireCodec } from '../features/agent-browser'
 
 it('keeps each concurrent browser response bound to its original selection', async () => {
   const call = createBrowserHttp({ fetch: async () => new Response('{}', { status: 200 }),

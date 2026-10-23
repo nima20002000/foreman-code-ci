@@ -1,7 +1,7 @@
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
 import { randomUUID } from 'node:crypto'
 import { AgentConfigurationVersionSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema, type RepeatBlockV1 } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema, type RepeatBlockV1 } from '@foreman-code/contracts/current'
 
 export const unsupportedReviewerScopes = ['reviewer-in-block/requester-outside', 'different-blocks'] as const
 export const supportedReviewerScopes = ['ordinary', 'same-block', 'reviewer-outside/requester-in-block', 'native-self-review-outside'] as const
@@ -47,6 +47,6 @@ export function reviewerScopeFixture(kind: ReviewerScopeCase) {
   }
   definition.executionPolicy = { maxParallelism: 1,
     maxNodeExecutions: definition.nodes.length + blocks.reduce((total, item) => total + (item.maxOccurrences - 1) * item.nodeIds.length, 0) }
-  f.version = agentWorkflowVersion(WorkflowVersionV3Schema.parse({ ...f.version, definition }))
+  f.version = agentWorkflowVersion(WorkflowVersionCurrentSchema.parse({ ...f.version, definition }))
   return f
 }

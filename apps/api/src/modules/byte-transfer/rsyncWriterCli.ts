@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import type { RsyncOwnerReference } from './rsyncWriterOwnership.js'
+import { hostEnvironment } from '../../shared/process.js'
 
 /** This is a separate installed entrypoint, never part of the normal worker import graph. */
 export function parseRsyncWriterArguments(args: readonly string[]): { root: string; reference: RsyncOwnerReference; args: string[] } {
@@ -29,7 +30,7 @@ export async function runRsyncWriterCli(args: readonly string[], signal: AbortSi
   signal.throwIfAborted()
   // Native recovery logs normally use stdout. It is exclusively the rsync protocol here;
   // import the ownership graph only AFTER disabling that process's component logging.
-  process.env.LOG_LEVEL = 'silent'
+  hostEnvironment().LOG_LEVEL = 'silent'
   const { RsyncWriterOwnership, runRsyncRemoteServer } = await import('./rsyncWriterOwnership.js')
   const ownership = new RsyncWriterOwnership(input.root, () => undefined)
   return runRsyncRemoteServer({ ownership, reference: input.reference, args: input.args, signal })

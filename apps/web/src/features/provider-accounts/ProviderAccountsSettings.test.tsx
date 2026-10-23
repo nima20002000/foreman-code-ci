@@ -13,13 +13,13 @@ import {
 import { server } from '../../mocks/server'
 import { queryKeys } from '../../shared/api/query'
 import { UnsavedChangesContext } from '../../shared/ui/unsavedChanges'
-import { OperatorComposerSettings } from '../operator-chat/OperatorComposerSettings'
-import { AgentSettingsForm } from '../graph/AgentSettingsForm'
-import { defaultAgentForHarness } from '../agents/agentSettings'
+import { OperatorComposerSettings } from '../operator-chat'
+import { AgentSettingsForm } from '../graph'
+import { defaultAgentForHarness } from '../agents'
 import { savedClaudeConfiguration } from '../settings/claudeSettings.fixtures'
 import { ProviderAccountsSettings } from './ProviderAccountsSettings'
 import { ProviderAccountSelect } from './ProviderAccountSelect'
-import { HarnessBasicFields } from '../settings/HarnessBasicFields'
+import { HarnessBasicFields } from '../settings'
 import { accountTarget, accountTargetInfo, authenticationOperation, workerAccountTarget } from './providerAccounts.fixtures'
 
 vi.mock('../../shared/api/harnessSettings', async importOriginal => ({

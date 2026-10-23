@@ -4,8 +4,8 @@ import { withAdvancedDefaults, type HarnessConfiguration } from '@foreman-code/c
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import type { ProviderAccountConfigurationService } from '../harnesses/providerAccountConfiguration.js'
-import type { HarnessCatalogService } from '../harnesses/catalog.js'
+import type { ProviderAccountConfigurationService } from '../harnesses/index.js'
+import type { HarnessCatalogService } from '../harnesses/index.js'
 import { DomainError } from '../errors.js'
 import { lockActiveWorkspace } from './admission.js'
 

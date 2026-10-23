@@ -1,11 +1,11 @@
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { isAuthorized, requireAuthorization } from '../access/policy.js'
 import { DomainError } from '../errors.js'
 
 /** The public default is harness metadata. Other immutable configuration pins
  * are readable only through the caller's owned history or validated active chat binding. */
-export async function authorizeOperatorConfigurationRead(database: GraphSqlClient, principal: ManagementPrincipal, configurationVersionId: string): Promise<void> {
+export async function authorizeOperatorConfigurationRead(database: SqlQuery, principal: ManagementPrincipal, configurationVersionId: string): Promise<void> {
   requireAuthorization(principal, 'harnesses:read')
   const current = (await database.query<{ current_configuration_version_id: string }>(
     'select current_configuration_version_id from application_operators where id=$1', ['application-operator'])).rows[0]

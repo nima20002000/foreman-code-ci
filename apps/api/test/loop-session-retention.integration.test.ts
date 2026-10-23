@@ -3,8 +3,8 @@ import { access, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION } from '@foreman-code/contracts'
-import { CurrentWorkflowSaveResultSchema, RunStartV3ResultSchema, SavedRunDetailsSchema,
-  makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { CurrentWorkflowSaveResultSchema, RunStartCurrentResultSchema, SavedRunDetailsSchema,
+  makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
 import { closeCompletedWorkflowSources } from '../src/modules/sources/workflowCleanup.js'
@@ -65,7 +65,7 @@ describe.runIf(postgresEnabled)('loop node directory and native session retentio
         ...f.input, workflowVersionId: saved.currentVersionId, expectedWorkflowRevision: saved.revision,
       } })
       expect(started.isError, JSON.stringify(started)).not.toBe(true)
-      const runId = RunStartV3ResultSchema.parse(decodeMcpToolResult(started)).run.id
+      const runId = RunStartCurrentResultSchema.parse(decodeMcpToolResult(started)).run.id
       const scope = { workspaceId: f.input.workspaceId, runId }
       const read = async () => {
         const result = await f.client.callTool({ name: 'run_get', arguments: { ...scope, detail: 'full' } })

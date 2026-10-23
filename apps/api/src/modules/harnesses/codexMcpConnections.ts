@@ -8,6 +8,7 @@ import { CodexStdioTransport } from './codexStdioTransport.js'
 import { assertCodexUnchanged, qualifyCodex } from './codexProtocol.js'
 import { applyMcpEdits, fingerprint, mcpEdits, record, type NativeMcpAdapter, type NativeMcpSnapshot } from './nativeMcpCommon.js'
 import { withNativeMcpDelivery } from './nativeMcpDelivery.js'
+import { hostEnvironment } from '../../shared/process.js'
 
 /** A second definition can survive user-entry removal, even when its current values are identical. */
 export function codexMcpOwnership(layers: unknown[], userLayer: Record<string, unknown>, user: Record<string, unknown>) {
@@ -21,7 +22,7 @@ export class CodexMcpConnections implements NativeMcpAdapter {
   constructor(private readonly binary: string | (() => string), private readonly directory: string,
     private readonly processRecovery?: NativeProcessRecovery,
     private readonly installLauncher: (signal: AbortSignal) => Promise<void> = installAppLauncher,
-    private readonly environment: NodeJS.ProcessEnv = process.env) {}
+    private readonly environment: NodeJS.ProcessEnv = hostEnvironment()) {}
   private async control<T>(work: (transport: CodexStdioTransport, binary: string, environment: NodeJS.ProcessEnv) => Promise<T>, signal: AbortSignal): Promise<T> {
     const environment: NodeJS.ProcessEnv = { ...this.environment, NO_COLOR: '1' }
     for (const key of Object.keys(environment)) if (/^(?:GRAPHQL_|FOREMAN_CODE_|OPERATOR_|DATABASE_URL$|TEST_DATABASE_URL$|PGPASSWORD$)/.test(key)) delete environment[key]

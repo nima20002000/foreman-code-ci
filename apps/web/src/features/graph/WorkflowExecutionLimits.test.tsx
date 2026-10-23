@@ -21,7 +21,7 @@ describe('agent and workflow execution limits', () => {
   it('keeps workflow limits out of the agent inspector and preserves the existing policy', async () => {
     const onSave = vi.fn()
     const policy = { maxNodeExecutions: 50, maxParallelism: 7 }
-    renderForm(<AgentSettingsForm agent={{ id: 'agent', name: 'Coder', harnessConfiguration: DEFAULT_HARNESS_DEFAULTS.codex }} executionPolicy={policy} onSave={onSave} onClose={() => {}} />)
+    renderForm(<AgentSettingsForm agent={{ id: 'agent', name: 'Coder', harnessConfiguration: DEFAULT_HARNESS_DEFAULTS.codex }} node={{ executionPolicy: policy }} onSave={onSave} onClose={() => {}} />)
     expect(screen.queryByLabelText('Maximum node executions')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save agent settings' })).toBeDisabled()
     const user = userEvent.setup()

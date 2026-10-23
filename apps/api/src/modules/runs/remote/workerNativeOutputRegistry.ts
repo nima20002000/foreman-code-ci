@@ -7,7 +7,7 @@ import { AgentFilePublishInputSchema, TemporaryFileScopeSchema, MAX_FILE_BYTES,
 import { BYTE_TRANSFER_POLICY } from '@foreman-code/contracts/byte-transfer'
 import { WorkerNativeOutputCommandSchema, WorkerNativeOutputReplySchema, MAX_NATIVE_OUTPUT_APPEND_BYTES,
   type WorkerNativeOutputCommand, type WorkerNativeOutputReply } from '@foreman-code/contracts/worker-native-output'
-import { anchored, identity, openPrivateRoot } from '../../sources/privateFilesystem.js'
+import { anchored, identity, openPrivateRoot } from '../../sources/index.js'
 import { DomainError } from '../../errors.js'
 import { captureWorkerNativeArtifactCallback, type WorkerNativeArtifactCallback,
   type WorkerNativeArtifactSnapshot, type WorkerNativeArtifactSource } from './workerNativeArtifactSender.js'

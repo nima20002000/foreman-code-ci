@@ -23,7 +23,8 @@ async function admit(computers: HostCiComputer[], statuses: CiHostStatus[], rese
     if (sql.includes('count(*)')) return { rows: computers.map((computer, index) => ({
       host_key: computer.key, count: reservations[index] ?? 0,
     })) }
-    if (sql.startsWith('insert into ci_runs')) {
+    // Only the Run insert binds nine values (record at position 3).
+    if (parameters?.length === 9) {
       records.push(CiRunRecordSchema.parse(JSON.parse(parameters![3] as string)))
     }
     return { rows: [], rowCount: 1 }

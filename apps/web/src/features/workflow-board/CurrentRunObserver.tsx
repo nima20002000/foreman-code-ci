@@ -1,11 +1,11 @@
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { queryKeys } from '../../shared/api/query'
-import { runsSelectorKeys } from '../runs-selector/query'
+import { runsSelectorKeys } from '../runs-selector'
 import { useCurrentRunQuery } from './currentRunQuery'
 
-export function CurrentRunObserver({ scope }: { scope: RepeatGraphScopeV3 }) {
+export function CurrentRunObserver({ scope }: { scope: RepeatGraphScopeCurrent }) {
   const current = useCurrentRunQuery(scope)
   const client = useQueryClient()
   const { workspaceId, workflowId } = scope

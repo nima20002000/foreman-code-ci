@@ -5,7 +5,7 @@ import { connect as connectTcp } from 'node:net'
 import { connect } from 'node:tls'
 import { afterAll, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { Client } from '@modelcontextprotocol/client'
-import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
+import { SavedRunDetailsSchema } from '@foreman-code/contracts/current'
 import { PostgresInteractionRepository } from '../src/modules/interactions/postgres.js'
 import { deliveredReview, receipts, reviewInProgress, useRemoteReviewFixture,
   waitForRemoteReview } from './helpers/remoteReviewProductionCases.js'

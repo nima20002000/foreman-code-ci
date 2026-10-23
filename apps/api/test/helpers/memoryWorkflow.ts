@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Client } from '@modelcontextprotocol/client'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { expect } from 'vitest'
 import type { currentOperatorIntegration } from './currentOperatorIntegration.js'
 

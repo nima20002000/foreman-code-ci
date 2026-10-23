@@ -21,6 +21,15 @@ interface Request {
   reconcilePublication?: string
 }
 
+/** The JSON text bound at an index, when it is JSON. */
+function boundJson(values: unknown[], index: number): Record<string, unknown> | undefined {
+  try { return JSON.parse(String(values[index])) as Record<string, unknown> } catch { return undefined /* ignore: the value is not JSON */ }
+}
+/** The workspace insert binds six values: the workspace id, then that workspace's JSON record. */
+const insertsWorkspace = (values: unknown[]) => values.length === 6 && boundJson(values, 1)?.id === values[0]
+/** The provisioning identity journal binds the provisioning id, then the folder's device and inode. */
+const stagesIdentity = (values: unknown[]) => values.length === 2 && boundJson(values, 1)?.inode !== undefined
+
 process.once('message', async (request: Request) => {
   const pool = new pg.Pool(request.database)
   const commands = new PostgresCommandCoordinator(pool)
@@ -56,12 +65,12 @@ process.once('message', async (request: Request) => {
         (this: pg.Client, ...args: unknown[]) => Promise<pg.QueryResult>
       // Hold a real uncommitted command after its directory is published.
       pg.Client.prototype.query = function (this: pg.Client, ...args: unknown[]) {
-        if (request.interrupt === true && typeof args[0] === 'string' && args[0].includes('insert into workspaces')) {
+        const values = Array.isArray(args[1]) ? args[1] : []
+        if (request.interrupt === true && insertsWorkspace(values)) {
           process.send!({ phase: 'provisioned' })
           return new Promise(() => {})
         }
-        if (request.interrupt === 'staged' && typeof args[0] === 'string'
-          && args[0].startsWith('update workspace_project_provisioning set identity')) {
+        if (request.interrupt === 'staged' && stagesIdentity(values)) {
           return query.apply(this, args).then(() => {
             process.send!({ phase: 'staged' })
             return new Promise(() => {})

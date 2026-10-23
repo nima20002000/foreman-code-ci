@@ -1,15 +1,15 @@
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { logIgnoredError } from '../diagnostics/index.js'
 import { NativeSessionReferenceSchema } from '@foreman-code/contracts'
 import { RemoteOperationStatusSchema, remoteActiveNative } from '@foreman-code/contracts/remote-execution'
 import { hasPositiveRemoteEntryClosure, hasPositiveRemoteNonEntryClosure } from '@foreman-code/contracts/remote-execution-entry-closure-node'
 import { readRemoteReceiptResponse } from '../runs/remote/installedWorkflowResponsePages.js'
-import type { CapturedRemoteTelemetryNativeOwner } from '../resource-telemetry/productionAuthority.js'
+import type { CapturedRemoteTelemetryNativeOwner } from '../resource-telemetry/index.js'
 import type pg from 'pg'
 import type { HarnessExecution } from '@foreman-code/contracts'
-import { sameWorkflowValue, canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { sameWorkflowValue, canonicalGraphJson } from '@foreman-code/contracts/current'
 import { DeviceConnectionIdentitySchema, type DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
-import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
-import type { WorkspaceLocationService } from '../workspaces/location.js'
+import type { DeviceEndpoint } from '../devices/index.js'
+import type { WorkspaceLocationService } from '../workspaces/index.js'
 import type { AgentPlacementProducer } from './agentProducer.js'
 import type { NativeManagerResolutionContext } from '../interactions/runtimePorts.js'
 import type { RunOwnership } from '../runs/ownership.js'
@@ -27,18 +27,19 @@ import { createRemoteNativeSourceChannel, assertRemoteNativeSourcesLocked, type 
 import { createRemoteWorkflowPhysicalVerification, type PreparedRemoteWorkflowPhysical } from '../runs/remote/workflowPhysicalVerification.js'
 import { remoteWorkflowSourceDigest } from '../runs/remote/workflowPhysicalReadout.js'
 import type { WorkflowOriginalNativeSource, WorkflowNativeCapture, WorkflowNativeCaptureInput } from '../interactions/workflowNativeCapture.js'
-import { didGraphTransactionCommit, type GraphTransactionSql } from '../run-graph/connection.js'
+import { didGraphTransactionCommit } from '../run-graph/index.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { WorkflowNativeProofRecord } from '../runs/workflowNativeProof.js'
 import type { WorkflowPhysicalArtifactsPort } from '../runs/remote/workflowPhysicalArtifacts.js'
 import { DomainError } from '../errors.js'
 import { admitRemoteOwnerControl, authorizeReservedRemoteResponse,
   readAdmittedRemoteOwnerControl } from '../runs/remote/ownerControlAdmission.js'
 import { readOriginalInteractionDeliveryClaim } from '../interactions/originalDeliveryClaim.js'
-import type { WorkerExecutionPolicy } from '../settings/workerExecution.js'
-import { transferContextForBinding } from '../byte-transfer/carrier.js'
+import type { WorkerExecutionPolicy } from '../settings/index.js'
+import { transferContextForBinding } from '../byte-transfer/index.js'
 import { assertRemoteReviewerReceipt } from './remoteReviewerAuthority.js'
 import type { CapturedReviewNativeSource } from '../interactions/reviewNativeCapture.js'
-import { deviceRequestTimeoutMs, retryDeviceRequest } from '../devices/deviceRequestRetry.js'
+import { deviceRequestTimeoutMs, retryDeviceRequest } from '../devices/index.js'
 import { preparationStop } from '../runs/remote/preparationCleanup.js'
 
 interface ProductionRemoteWorkflowInput {
@@ -59,7 +60,7 @@ interface RetainedRemoteWorkflowSource {
   capture?: WorkflowNativeCapture
 }
 type RemoteWorkflowPhysicalVerification = ReturnType<typeof createRemoteWorkflowPhysicalVerification>
-type RemoteWorkflowAuthority = (sql: GraphTransactionSql, binding: AcceptedExecutionBinding,
+type RemoteWorkflowAuthority = (sql: SqlTransaction, binding: AcceptedExecutionBinding,
   connection: DeviceConnectionIdentity, action: 'start' | 'read' | 'control' | 'stop') => ReturnType<typeof assertRemoteExecutionAuthority>
 
 function sourceKey(source: WorkflowOriginalNativeSource) { return remoteWorkflowSourceDigest(source) }
@@ -74,7 +75,7 @@ export function createProductionRemoteWorkflow(input: ProductionRemoteWorkflowIn
   const acknowledgments = new Set<VerifiedRemoteOriginalSource>()
   const companions = new WeakMap<WorkflowNativeCapture, RemoteNativeSourceEvidence>()
   const reviewCompanions = new WeakMap<CapturedReviewNativeSource, RemoteNativeSourceEvidence>()
-  const reviewAcknowledgments = new Map<string, Map<VerifiedRemoteOriginalSource, GraphTransactionSql>>()
+  const reviewAcknowledgments = new Map<string, Map<VerifiedRemoteOriginalSource, SqlTransaction>>()
   const artifactTerminals = new WeakMap<WorkflowNativeCapture, VerifiedRemoteOriginalSource>()
   const latest = new Map<string, string>()
   const retained = new Map<string, Map<string, RetainedRemoteWorkflowSource>>()
@@ -93,7 +94,7 @@ export function createProductionRemoteWorkflow(input: ProductionRemoteWorkflowIn
     if (!producer) throw new DomainError('AGENT_PLACEMENT_UNAVAILABLE', 'The actual placement producer is unavailable.', 503)
     return producer
   }
-  const authority = (sql: GraphTransactionSql, binding: AcceptedExecutionBinding, connection: DeviceConnectionIdentity, action: 'start' | 'read' | 'control' | 'stop') =>
+  const authority = (sql: SqlTransaction, binding: AcceptedExecutionBinding, connection: DeviceConnectionIdentity, action: 'start' | 'read' | 'control' | 'stop') =>
     assertRemoteExecutionAuthority(sql, input.locations, { version: 1, intent: binding.intent, placement: binding.placement, action }, connection, requireProducer())
   const carrier = deviceEndpointCarrier(() => input.endpoint())
   const prepare = (executionId: string) => prepareRemoteWorkflowBinding(input, bindings, executionId)
@@ -130,7 +131,7 @@ export function createProductionRemoteWorkflow(input: ProductionRemoteWorkflowIn
       })
       reviewCompanions.set(capture, evidence)
     },
-    async assertReviewPhysical(sql: GraphTransactionSql, capture: CapturedReviewNativeSource) {
+    async assertReviewPhysical(sql: SqlTransaction, capture: CapturedReviewNativeSource) {
       const evidence = reviewCompanions.get(capture)
       if (!capture.owner || !evidence) throw new DomainError('REMOTE_NATIVE_SOURCE_NOT_CAPTURED', 'The original review physical source is unavailable.', 409)
       await physical.assertOriginal(sql, capture.owner, channel.verify.read(evidence))
@@ -179,7 +180,7 @@ export function createProductionRemoteWorkflow(input: ProductionRemoteWorkflowIn
       entry.capture = capture
       companions.set(capture, entry.evidence)
     },
-    async artifactTerminalContext(sql: GraphTransactionSql, owner: RunOwnership, capture: WorkflowNativeCapture, proof: WorkflowNativeProofRecord) {
+    async artifactTerminalContext(sql: SqlTransaction, owner: RunOwnership, capture: WorkflowNativeCapture, proof: WorkflowNativeProofRecord) {
       const evidence = companions.get(capture)
       if (!evidence) throw new DomainError('REMOTE_NATIVE_SOURCE_NOT_CAPTURED', 'The original artifact terminal has no authenticated physical companion.', 409)
       const original = channel.verify.read(evidence)
@@ -187,10 +188,10 @@ export function createProductionRemoteWorkflow(input: ProductionRemoteWorkflowIn
       artifactTerminals.set(capture, original)
       return context
     },
-    assertArtifactTerminal(sql: GraphTransactionSql, owner: RunOwnership, capture: WorkflowNativeCapture, proof: WorkflowNativeProofRecord) {
+    assertArtifactTerminal(sql: SqlTransaction, owner: RunOwnership, capture: WorkflowNativeCapture, proof: WorkflowNativeProofRecord) {
       return physical.assertArtifactTerminal(sql, owner, capture, proof)
     },
-    assertAdoptedArtifacts(sql: GraphTransactionSql, owner: RunOwnership, capture: WorkflowNativeCapture) {
+    assertAdoptedArtifacts(sql: SqlTransaction, owner: RunOwnership, capture: WorkflowNativeCapture) {
       const original = artifactTerminals.get(capture)
       if (!original) throw new DomainError('REMOTE_NATIVE_SOURCE_NOT_CAPTURED', 'The original artifact terminal companion is unavailable.', 409)
       return physical.assertAdoptedArtifacts(sql, owner, original)
@@ -231,7 +232,7 @@ export function createProductionRemoteWorkflow(input: ProductionRemoteWorkflowIn
     afterCommit: (capture: WorkflowNativeCapture) => acknowledgeRemoteWorkflowSources({
       bindings, retained, latest, acknowledgments, companions, channel, physical, releaseExecution,
     }, capture),
-    assertPhysical: (sql: GraphTransactionSql, owner: RunOwnership,
+    assertPhysical: (sql: SqlTransaction, owner: RunOwnership,
       captures: WorkflowNativeCapture | readonly WorkflowNativeCapture[]) =>
       assertWorkflowPhysicalBatch(sql, owner, captures, companions, channel.verify, physical),
   }
@@ -293,7 +294,7 @@ async function acknowledgeRemoteWorkflowSources(dependencies: {
   }
 }
 
-async function assertWorkflowPhysicalBatch(sql: GraphTransactionSql, owner: RunOwnership,
+async function assertWorkflowPhysicalBatch(sql: SqlTransaction, owner: RunOwnership,
   input: WorkflowNativeCapture | readonly WorkflowNativeCapture[],
   companions: WeakMap<WorkflowNativeCapture, RemoteNativeSourceEvidence>,
   verification: ReturnType<typeof createRemoteNativeSourceChannel>['verify'],

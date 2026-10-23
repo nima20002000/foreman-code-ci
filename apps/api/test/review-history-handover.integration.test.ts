@@ -7,7 +7,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
 import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
 import { rejectableDeferred } from './helpers/deferred.js'
-import { br1002At } from './helpers/continuationCuts.js'
+import { continuationAt } from './helpers/continuationCuts.js'
 import { postgresEnabled } from './helpers/database.js'
 
 afterEach(() => vi.restoreAllMocks())
@@ -70,7 +70,7 @@ describe.skipIf(!postgresEnabled)('review history across observer handover', () 
     })
     try {
       originalDispatch = f.native.reviewers.dispatchNext(f.reviewerId, 'original-observer')
-      await br1002At(started.promise, originalDispatch)
+      await continuationAt(started.promise, originalDispatch)
       const job = (await f.coordination.findReviewJob(f.interaction.id, f.reviewerId))!
       expect(job.state).toBe(handover === 'after publication' ? 'acknowledged' : 'submitted')
       const resident = f.native.passiveOwnedNativeSessions().find(value => value.execution.id === f.reviewer.id)!
@@ -93,7 +93,7 @@ describe.skipIf(!postgresEnabled)('review history across observer handover', () 
       await expect(originalDispatch).rejects.toMatchObject({ code: 'ENGINE_RESTART' })
       successor = new ReviewerDispatcher(f.coordination, f.native)
       successorDispatch = successor.dispatchNext(f.reviewerId, 'replacement-observer')
-      await br1002At(published.promise, successorDispatch)
+      await continuationAt(published.promise, successorDispatch)
       const recovered = (await f.coordination.findReviewJob(f.interaction.id, f.reviewerId))!
       expect(recovered.leaseToken).not.toBe(job.leaseToken)
       expect(recovered.providerTurnOrMessageId).toBe(job.providerTurnOrMessageId)

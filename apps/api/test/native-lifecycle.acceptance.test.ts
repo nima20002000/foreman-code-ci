@@ -18,7 +18,7 @@ import { bootIdentity, identityAlive } from '../src/modules/harnesses/recovery/l
 import type { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
 import { repeatDigest, type RepeatNodeInput, type RepeatInputBinding } from '../src/modules/runs/repeatResolution.js'
 import { RepeatRunRepository } from '../src/modules/runs/repeatPostgres.js'
-import { nativeAcceptanceBinaries, runEng03NativeScenario, type Eng03NativeControl } from './helpers/nativeAcceptanceScenario.js'
+import { nativeAcceptanceBinaries, runNativeAcceptanceScenario, type NativeAcceptanceControl } from './helpers/nativeAcceptanceScenario.js'
 import { configureNativeWorkflowMcp } from './helpers/nativeWorkflowMcp.js'
 import { harnessBinaries } from '../src/modules/harnesses/binaries.js'
 import { CodexAppServerSessionManager } from '../src/modules/harnesses/codexAppServer.js'
@@ -48,7 +48,7 @@ describe('acceptance Job binary configuration', () => {
 
 const require = createRequire(import.meta.url)
 
-async function startedBranches(context: Eng03NativeControl) {
+async function startedBranches(context: NativeAcceptanceControl) {
   const started = await waitForStartedBranches(context)
   expect(started).toHaveLength(2)
   expect(new Set(started.map((item) => item.native_session_id)).size).toBe(2)
@@ -166,7 +166,7 @@ describe.skipIf(process.env.RUN_NATIVE_LIFECYCLE_TESTS !== '1')('ENG-03 C live n
 
   it('E03-L01 stops two positively started Codex branches without starting Reviewer', async () => {
     let started: Array<{ execution_id: string; native_session_id: string }> = []
-    const result = await runEng03NativeScenario('E03-L01', 'codex', 'codex', {
+    const result = await runNativeAcceptanceScenario('E03-L01', 'codex', 'codex', {
       control: async (context) => {
         const { pool, runId, nodeIds, stop, runs, startTask } = context
         started = await startedBranches(context)
@@ -188,7 +188,7 @@ describe.skipIf(process.env.RUN_NATIVE_LIFECYCLE_TESTS !== '1')('ENG-03 C live n
   it('E03-L02 fails the Run when one active task-owned process closes, then settles its sibling', async () => {
     let interruptedExecutionId = ''
     let originalBranches: Array<{ execution_id: string; native_session_id: string }> = []
-    const result = await runEng03NativeScenario('E03-L02', 'codex', 'codex', {
+    const result = await runNativeAcceptanceScenario('E03-L02', 'codex', 'codex', {
       prompts: {
         A: waitForOwnerBeforeWork('release-native-fault', 'read the accepted Entry result. Without more tools or files, list n and n squared modulo 97 for n=1 through 120, one row per n. Finish with A-FAULT. Keep the response under 3000 characters.'),
         B: waitForOwnerBeforeWork('release-native-fault', 'read the accepted Entry result. Without more tools or files, list n and n cubed modulo 101 for n=1 through 120, one row per n. Finish with B-FAULT. Keep the response under 3000 characters.'),
@@ -228,7 +228,7 @@ describe.skipIf(process.env.RUN_NATIVE_LIFECYCLE_TESTS !== '1')('ENG-03 C live n
     let interruptedExecutionId = ''
     let originalBranches: Array<{ execution_id: string; native_session_id: string }> = []
     let fault: { registrationId: string; guardianPid: number; guardianStartTicks: string; cgroup: string; at: string } | undefined
-    const result = await runEng03NativeScenario('E03-L02', 'codex', 'codex', {
+    const result = await runNativeAcceptanceScenario('E03-L02', 'codex', 'codex', {
       control: async (context) => {
         const { pool, runId, nodeIds, runtimeDirectory, registry, runs, startTask } = context
         const started = await startedBranches(context)
@@ -287,7 +287,7 @@ describe.skipIf(process.env.RUN_NATIVE_LIFECYCLE_TESTS !== '1')('ENG-03 C live n
 
   it('E03-L03 repeats Start and reconcile during two live turns without extra native submissions', async () => {
     let submissionCounts: number[] = []
-    const result = await runEng03NativeScenario('E03-L03', 'codex', 'codex', {
+    const result = await runNativeAcceptanceScenario('E03-L03', 'codex', 'codex', {
       control: async (context) => {
         const { pool, runId, nodeIds, engine, startTask } = context
         await startedBranches(context)
@@ -317,7 +317,7 @@ describe.skipIf(process.env.RUN_NATIVE_LIFECYCLE_TESTS !== '1')('ENG-03 C live n
 
   it('E03-L04 reobserves one active native turn on its exact session without another submission', async () => {
     let observed: { executionId: string; nativeSessionId: string; nativeTurnId: string } | undefined
-    const result = await runEng03NativeScenario('E03-L04', 'codex', 'codex', {
+    const result = await runNativeAcceptanceScenario('E03-L04', 'codex', 'codex', {
       prompts: {
         A: 'Read the accepted Entry result. Without tools or files, list n and n squared modulo 97 for n=1 through 60. End with A-OBSERVED.',
         B: 'Read the accepted Entry result. Without tools or files, list n and n cubed modulo 101 for n=1 through 60. End with B-OBSERVED.',
@@ -365,7 +365,7 @@ describe.skipIf(process.env.RUN_NATIVE_LIFECYCLE_TESTS !== '1')('ENG-03 C live n
     let cutExecutionId = '', cutNativeSessionId = ''
     let cutResult: unknown
     let acceptedSiblingId = '', beforeNativeEventCount = -1, afterNativeEventCount = -1
-    const result = await runEng03NativeScenario('E03-L04', 'codex', 'codex', {
+    const result = await runNativeAcceptanceScenario('E03-L04', 'codex', 'codex', {
       prompts: {
         A: 'Read the accepted Entry result. Without tools or files, list n and n squared for n=1 through 25. End with A-RECOVERY.',
         B: 'Read the accepted Entry result. Without tools or files, list n and n cubed for n=1 through 30. End with B-RECOVERY.',

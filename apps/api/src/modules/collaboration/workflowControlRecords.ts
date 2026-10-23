@@ -5,7 +5,8 @@ import {
   type ChatControlReceipt, type ChatDeliveryReceipt, type LogicalWorkRef,
 } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction, type GraphSqlClient, type GraphTransactionSql } from '../run-graph/connection.js'
+import { assertGraphTransaction } from '../run-graph/index.js'
+import type { SqlQuery, SqlTransaction } from '../../infrastructure/transaction.js'
 import type { WorkflowChatLockedTarget, WorkflowChatNativeTarget, WorkflowChatTarget, WorkflowControlCommand } from './workflowControlTypes.js'
 import { sha256CanonicalJsonHex } from '../../shared/hash.js'
 
@@ -47,10 +48,10 @@ export const WORKFLOW_INPUT_RETRIES = `with recursive retries(id) as (
     and not exists(select 1 from run_control_continuations k where k.run_id=$1 and k.successor_execution_id=x.execution_id)
 )`
 
-export async function readControlCommand(sql: GraphSqlClient, id: string): Promise<ControlCommandRow | undefined> {
+export async function readControlCommand(sql: SqlQuery, id: string): Promise<ControlCommandRow | undefined> {
   return (await sql.query<ControlCommandRow>(`select ${CONTROL_COMMAND_COLUMNS} from run_chat_commands where id=$1`, [id])).rows[0]
 }
-export async function replayControlCommand(sql: GraphSqlClient, principalId: string, commandId: string,
+export async function replayControlCommand(sql: SqlQuery, principalId: string, commandId: string,
   digest: string): Promise<ControlCommandRow | undefined> {
   const row = (await sql.query<ControlCommandRow>(`select ${CONTROL_COMMAND_COLUMNS} from run_chat_commands
     where principal_id=$1 and command_id=$2`, [principalId, commandId])).rows[0]
@@ -79,7 +80,7 @@ export async function insertControlCommand(context: WorkflowChatLockedTarget, in
   await projectControlReceipt(context.sql, context.run.id, input.id, 0, input.receipt, input.now)
 }
 
-export async function updateControlCommand(sql: GraphTransactionSql, row: ControlCommandSummary,
+export async function updateControlCommand(sql: SqlTransaction, row: ControlCommandSummary,
   receipt: ChatDeliveryReceipt | ChatControlReceipt, now: string, extra: {
     state?: WorkflowControlCommand['state']; continuationId?: string; consultationId?: string
     deliveredExecution?: unknown; nativeTarget?: unknown
@@ -98,7 +99,7 @@ export async function updateControlCommand(sql: GraphTransactionSql, row: Contro
   await projectControlReceipt(sql,row.run_id,row.id,Number(row.revision)+1,parsed,now)
 }
 
-async function projectControlReceipt(sql: GraphTransactionSql, runId: string, id: string, revision: number,
+async function projectControlReceipt(sql: SqlTransaction, runId: string, id: string, revision: number,
   receipt: ChatDeliveryReceipt | ChatControlReceipt, now: string) {
   if ('requestedIntent' in receipt) await synchronizeGroupDelivery(sql, receipt)
   await sql.query(`insert into run_activity(run_id,source,kind,occurred_at,payload)
@@ -108,7 +109,7 @@ async function projectControlReceipt(sql: GraphTransactionSql, runId: string, id
 
 /** Native adapters load only a committed command; all target and input identities
  * here were reserved by the service under the existing Run owner transaction. */
-export async function readWorkflowControlCommandLocked(sql: GraphTransactionSql, runId: string,
+export async function readWorkflowControlCommandLocked(sql: SqlTransaction, runId: string,
   id: string): Promise<WorkflowControlCommand | undefined> {
   assertGraphTransaction(sql)
   const row = await readControlCommand(sql,id)
@@ -127,7 +128,7 @@ export async function readWorkflowControlCommandLocked(sql: GraphTransactionSql,
 
 /** Persist the exact original-session writer and submission ID BEFORE native I/O.
  * B's existing native owner alone calls this after rechecking its dispatch fence. */
-export async function captureWorkflowControlNativeLocked(sql: GraphTransactionSql, input: {
+export async function captureWorkflowControlNativeLocked(sql: SqlTransaction, input: {
   runId: string; commandId: string; nativeTarget: WorkflowChatNativeTarget; now: string
 }): Promise<void> {
   assertGraphTransaction(sql)
@@ -149,7 +150,7 @@ export async function captureWorkflowControlNativeLocked(sql: GraphTransactionSq
 
 /** Called from the existing native observer with its actual acknowledgement.
  * A transport failure is unknown, never evidence that a turn stopped. */
-export async function markWorkflowControlCommandLocked(sql: GraphTransactionSql, input: {
+export async function markWorkflowControlCommandLocked(sql: SqlTransaction, input: {
   runId: string; commandId: string; state: 'submitting' | 'accepted' | 'completed' | 'failed' | 'unknown'
   nativeTurnId?: string; errorCode?: string; now: string
 }): Promise<void> {

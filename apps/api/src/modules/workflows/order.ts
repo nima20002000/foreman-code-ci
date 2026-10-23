@@ -5,9 +5,9 @@ import {
 import type pg from 'pg'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { authorizationPrincipal, requireAuthorization } from '../access/policy.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
-import { lockActiveWorkspace } from '../workspaces/admission.js'
+import { lockActiveWorkspace } from '../workspaces/index.js'
 
 function requireReorderAccess(principal: ManagementPrincipal, input: WorkflowReorderInput): void {
   const snapshot = authorizationPrincipal(principal)

@@ -1,5 +1,6 @@
 import type { HarnessOptions } from '@foreman-code/contracts/management'
 import { RETIRED_OPENCODE_MESSAGE, unavailableSessionControls, type HarnessConfiguration, type SessionControlCapabilities } from '@foreman-code/contracts'
+import { harnessCapabilityDescriptors } from './capabilities.js'
 import { harnessSignInRequired } from './qualificationErrors.js'
 
 /** Preferences for a not-yet-created native session are desired, never applied. */
@@ -26,7 +27,7 @@ export function pendingSessionControls(configuration: HarnessConfiguration,
     'Native settings will be checked when the first session is admitted.')
   return { ...controls, model: configuration.model,
     modelCapacity: models.find(model => model.id === configuration.model)?.contextWindow ?? null,
-    compact: { supported: true, reason: 'There is no native context to compact until the first message.' },
+    compact: { supported: harnessCapabilityDescriptors(configuration.harness).compact === 'native', reason: 'There is no native context to compact until the first message.' },
     plan: { supported: true, reason: 'Plan applies to the first native message; no model turn is created by this selection.' },
     autoCompact: { supported: configuration.harness === 'claude', reason: configuration.harness === 'claude'
       ? 'Applies when the owned SDK query starts.' : 'This harness has no automatic-compaction toggle.' },

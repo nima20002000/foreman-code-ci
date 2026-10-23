@@ -2,13 +2,14 @@ import { isDeepStrictEqual as same } from 'node:util'
 import { ArtifactAttemptSchema } from '@foreman-code/contracts/artifact-edges'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { VerifiedTransferReceiptSchema } from '@foreman-code/contracts/byte-transfer'
-import { SavedRunVersionSnapshotSchema, canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { SavedRunVersionSnapshotSchema, canonicalGraphJson } from '@foreman-code/contracts/current'
 import { workflowArtifactDigestsByOutputKey } from '@foreman-code/contracts/workflow-artifact-result'
 import { remoteWorkflowPhysicalOutput, type RemoteWorkflowPhysicalReadout } from '@foreman-code/contracts/remote-workflow-physical'
 import { workflowArtifactTransferManifestDigest } from '@foreman-code/contracts/workflow-artifact-transfer-node'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import { assertGraphTransaction, poisonGraphTransaction, type GraphTransactionSql } from '../../run-graph/connection.js'
-import { transferContextForBinding } from '../../byte-transfer/carrier.js'
+import { assertGraphTransaction, poisonGraphTransaction } from '../../run-graph/connection.js'
+import type { SqlTransaction } from '../../../infrastructure/transaction.js'
+import { transferContextForBinding } from '../../byte-transfer/index.js'
 import type { PostgresFileRepository } from '../../files/postgres.js'
 import type { DistributedPublicationLink } from '../../files/distributed/publicationLedger.js'
 import { digest } from '../../files/tools/context.js'
@@ -21,8 +22,8 @@ import { workflowArtifactResult } from '../workflowCoordinationResult.js'
 import { sha256Hex } from '../../../shared/hash.js'
 
 export interface WorkflowPhysicalArtifactsPort {
-  assertPublications(sql: GraphTransactionSql, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>): Promise<void>
-  assertAdopted(sql: GraphTransactionSql, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>): Promise<void>
+  assertPublications(sql: SqlTransaction, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>): Promise<void>
+  assertAdopted(sql: SqlTransaction, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>): Promise<void>
 }
 interface Ports {
   authority: Pick<PostgresArtifactPublicationAuthority,
@@ -36,13 +37,13 @@ const hash = (text: string) => sha256Hex(text)
  * remains outside G1 in W09 adoption; echoed worker pins are never an input here. */
 export class PostgresWorkflowPhysicalArtifacts implements WorkflowPhysicalArtifactsPort {
   constructor(private readonly mainId: string, private readonly ports: Ports) {}
-  async assertPublications(sql: GraphTransactionSql, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>) {
+  async assertPublications(sql: SqlTransaction, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>) {
     await this.verify(sql, readout, binding, false)
   }
-  async assertAdopted(sql: GraphTransactionSql, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>) {
+  async assertAdopted(sql: SqlTransaction, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>) {
     await this.verify(sql, readout, binding, true)
   }
-  private async verify(sql: GraphTransactionSql, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>, adopted: boolean) {
+  private async verify(sql: SqlTransaction, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>, adopted: boolean) {
     assertGraphTransaction(sql)
     try {
       const { receipt, output } = readout, intent = receipt.intent

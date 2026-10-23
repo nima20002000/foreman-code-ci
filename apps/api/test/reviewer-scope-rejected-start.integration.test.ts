@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { describe, expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
-import { ExecutableWorkflowV3Schema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { ExecutableWorkflowCurrentSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { reviewerScopeFixture, unsupportedReviewerScopes } from './helpers/reviewerScope.testSupport.js'
 import { transports } from './helpers/saveAdmission.testSupport.js'
@@ -15,8 +15,8 @@ for (const transport of transports) describe.skipIf(!postgresEnabled)(`ENG07 rev
     const f = await currentOperatorIntegration({ approvalNodeIds: [] })
     try {
       const historical = reviewerScopeFixture(kind)
-      const shape = z.object({ version: WorkflowVersionV3Schema, configurations: z.array(AgentConfigurationVersionSchema) }).strict()
-      const safeParse = ExecutableWorkflowV3Schema.safeParse.bind(ExecutableWorkflowV3Schema)
+      const shape = z.object({ version: WorkflowVersionCurrentSchema, configurations: z.array(AgentConfigurationVersionSchema) }).strict()
+      const safeParse = ExecutableWorkflowCurrentSchema.safeParse.bind(ExecutableWorkflowCurrentSchema)
       let legacyParses = 0
       // Setup ONLY: emulate the old validator's single omission while retaining
       // every other executable check and the REAL typed Save/publication writer.
@@ -31,14 +31,14 @@ for (const transport of transports) describe.skipIf(!postgresEnabled)(`ENG07 rev
         legacyParses++
         return value
       }
-      const oldValidator = vi.spyOn(ExecutableWorkflowV3Schema, 'parse').mockImplementation(legacyValue)
-      const oldSafeValidator = vi.spyOn(ExecutableWorkflowV3Schema, 'safeParse').mockImplementation((raw) => ({
+      const oldValidator = vi.spyOn(ExecutableWorkflowCurrentSchema, 'parse').mockImplementation(legacyValue)
+      const oldSafeValidator = vi.spyOn(ExecutableWorkflowCurrentSchema, 'safeParse').mockImplementation((raw) => ({
         success: true, data: legacyValue(raw),
       }))
-      try { await seedAgent3(f.db.pool, f.db.directory, historical, { run: false }) }
+      try { await seedWorkflowFixture(f.db.pool, f.db.directory, historical, { run: false }) }
       finally { oldSafeValidator.mockRestore(); oldValidator.mockRestore() }
       expect(legacyParses).toBeGreaterThan(0)
-      expect(ExecutableWorkflowV3Schema.safeParse({ version: historical.version, configurations: historical.configurations }).success).toBe(false)
+      expect(ExecutableWorkflowCurrentSchema.safeParse({ version: historical.version, configurations: historical.configurations }).success).toBe(false)
       const row = (await f.db.pool.query('select revision::text from workflows where id=$1', [historical.scope.workflowId])).rows[0]!
       const input = { workspaceId: historical.scope.workspaceId, workflowId: historical.scope.workflowId,
         workflowVersionId: historical.version.id, executionSemanticsVersion: 3, commandId: randomUUID(),

@@ -1,12 +1,12 @@
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../../../infrastructure/transaction.js'
+import { rollbackAfterFailure, withTransaction } from '../../../infrastructure/transaction.js'
 import { isDeepStrictEqual as same } from 'node:util'
 import type pg from 'pg'
 import { z } from 'zod'
 import { ArtifactAttemptSchema, ArtifactEdgeBindingSchema, type ArtifactAttempt } from '@foreman-code/contracts/artifact-edges'
 import { VerifiedTransferReceiptSchema } from '@foreman-code/contracts/byte-transfer'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { cancelBackendQuery } from '../../../infrastructure/pool.js'
-import { componentLogger } from '../../diagnostics/logger.js'
+import { componentLogger } from '../../diagnostics/index.js'
 import type { DistributedPublicationLink } from '../../files/distributed/publicationLedger.js'
 import type { FileQuery } from '../../files/repository.js'
 import { fileScopeIdentity } from '../../files/requests.js'
@@ -111,37 +111,44 @@ export class PostgresNativeArtifactOutputRepository implements NativeArtifactOut
       }
       processId = (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
       signal?.throwIfAborted()
-      await beginTransaction(client)
-      await client.query("set local lock_timeout='5s'; set local statement_timeout='10s'")
-      await authorize(client)
-      await assertNativeArtifactOutputLive(client, this.mainId, record)
-      signal?.throwIfAborted()
-      const inserted = await client.query(`insert into management_command_receipts(principal_id,operation,command_id,target_key,input_hash,result)
-        values ($1,$2,$3,$4,$5,$6::jsonb) on conflict do nothing`, [record.publication.ownerPrincipalId, operation, commandId, target, inputHash, serialized])
-      const stored = await client.query<{ principal_id: string; input_hash: string; result: unknown }>(`select principal_id,input_hash,result from management_command_receipts
-        where operation=$1 and target_key=$2`, [operation, target])
-      const original = stored.rows[0]
-      if (stored.rowCount !== 1 || !original || original.principal_id !== record.publication.ownerPrincipalId
-        || original.input_hash !== inputHash || !same(WorkflowNativeArtifactOutputSchema.parse(original.result), record)) conflict()
-      // Revalidate after all canonical/receipt row waits, including an idempotent readback.
-      await authorize(client)
-      await assertNativeArtifactOutputLive(client, this.mainId, record)
-      if (inserted.rowCount === 1) await client.query(`insert into management_audit(principal_id,source,action,target_key,outcome,details)
-        values($1,$2,$3,$4,'succeeded',$5::jsonb)`,
-      [record.publication.ownerPrincipalId, 'transferReceipt' in record ? 'device' : 'mcp', operation, target,
-        JSON.stringify({ commandId: record.commandId })])
-      await commitTransaction(client)
-      return structuredClone(record)
-    } catch (error) {
-      signal?.throwIfAborted()
-      try { await rollbackTransaction(client) }
-      catch (rollbackError) {
-        signal?.throwIfAborted()
-        throw new AggregateError([error, rollbackError], 'Artifact binding and rollback both failed.', {
-          cause: rollbackError,
+      let rollbackFailure: Error | undefined
+      try {
+        return await withTransaction({ client }, async () => {
+          await client.query("set local lock_timeout='5s'; set local statement_timeout='10s'")
+          await authorize(client)
+          await assertNativeArtifactOutputLive(client, this.mainId, record)
+          signal?.throwIfAborted()
+          const inserted = await client.query(`insert into management_command_receipts(principal_id,operation,command_id,target_key,input_hash,result)
+            values ($1,$2,$3,$4,$5,$6::jsonb) on conflict do nothing`, [record.publication.ownerPrincipalId, operation, commandId, target, inputHash, serialized])
+          const stored = await client.query<{ principal_id: string; input_hash: string; result: unknown }>(`select principal_id,input_hash,result from management_command_receipts
+            where operation=$1 and target_key=$2`, [operation, target])
+          const original = stored.rows[0]
+          if (stored.rowCount !== 1 || !original || original.principal_id !== record.publication.ownerPrincipalId
+            || original.input_hash !== inputHash || !same(WorkflowNativeArtifactOutputSchema.parse(original.result), record)) conflict()
+          // Revalidate after all canonical/receipt row waits, including an idempotent readback.
+          await authorize(client)
+          await assertNativeArtifactOutputLive(client, this.mainId, record)
+          if (inserted.rowCount === 1) await client.query(`insert into management_audit(principal_id,source,action,target_key,outcome,details)
+            values($1,$2,$3,$4,'succeeded',$5::jsonb)`,
+          [record.publication.ownerPrincipalId, 'transferReceipt' in record ? 'device' : 'mcp', operation, target,
+            JSON.stringify({ commandId: record.commandId })])
+          return structuredClone(record)
+        }, {
+          rollback: async (connection) => {
+            signal?.throwIfAborted()
+            rollbackFailure = await rollbackAfterFailure(connection)
+            if (rollbackFailure) signal?.throwIfAborted()
+            return rollbackFailure
+          },
         })
+      } catch (error) {
+        if (rollbackFailure) {
+          throw new AggregateError([error, rollbackFailure], 'Artifact binding and rollback both failed.', {
+            cause: rollbackFailure,
+          })
+        }
+        throw error
       }
-      throw error
     } finally {
       signal?.removeEventListener('abort', abort)
       if (cancellation) await cancellation

@@ -1,23 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useIsMutating, useQuery } from '@tanstack/react-query'
-import { WorkflowDefinitionV3Schema } from '@foreman-code/contracts/wave25'
+import { WorkflowDefinitionCurrentSchema } from '@foreman-code/contracts/current'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
-import { boardDraftContextKey } from '../workflow-board/keys'
+import { boardDraftContextKey, nextDraftKey, useBoardSelection } from '../board-core'
 import { NextDraftEditor } from './nextDraft/NextDraftEditor'
 import { nextDraftApi } from './nextDraft/transport'
-import { nextDraftKey } from './nextDraft/state'
 import { useGraphDraftStore } from './store'
 import { editIntentCommandKey } from './nextDraft/useGraphEditIntent'
-import type { BoardUpdateFailure } from '../workflow-board/BoardAlerts'
-import { useBoardSelection } from '../workflow-board/context'
-import { BoardLoading } from '../workflow-board/BoardLoading'
+import { type BoardUpdateFailure, BoardLoading } from '../workflow-board'
 
 /** Persisted execution tags are explicit. No default, conversion, complexity
  * selector or fallback can open an executable editor for a retired record. */
 export function PersistedWorkflowBoundary({ workspaceId, workflowId, workflow, updateFailures }: {
   workspaceId: string; workflowId: string; workflow: unknown; updateFailures?: readonly BoardUpdateFailure[]
 }) {
-  const parsed = WorkflowDefinitionV3Schema.safeParse(workflow)
+  const parsed = WorkflowDefinitionCurrentSchema.safeParse(workflow)
   if (!parsed.success || parsed.data.workspaceId !== workspaceId || parsed.data.id !== workflowId) {
     return <section role="alert" className="workflow-graph-state workflow-graph-state-error">
       <h2>Authoring unavailable</h2><p>The saved workflow is unavailable or has a retired or unsupported execution tag. No executable editor or Start was dispatched.</p>

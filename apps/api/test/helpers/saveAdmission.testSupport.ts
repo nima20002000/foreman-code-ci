@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { expect, vi } from 'vitest'
 import type { HarnessExecution } from '@foreman-code/contracts'
 import { CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, CurrentWorkflowSaveInputSchema,
-  CurrentWorkflowSaveResultSchema, type CurrentWorkflowSaveInput } from '@foreman-code/contracts/wave25'
+  CurrentWorkflowSaveResultSchema, type CurrentWorkflowSaveInput } from '@foreman-code/contracts/current'
 import { withTransaction } from '../../src/infrastructure/transaction.js'
 import type { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { graphHeaders, graphRpcValue } from '../graph-composition-fixture.js'

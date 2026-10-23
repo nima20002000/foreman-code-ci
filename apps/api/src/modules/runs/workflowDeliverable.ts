@@ -1,9 +1,11 @@
 import { workflowResultContext } from './resultContext.js'
 import type { ExecutionResult, HarnessExecution, ResultProtocol } from '@foreman-code/contracts'
-import { canonicalGraphJson, type OutputReferenceKind, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, type OutputReferenceKind, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { deliverableFailure, deliverableVerdict, type DeliverableContract } from '../interactions/deliverable.js'
-import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import { assertGraphTransaction } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { repeatTickIndex } from './repeatResolution.js'
+import { ciTicketIdsRequestedByExecution } from '../ci/reads.js'
 
 interface Queryable {
   readonly transaction?: true
@@ -21,18 +23,13 @@ export async function referencesCreatedByExecution(db: Queryable, kind: OutputRe
   const ids = values === undefined ? null
     : [...new Set(values.filter(value => UUID.test(value)).map(value => value.toLowerCase()))]
   if (ids?.length === 0) return new Set()
-  const result = await db.query(`select id from ci_runs
-    where ($1::uuid[] is null or id=any($1::uuid[]))
-      and workspace_id=$2 and (record#>>'{initiator,executionId}'=$3 or group_id in (select q.group_id
-        from ci_group_requesters q where q.workspace_id=$2 and q.execution_id=$3))`,
-  [ids, workspaceId, executionId])
-  const existing = new Set(result.rows.map(row => row.id))
+  const existing = await ciTicketIdsRequestedByExecution(db, ids, workspaceId, executionId)
   if (values === undefined) return existing
   return new Set(values.filter(value => existing.has(value.toLowerCase())))
 }
 
 /** The deliverable contract of one workflow Agent activation; none for interval checks or Job nodes. */
-export function workflowDeliverableContract(version: WorkflowVersionV3, execution: HarnessExecution,
+export function workflowDeliverableContract(version: WorkflowVersionCurrent, execution: HarnessExecution,
   referencesExist: DeliverableContract['referencesExist'], resultProtocol?: ResultProtocol): DeliverableContract | undefined {
   const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
   if (!node || node.kind === 'job') return undefined
@@ -46,7 +43,7 @@ export function workflowDeliverableContract(version: WorkflowVersionV3, executio
 }
 
 /** Validate a terminal deliverable once per transaction, shared by normalization and native verification. */
-export function workflowDeliverableFailure(db: Queryable, version: WorkflowVersionV3,
+export function workflowDeliverableFailure(db: Queryable, version: WorkflowVersionCurrent,
   execution: HarnessExecution, resultProtocol?: ResultProtocol): Promise<ExecutionResult | undefined> {
   if (execution.state !== 'completed' || execution.result?.outcome !== 'succeeded') return Promise.resolve(undefined)
   const read = async () => {
@@ -56,7 +53,7 @@ export function workflowDeliverableFailure(db: Queryable, version: WorkflowVersi
     return verdict ? deliverableFailure(verdict) : undefined
   }
   if (!db.transaction) return read()
-  assertGraphTransaction(db as GraphTransactionSql)
+  assertGraphTransaction(db as SqlTransaction)
   let verdicts = terminalVerdicts.get(db)
   if (!verdicts) {
     verdicts = new Map()

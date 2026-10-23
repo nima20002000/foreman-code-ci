@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type pg from 'pg'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { requireReviewerCredential } from './reviewerCredential.js'
 
 const scope = { agentId: 'reviewer', workspaceId: 'workspace', workflowId: 'workflow', runId: 'run' }
@@ -11,7 +11,7 @@ function fixture() {
     grants: [{ actions: ['interactions:read', 'interactions:respond'],
       scope: { workspaceIds: [scope.workspaceId], workflowIds: [scope.workflowId], runIds: [scope.runId] } }],
   }
-  const sql = { query: async () => ({ rows: [row], rowCount: 1 }) } as unknown as GraphSqlClient
+  const sql = { query: async () => ({ rows: [row], rowCount: 1 }) } as unknown as SqlQuery
   return { row, sql }
 }
 

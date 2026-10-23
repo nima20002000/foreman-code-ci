@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect } from 'vitest'
-import { CurrentWorkflowSaveInputSchema } from '@foreman-code/contracts/wave25'
-import { seedAgent3 } from './workflowDatabase.js'
+import { CurrentWorkflowSaveInputSchema } from '@foreman-code/contracts/current'
+import { seedWorkflowFixture } from './workflowDatabase.js'
 import { reviewerScopeFixture, type ReviewerScopeCase } from './reviewerScope.testSupport.js'
 import { rpc, type SaveFixture, type Transport } from './saveAdmission.testSupport.js'
 import { graphHeaders, graphRpcValue } from '../graph-composition-fixture.js'
@@ -18,7 +18,7 @@ export async function candidate(f: SaveFixture, kind: ReviewerScopeCase) {
   const baseline = structuredClone(target)
   delete baseline.version.definition.repeat
   for (const node of baseline.version.definition.nodes) delete node.choice
-  await seedAgent3(f.db.pool, f.db.directory, baseline, { run: false })
+  await seedWorkflowFixture(f.db.pool, f.db.directory, baseline, { run: false })
   const row = (await f.db.pool.query('select revision::text from workflows where id=$1', [baseline.scope.workflowId])).rows[0]!
   return { target, baseline, input: CurrentWorkflowSaveInputSchema.parse({
     workspaceId: baseline.scope.workspaceId, workflowId: baseline.scope.workflowId,

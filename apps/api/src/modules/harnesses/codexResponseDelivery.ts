@@ -1,4 +1,4 @@
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import type { ApprovalResponseOption, PendingNativeInteraction } from '@foreman-code/contracts'
 import { responseValueDigest, type NativeResponseDeliveryEvidence } from '../interactions/delivery.js'
 import type { NativeHistory } from './port.js'

@@ -7,7 +7,7 @@ import pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { AgentSchema, AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import * as c from '@foreman-code/contracts/management'
-import { canonicalGraphJson, makeCurrentWorkflowFixture, WorkflowRunV3Schema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, makeCurrentWorkflowFixture, WorkflowRunCurrentSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
@@ -77,11 +77,11 @@ it('batch archives workspaces through authenticated MCP with atomic conflicts, a
         values($1,$2,$3,1,$4::jsonb)`, [configuration.id, first.workspace.id, agent.id, JSON.stringify(configuration)])
     }
     const definition = { ...fixture.version.definition, id: workflow.id, workspaceId: first.workspace.id }
-    const version = WorkflowVersionV3Schema.parse({ ...fixture.version, id: 'version-active',
+    const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, id: 'version-active',
       workspaceId: first.workspace.id, workflowId: workflow.id,
       definition, contentHash: hash({ definition, configurations: fixture.version.agentConfigurationVersionIds,
         entryNodeId: fixture.version.entryNodeId }) })
-    const run = WorkflowRunV3Schema.parse({ ...fixture.run, id: 'run-active', workspaceId: first.workspace.id,
+    const run = WorkflowRunCurrentSchema.parse({ ...fixture.run, id: 'run-active', workspaceId: first.workspace.id,
       workflowId: workflow.id, workflowVersionId: version.id, agentConfigurationVersionIds: version.agentConfigurationVersionIds,
       executionState: 'running' })
     await pool.query(`insert into workflow_versions(id,workspace_id,workflow_id,version,entry_node_id,record,execution_semantics_version)
@@ -94,7 +94,7 @@ it('batch archives workspaces through authenticated MCP with atomic conflicts, a
     expect(active.isError).toBe(true)
     expect(JSON.stringify(active)).toContain('ARCHIVE_BLOCKED_BY_ACTIVE_RUN')
     expect((await pool.query('select count(*) from workspaces where archived_at is not null')).rows[0].count).toBe('0')
-    const completed = WorkflowRunV3Schema.parse({ ...run, executionState: 'completed', outcome: 'canceled',
+    const completed = WorkflowRunCurrentSchema.parse({ ...run, executionState: 'completed', outcome: 'canceled',
       result: { outcome: 'canceled' }, finishedAt: new Date().toISOString() })
     await pool.query("update runs set execution_state='completed',record=$2::jsonb where id=$1", [run.id, JSON.stringify(completed)])
     const result = c.WorkspaceBatchArchiveResultSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'workspace_batch_archive', arguments: input }))))

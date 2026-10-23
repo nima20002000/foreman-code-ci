@@ -6,9 +6,9 @@ import { afterAll, afterEach, beforeAll, describe, it, vi } from 'vitest'
 import { FilePageSchema } from '@foreman-code/contracts/files'
 import { postgresEnabled } from './helpers/database.js'
 import {
-  allocate, base, contentUrl, fil14Database, finalize, headers, markdown, owner, reread, upload,
-  type Fil14Database, type Runtime,
-} from './helpers/fil14Lifecycle.js'
+  allocate, base, contentUrl, fileLifecycleDatabase, finalize, headers, markdown, owner, reread, upload,
+  type FileLifecycleDatabase, type Runtime,
+} from './helpers/fileLifecycleFixtures.js'
 
 // Fail only the selected syscall for THIS test's managed allocation. Every other open,
 // write, link, fsync, unlink and database operation is real. Do not fill a real disk or
@@ -48,8 +48,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 })
 
 describe.skipIf(!postgresEnabled)('FIL-14 real storage with narrowly injected disk/publication failures', () => {
-  let database: Fil14Database, runtime: Runtime
-  beforeAll(async () => { database = await fil14Database(); runtime = await database.open() }, 60_000)
+  let database: FileLifecycleDatabase, runtime: Runtime
+  beforeAll(async () => { database = await fileLifecycleDatabase(); runtime = await database.open() }, 60_000)
   afterEach(() => { fault.kind = null; vi.restoreAllMocks() })
   afterAll(async () => { fault.kind = null; await database?.close() })
 

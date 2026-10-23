@@ -1,6 +1,6 @@
 import type { AgentConfigurationVersion } from '@foreman-code/contracts'
 import type { AcceptedNodePlacement, SavedNodePlacement } from '@foreman-code/contracts/node-placement'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import type { PlacementCommitFence } from './admission.js'
 
 /** Node identity and the complete frozen placement are checked for every node.

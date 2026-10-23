@@ -1,5 +1,5 @@
 import { isTransientDatabaseOrSocketError } from '@foreman-code/contracts/failure'
-import { componentLogger } from '../../diagnostics/logger.js'
+import { componentLogger } from '../../diagnostics/index.js'
 import { randomUUID } from 'node:crypto'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { DeviceApplicationResult } from '@foreman-code/contracts/device-application'

@@ -2,9 +2,9 @@ import type { ContextSnapshot, SessionMode, SessionPreferences, WorkflowSessionC
 import { readNativeExecutionBinding } from '../../placement/executionBinding.js'
 import { isDeepStrictEqual } from 'node:util'
 import { HarnessExecutionRequestSchema, AgentConfigurationVersionSchema, ApprovalResponseOptionSchema,
-  RETIRED_OPENCODE_MESSAGE, withInteractionResponse, type NativeSessionReference, type HarnessExecutionRequest,
+  withInteractionResponse, type NativeSessionReference, type HarnessExecutionRequest,
   type RecordedAgentHarness, type AgentHarness } from '@foreman-code/contracts'
-import { canonicalGraphJson, OutputSchemaSchema } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, OutputSchemaSchema } from '@foreman-code/contracts/current'
 import { DispatchIntentSchema, type AcceptedNodePlacement, type DispatchIntent, type NativeExecutionPlacement } from '@foreman-code/contracts/node-placement'
 import { RemoteOwnerControlSchema, RemoteReviewerAssignmentSchema, remoteActiveNative, type RemoteReviewerRequest,
   type RemoteNativeIdentity, type RemoteTerminalEvidence, type RemoteOperationReceipt, type RemoteOwnerControl,
@@ -18,14 +18,15 @@ import { readPlacement } from '../../placement/binding.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
 import { HistoryObservationPages } from './historyObservationPages.js'
 import { startNativeHistoryDownload } from './nativeHistoryPage.js'
-import { DomainError } from '../../errors.js'
-import { logIgnoredError } from '../../diagnostics/ignoredError.js'
+import { logIgnoredError } from '../../diagnostics/index.js'
 import { inspectNativeResponse } from '../../harnesses/responseAvailability.js'
+import { supportsExpectedTurnSteer } from '../../harnesses/capabilities.js'
 import { sha256CanonicalJsonHex, sha256Hex } from '../../../shared/hash.js'
+import { retiredHarnessError } from '../../harnesses/retiredHarness.js'
 
 function executableHarness(harness: RecordedAgentHarness): AgentHarness {
   if (harness === 'opencode') {
-    throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+    throw retiredHarnessError()
   }
   return harness
 }
@@ -770,7 +771,7 @@ export class RemoteExecutionHost {
     try {
       if (command.action.kind === 'stop') await this.cancelResident(resident, remoteActiveNative(recorded.receipt)?.turnId)
       else if (command.action.kind === 'steer') {
-        if (!resident.manager.steerTurn || resident.session.harness !== 'codex'
+        if (!resident.manager.steerTurn || !supportsExpectedTurnSteer(resident.session)
           || !command.native?.turnId || !command.workflowControl) throw new Error('Qualified Worker steering is unavailable')
         const accepted = await resident.manager.steerTurn(resident.session, { prompt: command.action.prompt,
           expectedTurnId: command.native.turnId, clientCorrelationId: command.commandId,

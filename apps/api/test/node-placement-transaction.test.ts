@@ -20,15 +20,13 @@ function database() {
   let committed: unknown[] = [], staged: unknown[] = []
   const events: string[] = []
   const raw = { query: async (text: string, values: unknown[] = []) => {
-    events.push(text.split(' ')[0]!)
+    events.push(values.length === 4 ? 'placement write' : text.split(' ')[0]!)
     if (text.startsWith('begin')) staged = [...committed]
     if (text === 'commit') committed = [...staged]
     if (text === 'rollback') staged = [...committed]
-    if (text.startsWith('insert into run_node_placements')) {
-      const records = Array.isArray(values[3]) ? values[3] as string[] : [values[3] as string]
-      staged.push(...records.map(record => JSON.parse(record)))
-    }
-    if (text.startsWith('select record from run_node_placements')) return { rows: staged.map((record) => ({ record })), rowCount: staged.length }
+    // The placement write binds the run id and three parallel arrays; the readback binds only the run id.
+    if (values.length === 4) staged.push(...(values[3] as string[]).map(record => JSON.parse(record)))
+    if (values.length === 1 && values[0] === 'run-1') return { rows: staged.map((record) => ({ record })), rowCount: staged.length }
     return { rows: [], rowCount: 0 }
   } } as unknown as pg.ClientBase
   return { connection: new ExclusiveGraphConnection(raw, () => undefined), events, committed: () => committed }
@@ -58,7 +56,7 @@ describe('same-transaction accepted placement evidence', () => {
     await expect(db.connection.transaction((sql) => insertAcceptedPlacements(sql, 'run-1', [{ id: 'node-1', agentId: 'agent-1' }],
       { 'agent-1': 'changed' }, [placement()], { assertCurrent: async () => undefined }))).rejects.toThrow('conflicts')
     expect(db.committed()).toEqual([])
-    expect(db.events).not.toContain('insert')
+    expect(db.events).not.toContain('placement write')
     await db.connection.close()
   })
 })

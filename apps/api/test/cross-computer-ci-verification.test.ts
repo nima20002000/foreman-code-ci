@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 import { CiGetOutputSchema, CiListOutputSchema, CiRunRecordSchema } from '@foreman-code/contracts'
-import { RunActivitiesPageSchema } from '@foreman-code/contracts/wave25'
+import { RunActivitiesPageSchema } from '@foreman-code/contracts/current'
 import * as verifier from './helpers/crossComputerCiVerification.js'
 
 function fixture(): Parameters<typeof verifier.verifyScenario>[0] {

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type pg from 'pg'
-import { AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { sourceOperationSelectionHash } from '../src/modules/sources/operationDigests.js'
 import { SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -12,12 +12,12 @@ import { PostgresSourceOperationAuthority } from '../src/modules/sources/operati
 import { RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
 import { createTestPool } from './helpers/testPool.mjs'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 // Readers of committed Run facts must answer while the Run owner holds its row locks.
 describe.skipIf(!postgresEnabled)('Run readers that do not queue behind the Run owner', () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
   let pool: pg.Pool
   const schema = `run_readers_${randomUUID().replaceAll('-', '')}`
   const mainId = randomUUID()
@@ -53,14 +53,14 @@ describe.skipIf(!postgresEnabled)('Run readers that do not queue behind the Run 
     keyRevision: null, authorizationRevision: null }
   attempt.placementHash = sourceOperationSelectionHash(root, attempt, intent.operationId)
 
-  const run = AcceptedWorkflowRunV3Schema.parse({ ...makeCurrentWorkflowFixture('source-reader', 'single').run,
+  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...makeCurrentWorkflowFixture('source-reader', 'single').run,
     id: intent.runId, workspaceId: 'workspace', workflowId: 'workflow', workflowVersionId: 'version',
     agentConfigurationVersionIds: { agent: 'configuration' }, authorizationPrincipalId: 'operator',
     executionLocation: { runnerId: 'runner-local', rootPath: '/private/project', locationRevision: 1,
       identityHash: `sha256:${'a'.repeat(64)}` } })
 
   beforeAll(async () => {
-    database = await agent3Database()
+    database = await migratedDatabase()
     await createFixtureSchema(database.pool, schema)
     const tables = [
       'runs(id text primary key,workspace_id text,workflow_version_id text,record jsonb,stop_requested_at timestamptz)',

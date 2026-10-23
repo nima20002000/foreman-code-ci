@@ -10,16 +10,16 @@ import { RunHandoffReadService } from '../src/modules/runs/handoffRead.js'
 import { RunManagementService } from '../src/modules/runs/management.js'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema,
   CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema,
-  RunActivitiesPageSchema, RunHandoffsReadSchema } from '@foreman-code/contracts/wave25'
+  RunActivitiesPageSchema, RunHandoffsReadSchema } from '@foreman-code/contracts/current'
 import { changeRunState, graphCatalogNames, graphFixture, graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { writerFixture } from './writer-fixtures.js'
 import type { currentDatabase } from './helpers/database.js'
-import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { withTaskDatabase } from './helpers/taskDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('NIM-2691 bounded Activities and handoff reads', () => {
   it('pins Run counters and paginates same-time facts across live overlap without disclosing source payloads', async () => {
-    await nim2691TaskDatabase(async (pool, directory) => {
+    await withTaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       const db = { pool, directory, schema: 'public', close: async () => undefined } as Awaited<ReturnType<typeof currentDatabase>>
       const t = await graphFixture(db, { form: 'sequential', handoffs: true, qualifiedReads: true })
@@ -148,7 +148,7 @@ describe.skipIf(!postgresEnabled)('NIM-2691 bounded Activities and handoff reads
   }, 120000)
 
   it('serves the same scoped reads over authenticated HTTP and Operator MCP, including denied and revoked callers', async () => {
-    await nim2691TaskDatabase(async (pool, directory) => {
+    await withTaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       const db = { pool, directory, schema: 'public', close: async () => undefined } as Awaited<ReturnType<typeof currentDatabase>>
       const t = await graphFixture(db, { form: 'sequential', handoffs: true, qualifiedReads: true })
@@ -228,7 +228,7 @@ describe.skipIf(!postgresEnabled)('NIM-2691 bounded Activities and handoff reads
   }, 120000)
 
   it('saves a configured connection limit through Operator MCP and reads the immutable version through HTTP', async () => {
-    await nim2691TaskDatabase(async (pool, directory) => {
+    await withTaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       const db = { pool, directory, schema: 'public', close: async () => undefined } as Awaited<ReturnType<typeof currentDatabase>>
       const t = await writerFixture(db)
@@ -262,7 +262,7 @@ describe.skipIf(!postgresEnabled)('NIM-2691 bounded Activities and handoff reads
   }, 120000)
 
   it('does not reinterpret an unmarked saved Run as having unlimited handoffs', async () => {
-    await nim2691TaskDatabase(async (pool, directory) => {
+    await withTaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       const db = { pool, directory, schema: 'public', close: async () => undefined } as Awaited<ReturnType<typeof currentDatabase>>
       const t = await graphFixture(db, { form: 'sequential', qualifiedReads: true })

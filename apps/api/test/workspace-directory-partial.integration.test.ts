@@ -9,7 +9,7 @@ import { HarnessDirectoryBrowser } from '../src/modules/harnesses/directoryBrows
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 
 vi.mock('node:fs/promises', async importOriginal => ({
   ...await importOriginal<typeof import('node:fs/promises')>(),
@@ -21,7 +21,7 @@ vi.mock('node:fs/promises', async importOriginal => ({
 }))
 
 it('returns partial large-directory listings over authenticated MCP with grant checks', async () => {
-  const database = await agent3Database()
+  const database = await migratedDatabase()
   const directory = await mkdtemp(`${process.env.FOREMAN_CODE_TEST_ROOT}/partial-directory-`)
   await mkdir(join(directory, 'child'))
   const access = new PostgresAccessService(database.pool)

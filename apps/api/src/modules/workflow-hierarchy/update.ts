@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { WorkflowHierarchyUpdateInputSchema } from '@foreman-code/contracts'
-import { CurrentWorkflowSavedSchema, sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { CurrentWorkflowSavedSchema, sameWorkflowValue } from '@foreman-code/contracts/current'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import type { WorkflowManagementService } from '../workflows/management.js'
 import { requireCurrentWorkflowAccess } from '../workflows/currentWorkflowPolicy.js'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
 import { readSavedWorkflowDefinition, readImmutableWorkflowVersion, IMMUTABLE_WORKFLOW_VERSION_COLUMNS,
   type ImmutableWorkflowVersionRow } from '../workflows/immutableRead.js'
-import { lockActiveWorkspace } from '../workspaces/admission.js'
+import { lockActiveWorkspace } from '../workspaces/index.js'
 import { DomainError } from '../errors.js'
 
 /** The existing publication authority owns validation, immutable versions and active-Run checks. */

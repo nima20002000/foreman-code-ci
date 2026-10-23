@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../../mocks/server'
-import { useRunsSelectorUi } from '../../runs-selector/uiStore'
+import { useRunsSelectorUi } from '../../runs-selector'
 import { activitiesRoute, activityPage, clients, installSelectedHandlers, mountSelectedActivities } from './sch10.testSupport'
 import { deferred } from '../../../test/deferred'
 

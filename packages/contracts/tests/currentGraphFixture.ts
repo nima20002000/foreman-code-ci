@@ -1,5 +1,5 @@
-import { makeCurrentWorkflowFixture, type CurrentFixtureForm } from '../src/wave25/currentFixture.js'
-import { RunGraphSnapshotSchema } from '../src/wave25/protocol.js'
+import { makeCurrentWorkflowFixture, type CurrentFixtureForm } from '../src/current/currentFixture.js'
+import { RunGraphSnapshotSchema } from '../src/current/protocol.js'
 
 /** Current semantics fixture for graph-wire assertions; no native or SQL claim. */
 export function makeCurrentGraphFixture(suffix = 'graph-wire', form: CurrentFixtureForm = 'sequential') {

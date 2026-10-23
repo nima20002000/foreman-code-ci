@@ -1,21 +1,20 @@
 import { randomUUID } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { SourceMaterializationRecordSchema, SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import { SourceOperationOwnerSchema, SourceReservationReclamationSchema,
   type SourceReservationReclamation } from '@foreman-code/contracts/source-operations'
-import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
-import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
+import { assertDeviceHostInstallation } from '../devices/index.js'
 import { admissionClosed, loadSourcePreparation, validateSourcePreparationClosure } from './preparationReconciliation.js'
 import type { SourceReclamationResult } from './reclaimSourceReservation.js'
 import { PostgresSourceReservations, type SourceReservation } from './reservations.js'
 import { withSourceOperationExclusion } from './sourceOperationExclusion.js'
 import { localWorkflowSourceClosed } from './workflowCleanup.js'
 import { oldestRetainedMaterialization } from './retainedMaterializations.js'
-import { componentLogger } from '../diagnostics/logger.js'
+import { componentLogger } from '../diagnostics/index.js'
 
-async function hasActiveAdmission(sql: GraphSqlClient, operationId: string): Promise<boolean> {
+async function hasActiveAdmission(sql: SqlQuery, operationId: string): Promise<boolean> {
   const active = await sql.query(`select 1 from job_executions e where e.operation_id=$1
       and (e.record#>>'{process,phase}' is distinct from 'terminal'
         or e.record#>>'{process,processStopped}' is distinct from 'true'
@@ -25,7 +24,7 @@ async function hasActiveAdmission(sql: GraphSqlClient, operationId: string): Pro
   return Boolean(active.rowCount)
 }
 
-async function admissionRemainsClosed(sql: GraphSqlClient, operationId: string): Promise<boolean> {
+async function admissionRemainsClosed(sql: SqlQuery, operationId: string): Promise<boolean> {
   if (await hasActiveAdmission(sql, operationId)) return false
   // The fence already checked ownership. Cleanup callbacks may run while the Run owner waits for them.
   const activeRuns = await sql.query(`with preparations as (
@@ -37,7 +36,7 @@ async function admissionRemainsClosed(sql: GraphSqlClient, operationId: string):
   return activeRuns.rowCount === 0
 }
 
-async function admissionInactive(sql: GraphSqlClient, operationId: string): Promise<boolean> {
+async function admissionInactive(sql: SqlQuery, operationId: string): Promise<boolean> {
   if (await hasActiveAdmission(sql, operationId)) return false
   const reconciliation = (await sql.query<{ owner: unknown; principal_id: string; command_id: string;
     queue_ticket_id: string | null }>(`select owner,principal_id,command_id,queue_ticket_id
@@ -131,7 +130,7 @@ export class MaterializationReservationCleanup {
     return withTransaction(this.pool, work)
   }
 
-  async authorize(sql: GraphSqlClient, reservationId: string, reclamationId: string) {
+  async authorize(sql: SqlQuery, reservationId: string, reclamationId: string) {
     const row = (await sql.query<{ record: SourceReservation }>(`select record from source_storage_reservations
       where reservation_id=$1 and owner_kind='materialization' and state<>'reclaimed' for share`, [reservationId])).rows[0]
     if (!row?.record.reclamation || row.record.reclamation.reclamationId !== reclamationId) {

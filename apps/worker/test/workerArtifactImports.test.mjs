@@ -58,7 +58,7 @@ test('Worker artifacts bundle new transitive API helpers without registering mod
       + "export { HostCiRunner } from '../../api/src/modules/ci/runner.ts';\n"
       + "export { configurationWithNodeSkills } from '../../api/src/modules/skills/nodeSkills.ts';\n"
       + "export { agentInstructionBundle } from '../../api/src/modules/skills/instructions.ts';\n"
-      + "export { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25';\n");
+      + "export { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current';\n");
   const result = f.build();
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr);

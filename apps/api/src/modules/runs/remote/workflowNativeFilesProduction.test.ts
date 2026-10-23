@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { TransferContext } from '@foreman-code/contracts/byte-transfer'
 import type { WorkflowNativeCapture } from '../../interactions/workflowNativeCapture.js'
-import type { GraphTransactionSql } from '../../run-graph/connection.js'
+import type { SqlTransaction } from '../../../infrastructure/transaction.js'
 import type { RepeatNativeEvidence } from '../repeatNativeRepository.js'
 import type { WorkflowNativeProofRecord } from '../workflowNativeProof.js'
 const calls = vi.hoisted(() => ({ admit: vi.fn(), construct: vi.fn() }))
@@ -20,7 +20,7 @@ function fixture() {
   const ports = { captures: { read: vi.fn(() => capture) }, assertPhysical: vi.fn(),
     authority: { authorize: vi.fn() }, transferContext: vi.fn(() => transfer as TransferContext | undefined) }
   const callback = createProductionWorkflowFileContexts('original-main', ports)
-  const sql = {} as GraphTransactionSql, evidence = {} as RepeatNativeEvidence, proof = {} as WorkflowNativeProofRecord
+  const sql = {} as SqlTransaction, evidence = {} as RepeatNativeEvidence, proof = {} as WorkflowNativeProofRecord
   return { capture, ports, transfer, callback, sql, evidence, proof }
 }
 it('passes the exact stored proof, open transaction and original transfer to admission', async () => {

@@ -18,7 +18,7 @@ import { ClaudeBoundedQueue } from '../src/modules/harnesses/claudeSdk/queue.js'
 import type { ClaudeNativeSessionManager } from '../src/modules/harnesses/claudeSdk/sessionManager.js'
 import type { ClaudeSdkClient, ClaudeSdkUserMessage } from '../src/modules/harnesses/claudeSdk/port.js'
 import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
-import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { withTaskDatabase } from './helpers/taskDatabase.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 /** Native transport frames are doubled; runner, normalizer, manager, callback authority, caller and PostgreSQL are real. */
@@ -73,7 +73,7 @@ function runtime(pool: pg.Pool, repository: PostgresOperatorConversationReposito
 it.each(['aborted', 'resident-write-loss', 'resident-stream-after-recovery', 'restart-without-proof', 'restart-with-stored-proof', 'restart-wrong-generation',
   'terminal-after-response', 'restart-after-terminal', 'concurrent-poll', 'concurrent-poll-write-loss'] as const)(
   'recovers %s Claude approval through authenticated MCP with no response or prompt replay', async scenario => {
-    await nim2691TaskDatabase(async (pool, directory) => {
+    await withTaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       const access = new PostgresAccessService(pool)
       const owner = await access.issue({ name: 'approval owner', audience: 'operator', expiresAt: new Date(Date.now() + 600_000),

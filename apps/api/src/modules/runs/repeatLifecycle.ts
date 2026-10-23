@@ -1,10 +1,11 @@
 import { readPublicProjectionLocked } from '../run-graph/compactSnapshot.js'
 import type pg from 'pg'
-import { AcceptedWorkflowRunV3Schema, RepeatGraphScopeV3Schema,
-  type AcceptedWorkflowRunV3, type GraphEffectAccessState } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, RepeatGraphScopeCurrentSchema,
+  type AcceptedWorkflowRunCurrent, type GraphEffectAccessState } from '@foreman-code/contracts/current'
 
 import { DomainError } from '../errors.js'
-import { beforeGraphCommit, withExclusiveGraphConnection, type GraphTransactionSql } from '../run-graph/connection.js'
+import { beforeGraphCommit, withExclusiveGraphConnection } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { currentRunGraphPublication, graphSourceDigest, openRunGraphPublication, readRepeatRunSourceLocked } from '../run-graph/publication.js'
 import { readPublicRunStateLocked } from '../run-graph/publicRunState.js'
 import { publicRunClosedFacts } from '../run-graph/publicProjection.js'
@@ -20,18 +21,18 @@ import { cancelHierarchyContinuationsLocked } from './hierarchyDirection.js'
 import { cancelWorkflowControlsLocked } from '../collaboration/workflowControlStore.js'
 import { isOpenRunState, writeRunStateLocked } from './runState.js'
 
-export function workflowRunScope(run: AcceptedWorkflowRunV3) {
-  return RepeatGraphScopeV3Schema.parse({ workspaceId: run.workspaceId, workflowId: run.workflowId,
+export function workflowRunScope(run: AcceptedWorkflowRunCurrent) {
+  return RepeatGraphScopeCurrentSchema.parse({ workspaceId: run.workspaceId, workflowId: run.workflowId,
     runId: run.id, workflowVersionId: run.workflowVersionId, executionSemanticsVersion: 3 })
 }
 
 /** Discovery is intentionally not FOR SHARE: openRunGraphPublication takes the
  * parent UPDATE lock before the head/children. Upgrading a prior shared parent
  * lock would deadlock two concurrent lifecycle writers. Never initialize a head. */
-export async function openWorkflowLifecycleLocked(sql: GraphTransactionSql, runId: string) {
+export async function openWorkflowLifecycleLocked(sql: SqlTransaction, runId: string) {
   const found = await sql.query<{ record: unknown }>('select record from runs where id=$1', [runId])
   if (found.rows.length !== 1) throw new DomainError('RUN_NOT_FOUND', 'The exact Run was not found.', 404)
-  const discovery = AcceptedWorkflowRunV3Schema.parse(found.rows[0]!.record)
+  const discovery = AcceptedWorkflowRunCurrentSchema.parse(found.rows[0]!.record)
   if (discovery.id !== runId) throw new DomainError('RUN_PIN_CONFLICT', 'Run identity changed during lifecycle discovery.', 409)
   const publication = await openRunGraphPublication(sql, workflowRunScope(discovery), readPublicProjectionLocked)
   const snapshot = await readAcceptedRepeatRunLocked(sql, runId)
@@ -42,7 +43,7 @@ export async function openWorkflowLifecycleLocked(sql: GraphTransactionSql, runI
 /** A replay verifies an existing complete source, never reconstructs a missing
  * transition or creates a new cleanup intent. The receipt is checked again after
  * G1 finalization, so returning from a producer is not mistaken for COMMIT. */
-async function verifyRunReplay(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3, stopped: boolean): Promise<void> {
+async function verifyRunReplay(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent, stopped: boolean): Promise<void> {
   const scope = workflowRunScope(run)
   const source = await readRepeatRunSourceLocked(sql, scope)
   if (!source.replayed || source.stopped !== stopped || !sameRepeatValue(source.run, run)) throw new DomainError('GRAPH_SOURCE_CONFLICT', 'The exact persisted Run state has no matching canonical source.', 409)
@@ -99,18 +100,18 @@ export async function markRepeatRunRunning(owner: RunOwnership,
       await verifyRunReplay(sql, run, snapshot.stopRequested)
       return
     }
-    const next = AcceptedWorkflowRunV3Schema.parse({ ...run, executionState: 'running', outcome: 'pending',
+    const next = AcceptedWorkflowRunCurrentSchema.parse({ ...run, executionState: 'running', outcome: 'pending',
       startedAt: run.startedAt ?? update.startedAt ?? new Date().toISOString() })
     if (await writeRunStateLocked(sql, run.executionState, next, JSON.stringify(next)) !== 1) throw new DomainError('RUN_NOT_FOUND', 'The owned Run disappeared during lifecycle publication.', 409)
     await publishRepeatRunStateLocked(publication, owner)
   })
 }
 
-export type AuthorizeWorkflowStop = (sql: GraphTransactionSql) => Promise<void>
+export type AuthorizeWorkflowStop = (sql: SqlTransaction) => Promise<void>
 
 /** Shared SQL Stop writer. The authenticated command and an internal authorized
  * Stop compose this on their existing G1. No provider/process work occurs here. */
-export async function requestWorkflowStopLocked(sql: GraphTransactionSql, runId: string,
+export async function requestWorkflowStopLocked(sql: SqlTransaction, runId: string,
   authorize: AuthorizeWorkflowStop, opened?: Awaited<ReturnType<typeof openWorkflowLifecycleLocked>>): Promise<'accepted' | 'already_terminal'> {
   if (typeof authorize !== 'function') throw new DomainError('REPEAT_STOP_AUTHORIZATION_REQUIRED', 'Stop requires its live SQL command authorizer.', 409)
   const { publication, snapshot } = opened ?? await openWorkflowLifecycleLocked(sql, runId)
@@ -131,7 +132,7 @@ export async function requestWorkflowStopLocked(sql: GraphTransactionSql, runId:
     const row = (await sql.query<{ owner: string; fence: string; record: unknown }>(
       'select pg_backend_pid()::text as owner,txid_current()::text as fence,record from runs where id=$1', [runId])).rows[0]
     if (!row) throw new DomainError('RUN_NOT_FOUND', 'The locked Run disappeared.', 404)
-    const actual = AcceptedWorkflowRunV3Schema.parse(row.record)
+    const actual = AcceptedWorkflowRunCurrentSchema.parse(row.record)
     return { scope: workflowRunScope(actual), effect: effect.identity, effectDigest: effect.digest,
       ownerId: row.owner, fence: row.fence, connectionGeneration: null, ownership: 'held',
       access: 'effect', security: 'valid', effectClosed: actual.executionState === 'completed', submission: 'unknown' }

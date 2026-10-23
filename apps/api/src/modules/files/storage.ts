@@ -1,16 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { constants, type ReadStream } from 'node:fs'
 import { lstat, mkdir, open, realpath, rm, link, unlink, type FileHandle } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { Readable } from 'node:stream'
 
 import { DomainError } from '../errors.js'
 import { readFileChunks, verifyFileType, type ExpectedFileBytes } from './byteValidation.js'
 
-export function defaultFileStorageRoot(): string {
-  return join(homedir(), '.local', 'share', 'graphql', 'files')
-}
+export { defaultFileStorageRoot } from '../../infrastructure/storageRoots.js'
 function inside(parent: string, child: string): boolean {
   const suffix = relative(parent, child)
   return suffix === '' || (!isAbsolute(suffix) && suffix !== '..' && !suffix.startsWith(`..${sep}`))

@@ -13,7 +13,7 @@ import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { PostgresSettingsRepository } from '../src/modules/settings/postgres.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 
 const retiredConfiguration = {
   harness: 'opencode', model: 'saved-provider/model', variant: 'max', nativeAgent: 'build',
@@ -33,7 +33,7 @@ it.skipIf(!postgresEnabled)(
       expect(appliedBefore.rows.map(row => row.version).sort((a, b) => a - b))
         .toEqual(migrations.filter(migration => migration.version !== retiredHarnessCredentialsMigration.version)
           .map(migration => migration.version).sort((a, b) => a - b))
-      const fixture = await seedAgent3(database.pool, database.directory)
+      const fixture = await seedWorkflowFixture(database.pool, database.directory)
       const operators = new PostgresOperatorRepository(database.pool)
       const operator = await operators.ensure()
       const access = new PostgresAccessService(database.pool)

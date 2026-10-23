@@ -4,7 +4,8 @@ import {
   type CoordinatorConsultationBinding,
 } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import { assertGraphTransaction } from '../run-graph/index.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { CONTROL_COMMAND_COLUMNS, CONTROL_COMMAND_SUMMARY_COLUMNS, controlId, readControlCommand, updateControlCommand,
   type ControlCommandRow, type ControlCommandSummary } from './workflowControlRecords.js'
 import type { WorkflowChatLockedTarget, WorkflowChatNativeTarget, WorkflowConsultationAdmission,
@@ -18,7 +19,7 @@ interface MailboxRow {
 interface ConsultationRow { id:string;binding:unknown;state:string;command_id:string;
   native_target:WorkflowChatNativeTarget|null;native_turn_id:string|null;native_evidence:unknown }
 
-async function mailbox(sql:GraphTransactionSql,runId:string,waitingActivationId:string) {
+async function mailbox(sql:SqlTransaction,runId:string,waitingActivationId:string) {
   return (await sql.query<MailboxRow>('select * from run_coordinator_mailboxes where run_id=$1 and waiting_activation_id=$2 for update',
     [runId,waitingActivationId])).rows[0]
 }
@@ -74,7 +75,7 @@ export async function reserveCoordinatorConsultationLocked(context:WorkflowChatL
   return admitted
 }
 
-async function createConsultation(sql:GraphTransactionSql,row:MailboxRow,command:ControlCommandRow,now:string):Promise<WorkflowConsultationAdmission> {
+async function createConsultation(sql:SqlTransaction,row:MailboxRow,command:ControlCommandRow,now:string):Promise<WorkflowConsultationAdmission> {
   const binding=CoordinatorConsultationBindingSchema.parse({runId:row.run_id,workflowVersionId:row.workflow_version_id,
     waitingActivationId:row.waiting_activation_id,delegationGroupId:row.group_id,
     consultationId:controlId('consultation',row.run_id,command.id),nativeSessionId:row.native_session_id,purpose:'consultation'})
@@ -88,7 +89,7 @@ async function createConsultation(sql:GraphTransactionSql,row:MailboxRow,command
     ...(command.native_prompt !== null ? {nativePrompt:command.native_prompt} : {})}
 }
 
-export async function readCoordinatorConsultationLocked(sql:GraphTransactionSql,runId:string,waitingActivationId:string) {
+export async function readCoordinatorConsultationLocked(sql:SqlTransaction,runId:string,waitingActivationId:string) {
   assertGraphTransaction(sql)
   const row=await mailbox(sql,runId,waitingActivationId)
   if(!row||!row.active_consultation_id) return undefined
@@ -101,7 +102,7 @@ export async function readCoordinatorConsultationLocked(sql:GraphTransactionSql,
 
 /** The delivery command may target the interrupted old reply. Its next
  * consultation has this separate immutable writer capture before native I/O. */
-export async function captureCoordinatorConsultationNativeLocked(sql:GraphTransactionSql,input:{
+export async function captureCoordinatorConsultationNativeLocked(sql:SqlTransaction,input:{
   binding:CoordinatorConsultationBinding;nativeTarget:WorkflowChatNativeTarget;now:string
 }):Promise<void> {
   assertGraphTransaction(sql)
@@ -143,7 +144,7 @@ export async function stopCoordinatorConsultationLocked(context: WorkflowChatLoc
 }
 
 /** B calls from its qualified original-session admission/observation. */
-export async function bindCoordinatorConsultationNativeLocked(sql:GraphTransactionSql,input:{
+export async function bindCoordinatorConsultationNativeLocked(sql:SqlTransaction,input:{
   binding:CoordinatorConsultationBinding;nativeTarget:WorkflowChatNativeTarget;now:string
 }):Promise<void> {
   assertGraphTransaction(sql)
@@ -175,7 +176,7 @@ export async function bindCoordinatorConsultationNativeLocked(sql:GraphTransacti
 }
 
 /** Must run before the existing graph continuation claims native capacity. */
-export async function claimWorkflowCoordinatorGraphLocked(sql:GraphTransactionSql,input:{runId:string;groupId:string;now:string}):Promise<boolean> {
+export async function claimWorkflowCoordinatorGraphLocked(sql:SqlTransaction,input:{runId:string;groupId:string;now:string}):Promise<boolean> {
   assertGraphTransaction(sql)
   const group=(await sql.query<{state:string}>('select state from run_hierarchy_groups where run_id=$1 and group_id=$2',
     [input.runId,input.groupId])).rows[0]
@@ -194,7 +195,7 @@ export async function claimWorkflowCoordinatorGraphLocked(sql:GraphTransactionSq
 
 /** Only an actual native settlement supplied by the existing observer may release
  * the mailbox. No graph result, parent return or F1 lifecycle is published here. */
-export async function settleCoordinatorConsultationLocked(sql:GraphTransactionSql,input:{
+export async function settleCoordinatorConsultationLocked(sql:SqlTransaction,input:{
   binding:CoordinatorConsultationBinding;outcome:'completed'|'failed'|'canceled';nativeEvidence:WorkflowConsultationSettlementEvidence;now:string
 }):Promise<WorkflowConsultationAdmission|undefined> {
   assertGraphTransaction(sql)
@@ -225,7 +226,7 @@ export async function settleCoordinatorConsultationLocked(sql:GraphTransactionSq
 
 /** Preparation failed before the sole owner captured or offered native input.
  * This is a proven unsubmitted reply, not a fabricated native terminal. */
-export async function failCoordinatorConsultationPreparationLocked(sql:GraphTransactionSql,input:{
+export async function failCoordinatorConsultationPreparationLocked(sql:SqlTransaction,input:{
   binding:CoordinatorConsultationBinding;errorCode:string;now:string
 }):Promise<WorkflowConsultationAdmission|undefined> {
   assertGraphTransaction(sql)
@@ -248,7 +249,7 @@ export async function failCoordinatorConsultationPreparationLocked(sql:GraphTran
   return releaseConsultationMailbox(sql,row,binding,input.now)
 }
 
-async function releaseConsultationMailbox(sql:GraphTransactionSql,row:MailboxRow,
+async function releaseConsultationMailbox(sql:SqlTransaction,row:MailboxRow,
   binding:CoordinatorConsultationBinding,now:string):Promise<WorkflowConsultationAdmission|undefined> {
   if(row.state==='canceled') return undefined
   if(row.active_consultation_id!==binding.consultationId) throw new DomainError('COORDINATOR_BINDING_CONFLICT','Another consultation owns this boundary.',409)
@@ -273,7 +274,7 @@ async function releaseConsultationMailbox(sql:GraphTransactionSql,row:MailboxRow
   return admitted
 }
 
-async function settleConsultationCommands(sql:GraphTransactionSql,consultationId:string,
+async function settleConsultationCommands(sql:SqlTransaction,consultationId:string,
   outcome:'completed'|'failed'|'canceled',now:string) {
   const related=(await sql.query<ControlCommandSummary>(`select ${CONTROL_COMMAND_SUMMARY_COLUMNS} from run_chat_commands
     where consultation_id=$1 and ((kind='stop' and state not in ('completed','failed','canceled'))
@@ -287,7 +288,7 @@ async function settleConsultationCommands(sql:GraphTransactionSql,consultationId
   }
 }
 
-async function promoteReservedConsultation(sql:GraphTransactionSql,row:MailboxRow):Promise<WorkflowConsultationAdmission> {
+async function promoteReservedConsultation(sql:SqlTransaction,row:MailboxRow):Promise<WorkflowConsultationAdmission> {
   const turn=(await sql.query<ConsultationRow>('select * from run_coordinator_consultations where id=$1',
     [row.reserved_next_consultation_id])).rows[0]
   if(!turn||turn.state!=='admitted') throw new DomainError('COORDINATOR_BINDING_CONFLICT','The reserved next consultation is unavailable.',409)
@@ -298,7 +299,7 @@ async function promoteReservedConsultation(sql:GraphTransactionSql,row:MailboxRo
     commandId:command.id,request:ChatSendRequestSchema.parse(command.request),sourceExecution:ExecutionRefSchema.parse(row.source_execution),
     ...(command.native_prompt !== null ? {nativePrompt:command.native_prompt} : {})}
 }
-async function closeConsultationQueue(sql:GraphTransactionSql,row:MailboxRow,now:string) {
+async function closeConsultationQueue(sql:SqlTransaction,row:MailboxRow,now:string) {
   const queued=(await sql.query<ControlCommandSummary>(`select ${CONTROL_COMMAND_SUMMARY_COLUMNS} from run_chat_commands where run_id=$1
     and target->>'kind'='workflow_coordinator' and target->>'waitingActivationId'=$2 and kind='delivery' and state='queued'
     order by sequence`,[row.run_id,row.waiting_activation_id])).rows

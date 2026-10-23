@@ -1,6 +1,6 @@
 import { lstat, readFile, readlink, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { logIgnoredError } from '../diagnostics/index.js'
 
 type DirectoryDiscovery =
   | { status: 'complete'; paths: string[] }

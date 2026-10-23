@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
-import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import type pg from 'pg'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { DeviceRequestPriority } from '@foreman-code/contracts/device-application'
@@ -11,7 +10,7 @@ import { harnessConnectionGeneration } from '../hostConnectionGeneration.js'
 import { HostHarnessProfileCheckRequestSchema, HostHarnessInstanceCheckInputSchema, HostHarnessProfileEvidenceSchema, type HostHarnessInstanceCheckInput, type HostHarnessOverride, type HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../../access/policy.js'
-import type { PostgresCommandCoordinator } from '../../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../../commands/index.js'
 import { DomainError } from '../../errors.js'
 import { assertClaudeFullAccess } from '../nativeWorkflowConfiguration.js'
 import type { HostHarnessOverrideAuthority } from './authority.js'
@@ -21,8 +20,9 @@ import type { HostHarnessProfileEvidenceRepository } from './profileRepository.j
 import type { HarnessInstallationRecord } from '../installationRegistry.js'
 import { qualificationError, staleQualification } from '../qualificationErrors.js'
 import { CLAUDE_PROFILE_CHECK_REVISION } from '../claudeSdk/profileRevision.js'
-import { logIgnoredError } from '../../diagnostics/ignoredError.js'
+import { logIgnoredError } from '../../diagnostics/index.js'
 import { sha256Hex } from '../../../shared/hash.js'
+import { retiredHarnessError } from '../retiredHarness.js'
 
 export interface AutomaticHostProfileCheck {
   host: CanonicalMachineReference
@@ -423,7 +423,7 @@ export class HostHarnessInstanceProfileChecks {
       const saved = await this.settings.latest(client, input.instanceId)
       if (saved && sameTarget(saved.target, input.target)
         && (saved.driverId === 'opencode' || saved.configuration.harness === 'opencode')) {
-        throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+        throw retiredHarnessError()
       }
     })
     const reuseLatest = automatic ? await automatic.then(() => true, () => false) : false
@@ -447,8 +447,7 @@ export class HostHarnessInstanceProfileChecks {
     if (!value || value.revision !== input.expectedRevision || !sameTarget(value.target, input.target)) {
       throw new DomainError('REVISION_CONFLICT', 'The exact host instance changed before qualification.', 409)
     }
-    if (value.driverId === 'opencode' || value.configuration.harness === 'opencode') throw new DomainError(
-      'HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+    if (value.driverId === 'opencode' || value.configuration.harness === 'opencode') throw retiredHarnessError()
     if (!value.enabled) throw new DomainError('HARNESS_INSTANCE_DISABLED', 'Disabled host instances cannot be qualified.', 409)
     assertClaudeFullAccess(value.configuration)
     return value

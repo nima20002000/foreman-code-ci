@@ -1,7 +1,6 @@
 import { RetryBackoff } from '@foreman-code/contracts/server-kit'
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import { PostgresSourceReservations, type SourceReservation } from './reservations.js'
 import type { PrivateSourceSnapshotStore } from './store.js'
 import { removeAbandonedRunSourceUses } from './runSourceUse.js'
@@ -11,7 +10,7 @@ const SNAPSHOT_SCAN_BATCH_SIZE = 50
 type SnapshotStore = Pick<PrivateSourceSnapshotStore, 'remove' | 'withCaptureLock'>
 
 /** Pressure can shorten retention, but cannot release a source that is still in use. */
-async function releasableSnapshots(sql: GraphSqlClient, snapshotIds: string[],
+async function releasableSnapshots(sql: SqlQuery, snapshotIds: string[],
   underPressure: boolean): Promise<Set<string>> {
   const result = await sql.query<{ snapshot_id: string }>(`with candidates as (
     select snapshot_id::text,(record->>'approvedAt')::timestamptz as approved_at,availability

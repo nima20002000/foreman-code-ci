@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import {
   allExecutions, conversationPages, historicalFixture, historicalRows, openHistoricalApi, qualifyLocation,
   readSelected, runA, selectedPath, sendAndFinish, startSaved, type HistoricalApi,
 } from './helpers/historicalRuns.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { chatTarget, expectProtocolDenial, retainedChatRows } from './helpers/historicalRunChat.js'
 
@@ -22,7 +22,7 @@ describe.skipIf(!postgresEnabled)('Historical Run-scoped chat authorization Post
       await runA(f); await qualifyLocation(f)
       const b = await startSaved(f)
       const ax = (await allExecutions(f))[0]!, bx = (await allExecutions(f, b.id)).find((entry) => entry.workflowNodeId === ax.workflowNodeId)!
-      const foreign = await seedAgent3(f.db.pool, f.db.directory, makeCurrentWorkflowFixture(randomUUID()), { run: true })
+      const foreign = await seedWorkflowFixture(f.db.pool, f.db.directory, makeCurrentWorkflowFixture(randomUUID()), { run: true })
       api = await openHistoricalApi(f)
       const aTarget = chatTarget(api, ax), bTarget = chatTarget(api, bx)
       const own = await sendAndFinish(api, aTarget, ax.id, null, 'authorized-message', 'Run A retained text.')

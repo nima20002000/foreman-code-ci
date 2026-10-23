@@ -4,11 +4,10 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkflowRunSummarySchema, type WorkflowRunSummary } from '@foreman-code/contracts'
-import { WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import { WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { server } from '../../mocks/server'
 import { currentWorkflowFixture } from '../../shared/mocks/currentWorkflow'
-import { WorkflowBoardProvider } from './context'
-import { boardRunListKey } from './keys'
+import { WorkflowBoardProvider, boardRunListKey } from '../board-core'
 import { RunActivityPanel } from './RunActivityPanel'
 import { shortRunId } from './runFacts'
 import { deferred } from '../../test/deferred'
@@ -17,7 +16,7 @@ const fixture = currentWorkflowFixture('activity-list')
 const { workspaceId, workflowId } = fixture.scope
 const listRoute = `*/api/management/workspaces/${workspaceId}/runs`
 const clients: QueryClient[] = []
-const completedRun = WorkflowRunV3Schema.parse({ ...fixture.run, executionState: 'completed', outcome: 'succeeded',
+const completedRun = WorkflowRunCurrentSchema.parse({ ...fixture.run, executionState: 'completed', outcome: 'succeeded',
   startedAt: fixture.createdAt, finishedAt: '2026-10-04T10:00:00.000Z', result: { outcome: 'succeeded', output: {} } })
 
 function summary(run: typeof fixture.run): WorkflowRunSummary {

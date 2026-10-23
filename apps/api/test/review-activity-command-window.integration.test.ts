@@ -4,7 +4,7 @@ import { compactCommandActivityMigration } from '../src/infrastructure/compactCo
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { readActivityCommands } from '../src/modules/conversations/activityCommands.js'
-import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { withTaskDatabase } from './helpers/taskDatabase.js'
 import { buildApp } from '../src/app.js'
 import { OperatorChatService, PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChat.js'
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
@@ -14,7 +14,7 @@ import { postgresEnabled } from './helpers/database.js'
 import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 it.skipIf(!postgresEnabled).each(['pending', 'uncertain', 'completed'])('retains the newest %s control beside 200 completed PostgreSQL receipts', async (status) => {
-    await nim2691TaskDatabase(async (pool) => {
+    await withTaskDatabase(async (pool) => {
       await applyApplicationMigrations(pool)
       const access = new PostgresAccessService(pool)
       const caller = await access.issue({ name: 'window owner', audience: 'operator',
@@ -62,7 +62,7 @@ it.skipIf(!postgresEnabled).each(['pending', 'uncertain', 'completed'])('retains
   }, 120000)
 
 it.skipIf(!postgresEnabled)('backfills compact receipt activity and follows result updates without changing stored outcomes', async () => {
-  await nim2691TaskDatabase(async pool => {
+  await withTaskDatabase(async pool => {
     const sql = await pool.connect()
     try {
       await beginTransaction(sql)

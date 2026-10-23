@@ -3,8 +3,9 @@ import {
   assertNativeGraphProjectionAuthority, canonicalGraphJson, sameGraphScope,
   type NativeGraphActivityRecord, type NativeGraphCorrelationRecord, type NativeGraphProjectionKey,
   type RunGraphScope,
-} from '@foreman-code/contracts/wave25'
-import { assertGraphTransaction, poisonGraphTransaction, type GraphTransactionSql } from './connection.js'
+} from '@foreman-code/contracts/current'
+import { assertGraphTransaction, poisonGraphTransaction } from './connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { RunGraphError } from './errors.js'
 import { assertRunGraphPublication } from './publication.js'
 import {
@@ -17,14 +18,14 @@ import { isClosedRunState } from '../runs/runState.js'
 
 /** The G1 writer port. All methods require the caller's Run -> head -> domain lock order. */
 export class PostgresNativeGraphProjectionWriter {
-  private async authorize(sql: GraphTransactionSql, scope: RunGraphScope, key: NativeGraphProjectionKey, guard: NativeGraphProjectionGuard): Promise<void> {
+  private async authorize(sql: SqlTransaction, scope: RunGraphScope, key: NativeGraphProjectionKey, guard: NativeGraphProjectionGuard): Promise<void> {
     assertGraphTransaction(sql)
     assertRunGraphPublication(sql, scope)
     if (!guard || typeof guard.readCurrentLocked !== 'function' || !sameGraphScope(guard.expected.scope, scope)
       || canonicalGraphJson(guard.expected.key) !== canonicalGraphJson(key)) throw new RunGraphError('GRAPH_AUTHORITY_INVALID')
     assertNativeGraphProjectionAuthority(guard.expected, await guard.readCurrentLocked(sql, scope, key))
   }
-  async persistActivity(sql: GraphTransactionSql, scope: RunGraphScope, previousRevision: string | null,
+  async persistActivity(sql: SqlTransaction, scope: RunGraphScope, previousRevision: string | null,
     input: NativeGraphActivityRecord, guard: NativeGraphProjectionGuard): Promise<void> {
     try {
       const next = NativeGraphActivityRecordSchema.parse(input)
@@ -70,7 +71,7 @@ export class PostgresNativeGraphProjectionWriter {
       if (result.rowCount !== 1) throw new RunGraphError('GRAPH_SOURCE_CONFLICT')
     } catch (error) { poisonGraphTransaction(sql); throw error }
   }
-  async persistCorrelation(sql: GraphTransactionSql, scope: RunGraphScope, previousRevision: string | null,
+  async persistCorrelation(sql: SqlTransaction, scope: RunGraphScope, previousRevision: string | null,
     input: NativeGraphCorrelationRecord, guard: NativeGraphProjectionGuard): Promise<void> {
     try {
       const next = NativeGraphCorrelationRecordSchema.parse(input)

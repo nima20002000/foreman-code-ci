@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { PreparedJobSpecRecord, JobAcceptedSpecRecord } from './jobVerification.js'
 import type { RunInput } from './schemaPrimitives.js'
-import { canonicalGraphJson } from './wave25/json.js'
+import { canonicalGraphJson } from './current/json.js'
 const hash = (value: unknown) => createHash('sha256').update(canonicalGraphJson(value)).digest('hex')
 
 /** Node-only producer/executor identity. Browser contracts never import this entrypoint. */

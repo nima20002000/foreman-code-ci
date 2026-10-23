@@ -2,21 +2,21 @@ import { describe, expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import {
   AcceptedCurrentNodeResultSchema, canonicalGraphJson, parseChoiceResultEnvelope,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { graphSourceDigest } from '../src/modules/run-graph/publication.js'
 import { normalizeRepeatTerminal, repeatTerminalResolution } from '../src/modules/runs/repeatNode.js'
 import { bindRepeatNodeInput, repeatExecutionIdentity } from '../src/modules/runs/repeatResolution.js'
 import { parseCurrentChoiceResult } from '../src/modules/runs/currentRouting.js'
 import {
-  br2001Fixture, br2001InvalidTexts, br2001Providers, br2001Terminal, br2001Text,
+  choiceProviderFixture, invalidChoiceTexts, choiceProviders, choiceProviderTerminal, choiceProviderText,
 } from './helpers/choiceProviders.js'
 
 /** Production normalization, strict schemas, resolution and input binding. No DB,
  * native process, coordinator, credential or provider execution in this suite. */
-describe.each(br2001Providers)('BR2-001: %s final-text choice carrier', (provider) => {
+describe.each(choiceProviders)('BR2-001: %s final-text choice carrier', (provider) => {
   it.each(['pass', 'issues'])('accepts complete %s text without rewriting provider evidence', (outcome) => {
-    const f = br2001Fixture(provider, `br2001-${provider}-${outcome}`)
-    const terminal = br2001Terminal(f.executions[0]!, provider, br2001Text(outcome, { checks: ['one', 'two'] }))
+    const f = choiceProviderFixture(provider, `br2001-${provider}-${outcome}`)
+    const terminal = choiceProviderTerminal(f.executions[0]!, provider, choiceProviderText(outcome, { checks: ['one', 'two'] }))
     const before = structuredClone(terminal.execution)
     Object.freeze(terminal.result.output)
     Object.freeze(terminal.result)
@@ -43,9 +43,9 @@ describe.each(br2001Providers)('BR2-001: %s final-text choice carrier', (provide
     expect(() => parseChoiceResultEnvelope(terminal.result, f.version.definition.nodes[0]!.choice!)).toThrow()
   })
 
-  it.each(br2001InvalidTexts)('rejects $name with a safe failure and no fallback route', ({ text }) => {
-    const f = br2001Fixture(provider, `br2001-invalid-${provider}`)
-    const terminal = br2001Terminal(f.executions[0]!, provider, text)
+  it.each(invalidChoiceTexts)('rejects $name with a safe failure and no fallback route', ({ text }) => {
+    const f = choiceProviderFixture(provider, `br2001-invalid-${provider}`)
+    const terminal = choiceProviderTerminal(f.executions[0]!, provider, text)
     const before = structuredClone(terminal.execution)
     const normalized = normalizeRepeatTerminal(f.version, f.scope, { nodeId: terminal.execution.workflowNodeId, occurrence: null }, terminal.execution)
     expect(normalized).toEqual({ ...before, result: { outcome: 'failed', error: {
@@ -65,13 +65,13 @@ describe.each(br2001Providers)('BR2-001: %s final-text choice carrier', (provide
   })
 
   it('rejects mixed, nested, non-string and array carriers instead of discarding their fields', () => {
-    const f = br2001Fixture(provider, `br2001-carrier-${provider}`)
-    const text = br2001Text()
+    const f = choiceProviderFixture(provider, `br2001-carrier-${provider}`)
+    const text = choiceProviderText()
     for (const output of [
       { text, extra: true }, { text, routing: { outcome: 'issues' }, data: null },
       { text: JSON.parse(text) }, { text: null }, { text: 0 }, { output: { text } }, [{ text }],
     ]) {
-      const terminal = br2001Terminal(f.executions[0]!, provider, text).execution
+      const terminal = choiceProviderTerminal(f.executions[0]!, provider, text).execution
       const input = HarnessExecutionSchema.parse({ ...terminal, result: { outcome: 'succeeded', output } })
       expect(normalizeRepeatTerminal(f.version, f.scope, { nodeId: input.workflowNodeId, occurrence: null }, input).result).toMatchObject({
         outcome: 'failed', error: { code: 'REPEAT_RESULT_INVALID', retryable: false },
@@ -82,17 +82,17 @@ describe.each(br2001Providers)('BR2-001: %s final-text choice carrier', (provide
   })
 
   it('keeps the original complete-result byte limit before unwrapping', () => {
-    const f = br2001Fixture(provider, `br2001-bound-${provider}`)
-    const empty = br2001Terminal(f.executions[0]!, provider, br2001Text('pass', ''))
+    const f = choiceProviderFixture(provider, `br2001-bound-${provider}`)
+    const empty = choiceProviderTerminal(f.executions[0]!, provider, choiceProviderText('pass', ''))
     const overhead = Buffer.byteLength(canonicalGraphJson(empty.result), 'utf8')
     const data = 'x'.repeat(64 * 1024 - overhead)
-    const atLimit = br2001Terminal(f.executions[0]!, provider, br2001Text('pass', data))
+    const atLimit = choiceProviderTerminal(f.executions[0]!, provider, choiceProviderText('pass', data))
     expect(Buffer.byteLength(canonicalGraphJson(atLimit.result), 'utf8')).toBe(64 * 1024)
     expect(AcceptedCurrentNodeResultSchema.safeParse(atLimit.result).success).toBe(true)
     expect(normalizeRepeatTerminal(f.version, f.scope, { nodeId: atLimit.execution.workflowNodeId, occurrence: null }, atLimit.execution)).toEqual(atLimit.execution)
     expect(parseCurrentChoiceResult(atLimit.result, f.version.definition.nodes[0]!.choice!))
       .toEqual({ routing: { outcome: 'pass' }, data })
-    const overLimit = br2001Terminal(f.executions[0]!, provider, br2001Text('pass', data + 'x'))
+    const overLimit = choiceProviderTerminal(f.executions[0]!, provider, choiceProviderText('pass', data + 'x'))
     expect(AcceptedCurrentNodeResultSchema.safeParse(overLimit.result).success).toBe(false)
     // Removing the carrier would fit: accepting this would silently relax the old limit.
     expect(AcceptedCurrentNodeResultSchema.safeParse({ ...overLimit.result, output: overLimit.result.output.text }).success).toBe(true)
@@ -103,8 +103,8 @@ describe.each(br2001Providers)('BR2-001: %s final-text choice carrier', (provide
   })
 
   it('passes the unchanged accepted carrier and digest to the selected Fixer input', () => {
-    const f = br2001Fixture(provider, `br2001-bind-${provider}`)
-    const terminal = br2001Terminal(f.executions[0]!, provider, br2001Text('issues', { detail: 'needs fix' }))
+    const f = choiceProviderFixture(provider, `br2001-bind-${provider}`)
+    const terminal = choiceProviderTerminal(f.executions[0]!, provider, choiceProviderText('issues', { detail: 'needs fix' }))
     const execution = normalizeRepeatTerminal(f.version, f.scope, { nodeId: terminal.execution.workflowNodeId, occurrence: null }, terminal.execution)
     const resolution = repeatTerminalResolution(f.version, f.scope, { nodeId: execution.workflowNodeId, occurrence: null }, execution).value
     const source = { relationshipId: f.version.definition.edges[0]!.id,
@@ -119,9 +119,9 @@ describe.each(br2001Providers)('BR2-001: %s final-text choice carrier', (provide
   })
 
   it('preserves direct string/object choices, JSON whitespace and ordinary non-choice results', () => {
-    const f = br2001Fixture(provider, `br2001-compatible-${provider}`)
-    const base = br2001Terminal(f.executions[0]!, provider, br2001Text()).execution
-    for (const output of [br2001Text(), JSON.parse(br2001Text()), { text: ` \n${br2001Text()}\t ` }]) {
+    const f = choiceProviderFixture(provider, `br2001-compatible-${provider}`)
+    const base = choiceProviderTerminal(f.executions[0]!, provider, choiceProviderText()).execution
+    for (const output of [choiceProviderText(), JSON.parse(choiceProviderText()), { text: ` \n${choiceProviderText()}\t ` }]) {
       const input = HarnessExecutionSchema.parse({ ...base, result: { outcome: 'succeeded', output } })
       expect(normalizeRepeatTerminal(f.version, f.scope, { nodeId: input.workflowNodeId, occurrence: null }, input)).toEqual(input)
       expect(repeatTerminalResolution(f.version, f.scope, { nodeId: input.workflowNodeId, occurrence: null }, input).value.outcome).toBe('pass')
@@ -129,7 +129,7 @@ describe.each(br2001Providers)('BR2-001: %s final-text choice carrier', (provide
         .toEqual({ routing: { outcome: 'pass' }, data: null })
     }
     delete f.version.definition.nodes[0]!.choice
-    for (const output of [{ text: 'Ordinary non-JSON reply.' }, { text: br2001Text(), extra: true }, 'plain text', { done: true }]) {
+    for (const output of [{ text: 'Ordinary non-JSON reply.' }, { text: choiceProviderText(), extra: true }, 'plain text', { done: true }]) {
       const input = HarnessExecutionSchema.parse({ ...base, result: { outcome: 'succeeded', output } })
       expect(normalizeRepeatTerminal(f.version, f.scope, { nodeId: input.workflowNodeId, occurrence: null }, input)).toEqual(input)
       const resolution = repeatTerminalResolution(f.version, f.scope, { nodeId: input.workflowNodeId, occurrence: null }, input).value
@@ -141,8 +141,8 @@ describe.each(br2001Providers)('BR2-001: %s final-text choice carrier', (provide
   })
 
   it('does not reinterpret failed/canceled or nonterminal evidence, or relax identity pins', () => {
-    const f = br2001Fixture(provider, `br2001-fences-${provider}`)
-    const base = br2001Terminal(f.executions[0]!, provider, br2001Text()).execution
+    const f = choiceProviderFixture(provider, `br2001-fences-${provider}`)
+    const base = choiceProviderTerminal(f.executions[0]!, provider, choiceProviderText()).execution
     for (const result of [{ outcome: 'canceled' }, { outcome: 'failed', error: {
       code: 'NATIVE_FAILED', message: 'Explicit native failure.', retryable: false,
     } }]) {

@@ -17,6 +17,7 @@ export async function copyApiRuntime(repository, output) {
     'apps/worker/src/diagnostics.mjs',
     'packages/contracts/src/verificationEnvironment.mjs',
     'packages/contracts/src/integrationScheduling.mjs',
+    'packages/ci-protocol/src/testResults.mjs',
   ]
   for (const path of paths) {
     const destination = join(runtime, path)

@@ -1,5 +1,5 @@
 import { DomainError } from '../errors.js'
-import { SOURCE_LIMITS } from '../sources/manifest.js'
+import { SOURCE_LIMITS } from '../sources/index.js'
 
 export const START_PREPARATION_TIMEOUT_MS = 5_000
 

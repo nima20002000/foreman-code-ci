@@ -5,10 +5,11 @@ import { ApiErrorResponseSchema, BrowserOperationRequestSchemas, BrowserOperatio
   BrowserViewerHelloSchema, BrowserViewerMessageSchema, decodeBrowserBinaryFrame,
   type BrowserOperationName, type BrowserSession } from '@foreman-code/contracts'
 import { z } from 'zod'
-import { createBrowserUiClient, createBrowserFilesClient, type BrowserCommandCodecs,
-  type BrowserViewCodecs, type BrowserFileCodecs } from '../features/agent-browser/client'
-import { createBrowserProfilesClient, type BrowserProfileCodecs } from '../features/browser-profiles/client'
-import type { BrowserWireCodec, BrowserHttpOptions } from '../features/agent-browser/http'
+import {
+  createBrowserUiClient, createBrowserFilesClient, type BrowserCommandCodecs, type BrowserViewCodecs,
+  type BrowserFileCodecs, type BrowserWireCodec, type BrowserHttpOptions,
+} from '../features/agent-browser'
+import { createBrowserProfilesClient, type BrowserProfileCodecs } from '../features/browser-profiles'
 
 function wire<Arguments extends readonly unknown[], Result>(name: BrowserOperationName,
   input: (...args: Arguments) => unknown, output: (value: unknown, args: Arguments) => Result | Promise<Result>,

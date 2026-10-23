@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import pg from 'pg'
 import { ExecutionResultSchema, HarnessExecutionSchema, type HarnessExecution, type ExecutionResult } from '@foreman-code/contracts'
 import {
-  WorkActivationInputSchema, WorkflowVersionV3Schema, makeCurrentWorkflowFixture, canonicalGraphJson, type WorkHandoffResult,
-} from '@foreman-code/contracts/wave25'
-import type { GraphTransactionSql } from '../src/modules/run-graph/connection.js'
+  WorkActivationInputSchema, WorkflowVersionCurrentSchema, makeCurrentWorkflowFixture, canonicalGraphJson, type WorkHandoffResult,
+} from '@foreman-code/contracts/current'
+import type { SqlTransaction } from '../src/infrastructure/transaction.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
 import type { RepeatRepositoryHost } from '../src/modules/runs/repeatPostgres.js'
 import { assertWorkHandoffDeliveryLocked } from '../src/modules/runs/workHandoffDelivery.js'
@@ -45,7 +45,7 @@ export async function acceptedReview(pool: pg.Pool, output: WorkHandoffResult,
   const source = agentWorkflowNode(fixture.version.definition.nodes[0])
   const reviewer = agentWorkflowNode(fixture.version.definition.nodes[1])
   const edge = fixture.version.definition.edges[0]!
-  const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
+  const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
     ...fixture.version.definition, handoffs: { contractVersion: 1 },
     executionPolicy: { maxParallelism: 1, maxNodeExecutions: 10 },
     edges: [{ ...edge, maxWorkHandoffsPerRun: 1 }],
@@ -136,7 +136,7 @@ export async function pendingRequester(pool: pg.Pool, t: Awaited<ReturnType<type
   return { activationId, execution }
 }
 
-export async function acceptPreparedResult(sql: GraphTransactionSql,
+export async function acceptPreparedResult(sql: SqlTransaction,
   t: Awaited<ReturnType<typeof acceptedReview>>, activationId: string,
   execution: HarnessExecution, output: WorkHandoffResult) {
   await sql.query('select id from runs where id=$1 for update', [t.run.id])

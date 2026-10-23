@@ -1,22 +1,23 @@
 import assert from 'node:assert/strict'
 import pg from 'pg'
 import { describe, expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
-import { ExclusiveGraphConnection, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
+import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
+import type { SqlTransaction } from '../src/infrastructure/transaction.js'
 import { RepeatRunRepository, type RepeatRepositoryHost } from '../src/modules/runs/repeatPostgres.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
 import { digest, text, transaction } from './repeat-migration-fixtures.js'
-import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { withTaskDatabase } from './helpers/taskDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('NIM-2691 ambiguous admission COMMIT', () => {
   it('recovers one committed request after its reply is lost, without a second charge or destination launch', async () => {
-    await nim2691TaskDatabase(async (pool, _directory, connectionString) => {
+    await withTaskDatabase(async (pool, _directory, connectionString) => {
       await applyApplicationMigrations(pool)
       const fixture = makeCurrentWorkflowFixture('nim2691-unknown-commit')
       const source = fixture.version.definition.nodes[0]!, edge = fixture.version.definition.edges[0]!
-      const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
+      const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
         ...fixture.version.definition, handoffs: { contractVersion: 1 },
         executionPolicy: { maxParallelism: 1, maxNodeExecutions: 3 },
         nodes: [{ ...source, choice: { outcomes: [
@@ -84,7 +85,7 @@ describe.skipIf(!postgresEnabled)('NIM-2691 ambiguous admission COMMIT', () => {
       })
       const owner = { runId: run.id, assertOwned: () => { if (!connected) throw new Error('OWNER_LOST') },
         oneShotConnection: () => connection,
-        readOneShotFence: async (sql: GraphTransactionSql) => {
+        readOneShotFence: async (sql: SqlTransaction) => {
           const row = (await sql.query<{ owner_id: string }>('select pg_backend_pid()::text as owner_id')).rows[0]
           assert.ok(row)
           return { ownerId: row.owner_id, fence: '1' }

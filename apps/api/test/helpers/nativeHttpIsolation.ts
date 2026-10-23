@@ -13,7 +13,7 @@ import { NativeProcessRegistry } from '../../src/modules/harnesses/recovery/proc
 import { registerUserInteractions } from '../../src/routes/userInteractions.js'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { privateFixtureDirectory } from './privateFixtureDirectory.js'
-import type { agent3Database } from './workflowDatabase.js'
+import type { migratedDatabase } from './migratedDatabase.js'
 
 export interface NativeHttpIsolationInput {
   script: string; directory: string; recovery: NativeProcessRecovery; owner: string; token: string
@@ -21,7 +21,7 @@ export interface NativeHttpIsolationInput {
 
 export async function nativeHttpIsolation(launch: (input: NativeHttpIsolationInput) => Promise<{
     exitCode: number | null; stdout: string; stderr: string
-  }>, options: { databaseUrl?: string; database?: Awaited<ReturnType<typeof agent3Database>> } = {}) {
+  }>, options: { database?: Awaited<ReturnType<typeof migratedDatabase>> } = {}) {
   const fixture = await currentOperatorIntegration(options)
   const directory = await privateFixtureDirectory('native-http-client-')
   const registry = new NativeProcessRegistry(join(directory, 'processes'))

@@ -1,5 +1,4 @@
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
-import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import { PostgresOperatorConversationRepository } from '../../conversations/operatorChatRepository.js'
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
@@ -16,6 +15,7 @@ import type { OperatorConfigurationVersion } from '@foreman-code/contracts'
 import type { NativeResponseJournal } from '../recovery/responseJournal.js'
 import { operatorCodexFileAdmissions } from './codex.js'
 import { operatorTurnHasFileInputs, recordOperatorFileSubmission } from './postgres.js'
+import { retiredHarnessError } from '../retiredHarness.js'
 
 /** Operator management credentials and accepted-turn file tokens remain separate. */
 export function productionOperatorManagers(input: {
@@ -32,13 +32,14 @@ export function productionOperatorManagers(input: {
   createClaude?: (configuration: OperatorConfigurationVersion, conversationId: string, fileInputs: boolean, recovery: ReturnType<NativeProcessRegistry['scope']>) => NativeHarnessSessionManager
   createDevice?: (configuration: OperatorConfigurationVersion, conversationId: string, fileInputs: boolean) => NativeHarnessSessionManager
   selectInstallation?: (configuration: OperatorConfigurationVersion) => RegistryHarnessSelection | undefined
+  /** How the Operator chat prepares input, binds accounts, lists models, steers and recovers compaction. */
+  chat?: Pick<NativeManagerResolver, 'prepareInput' | 'prepareAccountBinding' | 'modelOptions' | 'qualifiedSteer' | 'recoverCompaction'>
 }): NativeManagerResolver {
   const factories = input.nativeFactories ?? new NativeHarnessFactories({ ...input.config.harnesses,
     responseJournal: input.responseJournal })
   const modes = new Map<string, boolean>()
   const resolver: NativeManagerResolver = (configuration, conversationId, fileInputs = false) => {
-    if (configuration.harness.harness === 'opencode') throw new DomainError('HARNESS_RETIRED',
-      RETIRED_OPENCODE_MESSAGE, 409)
+    if (configuration.harness.harness === 'opencode') throw retiredHarnessError()
     const existing = input.managers.get(conversationId)
     if (existing) {
       if (modes.get(conversationId) !== fileInputs) throw new DomainError(
@@ -85,6 +86,7 @@ export function productionOperatorManagers(input: {
     modes.set(conversationId, fileInputs)
     return manager
   }
+  if (input.chat) Object.assign(resolver, input.chat)
   resolver.release = (id) => { input.managers.delete(id); modes.delete(id) }
   resolver.closeRecoveredRuntime = (id, signal) => input.processRegistry.closeOwner(`conversation:${id}`, signal)
   resolver.hasFileInputs = (id, requestId) => operatorTurnHasFileInputs(input.pool, id, requestId)

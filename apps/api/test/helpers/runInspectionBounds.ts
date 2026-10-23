@@ -3,9 +3,9 @@ import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import { expect } from 'vitest'
 import {
-  RUN_INSPECTION_TOOLS, RunStartV3InputSchema, RunStartV3ResultSchema,
+  RUN_INSPECTION_TOOLS, RunStartCurrentInputSchema, RunStartCurrentResultSchema,
   type RunInspectionToolName,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 
@@ -80,7 +80,7 @@ export async function startThroughHttp(f: InspectionHarness, input: Record<strin
   }
   expect(locationRevision).toBeTypeOf('number')
   const current = await f.services.workflows.get(f.writer.principal, f.f.scope.workspaceId, f.f.scope.workflowId)
-  const request = RunStartV3InputSchema.parse({ workspaceId: f.f.scope.workspaceId, workflowId: f.f.scope.workflowId,
+  const request = RunStartCurrentInputSchema.parse({ workspaceId: f.f.scope.workspaceId, workflowId: f.f.scope.workflowId,
     workflowVersionId: current.currentVersionId, executionSemanticsVersion: 3, commandId: randomUUID(),
     expectedWorkflowRevision: Number(current.revision), expectedAgentConfigurationVersionIds: f.f.version.agentConfigurationVersionIds,
     expectedLocationRevision: locationRevision, input })
@@ -88,11 +88,11 @@ export async function startThroughHttp(f: InspectionHarness, input: Record<strin
     url: `/api/management/workspaces/${request.workspaceId}/workflows/${request.workflowId}/runs`,
     headers: { authorization: `Bearer ${f.writer.token}` }, payload: request })
   expect(response.statusCode, response.body).toBe(202)
-  const started = RunStartV3ResultSchema.parse(response.json())
+  const started = RunStartCurrentResultSchema.parse(response.json())
   expect(started.accepted).toBe(true)
   expect(started.run.executionSemanticsVersion).toBe(3)
   expect(started.run.workflowVersionId).toBe(request.workflowVersionId)
-  const replay = RunStartV3ResultSchema.parse(value(await f.client.callTool({ name: 'run_start', arguments: request })))
+  const replay = RunStartCurrentResultSchema.parse(value(await f.client.callTool({ name: 'run_start', arguments: request })))
   expect(replay.replayed).toBe(true)
   expect(replay.run.id).toBe(started.run.id)
   expect((await f.db.pool.query('select id from runs where id=$1', [started.run.id])).rows).toHaveLength(1)

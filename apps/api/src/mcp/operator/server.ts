@@ -15,7 +15,7 @@ import { installOperatorPresentation, type OperatorCatalog } from './presentatio
 
 import { ManagementActionSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { collectBoundTools, sameCatalogDependencies, type BoundTool } from '../shared/catalog.js'
-import { catalogToolAvailable } from './catalogDiscovery.js'
+import { catalogToolAvailable, catalogToolRequirements } from './catalogDiscovery.js'
 import type { OperatorRequestContext, OperatorServices } from './types.js'
 import { registerRunGraphTools } from './tools/runGraph.js'
 import { registerRunInspectionTools } from './tools/runInspection.js'
@@ -23,11 +23,11 @@ import { registerWorkflowScheduleTools } from './tools/workflowSchedules.js'
 import { registerCurrentWorkflowTools } from './tools/currentWorkflow.js'
 import { registerWorkflowHierarchyTools } from './tools/workflowHierarchy.js'
 import { registerFileRetentionTools } from './tools/fileRetention.js'
-import { authorizationPrincipal } from '../../modules/access/policy.js'
+import { authorizationPrincipal, hasAction } from '../../modules/access/policy.js'
 import { OPERATOR_TOOL_GROUPS, OPERATOR_TOOLS, type OperatorToolGroup } from './catalog.js'
 import { registerToolDefinition, toolAvailable, type OperatorToolDefinition } from './definition.js'
 import { invokeOperatorTool } from './invoke.js'
-import { registerOperatorDiscoveryTools } from './discovery.js'
+import { registerOperatorDiscoveryTools, type OperatorDiscoveryCaller } from './discovery.js'
 
 export function createOperatorMcpServer(context: OperatorRequestContext): McpServer {
   const server = new McpServer({ name: PRODUCT_SLUG, title: MCP_DISPLAY_NAME, version: '1.0.0' })
@@ -37,8 +37,28 @@ export function createOperatorMcpServer(context: OperatorRequestContext): McpSer
   paginateToolLists(server)
   const catalog = installOperatorPresentation(server)
   registerOperatorTools(server, context, catalog)
-  registerOperatorDiscoveryTools(server, () => catalog)
+  registerOperatorDiscoveryTools(server, () => catalog, operatorDiscoveryCaller(context))
   return server
+}
+
+/**
+ * tool_schema shows a tool's required actions to callers who may read capabilities, as operator_get_capabilities does,
+ * and audits a lookup of a tool the caller cannot use.
+ */
+export function operatorDiscoveryCaller(context: OperatorRequestContext): OperatorDiscoveryCaller {
+  const request = { ...context, principal: authorizationPrincipal(context.principal) }
+  return {
+    recordDenied: toolName => context.services.commands.recordDenied(context.principal.id, 'mcp', toolName, `mcp:${toolName}`),
+    ...(hasAction(context.principal, 'capabilities:read') ? { requirement: (name: string) => {
+      try {
+        const [requirement] = catalogToolRequirements(request, OPERATOR_TOOLS, [name], {})
+        return requirement ? { actions: requirement.actions, detail: requirement.detail } : undefined
+      } catch {
+        // ignore: a tool without permission metadata is shown without requirements instead of failing the lookup.
+        return undefined
+      }
+    } } : {}),
+  }
 }
 
 /** Registers the registry tools this caller can discover, in order. */
@@ -134,5 +154,4 @@ function registerOperatorDefinitions(server: McpServer, context: OperatorRequest
   if (context.services.runGraph) registerRunGraphTools(server, context, context.services.runGraph)
   group('interactions')
   group('extensions')
-  group('toolSchema')
 }

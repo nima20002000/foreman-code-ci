@@ -20,7 +20,7 @@ import type { JobPublicationAuthority } from '../../jobs/authority.js'
 import type { JobSql } from '../../jobs/repository.js'
 import { commandInputHash, PostgresCommandCoordinator } from '../../commands/postgres.js'
 import type { DeviceEndpoint } from '../../devices/deviceEndpoint.js'
-import { sourceMaterializationDigest } from '../../sources/bindingHash.js'
+import { sourceMaterializationDigest } from '../../sources/index.js'
 import { DomainError } from '../../errors.js'
 import type { FileMutationSource } from '../repository.js'
 

@@ -3,10 +3,10 @@ import { DomainError } from '../src/modules/errors.js'
 import { repeatNativeObserver } from '../src/modules/runs/repeatRuntime.js'
 import { RunnerAdmission } from '../src/modules/runs/runnerAdmission.js'
 import type { RepeatNativeLaunchStore } from '../src/modules/interactions/repeatObservation.js'
-import { native2Fixture } from './native-reviewer-fixtures.js'
+import { nativeReviewerFixture } from './native-reviewer-fixtures.js'
 
 it.each(['main', 'device:worker'])('rejects a failed selected profile before waiting for occupied capacity on %s', async hostKey => {
-  const f = native2Fixture(false)
+  const f = nativeReviewerFixture(false)
   f.set({ ...f.get(), state: 'queued', nativeSessionId: undefined })
   const admission = new RunnerAdmission(1)
   let release!: () => void

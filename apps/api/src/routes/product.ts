@@ -5,7 +5,7 @@ import {
   RespondToInteractionRequestSchema,
   RespondToInteractionResponseSchema,
 } from '@foreman-code/contracts'
-import { SavedWorkflowResponseSchema, SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
+import { SavedWorkflowResponseSchema, SavedRunDetailsSchema } from '@foreman-code/contracts/current'
 import type { OperatorServices } from '../mcp/operator/types.js'
 import { InteractionListInputSchema } from '@foreman-code/contracts/management'
 import type { FastifyInstance } from 'fastify'

@@ -2,24 +2,25 @@ import { omitProperties } from '../../shared/omitProperties.js'
 import { randomUUID } from 'node:crypto'
 import { AgentConfigurationVersionSchema, DEFAULT_HARNESS_DEFAULTS, type NativeSessionReference,
   type SessionPreferences } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
-import type { ExecutionChatPort } from '../collaboration/ports.js'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import type { ExecutionChatPort } from '../collaboration/index.js'
 import { workflowChatMigration } from '../../infrastructure/workflowChatMigration.js'
 import { PostgresAccessService } from '../access/postgres.js'
 import { requireAuthorization } from '../access/policy.js'
-import { PostgresOperatorRepository } from '../operators/postgres.js'
-import { PostgresWorkflowRepository } from '../workflows/postgres.js'
+import { PostgresOperatorRepository } from '../operators/index.js'
+import { PostgresWorkflowRepository } from '../workflows/index.js'
 import { pendingSessionControls } from '../harnesses/sessionControlDefaults.js'
 import type { NativeHarnessSessionManager, NativeInitialTurnInput, NativeSessionStart, NativeSteerInput,
   NativeTurnInput } from '../harnesses/port.js'
-import { agent3Database, seedAgent3 } from '../../../test/helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from '../../../test/helpers/workflowDatabase.js'
+import { migratedDatabase } from '../../../test/helpers/migratedDatabase.js'
 import { ChatManager } from '../../../test/helpers/operatorChatFixture.js'
 import { AgentChatService, type AgentChatManagerFactory } from './agentChat.js'
 import { OperatorChatService, type NativeManagerResolver, type OperatorChatAuthority } from './operatorChat.js'
 import { PostgresAgentChatRepository } from './agentChatRepository.js'
 import { PostgresOperatorConversationRepository } from './operatorChatRepository.js'
 import type { ConversationFeatureContext } from './conversationFeatureSubject.js'
-import { createWorkflowChatFeature } from '../workflow-chat/feature.js'
+import { createWorkflowChatFeature } from '../workflow-chat/index.js'
 
 /** Only native I/O and the parallel engine port are fake; admission, auth, queues and recovery use production SQL/services. */
 export class DeliveryNativeFixture extends ChatManager {
@@ -87,7 +88,7 @@ export class DeliveryNativeFixture extends ChatManager {
 }
 
 export async function conversationDeliveryFixture() {
-  const database = await agent3Database()
+  const database = await migratedDatabase()
   if (!(await database.pool.query("select to_regclass('workflow_chat_posts') as table_name")).rows[0]?.table_name) {
     await database.pool.query(workflowChatMigration.sql)
   }
@@ -96,7 +97,7 @@ export async function conversationDeliveryFixture() {
     ...configuration, harness: { ...DEFAULT_HARNESS_DEFAULTS.codex, model: 'fixture', reasoningEffort: 'low',
       sandbox: 'read-only', serviceTier: 'standard' },
   }))
-  const saved = await seedAgent3(database.pool, database.directory, definition, { run: false })
+  const saved = await seedWorkflowFixture(database.pool, database.directory, definition, { run: false })
   const node = saved.version.definition.nodes[0]!
   const query = { workflowId: saved.scope.workflowId, workflowNodeId: node.id, agentId: node.agentId }
   const scope = { workspaceId: saved.scope.workspaceId, workflowId: saved.scope.workflowId }

@@ -10,7 +10,7 @@ import { sessionGeneration } from '../../../shared/api/sessionBoundary'
 import { executionChatReadKey, executionChatScopeKey, executionChatSelectionKey, resolveExecutionChat,
   workflowExecutionChatClient, type WorkflowExecutionChatClient } from './client'
 import type { WorkflowExecutionChatSlotSelection, WorkflowExecutionChatViews } from './types'
-import { useBoardAuthoring } from '../../workflow-board/context'
+import { useBoardAuthoring } from '../../board-core'
 
 type Resolved=Extract<WorkflowExecutionChatResolution,{kind:'selected'}>
 function isPinned(selection:WorkflowExecutionChatSelection,resolved:Resolved) {

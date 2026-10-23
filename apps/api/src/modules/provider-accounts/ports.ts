@@ -5,7 +5,7 @@ import type {
   ProviderAccountHumanHandoff,
 } from '@foreman-code/contracts/provider-accounts'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { LocalProviderCredentials } from './localCredentials.js'
 import type { ProviderAccountNativeInput, ProviderAccountNativePort } from './nativeCommands.js'
 
@@ -19,7 +19,7 @@ export interface ResolvedProviderAccount {
 }
 export interface ProviderAccountResolver {
   resolve(provider: AccountProvider, accountId?: string,
-    options?: { sql?: GraphSqlClient; allowDefault?: boolean; signal?: AbortSignal;
+    options?: { sql?: SqlQuery; allowDefault?: boolean; signal?: AbortSignal;
       acceptedBinding?: AcceptedProviderAccountBinding }): Promise<ResolvedProviderAccount | null>
 }
 /** Native paths stay inside the owning host; only sanitized observations cross this port. */

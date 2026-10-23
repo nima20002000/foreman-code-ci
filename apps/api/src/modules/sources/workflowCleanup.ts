@@ -2,13 +2,13 @@ import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
 import type { RetainedSourceFootprint } from '@foreman-code/contracts/source-operations'
 import type pg from 'pg'
-import type { GraphSqlClient } from '../run-graph/connection.js'
-import { readUnboundWorkflowClosure, readWorkflowClosure } from '../interactions/workflowClosure.js'
-import { hasRetainedRemoteReviewerSource } from '../interactions/retainedRemoteReviewer.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
+import { readUnboundWorkflowClosure, readWorkflowClosure } from '../interactions/index.js'
+import { hasRetainedRemoteReviewerSource } from '../interactions/index.js'
 import type { PostgresSourceService } from './service.js'
 import { withSourceOperationExclusion } from './sourceOperationExclusion.js'
 
-export async function localWorkflowSourceClosed(sql: GraphSqlClient, executionId: string): Promise<boolean> {
+export async function localWorkflowSourceClosed(sql: SqlQuery, executionId: string): Promise<boolean> {
   const row = (await sql.query<{ record: unknown }>(
     'select record from harness_executions where id=$1', [executionId],
   )).rows[0]

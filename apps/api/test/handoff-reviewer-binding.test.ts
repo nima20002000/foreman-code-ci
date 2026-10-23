@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { HarnessExecutionSchema, type ExecutionResult, type HarnessExecution } from '@foreman-code/contracts'
-import { WorkActivationInputSchema, WorkflowVersionV3Schema, workLimitNoticeText, type WorkActivationInput,
-  type WorkRequest } from '@foreman-code/contracts/wave25'
-import type { GraphSqlClient } from '../src/modules/run-graph/connection.js'
+import { WorkActivationInputSchema, WorkflowVersionCurrentSchema, workLimitNoticeText, type WorkActivationInput,
+  type WorkRequest } from '@foreman-code/contracts/current'
+import type { SqlQuery } from '../src/infrastructure/transaction.js'
 import { PostgresRepeatReviewerBindings } from '../src/modules/interactions/repeatReviewer.js'
 import { repeatDigest, repeatExecutionIdentity, workActivationSlotId } from '../src/modules/runs/repeatResolution.js'
 import { approvalFixture } from './helpers/approvalFixture.js'
 
 function fixture() {
   const base = approvalFixture()
-  const version = WorkflowVersionV3Schema.parse({ ...base.version, definition: {
+  const version = WorkflowVersionCurrentSchema.parse({ ...base.version, definition: {
     ...base.version.definition, handoffs: { contractVersion: 1 },
     executionPolicy: { maxParallelism: 2, maxNodeExecutions: 12 },
     edges: base.version.definition.edges.map((edge) => edge.kind === 'execution'
@@ -92,7 +92,7 @@ function fixture() {
     if (statement.includes('from run_work_requests')) records = requests
     if (statement.includes('from run_work_returns')) records = returns
     return { rows: records.has(String(values[1])) ? [{ record: records.get(String(values[1])) }] : [] }
-  } } as unknown as GraphSqlClient
+  } } as unknown as SqlQuery
   function select(execution = worker) {
     return new PostgresRepeatReviewerBindings(sql).select({ workspaceId: scope.workspaceId,
       workflowId: scope.workflowId, runId: scope.runId, executionId: execution.id,

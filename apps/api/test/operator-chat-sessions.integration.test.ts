@@ -7,8 +7,6 @@ import { FoundationSettingsManagementService } from '../src/modules/settings/man
 import { registerOperatorChatFixture, type OperatorChatFixture, claudeConfiguration, waitFor } from './helpers/operatorChatFixture.js'
 import { postgresEnabled } from './helpers/database.js'
 
-const connectionString = process.env.TEST_DATABASE_URL
-
 let pool: OperatorChatFixture['pool']
 let access: OperatorChatFixture['access']
 let owner: OperatorChatFixture['owner']

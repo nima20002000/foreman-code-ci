@@ -6,12 +6,12 @@ import { DispatchIntentSchema } from '@foreman-code/contracts/node-placement'
 import { SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import { AgentSourceAttemptAuthority } from '../src/modules/sources/agentSourceAuthority.js'
 import { readReconciledDispatchIntent } from '../src/modules/runs/remote/persistence.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock ordering', () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
   const schema = `dispatch_locks_${randomUUID().replaceAll('-', '')}`
   const intent = DispatchIntentSchema.parse({
     schemaVersion: 1, protocolVersion: 1, mainId: randomUUID(), runId: 'run', nodeId: 'node',
@@ -21,7 +21,7 @@ describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock or
   })
 
   beforeAll(async () => {
-    database = await agent3Database()
+    database = await migratedDatabase()
     await createFixtureSchema(database.pool, schema)
     await database.pool.query(`create table ${schema}.runs(id text primary key)`)
     await database.pool.query(`create table ${schema}.execution_dispatch_intents(operation_id text primary key,

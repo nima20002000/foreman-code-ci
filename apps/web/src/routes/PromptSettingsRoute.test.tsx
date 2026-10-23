@@ -11,7 +11,7 @@ import {
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { routeTree } from '../app/router'
-import { clearRevisionedFormPersistence } from '../features/settings/revisionedForm'
+import { clearRevisionedFormPersistence } from '../features/settings'
 import { server } from '../mocks/server'
 import { settingsExperienceKeys } from '../shared/api/settingsExperience'
 import { promptSettingsKey } from '../shared/api/promptSettings'

@@ -5,9 +5,9 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { ManagedWorkspaceSchema } from '@foreman-code/contracts/management'
 import {
   CurrentWorkflowCreateInputSchema, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
-  RunStartV3ResultSchema, SavedManagedWorkflowCommandResultSchema, SavedManagedWorkflowSchema,
+  RunStartCurrentResultSchema, SavedManagedWorkflowCommandResultSchema, SavedManagedWorkflowSchema,
   makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { graphHeaders } from './graph-composition-fixture.js'
 import { setupWorkflowCreateIntegration } from './helpers/operatorWorkflowCreate.js'
@@ -76,7 +76,7 @@ describe.runIf(postgresEnabled)('workflow approval defaults through authenticate
         [workspaceId, JSON.stringify({ device: String(identity.dev), inode: String(identity.ino) })])
       const workspace = ManagedWorkspaceSchema.parse(value(
         await f.client.callTool({ name: 'workspace_get', arguments: { workspaceId } })))
-      const started = RunStartV3ResultSchema.parse(value(await f.client.callTool({ name: 'run_start', arguments: {
+      const started = RunStartCurrentResultSchema.parse(value(await f.client.callTool({ name: 'run_start', arguments: {
         ...scope, workflowVersionId: read.currentVersionId, executionSemanticsVersion: 3,
         expectedWorkflowRevision: read.revision, expectedAgentConfigurationVersionIds: read.version.agentConfigurationVersionIds,
         expectedLocationRevision: workspace.locationRevision,

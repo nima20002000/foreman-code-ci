@@ -1,20 +1,19 @@
 import { MemoryBoardSurface } from './MemoryBoardSurface'
 import { activeRunCandidates } from '@foreman-code/contracts/run-snapshots'
-import { MasterOverview } from '../workflow-hierarchy/MasterOverview'
+import { MasterOverview, createWorkflowExecutionChatSlot } from '../workflow-hierarchy'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from 'react'
 import { useLocation, useRouter } from '@tanstack/react-router'
 import type { ExecutionRef, WorkflowRunSummary } from '@foreman-code/contracts'
-import type { BoardSidePanel, RepeatGraphScopeV3, WorkspaceBoardInspection } from '@foreman-code/contracts/wave25'
+import type { BoardSidePanel, RepeatGraphScopeCurrent, WorkspaceBoardInspection } from '@foreman-code/contracts/current'
 import { Alert, Button, Icon, IconButton } from '../../shared/ui/nocturne'
-import { WorkspaceExecutionLocationSettings } from '../settings/WorkspaceExecutionLocationSettings'
+import { WorkspaceExecutionLocationSettings } from '../settings'
 import { RunBoardSlot, useRunBoardShown } from '../run-board'
-import { useRunSummaries, useSelectedRun, useSelectedRunSnapshot } from '../runs-selector'
-import { isRunAccessError } from '../runs-selector/query'
+import { useRunSummaries, useSelectedRun, useSelectedRunSnapshot, isRunAccessError } from '../runs-selector'
 import { BoardNavigationControls } from './BoardNavigationControls'
 import {
   BoardAuthoringContext, BoardHostsContext, BoardSelectionContext,
   type WorkflowAuthoringActions, type WorkflowBoardAuthoring, type WorkflowBoardSelection,
-} from './context'
+} from '../board-core'
 import { ActivitiesPopover } from './ActivitiesPopover'
 import { RunActivityPanel } from './RunActivityPanel'
 import { useWorkflowSidePanel } from './useWorkflowSidePanel'
@@ -24,7 +23,6 @@ import { useBrowserPanelRelease } from './useBrowserPanelRelease'
 import { useBoardDrawers } from './useBoardDrawers'
 import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
 import { PanelFooterSlotContext, PanelHeaderSlotContext } from '../../shared/ui/panelHeaderSlot'
-import { createWorkflowExecutionChatSlot } from '../workflow-hierarchy/execution-chat/createWorkflowExecutionChatSlot'
 import { SelectedRunControls } from './actions/SelectedRunControls'
 import { GroupChatPanel } from './GroupChatPanel'
 import { DirectionWaitNotice } from './actions/directionWait'
@@ -33,10 +31,10 @@ import './workflowBoard.css'
 
 /** This component is keyed by workspace/workflow only, NEVER by selected Run. */
 export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, selectRun, inspection, selectInspection, summaries, summariesReadAt, children, selectedAgentId, selectDraftAgent, collaborationSlots: suppliedSlots }: {
-  workspaceId: string; workflowId: string; run?: RepeatGraphScopeV3
+  workspaceId: string; workflowId: string; run?: RepeatGraphScopeCurrent
   selectedAgentId?: string; selectDraftAgent?(agentId?: string): void
   inspection: WorkspaceBoardInspection; selectInspection(inspection: WorkspaceBoardInspection): void
-  selectRun(scope?: RepeatGraphScopeV3): void; summaries: readonly WorkflowRunSummary[]; summariesReadAt?: number; children: ReactNode
+  selectRun(scope?: RepeatGraphScopeCurrent): void; summaries: readonly WorkflowRunSummary[]; summariesReadAt?: number; children: ReactNode
   collaborationSlots?: WorkflowCollaborationSlots
 }) {
   const location = useLocation()
@@ -76,7 +74,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     }
     return selection.current.generation
   }, [router])
-  const chooseRun = useCallback((scope?: RepeatGraphScopeV3) => {
+  const chooseRun = useCallback((scope?: RepeatGraphScopeCurrent) => {
     if (scope?.runId !== requestedRun?.runId) releaseBrowser()
     selection.current.generation++
     selectRun(scope)
@@ -109,7 +107,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   // The retained editor is hidden while a Run is shown, so its Activities button is unavailable;
   // the Run's own Activities and details open from the Board toolbar over this exact scope.
   const selectedRunId = boardSelection.active && !boardSelection.invalid ? boardSelection.identity.runId : null
-  const detailsScope = useMemo<RepeatGraphScopeV3 | undefined>(() => {
+  const detailsScope = useMemo<RepeatGraphScopeCurrent | undefined>(() => {
     if (!selectedRunId) return undefined
     if (legacyRun?.runId === selectedRunId) return legacyRun
     return picked?.kind === 'available' && picked.runId === selectedRunId

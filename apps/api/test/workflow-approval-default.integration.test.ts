@@ -7,7 +7,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import {
   CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
   ManualRunStartResultSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { setupWorkflowCreateIntegration } from './helpers/operatorWorkflowCreate.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 

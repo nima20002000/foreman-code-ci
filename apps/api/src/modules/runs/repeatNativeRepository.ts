@@ -1,6 +1,6 @@
 import { type HarnessExecution, type NativeSessionReference } from '@foreman-code/contracts'
 import { retainWorkflowNativeCapture } from '../interactions/workflowNativeCapture.js'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
 import type { WorkflowNativeProofRecord } from './workflowNativeProof.js'
 import type { WorkflowNativeEntryPermit } from './workflowNativeEntry.js'
@@ -90,20 +90,20 @@ export interface RepeatNativeChange {
 /** Mandatory native capability on the existing transaction host. No native I/O,
  * credentials, filesystem allocation, or pool transaction may occur here. */
 export interface RepeatNativeLockedHooks {
-  assertLaunchLocked(sql: GraphTransactionSql, execution: HarnessExecution, ref: RepeatNodeRef,
+  assertLaunchLocked(sql: SqlTransaction, execution: HarnessExecution, ref: RepeatNodeRef,
     paths: RepeatLaunchPaths): Promise<void>
-  assertBoundaryLocked(sql: GraphTransactionSql, execution: HarnessExecution, ref: RepeatNodeRef,
+  assertBoundaryLocked(sql: SqlTransaction, execution: HarnessExecution, ref: RepeatNodeRef,
     evidence: RepeatNativeBoundaryEvidence): Promise<void>
-  assertUpdateLocked(sql: GraphTransactionSql, previous: HarnessExecution, incoming: HarnessExecution,
+  assertUpdateLocked(sql: SqlTransaction, previous: HarnessExecution, incoming: HarnessExecution,
     ref: RepeatNodeRef, evidence: RepeatNativeEvidence,
     resultEffectFailure?: WorkflowResultEffectFailure): Promise<WorkflowNativeProofRecord>
   /** The canonical G1 producer must retain source/effect/reset receipts on this
    * transaction. A callback result is not a receipt. No second graph journal. */
-  publishLocked(sql: GraphTransactionSql, change: RepeatNativeChange, mutate: () => Promise<void>): Promise<void>
+  publishLocked(sql: SqlTransaction, change: RepeatNativeChange, mutate: () => Promise<void>): Promise<void>
   /** Must prove the exact canonical receipt through the owning transaction's
    * finalization. A detached pool read or run_repeat_effects alone is insufficient. */
-  assertReceiptLocked(sql: GraphTransactionSql, change: RepeatNativeChange): Promise<void>
-  assertLaunchReceiptLocked(sql: GraphTransactionSql, claim: RepeatLaunchClaim, digest: string): Promise<void>
+  assertReceiptLocked(sql: SqlTransaction, change: RepeatNativeChange): Promise<void>
+  assertLaunchReceiptLocked(sql: SqlTransaction, claim: RepeatLaunchClaim, digest: string): Promise<void>
 }
 export function requireRepeatNativeHooks(hooks: RepeatNativeLockedHooks | undefined): RepeatNativeLockedHooks {
   if (!hooks || ['assertLaunchLocked', 'assertBoundaryLocked', 'assertUpdateLocked', 'publishLocked',
@@ -116,7 +116,7 @@ export function requireRepeatNativeHooks(hooks: RepeatNativeLockedHooks | undefi
 /** Conservative possible-submission evidence. Missing launch receipts are NOT
  * permission to submit if any allocation/preflight/native/credential evidence
  * exists. This is the same existing lifetime protocol; it creates no new table. */
-export async function repeatPossibleSubmissionLocked(sql: GraphTransactionSql, execution: HarnessExecution): Promise<boolean> {
+export async function repeatPossibleSubmissionLocked(sql: SqlTransaction, execution: HarnessExecution): Promise<boolean> {
   if (execution.state !== 'queued' || execution.startedAt || execution.finishedAt || execution.result
     || execution.nativeSessionId || execution.workingDirectory || execution.runtimeDirectory) return true
   const result = await sql.query<{ possible_submission: boolean }>(`select (

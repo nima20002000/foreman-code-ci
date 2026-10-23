@@ -1,4 +1,4 @@
-import { beginRuntimeTiming, runtimeTimingPoint } from '../diagnostics/runtimeTiming.js'
+import { beginRuntimeTiming, runtimeTimingPoint } from '../diagnostics/index.js'
 import { randomUUID } from 'node:crypto'
 import { HarnessExecutionError } from './errors.js'
 import { spawnOwnedStdioProcess } from './process.js'
@@ -6,7 +6,7 @@ import { attachDetachedStdio, detachRecoveredChild, hasDetachedStdioProcess,
   nativeProcessExit, type NativeProcessRecovery } from './recovery/processRegistry.js'
 import { redactKnownSecrets } from './secrets.js'
 import { openCodexRuntimeTiming } from './codexRuntimeTiming.js'
-import { ignoreError, logIgnoredError } from '../diagnostics/ignoredError.js'
+import { ignoreError, logIgnoredError } from '../diagnostics/index.js'
 
 export type JsonObject = Record<string, unknown>
 export type RequestId = string | number

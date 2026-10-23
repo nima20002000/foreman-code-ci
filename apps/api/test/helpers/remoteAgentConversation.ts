@@ -9,7 +9,7 @@ import { createTestPool } from './testPool.mjs'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { AgentFileReadResultSchema, FileWithRevisionSchema, type MessageAttachmentRef } from '@foreman-code/contracts/files'
-import { AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { WorkerConversationBindingSchema, WorkerConversationRpcRequestSchema,
   type WorkerConversationRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
 import { buildApp } from '../../src/app.js'
@@ -41,7 +41,8 @@ import { requireAuthorization } from '../../src/modules/access/policy.js'
 import { HarnessInstanceSettingsRepository } from '../../src/modules/harnesses/instanceSettings/repository.js'
 import { HostHarnessOverrideService } from '../../src/modules/harnesses/instanceSettings/service.js'
 import { graphHeaders, graphRpc, graphRpcValue } from '../graph-composition-fixture.js'
-import { agent3Database, seedAgent3 } from './workflowDatabase.js'
+import { seedWorkflowFixture } from './workflowDatabase.js'
+import { migratedDatabase } from './migratedDatabase.js'
 import { remoteChatProvider } from './remoteChatProvider.js'
 import { deferred } from './deferred.js'
 import { recordedConversationRuntime } from './recordedConversationRuntime.js'
@@ -49,15 +50,15 @@ import { DomainError } from '../../src/modules/errors.js'
 
 export async function remoteAgentConversation(harness: 'codex' | 'claude', location: 'worker' | 'main' = 'worker',
   options: { runAttempts?: number; poolSize?: number; sessionObservationDelayMs?: number } = {}) {
-  const db = await agent3Database()
+  const db = await migratedDatabase()
   const recorded = workerConversationFixture('agent', harness)
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
   fixture.configurations = fixture.configurations.map(value => AgentConfigurationVersionSchema.parse({ ...value,
     harness: { ...recorded.configuration.harness, model: 'test-model',
       ...(harness === 'claude' ? { configDirectory: join(db.directory, 'claude-profile') } : {}) },
     ...(location === 'worker' ? { harnessProfileSelection: recorded.binding.profile } : {}) }))
-  const seeded = await seedAgent3(db.pool, db.directory, fixture, { run: !!options.runAttempts })
-  const sourceRun = options.runAttempts ? AcceptedWorkflowRunV3Schema.parse({ ...seeded.run,
+  const seeded = await seedWorkflowFixture(db.pool, db.directory, fixture, { run: !!options.runAttempts })
+  const sourceRun = options.runAttempts ? AcceptedWorkflowRunCurrentSchema.parse({ ...seeded.run,
     executionState: 'completed', outcome: 'succeeded', result: { outcome: 'succeeded', output: {} },
     finishedAt: seeded.createdAt }) : undefined
   const constrainedPool = options.poolSize ? createTestPool({ connectionString: db.databaseUrl,

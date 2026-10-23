@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { MemorySaver } from '@langchain/langgraph'
 import { HarnessExecutionSchema, type ExecutionResult, type HarnessExecution } from '@foreman-code/contracts'
 import {
-  ExecutableWorkflowV3Schema, makeCurrentWorkflowFixture, parseRepeatExitResultV1, validateRepeatDecisionV1,
+  ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture, parseRepeatExitResultV1, validateRepeatDecisionV1,
   type CurrentFixtureForm, type RepeatDecisionV1, type RepeatOccurrenceV1,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { buildRepeatGraph, type RepeatGraphStore } from '../../src/modules/runs/repeatGraph.js'
 import type { RepeatRunRepository } from '../../src/modules/runs/repeatPostgres.js'
 import {
@@ -20,12 +20,12 @@ import {
 } from '../../src/modules/runs/repeatResolution.js'
 import { compileExecutionTopology, decideExecutionAdmission } from '../../src/modules/runs/topology.js'
 
-export function a1Scenario(form: CurrentFixtureForm = 'sequential', suffix = `a1-${form}`) {
+export function graphScenario(form: CurrentFixtureForm = 'sequential', suffix = `a1-${form}`) {
   return makeCurrentWorkflowFixture(suffix, form)
 }
-export type A1Scenario = ReturnType<typeof a1Scenario>
-export function unequalScenario(): A1Scenario {
-  const f = a1Scenario('parallel', 'a1-unequal-engine')
+export type GraphScenario = ReturnType<typeof graphScenario>
+export function unequalScenario(): GraphScenario {
+  const f = graphScenario('parallel', 'a1-unequal-engine')
   const config = { ...f.configurations[2]!, agentId: 'agent-a1-long', id: 'cfg-a1-long' }
   f.configurations.push(config)
   const extra = { id: 'node-a1-long', agentId: config.agentId, name: 'Long branch' }
@@ -35,37 +35,37 @@ export function unequalScenario(): A1Scenario {
   f.version.definition.nodes.push(extra); f.version.agentConfigurationVersionIds[config.agentId] = config.id
   f.version.definition.executionPolicy!.maxNodeExecutions = 5
   f.run.agentConfigurationVersionIds = { ...f.version.agentConfigurationVersionIds }
-  ExecutableWorkflowV3Schema.parse({ version: f.version, configurations: f.configurations })
+  ExecutableWorkflowCurrentSchema.parse({ version: f.version, configurations: f.configurations })
   return f
 }
-export function conditionalScenario(): A1Scenario {
-  const f = a1Scenario('parallel', 'a1-conditional-engine')
+export function conditionalScenario(): GraphScenario {
+  const f = graphScenario('parallel', 'a1-conditional-engine')
   f.version.definition.nodes[0]!.choice = { outcomes: f.version.definition.edges.filter((item) => item.source === f.version.entryNodeId)
     .map((edge, index) => ({ outcome: index === 0 ? 'left' : 'right', target: { kind: 'edge' as const, relationshipId: edge.id } })) }
-  ExecutableWorkflowV3Schema.parse({ version: f.version, configurations: f.configurations })
+  ExecutableWorkflowCurrentSchema.parse({ version: f.version, configurations: f.configurations })
   return f
 }
-export function approvalParallelScenario(): A1Scenario {
-  const f = a1Scenario('parallel', 'a1-approval-engine')
+export function approvalParallelScenario(): GraphScenario {
+  const f = graphScenario('parallel', 'a1-approval-engine')
   f.configurations[0]!.productRole = 'orchestrator'
   const approval = { handler: 'orchestrator' as const, designatedOrchestratorAgentId: f.configurations[0]!.agentId }
   f.version.approval = approval; f.version.definition.approval = approval; f.run.approval = approval
   for (const node of f.version.definition.nodes.slice(1)) f.version.definition.edges.push({ id: `review-${node.id}`,
     kind: 'approval', source: f.version.entryNodeId, target: node.id })
-  ExecutableWorkflowV3Schema.parse({ version: f.version, configurations: f.configurations })
+  ExecutableWorkflowCurrentSchema.parse({ version: f.version, configurations: f.configurations })
   return f
 }
 
 /** Deterministic TEST PORTS only: exercises the REAL graph, node action, routing,
  * binding and repeat algorithms. Not PostgreSQL, native launch, receipts or a
  * production publisher. The A2/A3 suites must prove these ports durably. */
-export function graphHarness(f: A1Scenario, options: {
+export function graphHarness(f: GraphScenario, options: {
   outcome?: (ref: RepeatNodeRef) => string
   retryEntryOnce?: boolean
   beforeObserve?: (execution: HarnessExecution, ref: RepeatNodeRef, signal: AbortSignal) => Promise<void>
   beforeTransition?: (occurrence: RepeatOccurrenceV1) => void
 } = {}) {
-  const version = ExecutableWorkflowV3Schema.parse({ version: f.version, configurations: f.configurations }).version
+  const version = ExecutableWorkflowCurrentSchema.parse({ version: f.version, configurations: f.configurations }).version
   const controller = new AbortController(), checkpointer = new MemorySaver()
   const executions = new Map<string, HarnessExecution>(), refs = new Map<string, RepeatNodeRef>()
   const inputs = new Map<string, { input: RepeatNodeInput; digest: string; bindings: RepeatInputBinding[] }>()

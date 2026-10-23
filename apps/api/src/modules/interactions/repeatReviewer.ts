@@ -3,8 +3,8 @@ import { HarnessExecutionSchema, type DurableInteraction, type HarnessExecution 
 import { AcceptedCurrentNodeResultSchema, NodeResolutionSchema, RepeatOccurrenceV1Schema,
   CurrentRunVersionSnapshotSchema, WorkActivationInputSchema, WorkRequestSchema, WorkReturnSchema,
   WorkLimitDenialSchema, workConnectionForRequest, type WorkActivationInput, type WorkRequest,
-  type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+  type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { assertRepeatExecution, repeatDigest, repeatExecutionIdentity, repeatSlotId, workActivationSlotId,
   type RepeatNodeRef, type RepeatScope } from '../runs/repeatResolution.js'
 import { DomainError } from '../errors.js'
@@ -31,7 +31,7 @@ function conflict(): never {
 /** Approval is authority, not a scheduling edge. Do not select a latest attempt
  * or a reviewer from another live block. Cross-block reviewer scopes need an
  * explicit immutable export binding; they are deliberately not guessed here. */
-export function repeatReviewerOccurrence(version: WorkflowVersionV3, requester: RepeatNodeRef,
+export function repeatReviewerOccurrence(version: WorkflowVersionCurrent, requester: RepeatNodeRef,
   reviewerNodeId: string): string | null {
   const reviewerBlock = version.definition.repeat?.blocks.find((block) => block.nodeIds.includes(reviewerNodeId))
   if (!reviewerBlock) return null
@@ -61,7 +61,7 @@ interface ReviewExecution {
 
 /** Read only. The decision caller supplies its existing credential/Stop-locked
  * transaction; enqueue supplies its normal pool. This is not a launch grant. */
-async function loadExecution(sql: GraphSqlClient, scope: RepeatScope, version: WorkflowVersionV3,
+async function loadExecution(sql: SqlQuery, scope: RepeatScope, version: WorkflowVersionCurrent,
   executionId: string): Promise<ReviewExecution> {
   const rows = await sql.query<ExecutionRow>(`select e.record,x.identity,e.accepted,e.id as execution_id,
     e.run_id,e.workflow_node_id,e.agent_id,e.attempt,s.slot_id,s.occurrence_id,
@@ -100,7 +100,7 @@ async function loadExecution(sql: GraphSqlClient, scope: RepeatScope, version: W
   return { execution, ref, accepted: row.accepted, work }
 }
 
-async function acceptedWorkExecution(sql: GraphSqlClient, scope: RepeatScope, version: WorkflowVersionV3,
+async function acceptedWorkExecution(sql: SqlQuery, scope: RepeatScope, version: WorkflowVersionCurrent,
   source: { executionId: string; activationId: string; nodeId: string; digest: string; result?: unknown }): Promise<ReviewExecution> {
   const selected = await loadExecution(sql, scope, version, source.executionId)
   const result = await sql.query<{ result_json: string; result_digest: string }>(
@@ -119,7 +119,7 @@ async function acceptedWorkExecution(sql: GraphSqlClient, scope: RepeatScope, ve
   return selected
 }
 
-async function workRequest(sql: GraphSqlClient, scope: RepeatScope, version: WorkflowVersionV3,
+async function workRequest(sql: SqlQuery, scope: RepeatScope, version: WorkflowVersionCurrent,
   requestId: string, frozen?: WorkRequest): Promise<WorkRequest> {
   const rows = await sql.query<{ record: unknown }>(
     'select record from run_work_requests where run_id=$1 and request_id=$2', [scope.runId, requestId])
@@ -135,7 +135,7 @@ async function workRequest(sql: GraphSqlClient, scope: RepeatScope, version: Wor
   return request
 }
 
-async function workParents(sql: GraphSqlClient, scope: RepeatScope, version: WorkflowVersionV3,
+async function workParents(sql: SqlQuery, scope: RepeatScope, version: WorkflowVersionCurrent,
   current: ReviewExecution): Promise<ReviewExecution[]> {
   if (!current.work) return conflict()
   const work = current.work
@@ -189,7 +189,7 @@ async function workParents(sql: GraphSqlClient, scope: RepeatScope, version: Wor
 }
 
 /** Follow accepted causes, so sibling work and later reactivations cannot replace the review owner. */
-async function workReviewer(sql: GraphSqlClient, scope: RepeatScope, version: WorkflowVersionV3,
+async function workReviewer(sql: SqlQuery, scope: RepeatScope, version: WorkflowVersionCurrent,
   requester: ReviewExecution, reviewerNodeId: string): Promise<HarnessExecution> {
   const visiting = new Set<string>()
   const selected = new Map<string, HarnessExecution>()
@@ -217,7 +217,7 @@ async function workReviewer(sql: GraphSqlClient, scope: RepeatScope, version: Wo
 }
 
 export class PostgresRepeatReviewerBindings implements RepeatReviewerBindings {
-  constructor(private readonly sql: GraphSqlClient) {}
+  constructor(private readonly sql: SqlQuery) {}
 
   async select(interaction: RepeatReviewRequest, reviewerNodeId: string): Promise<RepeatReviewerBinding> {
     const snapshot = await this.sql.query<{ run_record: unknown; version_record: unknown; run_id: string;
@@ -282,7 +282,7 @@ export class PostgresRepeatReviewerBindings implements RepeatReviewerBindings {
 
 /** Called AFTER the existing immutable relationship/credential checks. It adds
  * occurrence binding; it never substitutes for those checks or widens schemas. */
-export async function assertRepeatReviewerBinding(sql: GraphSqlClient, interaction: RepeatReviewRequest,
+export async function assertRepeatReviewerBinding(sql: SqlQuery, interaction: RepeatReviewRequest,
   reviewerNodeId: string, executionId: string): Promise<void> {
   const row = (await sql.query<{ semantics: string | null }>(
     "select record->>'executionSemanticsVersion' as semantics from runs where id=$1", [interaction.runId])).rows[0]

@@ -1,29 +1,30 @@
 import { readPublicProjectionLocked } from '../run-graph/compactSnapshot.js'
 import { randomUUID } from 'node:crypto'
-import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
+import type { BaseCheckpointSaver } from '../../infrastructure/langgraph.js'
 import type { DurableInteraction } from '@foreman-code/contracts'
-import { WorkflowRunV3Schema, RunGraphScopeSchema } from '@foreman-code/contracts/wave25'
+import { WorkflowRunCurrentSchema, RunGraphScopeSchema } from '@foreman-code/contracts/current'
 import { isAtomicApprovalCheckpointSaver } from '../../infrastructure/approvalCheckpointSaver.js'
 import { DomainError } from '../errors.js'
 import { openRunGraphPublication } from '../run-graph/publication.js'
-import { beforeGraphCommit, didGraphTransactionCommit, type GraphTransactionSql } from '../run-graph/connection.js'
+import { beforeGraphCommit, didGraphTransactionCommit } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { PostgresInteractionRepository } from '../interactions/postgres.js'
-import { Wave25InteractionRepository } from '../interactions/wave25/repository.js'
-import { lockInteraction, readContext } from '../interactions/wave25/context.js'
-import { consumeApprovalGraphResume, holdResumeClaims } from '../interactions/wave25/resume.js'
+import { Wave25InteractionRepository } from '../interactions/current/repository.js'
+import { lockInteraction, readContext } from '../interactions/current/context.js'
+import { consumeApprovalGraphResume, holdResumeClaims } from '../interactions/current/resume.js'
 import type { GraphResumeClaim } from '../interactions/deliveryPostgres.js'
 import type { RunOwnership } from './ownership.js'
 import { mintWorkflowResumePermit, type WorkflowResumePermit } from './workflowResumePermit.js'
 import { assertWorkflowApprovalAckLocked } from '../interactions/nativeApprovalProof.js'
 
-type WorkflowRunV3 = ReturnType<typeof WorkflowRunV3Schema.parse>
+type WorkflowRunCurrent = ReturnType<typeof WorkflowRunCurrentSchema.parse>
 export type { WorkflowResumePermit }
-export type AuthorizeApprovalResume = (sql: GraphTransactionSql, run: WorkflowRunV3) => Promise<void>
+export type AuthorizeApprovalResume = (sql: SqlTransaction, run: WorkflowRunCurrent) => Promise<void>
 
 /** The existing permission checker reads current grants. Hold the accepted and
  * root principal rows so revocation/grant changes serialize with this receipt;
  * a timer-based expiry still needs a database-clock check just before COMMIT. */
-async function lockResumeAuthority(sql: GraphTransactionSql, run: WorkflowRunV3): Promise<string[]> {
+async function lockResumeAuthority(sql: SqlTransaction, run: WorkflowRunCurrent): Promise<string[]> {
   const id = run.authorizationPrincipalId
   if (!id) return []
   const discovery = (await sql.query<{ delegated_from: string | null }>(
@@ -74,14 +75,14 @@ export async function consumeDeliveredApprovals(owner: RunOwnership, saver: Base
     claims.set(claim.interaction.id, claim)
   }
   const releaseClaims = () => Promise.all([...claims.values()].map(claim => claim.release?.()))
-  let transaction: GraphTransactionSql | undefined
-  const consumeCheckpoint = async (sql: GraphTransactionSql) => {
+  let transaction: SqlTransaction | undefined
+  const consumeCheckpoint = async (sql: SqlTransaction) => {
     // The owner takes over the claims here; a renewal must not queue behind this transaction's row locks.
     await releaseClaims()
     transaction = sql
     owner.assertOwned()
     const row = (await sql.query<{ record: unknown }>('select record from runs where id=$1', [owner.runId])).rows[0]
-    const discovery = WorkflowRunV3Schema.parse(row?.record)
+    const discovery = WorkflowRunCurrentSchema.parse(row?.record)
     const scope = RunGraphScopeSchema.parse({ workspaceId: discovery.workspaceId, workflowId: discovery.workflowId,
       runId: discovery.id, workflowVersionId: discovery.workflowVersionId, executionSemanticsVersion: 3 })
     const publication = await openRunGraphPublication(sql, scope, readPublicProjectionLocked)
@@ -92,7 +93,7 @@ export async function consumeDeliveredApprovals(owner: RunOwnership, saver: Base
     const ids = [...new Set(ordered.map((item) => item.executionId))].sort()
     const executions = await sql.query('select id from harness_executions where run_id=$1 and id=any($2::text[]) order by id for update', [owner.runId, ids])
     if (executions.rows.length !== ids.length) throw new DomainError('GRAPH_RESUME_LIMIT', 'The exact resumed executions are missing.', 409)
-    const currentRun = WorkflowRunV3Schema.parse((await sql.query<{ record: unknown }>(
+    const currentRun = WorkflowRunCurrentSchema.parse((await sql.query<{ record: unknown }>(
       'select record from runs where id=$1', [owner.runId])).rows[0]?.record)
     if (currentRun.authorizationPrincipalId && !authorize) {
       throw new DomainError('GRAPH_SECURITY_UNQUALIFIED', 'Resume requires the accepted Run authorization check.', 409)

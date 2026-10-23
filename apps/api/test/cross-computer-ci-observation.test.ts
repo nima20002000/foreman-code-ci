@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import type { Client } from '@modelcontextprotocol/client'
 import { expect, it, vi } from 'vitest'
-import type { SavedRunDetails } from '@foreman-code/contracts/wave25'
+import type { SavedRunDetails } from '@foreman-code/contracts/current'
 import { createScenarioObservation, pollCiScenario,
   type RunningCiWorkflow } from './helpers/crossComputerCiObservation.js'
 

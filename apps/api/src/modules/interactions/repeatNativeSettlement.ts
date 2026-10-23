@@ -3,11 +3,12 @@ import {
   DurableInteractionSchema, HarnessExecutionSchema, NativeSessionReferenceSchema, ReviewJobSchema,
   type HarnessExecution, type NativeSessionReference,
 } from '@foreman-code/contracts'
-import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { graphSourceDigest } from '../run-graph/publication.js'
 import { readWorkflowClosure, readUnboundWorkflowClosure, type UnboundWorkflowClosure } from './workflowClosure.js'
 import { assertReviewJobTerminalProofLocked } from './reviewNativeProof.js'
-import { CANCELED_INTERACTION_RETIRED_SQL, decisionDigest } from './wave25/publication.js'
+import { CANCELED_INTERACTION_RETIRED_SQL, decisionDigest } from './current/publication.js'
 import { assertWorkflowApprovalAckLocked } from './nativeApprovalProof.js'
 import { readAcceptedRepeatRunLocked } from '../runs/repeatStartRead.js'
 import { readRepeatExecutionLocked } from '../runs/repeatExecutionRead.js'
@@ -37,7 +38,7 @@ export interface RepeatNativeSettlementCheckpoint {
  * lock and exact occurrence/slot/input receipt checks. Private
  * workflow-finalization updates roll back with the enclosing owner transaction.
  */
-export async function settleRepeatNativeExecutionLocked(sql: GraphTransactionSql, runId: string,
+export async function settleRepeatNativeExecutionLocked(sql: SqlTransaction, runId: string,
   supplied: HarnessExecution): Promise<void> {
   await settleRepeatNativeExecutionWithProofLocked(sql, runId, supplied)
 }
@@ -46,7 +47,7 @@ export async function settleRepeatNativeExecutionLocked(sql: GraphTransactionSql
  * An application catching a failed assertion must not commit partial private
  * finalization updates. This uses the existing branded transaction's poison and
  * finalizers; it neither opens a transaction nor issues native/resource calls. */
-export async function settleRepeatNativeExecutionWithProofLocked(sql: GraphTransactionSql, runId: string,
+export async function settleRepeatNativeExecutionWithProofLocked(sql: SqlTransaction, runId: string,
   supplied: HarnessExecution): Promise<readonly RepeatNativeSettlementCheckpoint[]> {
   assertGraphTransaction(sql)
   try {
@@ -71,7 +72,7 @@ export async function settleRepeatNativeExecutionWithProofLocked(sql: GraphTrans
   }
 }
 
-async function settleExact(sql: GraphTransactionSql, runId: string,
+async function settleExact(sql: SqlTransaction, runId: string,
   supplied: HarnessExecution): Promise<RepeatNativeSettlementCheckpoint[]> {
   assertGraphTransaction(sql)
   const parent = await sql.query<{ semantics: string; id: string; workspace_id: string; workflow_id: string; pins_match: boolean; negative_cleanup: boolean }>(
@@ -162,7 +163,7 @@ async function settleExact(sql: GraphTransactionSql, runId: string,
   return [...closed.map(({ execution, session, generation }) => structuredClone({ execution, session, generation })), ...unbound, ...retained]
 }
 
-async function readExecution(sql: GraphTransactionSql, runId: string, id: string): Promise<HarnessExecution> {
+async function readExecution(sql: SqlTransaction, runId: string, id: string): Promise<HarnessExecution> {
   const row = (await sql.query<{ id: string; run_id: string; workflow_node_id: string; agent_id: string; attempt: number; record: unknown }>(
     `select id,run_id,workflow_node_id,agent_id,attempt,record from harness_executions where id=$1 and run_id=$2 for update`, [id, runId])).rows[0]
   const execution = HarnessExecutionSchema.parse(row?.record)
@@ -172,7 +173,7 @@ async function readExecution(sql: GraphTransactionSql, runId: string, id: string
   return execution
 }
 
-async function assertExecutionResourcesSettled(sql: GraphTransactionSql, runId: string, executionId: string,
+async function assertExecutionResourcesSettled(sql: SqlTransaction, runId: string, executionId: string,
   retainedPrincipalId?: string): Promise<void> {
   const row = (await sql.query<{ outstanding: boolean }>(`select (
     exists(select 1 from worker_credential_bindings b left join management_principals p on p.id=b.principal_id
@@ -189,7 +190,7 @@ async function assertExecutionResourcesSettled(sql: GraphTransactionSql, runId: 
   if (row?.outstanding !== false) return repeatNativePending()
 }
 
-async function readSettledReviewers(sql: GraphTransactionSql, runId: string,
+async function readSettledReviewers(sql: SqlTransaction, runId: string,
   requester: HarnessExecution): Promise<HarnessExecution[]> {
   const result = new Map<string, HarnessExecution>()
   let after = ''
@@ -224,7 +225,7 @@ async function readSettledReviewers(sql: GraphTransactionSql, runId: string,
   }
 }
 
-async function assertInteractionsSettled(sql: GraphTransactionSql, runId: string, execution: HarnessExecution,
+async function assertInteractionsSettled(sql: SqlTransaction, runId: string, execution: HarnessExecution,
   session: NativeSessionReference | null, scope: { workspace_id: string; workflow_id: string }, negativeCleanup: boolean): Promise<void> {
   let after = ''
   for (;;) {

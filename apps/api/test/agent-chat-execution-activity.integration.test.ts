@@ -10,7 +10,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import {
   CURRENT_WORKFLOW_ROUTES, CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { AgentChatService } from '../src/modules/conversations/agentChat.js'

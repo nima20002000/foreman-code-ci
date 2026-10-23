@@ -7,12 +7,12 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { memoryFixture } from '../src/modules/memory-boards/testing/fixture.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.runIf(postgresEnabled)('Memory board application composition', () => {
-  let db: Awaited<ReturnType<typeof agent3Database>>
-  beforeAll(async () => { db = await agent3Database() }, 60000)
+  let db: Awaited<ReturnType<typeof migratedDatabase>>
+  beforeAll(async () => { db = await migratedDatabase() }, 60000)
   afterAll(async () => { await db?.close() })
 
   it('mounts migrated boards in HTTP, authenticated MCP and capability discovery with persisted readback', async () => {

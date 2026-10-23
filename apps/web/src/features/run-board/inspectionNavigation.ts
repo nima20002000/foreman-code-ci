@@ -1,7 +1,7 @@
 import { defaultStringifySearch, useLocation, useRouter } from '@tanstack/react-router'
-import { readRunInspectionKey, runInspectionKey } from '@foreman-code/contracts/wave25'
-import type { SelectedRunState } from '../runs-selector/useSelectedRun'
-import { useBoardSelection } from '../workflow-board/context'
+import { readRunInspectionKey, runInspectionKey } from '@foreman-code/contracts/current'
+import type { SelectedRunState } from '../runs-selector'
+import { useBoardSelection } from '../board-core'
 
 export function useRunNodeInspectionNavigation(selection: SelectedRunState) {
   const router = useRouter()

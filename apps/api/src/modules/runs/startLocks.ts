@@ -1,5 +1,5 @@
 import { setTimeout } from 'node:timers/promises'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
 
 export const RUN_START_LOCK_WAIT_MS = 30_000
@@ -9,7 +9,7 @@ export interface RunStartLockWait {
   signal?: AbortSignal
 }
 
-export async function waitForRunStartLock(sql: GraphSqlClient, key: string,
+export async function waitForRunStartLock(sql: SqlQuery, key: string,
   wait: RunStartLockWait = { deadline: performance.now() + RUN_START_LOCK_WAIT_MS }): Promise<void> {
   for (;;) {
     wait.signal?.throwIfAborted()

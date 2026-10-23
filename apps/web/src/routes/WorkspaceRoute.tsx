@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 
-import { WorkspaceExecutionLocationSetup } from '../features/settings/WorkspaceExecutionLocationSetup'
-import { NewWorkflowAction } from '../features/workflows/NewWorkflowAction'
+import { WorkspaceExecutionLocationSetup } from '../features/settings'
+import { NewWorkflowAction } from '../features/workflows'
 import { Alert, EmptyState, ErrorState, Icon, LoadingState } from '../shared/ui/nocturne'
 import { useRunQuery } from '../shared/api/query'
 import '../features/workflows/workflows.css'

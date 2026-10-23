@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { agentWorktree } from './service.js'
 import { createSourceManifest } from './manifest.js'
 import { freezePlacement } from '../placement/binding.js'
@@ -12,7 +12,7 @@ it.each(['another repository', 'removed repository'])('uses the approved reposit
     entries: [], deletions: [] })
   const sql = { query: async () => ({ rows: [{ workflow_name: 'Website', agent_name: 'Coder', run_id: 'run-accepted',
     workspace: { id: 'workspace-one', name: 'Site', ...(change === 'another repository'
-      ? { repository: { provider: 'github', owner: 'other', name: 'site', defaultBranch: 'main' } } : {}) } }] }) } as unknown as GraphSqlClient
+      ? { repository: { provider: 'github', owner: 'other', name: 'site', defaultBranch: 'main' } } : {}) } }] }) } as unknown as SqlQuery
   expect(await agentWorktree(sql, 'execution-one', manifest)).toMatchObject({ repository: 'original/site' })
 })
 
@@ -22,7 +22,7 @@ it('keeps the accepted shared-copy behavior when a repository is configured afte
     git: { commit: 'a'.repeat(40), tree: 'b'.repeat(40), objectFormat: 'sha1' }, entries: [], deletions: [] })
   const sql = { query: async () => ({ rows: [{ workflow_name: 'Website', agent_name: 'Coder', run_id: 'run-accepted',
     workspace: { id: 'workspace-one', name: 'Site',
-      repository: { provider: 'github', owner: 'other', name: 'site', defaultBranch: 'main' } } }] }) } as unknown as GraphSqlClient
+      repository: { provider: 'github', owner: 'other', name: 'site', defaultBranch: 'main' } } }] }) } as unknown as SqlQuery
   expect(await agentWorktree(sql, 'execution-one', manifest)).toBeUndefined()
 })
 
@@ -46,7 +46,7 @@ it('uses the frozen branch request after workflow and Agent names change', async
       harnessInstallationId: 'installation', installationFingerprint: digest, runtimeContractVersion: 1,
       protocolRevision: '1', credentialScopeRefs: [], worktree } })
   const sql = { query: async () => ({ rows: [{ placement, workflow_name: 'Renamed workflow',
-    agent_name: 'Renamed Agent', run_id: placement.runId }] }) } as unknown as GraphSqlClient
+    agent_name: 'Renamed Agent', run_id: placement.runId }] }) } as unknown as SqlQuery
   expect(await agentWorktree(sql, 'execution', manifest)).toEqual(worktree)
   const another = createSourceManifest({ ...manifest, git: { ...manifest.git!, repository: 'other/site' } })
   await expect(agentWorktree(sql, 'execution', another)).rejects.toMatchObject({ code: 'SOURCE_WORKTREE_CONFLICT' })

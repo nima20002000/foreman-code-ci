@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, type CodexHarnessConfiguration } from '@foreman-code/contracts'
 import { fixture } from './core.cases'
-import { authoringHints, entryChoices, startFromConnectionSource } from './model'
+import { authoringHints, entryChoices, startFromConnectionSource } from '../../board-core'
 
 const codex: CodexHarnessConfiguration = { harness: 'codex', model: 'gpt-5.6-luna', reasoningEffort: 'medium',
   sandbox: 'read-only', serviceTier: 'standard' }

@@ -6,11 +6,11 @@ import type { DeviceRegistration } from '@foreman-code/contracts/device-identity
 import type { RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
 import type { SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import type { WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root-policies'
-import type { GraphSqlClient } from '../run-graph/connection.js'
-import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
-import { HarnessInstallationRegistry } from '../harnesses/installationRegistry.js'
-import { HarnessInstanceRegistry, localHarnessDrivers } from '../harnesses/instanceRegistry.js'
-import { WorkspaceLocationService } from '../workspaces/location.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
+import { assertDeviceHostInstallation } from '../devices/index.js'
+import { HarnessInstallationRegistry } from '../harnesses/index.js'
+import { HarnessInstanceRegistry, localHarnessDrivers } from '../harnesses/index.js'
+import { WorkspaceLocationService } from '../workspaces/index.js'
 import { PostgresSourceService } from '../sources/service.js'
 import { createSourceManifest } from '../sources/manifest.js'
 import { createProductionRootPolicies } from '../sources/productionRootAuthority.js'
@@ -104,7 +104,7 @@ export function authorityQueryFixture() {
     stopped: state.stopped, cleanup: state.cleanup, failed: state.failed, granted: state.granted,
     connection: state.origin, receipt: state.receipt ?? null, receipt_present: !!state.receipt, entered: state.entered })
   // The catalog supplies rows; query counting happens independently at the pool boundary.
-  const catalog: GraphSqlClient = { async query<R extends pg.QueryResultRow>(text: string, values?: unknown[]) {
+  const catalog: SqlQuery = { async query<R extends pg.QueryResultRow>(text: string, values?: unknown[]) {
     let rows: unknown[] = []
     if (text.startsWith('select i.record as dispatch')) rows = [authorityRow()]
     else if (text.includes('as authorization_read')) rows = [{ authorization_read: {

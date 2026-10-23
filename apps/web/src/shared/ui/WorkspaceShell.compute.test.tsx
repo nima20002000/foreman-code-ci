@@ -1,7 +1,7 @@
 import { act, screen, within } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
 import { renderWithRouter } from '../../test/renderWithRouter'
-import { useNavigationUiStore } from '../../features/workspaces/navigationUiStore'
+import { useNavigationUiStore } from '../../features/workspaces'
 import { WorkspaceShell } from './WorkspaceShell'
 
 afterEach(() => act(() => useNavigationUiStore.getState().setCollapsed(false)))

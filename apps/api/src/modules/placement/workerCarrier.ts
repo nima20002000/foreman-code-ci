@@ -3,16 +3,16 @@ import { RemoteOperationReceiptSchema, type RemoteOperationReceipt } from '@fore
 import { DeviceConnectionIdentitySchema, type DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
 import { WorkspaceRootWorkerRequestSchema, WORKSPACE_ROOT_EXTENSION } from '@foreman-code/contracts/workspace-root-policies'
 import type { RootWorkerClient } from '../sources/rootHosts.js'
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { RemoteNativeSessionManager, type RemoteNativeManagerOptions } from '../runs/remote/nativeManagerProxy.js'
 import { readRemoteReceiptResponse } from '../runs/remote/installedWorkflowResponsePages.js'
 import { VerifiedRemoteEvidence, type RemoteResultCommitPort } from '../runs/remote/resultBridge.js'
 import type { NativeManagerResolutionContext } from '../interactions/runtimePorts.js'
-import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
+import { WorkerExecutionPolicy } from '../settings/index.js'
 import { DomainError } from '../errors.js'
 import type { AcceptedExecutionBinding } from './nativeComposition.js'
-import { deviceRequestTimeoutMs } from '../devices/deviceRequestRetry.js'
-import { isDeviceLinkDrop } from '../devices/deviceReconnect.js'
+import { deviceRequestTimeoutMs } from '../devices/index.js'
+import { isDeviceLinkDrop } from '../devices/index.js'
 
 /** W07 returns the identity AND request closure of the SAME authenticated
  * channel instance. A presence label or separately looked-up mutable channel

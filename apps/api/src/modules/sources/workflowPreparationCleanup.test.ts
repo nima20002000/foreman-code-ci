@@ -4,7 +4,7 @@ import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import { DispatchIntentSchema } from '@foreman-code/contracts/node-placement'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
 import { remoteEntryClosureDigest, remoteNonEntryClosureDigest } from '@foreman-code/contracts/remote-execution-entry-closure-node'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { repeatExecutionIdentity } from '../runs/repeatResolution.js'
 import { assertWorkflowPreparationClosed, remoteWorkflowPreparationClosed,
   type loadWorkflowPreparation } from './workflowPreparationCleanup.js'
@@ -16,7 +16,7 @@ function fixture() {
     result: { outcome: 'canceled' }, createdAt: '2026-10-04T00:00:00Z', finishedAt: '2026-10-04T00:01:00Z',
   })
   const entry = { phase: 'entered', reservation: { execution: repeatExecutionIdentity(execution) } }
-  const sql = { query: async () => ({ rows: [entry] }) } as unknown as GraphSqlClient
+  const sql = { query: async () => ({ rows: [entry] }) } as unknown as SqlQuery
   const state = {
     execution, execution_state: 'completed', stop_requested: false, cleanup_pending: false, session_bound: false, nativeSession: null,
   } as Awaited<ReturnType<typeof loadWorkflowPreparation>>
@@ -88,7 +88,7 @@ it.each(['entry', 'non-entry'] as const)('releases the original preparation afte
     if (text.startsWith('select receipt,')) return { rows: [{ receipt, session_bound: state.sessionBound }] }
     if (text.startsWith('select record from execution_dispatch_intents')) return { rows: [{ record: state.current }] }
     return { rows: [] }
-  } } as unknown as GraphSqlClient
+  } } as unknown as SqlQuery
   await expect(remoteWorkflowPreparationClosed(sql, 'execution')).resolves.toBe(true)
   state.sessionBound = true
   await expect(remoteWorkflowPreparationClosed(sql, 'execution')).rejects.toMatchObject({ code: 'SOURCE_PREPARATION_NOT_FOUND' })

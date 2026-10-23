@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { CiRunRecordSchema, type CiRunRecord } from '@foreman-code/contracts'
-import { ciIntegrationSelectionMigration } from '../src/infrastructure/ciIntegrationSelectionMigration.js'
+import { ciIntegrationSelectionMigration } from '../src/modules/ci/migrations.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { readQueuedCiRuns } from '@foreman-code/ci/queuedRuns'

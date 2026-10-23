@@ -4,11 +4,10 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { memoryBoardTools, newAgentGraphqlTools, type GraphqlAgentTool } from '@foreman-code/contracts'
-import { WorkflowBoardProvider } from '../workflow-board/context'
+import { WorkflowBoardProvider, type CollaborationFieldSlots } from '../board-core'
 import { GraphqlToolsFields } from './GraphqlToolsFields'
 import { NodeWorkflowFields } from './nextDraft/AuthoringFields'
 import { fixture } from './nextDraft/core.cases'
-import type { CollaborationFieldSlots } from './collaborationFields'
 import { CollaborationUIProvider } from '../../shared/ui/collaborationSlots'
 
 afterEach(cleanup)

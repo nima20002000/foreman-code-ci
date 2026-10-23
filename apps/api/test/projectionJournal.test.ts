@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
-import { RepeatGraphStateV3Schema, type RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
+import { RepeatGraphStateCurrentSchema, type RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { openRunGraphPublication, type RunGraphPublication } from '../src/modules/run-graph/publication.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../src/modules/run-graph/repeatReceipts.js'
 import { readRepeatGraphCurrent, readRepeatGraphPage } from '../src/modules/run-graph/repeatReader.js'
@@ -12,7 +12,7 @@ const domainSources = (db: ProjectionDatabase) => db.state.sources.filter((row) 
 
 async function publish(db: ProjectionDatabase, count = 1) {
   const connection = db.connection()
-  let publication!: RunGraphPublication<RepeatGraphScopeV3>
+  let publication!: RunGraphPublication<RepeatGraphScopeCurrent>
   try {
     await connection.transaction(async sql => {
       publication = await openRunGraphPublication(sql, projectionScope, db.readPublicProjection)
@@ -123,7 +123,7 @@ describe('Run graph journal', () => {
   })
   it('snapshot recovery requires committed Run metadata, including after payload reset/retention', async () => {
     const db = new ProjectionDatabase(), c = db.connection()
-    const state = RepeatGraphStateV3Schema.parse({ run: db.runState(), nodes: [], inputBindings: [], interactions: [], reviews: [],
+    const state = RepeatGraphStateCurrentSchema.parse({ run: db.runState(), nodes: [], inputBindings: [], interactions: [], reviews: [],
       occurrences: [], executions: [], results: [], bindings: [], resolutions: [], decisions: [] })
     try {
       await assert.rejects(c.transaction(sql => assertRepeatGraphCommittedState(sql, projectionScope, '0', state), true))

@@ -1,4 +1,4 @@
-import { CURRENT_WORKFLOW_TOOLS } from '@foreman-code/contracts/wave25'
+import { CURRENT_WORKFLOW_TOOLS } from '@foreman-code/contracts/current'
 import type { McpServer } from '@modelcontextprotocol/server'
 import {
   ManagementActionSchema,
@@ -127,7 +127,7 @@ describe('Operator tool registration permissions', () => {
   it('registers every supported tool for an unrestricted owner', () => {
     // These require more than one grant (respond also needs interactions:read).
     const expected = [...actionTools.flatMap(([, names]) => names), 'interaction_respond',
-      'run_handoffs_get_v1', 'run_start', 'run_start_resolve', 'workflow_reorder', 'bug_reports_close'].sort()
+      'run_handoffs_get_v1', 'run_start', 'run_start_resolve', 'bug_reports_close'].sort()
     expect(registered(context([{ actions: [...ManagementActionSchema.options], scope: {} }]))).toEqual(expected)
   })
 

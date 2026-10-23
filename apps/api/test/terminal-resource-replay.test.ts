@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { native2Fixture } from './native-reviewer-fixtures.js'
+import { nativeReviewerFixture } from './native-reviewer-fixtures.js'
 
 const pending = { code: 'REPEAT_CLEANUP_PENDING' }
 
 // The coordinator, closure reader, credential repair and serialized finalizers
 // are real. Only the database rows and credential service are explicit doubles.
 test('cold terminal replay repairs only captured workflow principals before settlement', async () => {
-  const f = native2Fixture(); f.closed()
+  const f = nativeReviewerFixture(); f.closed()
   f.recovery.bindings.push({ principalId: 'exact-workflow-principal', purpose: 'workflow', revoked: false })
   const before = structuredClone(f.get())
   try {
@@ -27,7 +27,7 @@ test('cold terminal replay repairs only captured workflow principals before sett
 })
 
 test('cold terminal replay never revokes a reviewer principal or bypasses its resource obligation', async () => {
-  const f = native2Fixture(); f.closed()
+  const f = nativeReviewerFixture(); f.closed()
   f.recovery.bindings.push(
     { principalId: 'original-workflow-principal', purpose: 'workflow', revoked: false },
     { principalId: 'successor-reviewer-principal', purpose: 'reviewer', revoked: false },
@@ -43,7 +43,7 @@ test('cold terminal replay never revokes a reviewer principal or bypasses its re
 })
 
 test('a changed owner fence rolls back cold credential capture before any revocation', async () => {
-  const f = native2Fixture(); f.closed()
+  const f = nativeReviewerFixture(); f.closed()
   f.recovery.bindings.push({ principalId: 'must-not-revoke', purpose: 'workflow', revoked: false })
   const readFence = f.owner.readOneShotFence
   let reads = 0
@@ -58,7 +58,7 @@ test('a changed owner fence rolls back cold credential capture before any revoca
 })
 
 test('a later native generation cannot borrow the original cold credential settlement', async () => {
-  const f = native2Fixture(); f.closed()
+  const f = nativeReviewerFixture(); f.closed()
   f.recovery.bindings.push({ principalId: 'original-workflow-principal', purpose: 'workflow', revoked: false })
   const revoke = f.credentials.revoke
   f.credentials.revoke = async (identity) => {

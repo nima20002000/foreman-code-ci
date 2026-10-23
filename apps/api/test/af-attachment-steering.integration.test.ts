@@ -3,8 +3,8 @@ import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import type { SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
-import { afPublicationFixture } from './helpers/afPublicationFixture.js'
-import { withAfMcp } from './helpers/afMcp.js'
+import { nativePublicationFixture } from './helpers/nativePublicationFixture.js'
+import { withPublicationMcp } from './helpers/afMcp.js'
 import { postgresEnabled } from './helpers/database.js'
 
 // Valid 1x1 PNG. This tests admission, not native image rendering.
@@ -12,7 +12,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 
 describe.skipIf(!postgresEnabled)('AF-05 attachment steering', { timeout: 90_000 }, () => {
   it('rejects document/image/attachment-only steers before admission over service, HTTP and authenticated MCP', async () => {
-    const f = await afPublicationFixture()
+    const f = await nativePublicationFixture()
     const active = await f.pause() // The live Codex turn started without files or file-tool authority.
     const doc = await f.upload(), image = await f.upload(png, 'pixel.png', 'image/png')
     const admit = vi.spyOn(f.repository, 'admit')
@@ -23,7 +23,7 @@ describe.skipIf(!postgresEnabled)('AF-05 attachment steering', { timeout: 90_000
       headers: { host: 'localhost', authorization: `Bearer ${token}` }, payload: input,
     })
     try {
-      await withAfMcp(f, async (writer, reader) => {
+      await withPublicationMcp(f, async (writer, reader) => {
         const tool = (await operatorCatalog(writer)).find((entry) => entry.name === 'agent_chat_send')!
         expect(tool.description).toMatch(/steer adds text only/)
         for (const attachments of [[doc], [image], [doc, image]]) for (const content of ['look at these', '']) {

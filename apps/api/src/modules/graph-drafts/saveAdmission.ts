@@ -1,14 +1,14 @@
 import type pg from 'pg'
 import { RunOutcomeSchema } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema,
-  SavedRunVersionSnapshotSchema, ExecutableWorkflowV3Schema } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema,
+  SavedRunVersionSnapshotSchema, ExecutableWorkflowCurrentSchema } from '@foreman-code/contracts/current'
 import { CurrentJournalRunPinSchema as GraphEditRunPinSchema, CurrentJournalRunStateSchema as GraphEditRunStateSchema,
-  type CurrentJournalRunState as GraphEditRunState } from '@foreman-code/contracts/wave25'
+  type CurrentJournalRunState as GraphEditRunState } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
 import { hasSaveNativeSettlement } from './saveNativeSettlement.js'
 import { readImmutableWorkflowVersion, readImmutableAgentConfiguration,
-  type ImmutableWorkflowVersionRow, type ImmutableAgentConfigurationRow } from '../workflows/immutableRead.js'
-import { CANCELED_INTERACTION_RETIRED_SQL } from '../interactions/wave25/publication.js'
+  type ImmutableWorkflowVersionRow, type ImmutableAgentConfigurationRow } from '../workflows/index.js'
+import { CANCELED_INTERACTION_RETIRED_SQL } from '../interactions/index.js'
 import { PUBLIC_PENDING_INTERACTION_SQL, PUBLIC_UNSETTLED_REVIEW_SQL } from '../run-graph/publicObligations.js'
 
 export interface AffectedGraphScope { workspaceId: string; workflowId: string; stagedAgentIds: readonly string[] }
@@ -185,7 +185,7 @@ function validCurrentSnapshot(row: AffectedRow): boolean {
   if (semantics !== 3) return false // Missing, retired, string and unknown pins never acquire current authority.
   try {
     if (!row.version_row || !Array.isArray(row.configurations)) return false
-    const run = AcceptedWorkflowRunV3Schema.parse(row.record)
+    const run = AcceptedWorkflowRunCurrentSchema.parse(row.record)
     if (run.id !== row.id || run.workspaceId !== row.workspace_id || run.workflowId !== row.workflow_id
       || run.workflowVersionId !== row.workflow_version_id) return false
     const version = readImmutableWorkflowVersion(row.version_row, { id: row.workflow_version_id,
@@ -193,7 +193,7 @@ function validCurrentSnapshot(row: AffectedRow): boolean {
     const configurations = row.configurations.map((configuration) => readImmutableAgentConfiguration(configuration,
       { workspaceId: row.workspace_id }))
     if (!SavedRunVersionSnapshotSchema.safeParse({ run, version }).success) return false
-    const executable = ExecutableWorkflowV3Schema.safeParse({ version, configurations })
+    const executable = ExecutableWorkflowCurrentSchema.safeParse({ version, configurations })
     // Historical settlement checks snapshot integrity, not newer admission rules:
     // an already-accepted Run must not block a corrective Save only because its
     // immutable topology fails the later cross-repeat reviewer restriction.

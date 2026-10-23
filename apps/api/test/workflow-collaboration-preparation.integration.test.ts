@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL, type AgentSubject, type BoardApplicationReceipt,
   type BrowserPrepareResult, type BoardResult } from '@foreman-code/contracts'
-import type { GraphTransactionSql } from '../src/modules/run-graph/connection.js'
+import type { SqlTransaction } from '../src/infrastructure/transaction.js'
 import { DomainError } from '../src/modules/errors.js'
 import { requestRepeatRunStop } from '../src/modules/runs/repeatLifecycle.js'
 import { recordWorkflowExecutionFailure } from '../src/modules/runs/workflowLifecycle.js'
@@ -53,7 +53,7 @@ describe.skipIf(!postgresEnabled)('workflow collaboration preparation and atomic
       const text = 'Card one · Doing · revision 7'
       return { text, byteLength: new TextEncoder().encode(text).byteLength, cardIds: ['card-one'], omittedCount: 3 }
     })
-    async function persist(sql: GraphTransactionSql, sourceEventKey: string, payload: unknown): Promise<BoardApplicationReceipt> {
+    async function persist(sql: SqlTransaction, sourceEventKey: string, payload: unknown): Promise<BoardApplicationReceipt> {
       const inserted = await sql.query(`insert into collaboration_test_events(source_key,payload) values($1,$2::jsonb)
         on conflict(source_key) do nothing`, [sourceEventKey, JSON.stringify(payload)])
       return { applicationId: `application:${sourceEventKey}`, sourceEventKey, commandIds: [],

@@ -1,20 +1,21 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { AgentChatService } from '../src/modules/conversations/agentChat.js'
 import { agentChatKey, PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { createAdmittedNativeManager } from '../src/modules/harnesses/admittedManager.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { ChatManager } from './helpers/operatorChatFixture.js'
 import { readUntil } from './helpers/observableCondition.js'
 
 it.each(['stopped', 'disconnected'] as const)(
   'disposes a local native owner after its stream is %s while retaining its unconfirmed message', async stream => {
-  const db = await agent3Database()
+  const db = await migratedDatabase()
   let chat: AgentChatService | undefined
   const native = new ChatManager()
   native.autoFinish = false
@@ -24,7 +25,7 @@ it.each(['stopped', 'disconnected'] as const)(
     if (stream === 'disconnected') signal?.throwIfAborted()
   }
   try {
-    const seeded = await seedAgent3(db.pool, db.directory, makeCurrentWorkflowFixture(randomUUID(), 'sequential'), { run: false })
+    const seeded = await seedWorkflowFixture(db.pool, db.directory, makeCurrentWorkflowFixture(randomUUID(), 'sequential'), { run: false })
     const node = seeded.version.definition.nodes[0]!
     const configuration = seeded.configurations.find(value => value.agentId === node.agentId)!
     const context = { workspaceId: configuration.workspaceId, workflowId: seeded.scope.workflowId,

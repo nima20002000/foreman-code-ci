@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 import { ManagementPrincipalSchema } from '@foreman-code/contracts/management'
 import { CanonicalRunGraphReadCapabilitiesSchema, CanonicalRunGraphScopeSchema,
-  ManualRunStartInputSchema, RunStartV3InputSchema } from '@foreman-code/contracts/wave25'
+  ManualRunStartInputSchema, RunStartCurrentInputSchema } from '@foreman-code/contracts/current'
 import { RunGraphReadService } from '../src/modules/run-graph/readService.js'
 import { canonicalRunGraphReadApi } from '../src/modules/run-graph/repeatReadService.js'
 
@@ -23,7 +23,7 @@ function rejectsCode(work: () => unknown, code: string) {
 
 describe('read discovery and manual Start contracts', () => {
   it('has exactly one current Start arm without adding repeat to the command', () => {
-    expect(ManualRunStartInputSchema.parse(start)).toEqual(RunStartV3InputSchema.parse(start))
+    expect(ManualRunStartInputSchema.parse(start)).toEqual(RunStartCurrentInputSchema.parse(start))
     expect(Object.hasOwn(ManualRunStartInputSchema.parse(start), 'repeat')).toBe(false)
   })
   it.each(['workflowVersionId', 'expectedWorkflowRevision', 'expectedAgentConfigurationVersionIds', 'expectedLocationRevision'])(

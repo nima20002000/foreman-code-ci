@@ -24,13 +24,13 @@ import { registerProductionFileStorage } from '../src/modules/files/production.j
 import { productionFileTools } from '../src/modules/files/tools/production.js'
 import { PostgresFileConversationAuthorization } from '../src/modules/files/authorization.js'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 // Native frames are recorded; PostgreSQL admission, SDK MCP and the file service are production code.
 async function fixture(readOnly: boolean) {
-  const db = await agent3Database()
+  const db = await migratedDatabase()
   const app = Fastify({ logger: false })
   const resources: { close?: () => Promise<void> } = {}
   onTestFinished(async () => {

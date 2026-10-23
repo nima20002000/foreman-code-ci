@@ -2,7 +2,7 @@ import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 import { RunOutcomeSchema } from '@foreman-code/contracts'
 import { assertMeaningfulSaveAdmitted, readAffectedGraphRuns } from '../src/modules/graph-drafts/saveAdmission.js'
-import type { GraphSqlClient } from '../src/modules/run-graph/connection.js'
+import type { SqlQuery } from '../src/infrastructure/transaction.js'
 import { currentSaveAdmissionFixture } from './helpers/currentSaveAdmission.js'
 import { recoveryIdentity } from './helpers/recoveryExecution.testSupport.js'
 import { saveNativeProtocolFixture, type SaveNativeProof } from './helpers/saveNativeSettlement.testSupport.js'
@@ -24,15 +24,15 @@ function fixture(proof: SaveNativeProof = 'closed') {
   })
   const queryFailures: unknown[] = []
   let phase: 'initial' | 'locked' | 'facts' = 'initial'
-  const sql: GraphSqlClient = { async query<R extends pg.QueryResultRow>(text: string, values: unknown[] = []) {
+  const sql: SqlQuery = { async query<R extends pg.QueryResultRow>(text: string, values: unknown[] = []) {
     try {
-      if (text.startsWith('select r.id from runs r where ')) {
+      // The first read locks the affected Run set by scope; the second reads their facts with the settled outcomes.
+      if (phase === 'initial') {
         expect(values).toEqual(scopeValues)
         phase = 'locked'
         return result<R>([{ id: row.id }])
       }
-      if (text.startsWith('select r.id,r.workspace_id,r.workflow_id,r.workflow_version_id,r.record,')) {
-        expect(phase).toBe('locked')
+      if (phase === 'locked') {
         expect(values).toEqual([...scopeValues, RunOutcomeSchema.options.filter((outcome) => outcome !== 'pending')])
         phase = 'facts'
         return result<R>([row])

@@ -69,6 +69,18 @@ export default tseslint.config(
         message: 'Start child processes through src/shared/process.ts (runProcess, runProcessSettled, spawnProcess, forkProcess).' })) }],
     },
   },
+  {
+    // Environment reads: settings come from src/config.ts (loadConfig and its lazy accessors); a child process or a
+    // function that forwards the host environment takes hostEnvironment() from src/shared/process.ts. Entry points,
+    // composition and tests may read process.env directly.
+    files: ['src/**/*.ts'],
+    ignores: ['src/config.ts', 'src/shared/process.ts', 'src/server.ts', 'src/cli/**', 'src/production.ts',
+      '**/*.test.ts', '**/*.test-support.ts', '**/__tests__/**'],
+    rules: {
+      'no-restricted-properties': ['error', { object: 'process', property: 'env',
+        message: 'Read settings through src/config.ts, or take the host environment from hostEnvironment() in src/shared/process.ts.' }],
+    },
+  },
   { files: ['src/shared/hash.ts'], rules: { 'no-restricted-syntax': 'off' } },
   { files: ['src/shared/process.ts'], rules: { 'no-restricted-imports': 'off' } },
   ...foremanLint(import.meta.dirname),

@@ -9,7 +9,7 @@ import { DispatchIntentSchema, type DispatchIntent } from '@foreman-code/contrac
 import { NativeSessionReferenceSchema, type NativeSessionReference } from '@foreman-code/contracts'
 import { MAX_FILE_BYTES } from '@foreman-code/contracts/files'
 import { BYTE_TRANSFER_POLICY } from '@foreman-code/contracts/byte-transfer'
-import { anchored, identity, openPrivateRoot, withPrivateDirectoryLock } from '../../sources/privateFilesystem.js'
+import { anchored, identity, openPrivateRoot, withPrivateDirectoryLock } from '../../sources/index.js'
 import { DomainError } from '../../errors.js'
 import { sha256Hex } from '../../../shared/hash.js'
 

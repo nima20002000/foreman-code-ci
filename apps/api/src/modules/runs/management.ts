@@ -5,8 +5,8 @@ import { RunSubagentService } from '../subagents/service.js'
 import { RunActivitySchema } from '@foreman-code/contracts'
 import { RunStopInputSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import type pg from 'pg'
-import { RunStartV3InputSchema, SavedWorkflowRunSchema, CurrentJournalStopSchema, canonicalGraphJson,
-  type RunStartV3Input } from '@foreman-code/contracts/wave25'
+import { RunStartCurrentInputSchema, SavedWorkflowRunSchema, CurrentJournalStopSchema, canonicalGraphJson,
+  type RunStartCurrentInput } from '@foreman-code/contracts/current'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { RunHistoryService } from './history.js'
 import { decodeRunHistoryCursor, encodeRunHistoryCursor } from './historyCursor.js'
@@ -22,16 +22,16 @@ import { resolveRunStart } from './startResolution.js'
 import { hasAction, isAuthorized, requireAuthorization } from '../access/policy.js'
 import { intersectGrants } from '../access/operatorDelegation.js'
 import { authorizedPage } from '../access/authorizedPage.js'
-import { PostgresCommandCoordinator } from '../commands/postgres.js'
+import { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import type { LangGraphWorkflowEngine } from './engine.js'
 import type { PostgresRunRepository } from './postgres.js'
-import type { WorkspaceLocationService } from '../workspaces/location.js'
+import type { WorkspaceLocationService } from '../workspaces/index.js'
 import type { CurrentRunProductionBinding, CurrentRuntimeAvailability } from './currentProduction.js'
 
-import { createScheduleDispatcher } from '../schedules/runtime.js'
-import type { WorkflowScheduleDispatcher } from '../schedules/dispatcher.js'
-import type { ScheduleDispatchErrorReporter } from '../schedules/dispatchErrors.js'
+import { createScheduleDispatcher } from '../schedules/index.js'
+import type { WorkflowScheduleDispatcher } from '../schedules/index.js'
+import type { ScheduleDispatchErrorReporter } from '../schedules/index.js'
 
 type RunListScope = { workspaceId: string; workflowId?: string | undefined }
 type RunListInput = RunListScope & { cursor?: string | undefined; limit: number }
@@ -189,13 +189,13 @@ export class RunManagementService {
   }
 
   async start(principal: ManagementPrincipal, source: 'http' | 'mcp',
-    raw: RunStartV3Input & { triggerJobId?: string | undefined },
+    raw: RunStartCurrentInput & { triggerJobId?: string | undefined },
     options: Pick<RepeatStartOptions, 'continuation'> = {}) {
     // No absent/retired/unknown tag can choose another execution path.
     if (raw.executionSemanticsVersion !== 3) throw new DomainError('EXECUTION_SEMANTICS_UNSUPPORTED',
       'Current execution requires explicit semantics 3.', 409)
     const { triggerJobId, ...value } = raw
-    const input = RunStartV3InputSchema.parse(value)
+    const input = RunStartCurrentInputSchema.parse(value)
     requireAuthorization(principal, 'runs:start', { workspaceId: input.workspaceId, workflowId: input.workflowId })
     requireAuthorization(principal, 'workspace_locations:read', { workspaceId: input.workspaceId })
     const production = this.currentProduction
@@ -218,7 +218,7 @@ export class RunManagementService {
     return { run: this.visibleRun(principal, execution.value), accepted: true as const, replayed: execution.replayed }
   }
 
-  async resolveStart(principal: ManagementPrincipal, source: 'http' | 'mcp', input: RunStartV3Input) {
+  async resolveStart(principal: ManagementPrincipal, source: 'http' | 'mcp', input: RunStartCurrentInput) {
     const result = await resolveRunStart(this.pool, principal, source, input)
     return result.status === 'accepted' ? { ...result, run: this.visibleRun(principal, result.run) } : result
   }

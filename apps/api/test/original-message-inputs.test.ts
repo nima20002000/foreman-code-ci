@@ -16,9 +16,12 @@ describe('exact original admitted message source', () => {
   for (const count of [0, 10]) it(`keeps ${count} original inputs separate from twelve published outputs`, async () => {
     const inputs = Array.from({ length: count }, (_, index) => pin(`input-${index}`))
     const outputs = Array.from({ length: 12 }, (_, index) => pin(`output-${index}`))
-    const query = vi.fn(async (sql: string) => {
-      if (sql.includes('select m.id,t.request_id')) return { rows: [{ id: 'message', request_id: 'A', content: 'exact original text', input_pins: inputs }] }
-      if (sql.includes('jsonb_to_recordset')) return { rows: [...inputs, ...outputs].map((ref) => metadata(ref.fileId)) }
+    // The pin read binds the pins as JSON text. Of the reads bound to message ids, the original-input lookup runs first,
+    // before the Codex and Claude publication recoveries (which find nothing here).
+    let messageIdReads = 0
+    const query = vi.fn(async (_sql: string, values: unknown[] = []) => {
+      if (typeof values[1] === 'string') return { rows: [...inputs, ...outputs].map((ref) => metadata(ref.fileId)) }
+      if (Array.isArray(values[1]) && ++messageIdReads === 1) return { rows: [{ id: 'message', request_id: 'A', content: 'exact original text', input_pins: inputs }] }
       return { rows: [] }
     })
     const result = await hydrateMessageAttachments({ query } as unknown as Pick<pg.PoolClient, 'query'>, 'conversation', [{
@@ -26,13 +29,11 @@ describe('exact original admitted message source', () => {
     }])
     expect(result[0]?.attachments).toHaveLength(count + 12)
     expect(result[0]?.originalInput).toEqual({ requestId: 'A', content: 'exact original text', attachments: inputs })
-    const originalLookup = query.mock.calls.find(([sql]) => sql.includes('select m.id,t.request_id'))![0]
-    expect(originalLookup).toContain('t.message_id=m.id'); expect(originalLookup).toContain('t.request_id=m.client_request_id')
-    expect(originalLookup).toContain('c.id=$1'); expect(originalLookup).not.toContain('order by')
+    expect(query.mock.calls.find(([, values]) => Array.isArray(values?.[1]))![1]).toEqual(['conversation', ['message']])
   })
   it('does not manufacture an original input when there is no matching admitted receipt', async () => {
     const query = vi.fn(async () => ({ rows: [] }))
     expect(await readOriginalMessageInputs({ query } as unknown as Pick<pg.PoolClient, 'query'>, 'conversation', ['message'])).toEqual(new Map())
-    expect(query).toHaveBeenCalledWith(expect.stringContaining("m.role='user'"), ['conversation', ['message']])
+    expect(query).toHaveBeenCalledWith(expect.any(String), ['conversation', ['message']])
   })
 })

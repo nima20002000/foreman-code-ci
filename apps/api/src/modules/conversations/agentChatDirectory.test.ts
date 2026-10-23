@@ -134,11 +134,12 @@ function runDirectorySql(harness: 'codex' | 'claude', hostKind: 'main' | 'device
       installationFingerprint: digest, runtimeContractVersion: 1, protocolRevision: '1', credentialScopeRefs: [],
       artifactOutputs: { version: 1, outputKeys: ['result'] } },
   })
-  const query = async (text: string, values: unknown[]) => {
-    if (text.includes('from run_node_placements')) {
+  // The saved directory read binds the conversation id; the accepted placement read binds the run and node ids.
+  const query = async (_text: string, values: unknown[]) => {
+    if (values.length === 2) {
       return { rows: values[0] === placement.runId && values[1] === placement.nodeId ? [{ record: placement }] : [] }
     }
-    if (text.includes('from operator_conversations')) {
+    if (values.length === 1 && values[0] === 'conversation') {
       return { rows: [{ path, host_kind: profileHostKind, origin_run_id: 'run', workflow_node_id: 'node' }] }
     }
     return { rows: [] }

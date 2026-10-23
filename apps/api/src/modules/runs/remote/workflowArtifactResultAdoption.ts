@@ -3,7 +3,7 @@ import { HarnessExecutionSchema, type HarnessExecution, type ResultProtocol } fr
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import { ArtifactAttemptSchema } from '@foreman-code/contracts/artifact-edges'
 import { remoteWorkflowHasTurn, remoteWorkflowTurnId, type RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
-import { WorkflowVersionV3Schema, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { WorkflowVersionCurrentSchema, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import type { WorkflowArtifactResultV1 } from '@foreman-code/contracts/workflow-artifact-result'
 import type { AcceptedArtifactPublication } from '../../files/distributed/publication.js'
 import { DomainError } from '../../errors.js'
@@ -14,7 +14,7 @@ import type { NativeArtifactOutputs, NativeArtifactOutput } from './nativeArtifa
 import { workflowArtifactResult } from '../workflowCoordinationResult.js'
 
 export interface VerifiedWorkflowArtifactSource {
-  version: WorkflowVersionV3
+  version: WorkflowVersionCurrent
   resultProtocol?: ResultProtocol | undefined
   execution: HarnessExecution
   proof: WorkflowNativeProofRecord
@@ -55,7 +55,7 @@ export class WorkflowArtifactResultAdoption {
       proof: original.proof, sourceDigest: original.sourceDigest, remote: original.remote })
     await original.assertCurrent()
     const { proof } = snapshot
-    const version = WorkflowVersionV3Schema.parse(snapshot.version), execution = HarnessExecutionSchema.parse(snapshot.execution)
+    const version = WorkflowVersionCurrentSchema.parse(snapshot.version), execution = HarnessExecutionSchema.parse(snapshot.execution)
     assertRepeatExecution(version, proof.scope, proof.ref, execution)
     if (snapshot.sourceDigest !== repeatDigest(proof, REMOTE_NATIVE_SOURCE_LIMIT)
       || proof.scope.workspaceId !== accepted.attempt.workspaceId || proof.scope.workflowId !== accepted.attempt.workflowId

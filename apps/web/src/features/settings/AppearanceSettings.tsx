@@ -1,5 +1,5 @@
 import { Alert, Button, SegmentedControl, SettingRow, SettingsSection, Skeleton } from '../../shared/ui/nocturne'
-import { useSyncedTheme } from '../theme/useSyncedTheme'
+import { useSyncedTheme } from '../theme'
 import { ThemeSchema } from '@foreman-code/contracts/management'
 import './settingsExperience.css'
 import './generalSettings.css'

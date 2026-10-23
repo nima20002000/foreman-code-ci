@@ -1,13 +1,13 @@
 import { MemorySaver } from '@langchain/langgraph'
 import { describe, expect, it, vi } from 'vitest'
-import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { buildRepeatGraph, type RepeatGraphStore } from '../src/modules/runs/repeatGraph.js'
 import type { WorkflowJobNodeStore } from '../src/modules/jobs/workflowNode.js'
 import type { RepeatResolution } from '../src/modules/runs/repeatResolution.js'
 
 function fixture() {
   const f = makeCurrentWorkflowFixture('production-job-graph')
-  const version = WorkflowVersionV3Schema.parse({ ...f.version, entryNodeId: 'job-node', agentConfigurationVersionIds: {}, definition: { ...f.version.definition,
+  const version = WorkflowVersionCurrentSchema.parse({ ...f.version, entryNodeId: 'job-node', agentConfigurationVersionIds: {}, definition: { ...f.version.definition,
     nodes: [{ kind: 'job', id: 'job-node', name: 'Build', jobDefinitionId: 'definition', jobDefinitionRevision: 1,
       jobDefinitionVersionId: 'definition-version' }], edges: [], entryNodeId: 'job-node', repeat: undefined, handoffs: undefined } })
   const forbidden = vi.fn(async () => { throw new Error('Agent/native path must not run for a Job node') })

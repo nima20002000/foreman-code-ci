@@ -1,17 +1,17 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { CODEX_APPROVAL_OPTIONS_FIXTURE } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { agentChatKey, PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 
 describe('Agent chat receipt atomicity', () => {
   let database: Awaited<ReturnType<typeof migratedDatabase>>
   let seeded: ReturnType<typeof makeCurrentWorkflowFixture>
   beforeAll(async () => {
     database = await migratedDatabase()
-    seeded = await seedAgent3(database.pool, database.directory,
+    seeded = await seedWorkflowFixture(database.pool, database.directory,
       makeCurrentWorkflowFixture(randomUUID(), 'single'), { run: false })
   }, 60_000)
   afterAll(async () => { await database?.close() })

@@ -1,10 +1,10 @@
 import type { HarnessConfiguration, WorkflowApprovalConfiguration } from '@foreman-code/contracts'
-import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
 
 /** Reject an unavailable reviewer before launch. Never change native permissions to make it work. */
 export function validateReviewerBootstrap(
-  definition: WorkflowDefinitionV3,
+  definition: WorkflowDefinitionCurrent,
   approval: WorkflowApprovalConfiguration,
   configuration: HarnessConfiguration | undefined,
   acceptedEntryNodeId?: string,

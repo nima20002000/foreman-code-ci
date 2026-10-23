@@ -1,25 +1,26 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { approvalFixture } from './helpers/approvalFixture.js'
 
 // Legacy approval inference/materialization is retired. Current protection uses
 // the typed complete-definition writer and preserves accepted immutable facts.
 describe.skipIf(!postgresEnabled)('Current persisted approval writer protection', () => {
-  let db: Awaited<ReturnType<typeof agent3Database>>
-  beforeAll(async () => { db = await agent3Database() }, 60000)
+  let db: Awaited<ReturnType<typeof migratedDatabase>>
+  beforeAll(async () => { db = await migratedDatabase() }, 60000)
   afterAll(async () => { await db?.close() })
   async function setup() {
     const f = makeCurrentWorkflowFixture(randomUUID(), 'approval')
     const native = approvalFixture().configurations
     f.configurations.forEach((config, index) => { config.harness = structuredClone(native[index]!.harness) })
-    await seedAgent3(db.pool, db.directory, f, { run: false })
+    await seedWorkflowFixture(db.pool, db.directory, f, { run: false })
     const writer = await new PostgresAccessService(db.pool).issue({ name: 'Approval definition author', audience: 'operator',
       expiresAt: new Date(Date.now() + 300000), grants: [{ actions: ManagementActionSchema.options,
         scope: { workspaceIds: [f.scope.workspaceId] } }] })

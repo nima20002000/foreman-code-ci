@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { NodeResolution, WorkflowRelationship, WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import type { NodeResolution, WorkflowRelationship, WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { compileExecutionTopology, decideExecutionAdmission, selectedTerminalResolutions } from '../src/modules/runs/topology.js'
 
-function version(ids: string[], edges: WorkflowRelationship[], entry = ids[0]!): WorkflowVersionV3 {
+function version(ids: string[], edges: WorkflowRelationship[], entry = ids[0]!): WorkflowVersionCurrent {
   // This fixture exercises only compilation. Full executable acceptance has its own schema tests.
-  return { entryNodeId: entry, definition: { entryNodeId: entry, nodes: ids.map((id) => ({ id })), edges } } as WorkflowVersionV3
+  return { entryNodeId: entry, definition: { entryNodeId: entry, nodes: ids.map((id) => ({ id })), edges } } as WorkflowVersionCurrent
 }
 function edge(id: string, source: string, target: string, kind: 'execution' | 'approval' = 'execution'): WorkflowRelationship {
   return { id, source, target, kind }

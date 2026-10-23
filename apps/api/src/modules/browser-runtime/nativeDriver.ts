@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
-import { spawnProcess } from '../../shared/process.js'
+import { spawnProcess, hostEnvironment } from '../../shared/process.js'
 import { readFile, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -14,6 +14,7 @@ import { browserProcessAlive, browserProcessBirthId, readBrowserProcessIdentity,
 import { assertPortableBrowserCookies, type BrowserPortableState } from './snapshotStorage.js'
 import { createBrowserRuntimeDirectory, removeBrowserRuntimeDirectory } from '../../../../worker/src/browserRuntimeInstall.mjs'
 import { BrowserVirtualDisplay } from './virtualDisplay.js'
+import { configuredTemporaryDirectory, hasGraphicalSession } from '../../config.js'
 
 interface AttachedTab {
   id: string; sessionId: string; title: string; url: string
@@ -173,7 +174,7 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
         : headless ? ['--headless=new', '--window-size=1440,900'] : []), 'about:blank']
     // Chromium's own profile lock remains authoritative; no lock removal or sandbox bypass.
     const runtimeDirectory = await createBrowserRuntimeDirectory(this.options.actionDirectory)
-    const env: NodeJS.ProcessEnv = { ...process.env, TMPDIR: runtimeDirectory?.temporaryDirectory ?? process.env.TMPDIR }
+    const env: NodeJS.ProcessEnv = { ...hostEnvironment(), TMPDIR: runtimeDirectory?.temporaryDirectory ?? configuredTemporaryDirectory() }
     if (display) { env.DISPLAY = display; delete env.WAYLAND_DISPLAY }
     const processHandle = spawnProcess(this.options.runtime.chromiumExecutable, args, { stdio: ['ignore', 'ignore', 'pipe'], env })
     // Keep only Chromium's last fatal line, so a launch failure names its own cause.
@@ -550,7 +551,7 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
   }
 
   private relaunchHeaded(profileId: string, profile: NativeProfile): Promise<Record<string, string>> {
-    if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+    if (process.platform === 'linux' && !hasGraphicalSession()) {
       throw new DomainError('BROWSER_NATIVE_INTERACTION_UNAVAILABLE', 'Continue on this computer requires its graphical desktop session.', 409)
     }
     const task = (async () => {

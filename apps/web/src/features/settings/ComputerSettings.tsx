@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
-import { ComputerCards } from '../computers/ComputerCards'
+import { ComputerCards } from '../computers'
 import { useRegisteredComputersQuery, useSelectedMainQuery } from '../../shared/api/computerSettings'
 import { Alert, Button, LoadingState } from '../../shared/ui/nocturne'
 import { ComputerDetailSettings } from './ComputerDetailSettings'

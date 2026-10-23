@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { GraphIdSchema, IdSchema, TimestampSchema } from "./schemaPrimitives.js";
-import { CurrentWorkflowRelationshipSchema } from "./wave25/workflowShape.js";
+import { CurrentWorkflowRelationshipSchema } from "./current/workflowShape.js";
 import type { RunExecutionState, RunOutcome, WorkflowRunSummary } from "./index.js";
 import { ExecutionQueueEntrySchema } from './executionQueue.js';
 import { AcceptedProviderAccountBindingSchema } from './providerAccounts.js';

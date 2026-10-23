@@ -6,14 +6,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
-  makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+  makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { buildProductionApp } from '../src/production.js'
 import { loadConfig } from '../src/config.js'
 import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { ProductionPlacementChoiceDiscovery } from '../src/modules/placement/choiceDiscovery.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 
 /** Real production composition, PostgreSQL and bearer MCP; destination inventory is synthetic, with no native execution. */
 describe.skipIf(!postgresEnabled)('saved placement discovery and clearing through the production server', () => {
@@ -37,7 +37,7 @@ describe.skipIf(!postgresEnabled)('saved placement discovery and clearing throug
           tools: ['Read', 'Write'], permissionRules: [], instructions: '', mcpServers: {} }
       }
       initial.version.definition.nodes[0]!.placement = placement
-      const fixture = await seedAgent3(db.pool, db.directory, initial, { run: false })
+      const fixture = await seedWorkflowFixture(db.pool, db.directory, initial, { run: false })
       const input = { workspaceId: fixture.scope.workspaceId, workflowId: fixture.scope.workflowId,
         nodeId: fixture.version.definition.nodes[0]!.id, agentConfigurationVersionId: fixture.configurations[0]!.id }
       const choices = [{ id: 'approved-main-choice', label: `Main · ${harness}`, placement,

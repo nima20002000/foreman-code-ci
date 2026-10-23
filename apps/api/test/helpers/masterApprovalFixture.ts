@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 
 /** A saved hierarchy using the existing single-child handoff protocol. */
 export function masterApprovalFixture() {

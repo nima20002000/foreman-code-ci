@@ -3,27 +3,28 @@ import { access, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, RunWorktreeSchema } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, RunWorktreeSchema } from '@foreman-code/contracts/current'
 import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
 import { canContinueWorkflowSession } from '../src/modules/runs/sessionContinuation.js'
 import { systemGitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
 import { PostgresWorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
 import { deferred } from './helpers/deferred.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 
 async function fixture() {
-  const db = await agent3Database()
+  const db = await migratedDatabase()
   const env = gitFixtureEnvironment()
   const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim()
   try {
-    const f = await seedAgent3(db.pool, db.directory)
+    const f = await seedWorkflowFixture(db.pool, db.directory)
     git(db.directory, 'init', '-b', 'main')
     await writeFile(join(db.directory, 'project.txt'), 'default branch\n')
     git(db.directory, 'add', 'project.txt')
     git(db.directory, 'commit', '-m', 'Project')
-    const run = AcceptedWorkflowRunV3Schema.parse({ ...f.run, executionState: 'running' })
+    const run = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run, executionState: 'running' })
     await db.pool.query('update runs set execution_state=$2,record=$3::jsonb where id=$1',
       [run.id, run.executionState, JSON.stringify(run)])
     const ports = systemGitWorktreePorts(env)

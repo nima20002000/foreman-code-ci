@@ -50,8 +50,10 @@ function fixture() {
   const snapshot = { run: {}, version, stopRequested: false, cleanupPending: false }
   const stored = { execution, ref: proof.ref, inputDigest: proof.inputDigest }
   let durable = { record: structuredClone(proof), source_digest: repeatDigest(proof, 4 * 1024 * 1024) }
-  const connection = new ExclusiveGraphConnection({ query: vi.fn(async (text: string) => ({
-    rows: [text.includes('from remote_execution_receipts') ? { receipt: remote } : durable], rowCount: 1,
+  // The remote receipt read binds only an operation id; every other read answers with the durable proof.
+  const operationIds: unknown[] = ['operation', remote.intent.operationId]
+  const connection = new ExclusiveGraphConnection({ query: vi.fn(async (_text: string, values: unknown[] = []) => ({
+    rows: [values.length === 1 && operationIds.includes(values[0]) ? { receipt: remote } : durable], rowCount: 1,
   })) } as unknown as pg.ClientBase, () => {})
   const owner = { runId: 'run', assertOwned() {}, oneShotConnection: () => connection } as unknown as RunOwnership
   const capture = { owner, execution, session: proof.session, source: proof.original,

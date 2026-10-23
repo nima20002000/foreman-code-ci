@@ -1,4 +1,4 @@
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { repeatNativePending } from '../interactions/repeatNativeEvidence.js'
 
 export type RepeatNativeAttemptSelection = { kind: 'occurrence'; id: string }
@@ -10,7 +10,7 @@ export type RepeatNativeAttemptSelection = { kind: 'occurrence'; id: string }
  * scan deliberately includes unmapped executions so the visitor fails closed on
  * a missing occurrence/slot/input receipt rather than silently dropping work.
  */
-export async function visitRepeatNativeAttemptsLocked(sql: GraphTransactionSql, runId: string,
+export async function visitRepeatNativeAttemptsLocked(sql: SqlTransaction, runId: string,
   selected: RepeatNativeAttemptSelection, visit: (ids: readonly string[]) => Promise<void>): Promise<void> {
   if (!runId || selected.kind !== 'run' && !selected.id
     || selected.kind === 'slot' && (!Number.isSafeInteger(selected.throughAttempt)

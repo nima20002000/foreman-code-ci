@@ -11,6 +11,7 @@ import { WorkerConversationRpcRequestSchema, type WorkerConversationReceipt,
 import { WORKSPACE_ROOT_EXTENSION } from '@foreman-code/contracts/workspace-root-policies'
 import { createProductionWorkerConversations } from './workerProduction.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
+import { workerConversationStoreRead } from '../../../test/helpers/workerConversationStoreReads.js'
 import { workerOperatorDirectory } from './workerOperatorDirectory.js'
 import { nativeCorrelation } from './operatorChatRepository.js'
 import { workerExecutionConfiguration } from './workerExecutionConfiguration.js'
@@ -45,11 +46,9 @@ it.each([false, true].flatMap(fileInputs => [false, true].map(restored => ({ fil
     operator_configuration_version_id: accepted.id, active_request_id: 'next-turn',
     native_session_id: f.session.nativeSessionId, deleted_at: null, record: { status: 'open' },
     payload: { ownerPrincipalId: owner.id }, worker_conversation_binding: binding }
-  const pool = { query: vi.fn(async (sql: string) => {
-    if (sql.includes('from management_principals')) return { rows: [owner] }
-    if (sql.includes('from provider_account_accepted_bindings')) return { rows: [{ binding: binding.accountBinding }] }
-    return { rows: [conversation], rowCount: 1 }
-  }) } as unknown as pg.Pool
+  const pool = { query: vi.fn(async (_sql: string, values?: unknown[]) =>
+    workerConversationStoreRead(values, { principals: [owner], accountBinding: binding.accountBinding })
+      ?? { rows: [conversation], rowCount: 1 }) } as unknown as pg.Pool
   const prepareFiles = vi.fn(async () => undefined)
   const frames: WorkerConversationRpcRequest[] = []
   let connection = f.connection
@@ -172,11 +171,12 @@ it.each([['codex', false, false, 'persisted'], ['codex', true, false, 'persisted
     owner_principal_id: principal.id, payload: { ownerPrincipalId: principal.id }, record: { status: 'open',
       ...(previewGeneration ? { workerSessionGeneration: binding.sessionGeneration } : {}) },
     worker_conversation_binding: bindingObservation === 'persisted' ? binding : null }
-  const pool = { query: vi.fn(async (sql: string, parameters?: unknown[]) => {
-    if (sql.includes('from management_principals')) return { rows: [principal] }
-    if (sql.includes('from provider_account_accepted_bindings')) return { rows: [{ binding: binding.accountBinding }] }
-    if (sql.startsWith('update operator_conversations set worker_conversation_binding')) {
-      conversation.worker_conversation_binding = JSON.parse(parameters![1] as string)
+  const pool = { query: vi.fn(async (_sql: string, parameters?: unknown[]) => {
+    const known = workerConversationStoreRead(parameters, { principals: [principal], accountBinding: binding.accountBinding })
+    if (known) return known
+    // The owner binding update is the only write that binds five values, the conversation id first.
+    if (parameters?.length === 5 && parameters[0] === conversation.id) {
+      conversation.worker_conversation_binding = JSON.parse(parameters[1] as string)
     }
     return { rows: [conversation], rowCount: 1 }
   }) } as unknown as pg.Pool

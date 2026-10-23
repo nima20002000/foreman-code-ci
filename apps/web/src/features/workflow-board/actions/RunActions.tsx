@@ -1,12 +1,12 @@
 import { InfoHint } from '../../../shared/ui/InfoHint'
 import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { RepeatGraphScopeV3Schema } from '@foreman-code/contracts/wave25'
+import { RepeatGraphScopeCurrentSchema } from '@foreman-code/contracts/current'
 import type { ManagementAction } from '@foreman-code/contracts/management'
 import { ApiError } from '../../../shared/api/client'
 import { useLocalHumanAccessQuery } from '../../../shared/api/settingsExperience'
 import { sessionGeneration } from '../../../shared/api/sessionBoundary'
-import { useBoardSelection } from '../context'
+import { useBoardSelection } from '../../board-core'
 import { currentRunKey } from '../currentRunQuery'
 import { canUseBoardAction } from '../permissions'
 import { assertActionScope, runActionsClient, type RunActionSelection } from './client'
@@ -57,7 +57,7 @@ function SelectedRunActions({ selection, access }: {
   const run = !allowed('runs:read') || status.isError ? undefined : status.data
   const { workspaceId, workflowId, runId } = selection
   const workflowVersionId = allowed('runs:read') ? status.data?.workflowVersionId : undefined
-  const scope = useMemo(() => workflowVersionId ? RepeatGraphScopeV3Schema.parse({
+  const scope = useMemo(() => workflowVersionId ? RepeatGraphScopeCurrentSchema.parse({
     workspaceId, workflowId, runId, workflowVersionId, executionSemanticsVersion: 3,
   }) : undefined, [workspaceId, workflowId, runId, workflowVersionId])
   const refresh = () => {

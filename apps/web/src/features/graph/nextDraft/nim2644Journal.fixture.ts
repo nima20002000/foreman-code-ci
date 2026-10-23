@@ -1,9 +1,8 @@
-import { GraphEditIntentV3Schema, type GraphEditIntentV3, type GraphEditStageInputV3 } from '@foreman-code/contracts/wave25'
-import type { NextDraftEdit } from './state'
-import type { NextDraftContext } from './model'
+import { GraphEditIntentCurrentSchema, type GraphEditIntentCurrent, type GraphEditStageInputCurrent } from '@foreman-code/contracts/current'
+import type { NextDraftEdit, NextDraftContext } from '../../board-core'
 
 const hash = 'sha256:' + '1'.repeat(64), now = '2026-09-24T00:00:00Z'
-export function journalRequest(edit: NextDraftEdit, commandId: string): GraphEditStageInputV3 {
+export function journalRequest(edit: NextDraftEdit, commandId: string): GraphEditStageInputCurrent {
   const { draft, agents } = edit.context
   if (draft.publishedRevision == null) throw new Error('The journal fixture requires an exact saved revision.')
   const stagedAgents = Object.values(edit.agentEdits ?? {}).filter((agent) => edit.graph.nodes.some((node) => node.kind!=='job' && node.agentId === agent.id))
@@ -18,8 +17,8 @@ export function journalRequest(edit: NextDraftEdit, commandId: string): GraphEdi
       return agent?.configurationVersionId ? [[node.agentId, agent.configurationVersionId]] : []
     })), ...(stagedAgents.length ? { stagedAgents } : {}) }
 }
-export function journalIntent(request: GraphEditStageInputV3, context: NextDraftContext,
-  affected: GraphEditIntentV3['affected'] = []): GraphEditIntentV3 {
+export function journalIntent(request: GraphEditStageInputCurrent, context: NextDraftContext,
+  affected: GraphEditIntentCurrent['affected'] = []): GraphEditIntentCurrent {
   const { draftId } = request
   const save = { workspaceId: request.workspaceId, workflowId: request.workflowId, expectedRevision: request.expectedRevision,
     expectedWorkflowVersionId: request.expectedWorkflowVersionId, executionSemanticsVersion: request.executionSemanticsVersion,
@@ -28,7 +27,7 @@ export function journalIntent(request: GraphEditStageInputV3, context: NextDraft
   const saveCommandId = `save-${request.commandId}`
   const resultant = { ...request.expectedAgentConfigurationVersionIds,
     ...Object.fromEntries((request.stagedAgents ?? []).map(({ agent }) => [agent.id, `saved-${agent.id}`])) }
-  return GraphEditIntentV3Schema.parse({ kind: 'current', id: `intent-${request.commandId}`, ownerPrincipalId: 'fixture',
+  return GraphEditIntentCurrentSchema.parse({ kind: 'current', id: `intent-${request.commandId}`, ownerPrincipalId: 'fixture',
     workspaceId: request.workspaceId, workflowId: request.workflowId, draftId,
     stageCommandId: request.commandId, stageInputHash: hash,
     advanceCommandId: `advance-${request.commandId}`, advanceInputHash: hash,
@@ -48,9 +47,9 @@ export function journalIntent(request: GraphEditStageInputV3, context: NextDraft
       commandId: `stop-${runId}-${request.commandId}` } })),
     state: 'staged', saveAttempted: false, createdAt: now, updatedAt: now })
 }
-export function savedJournal(intent: GraphEditIntentV3, version = 2): GraphEditIntentV3 {
+export function savedJournal(intent: GraphEditIntentCurrent, version = 2): GraphEditIntentCurrent {
   const graph = { ...intent.stagedDraft.graph, version }, versionId = `version-${version}`
-  return GraphEditIntentV3Schema.parse({ ...intent, state: 'saved', saveAttempted: true,
+  return GraphEditIntentCurrentSchema.parse({ ...intent, state: 'saved', saveAttempted: true,
     result: { workspaceId: intent.workspaceId, workflowId: intent.workflowId, revision: intent.expectedRevision + 1,
       currentVersionId: versionId,
       agents: (intent.stagedDraft.stagedAgents ?? []).map(({ agent, baseRevision }) => ({ metadataRevision: (baseRevision ?? 0) + 1,

@@ -16,13 +16,13 @@ import { stripMcpInputSchemas } from '../src/mcp/shared/inputSchemas.js'
 import type { CardDetail, MutationReceipt } from '../src/modules/memory-boards/types.js'
 import { memoryFixture } from '../src/modules/memory-boards/testing/fixture.js'
 import { memoryTestRegistry } from '../src/modules/memory-boards/testing/mcpRegistry.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Memory board HTTP and authenticated MCP parity',()=>{
-  let database:Awaited<ReturnType<typeof agent3Database>>
+  let database:Awaited<ReturnType<typeof migratedDatabase>>
   beforeAll(async()=>{
-    database=await agent3Database()
+    database=await migratedDatabase()
     await withTransaction(database.pool,async tx=>{
       const present=await tx.query("select to_regclass('memory_boards') as name")
       if(!present.rows[0]?.name)await tx.query(memoryBoardsMigration.sql)

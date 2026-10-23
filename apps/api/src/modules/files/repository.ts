@@ -1,7 +1,7 @@
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { File, FilePage, FileScope, FileWithRevision, PermanentFileScope, MessageAttachmentRef } from '@foreman-code/contracts/files'
 
-export type FileQuery = GraphSqlClient
+export type FileQuery = SqlQuery
 export type FileMutationSource = 'http' | 'mcp' | 'device'
 /** Reference writes revalidate live grants and lineage in the same transaction as their metadata/audit. */
 export interface FileMutationContext {

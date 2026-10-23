@@ -1,13 +1,14 @@
 import { holdWorkflowNativePublicationLease, renewWorkflowNativePublicationLease } from './workflowNativeLease.js'
-import { componentLogger } from '../diagnostics/logger.js'
+import { componentLogger } from '../diagnostics/index.js'
 import { assertOriginalWorkflowTerminal, workflowProviderId } from '../interactions/workflowTerminalSource.js'
 import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { DurableInteractionSchema, HarnessExecutionSchema, NativeSessionReferenceSchema,
   type HarnessExecution, type HarnessNativeEvent } from '@foreman-code/contracts'
-import { canonicalGraphJson, type GraphEvidence, type NativeGraphProjectionKey, type AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, type GraphEvidence, type NativeGraphProjectionKey, type AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { activeNativeBatch, memoizeNativeRead, nativeCommitCheck, prefetchedNativeAppend, seedNativeRead } from '../run-graph/nativeBatch.js'
 import { currentRunGraphPublication, hasRunGraphPublication, seedRetainRows } from '../run-graph/publication.js'
 import { assertRepeatCanonicalReceiptRows, requireRepeatCanonicalReceiptBeforeCommit,
@@ -24,9 +25,9 @@ import { assertWorkflowNativeEntryPermitLocked, assertWorkflowNativeEntryRow,
 import { repeatDigest, repeatExecutionIdentity, repeatId, sameRepeatValue, type RepeatNodeRef, type RepeatScope } from './repeatResolution.js'
 import type { RunOwnership } from './ownership.js'
 import { matchingDeliveryEvidence } from '../interactions/delivery.js'
-import { recordWorkerResumption } from '../interactions/wave25/resume.js'
+import { recordWorkerResumption } from '../interactions/current/resume.js'
 import type { NativeGraphProjectionGuard } from '../run-graph/records.js'
-import { createRequestLocked } from '../interactions/wave25/decisions.js'
+import { createRequestLocked } from '../interactions/current/decisions.js'
 import { nativeApprovalContext } from '../interactions/nativeApprovalContext.js'
 import { pendingOnLaneTurn } from '../interactions/pendingLaneTurn.js'
 import { appendWorkflowNativeGraphEventLocked, type WorkflowApprovalCorrelation, type WorkflowContinuationProof, type WorkflowNativeLease } from './workflowNativeGraph.js'
@@ -78,7 +79,7 @@ function immutableExecution(execution: HarnessExecution) {
 const proofRecordKey = (proofId: string) => `proof-record:${proofId}`
 
 /** The group's persisted row for this proof when the batch wrote it; otherwise its own write. */
-async function persistOriginalRecord(sql: GraphTransactionSql, record: WorkflowNativeProofRecord): Promise<WorkflowNativeProofRecord> {
+async function persistOriginalRecord(sql: SqlTransaction, record: WorkflowNativeProofRecord): Promise<WorkflowNativeProofRecord> {
   const seeded = activeNativeBatch(sql)?.reads.get(proofRecordKey(record.proofId))
   if (seeded) return structuredClone(await seeded) as WorkflowNativeProofRecord
   return (await persistWorkflowNativeSources(sql, [record]))[0]!
@@ -99,7 +100,7 @@ function samePhysicalCapture(previous: WorkflowNativeCapture, capture: WorkflowN
       capture.lifetimeGeneration, capture.closureGeneration])
 }
 
-async function transcriptCorrelation(sql: GraphTransactionSql, capture: WorkflowNativeCapture,
+async function transcriptCorrelation(sql: SqlTransaction, capture: WorkflowNativeCapture,
   event: HarnessNativeEvent): Promise<boolean> {
   const row = (await sql.query<{ connection_id: string | null; connection_generation: number;
     native_turn_id: string | null; native_session_id: string; provider: string }>(`
@@ -126,10 +127,10 @@ async function transcriptCorrelation(sql: GraphTransactionSql, capture: Workflow
  * no-submission/close evidence occurs inside these methods. */
 export class WorkflowNativeProofServices {
   constructor(private readonly captures: WorkflowNativeVerificationPort,
-    private readonly assertAdditionalPhysical?: (sql: GraphTransactionSql, owner: RunOwnership, captures: readonly WorkflowNativeCapture[]) => Promise<void>,
-    private readonly afterPersistOriginalLocked?: (sql: GraphTransactionSql, evidence: RepeatNativeEvidence, proof: WorkflowNativeProofRecord) => Promise<void>) {}
+    private readonly assertAdditionalPhysical?: (sql: SqlTransaction, owner: RunOwnership, captures: readonly WorkflowNativeCapture[]) => Promise<void>,
+    private readonly afterPersistOriginalLocked?: (sql: SqlTransaction, evidence: RepeatNativeEvidence, proof: WorkflowNativeProofRecord) => Promise<void>) {}
 
-  private async current(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3, executionId: string,
+  private async current(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent, executionId: string,
     owner: RunOwnership, lockedSnapshot?: AcceptedRepeatRunSnapshot
   ): Promise<{ stored: StoredRepeatExecution; scope: RepeatScope; snapshot: AcceptedRepeatRunSnapshot }> {
     assertGraphTransaction(sql); owner.assertOwned()
@@ -143,7 +144,7 @@ export class WorkflowNativeProofServices {
     })
   }
 
-  private async physical(sql: GraphTransactionSql, scope: RepeatScope, stored: StoredRepeatExecution,
+  private async physical(sql: SqlTransaction, scope: RepeatScope, stored: StoredRepeatExecution,
     capture: WorkflowNativeCapture, owner: RunOwnership,
     captures: readonly WorkflowNativeCapture[] = [capture]): Promise<void> {
     for (const frame of captures) frame.assertCurrent()
@@ -153,7 +154,7 @@ export class WorkflowNativeProofServices {
       () => this.physicalLocked(sql, scope, stored, capture, owner, captures))
   }
 
-  private async physicalLocked(sql: GraphTransactionSql, scope: RepeatScope, stored: StoredRepeatExecution,
+  private async physicalLocked(sql: SqlTransaction, scope: RepeatScope, stored: StoredRepeatExecution,
     capture: WorkflowNativeCapture, owner: RunOwnership,
     captures: readonly WorkflowNativeCapture[]): Promise<void> {
     await this.assertAdditionalPhysical?.(sql, owner, captures)
@@ -240,7 +241,7 @@ export class WorkflowNativeProofServices {
     capture.assertCurrent()
   }
 
-  async assertNativeBoundaryLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3, execution: HarnessExecution,
+  async assertNativeBoundaryLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent, execution: HarnessExecution,
     ref: RepeatNodeRef, evidence: RepeatNativeBoundaryEvidence, owner: RunOwnership): Promise<void> {
     assertGraphTransaction(sql)
     try {
@@ -294,7 +295,7 @@ export class WorkflowNativeProofServices {
   /** Store the capture before normalizing the first terminal. Same-source retry
    * retains its first immutable owner/lease receipt; current authority is checked
    * independently. A reused event ID with changed original bytes is a conflict. */
-  async persistOriginalLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+  async persistOriginalLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
     evidence: RepeatNativeEvidence, owner: RunOwnership,
     approval?: WorkflowApprovalCorrelation): Promise<WorkflowNativeProofRecord> {
     assertGraphTransaction(sql)
@@ -307,7 +308,7 @@ export class WorkflowNativeProofServices {
 
   /** Physical settlement may follow terminal publication. Retain its new proof
    * without rewriting the immutable result or applying its board effects again. */
-  async retainSettledTerminalLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+  async retainSettledTerminalLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
     evidence: RepeatNativeEvidence, owner: RunOwnership): Promise<WorkflowNativeProofRecord> {
     const capture = this.captures.read(evidence)
     const current = await this.current(sql, run, capture.execution.id, owner)
@@ -326,7 +327,7 @@ export class WorkflowNativeProofServices {
     return this.persistCapturedOriginalLocked(sql, run, evidence, owner, capture, current, { settlementOf: original.proofId })
   }
 
-  private async persistCapturedOriginalLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+  private async persistCapturedOriginalLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
     evidence: RepeatNativeEvidence, owner: RunOwnership, capture: WorkflowNativeCapture,
     current: { stored: StoredRepeatExecution; scope: RepeatScope },
     options: { approval?: WorkflowApprovalCorrelation | undefined; settlementOf?: string } = {}): Promise<WorkflowNativeProofRecord> {
@@ -429,7 +430,7 @@ export class WorkflowNativeProofServices {
   }
 
   /** Original-source rows for the group persist in one write before any frame is processed. */
-  private async prefetchOriginalProofs(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+  private async prefetchOriginalProofs(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
     frames: readonly { event: HarnessNativeEvent; evidence: RepeatNativeEvidence }[], owner: RunOwnership): Promise<void> {
     if (!activeNativeBatch(sql)) return
     const records: WorkflowNativeProofRecord[] = []
@@ -445,7 +446,7 @@ export class WorkflowNativeProofServices {
     await seedRetainRows(sql, run.id, saved.map((record) => record.proofId))
   }
 
-  async appendEventsLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+  async appendEventsLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
     frames: readonly { event: HarnessNativeEvent; evidence: RepeatNativeEvidence }[],
     owner: RunOwnership, lease?: WorkflowNativeLease): Promise<void> {
     try {
@@ -472,7 +473,7 @@ export class WorkflowNativeProofServices {
   }
 
   /** Choose before taking locks; correlation initialization and semantic events still use the graph writer. */
-  async tryAppendTranscriptsLocked(sql: GraphTransactionSql,
+  async tryAppendTranscriptsLocked(sql: SqlTransaction,
     input: readonly { event: HarnessNativeEvent; evidence: RepeatNativeEvidence }[],
     owner: RunOwnership, lease?: WorkflowNativeLease): Promise<boolean> {
     if (!lease || !input.every(frame => isWorkflowTranscriptEvent(frame.event))) return false
@@ -496,7 +497,7 @@ export class WorkflowNativeProofServices {
   }
 
   /** Locked physical rows are shared by a bounded group; every capture is checked again at commit. */
-  private async appendTranscriptsLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+  private async appendTranscriptsLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
     frames: readonly { event: HarnessNativeEvent; evidence: RepeatNativeEvidence; capture: WorkflowNativeCapture }[],
     owner: RunOwnership, lockedSnapshot?: AcceptedRepeatRunSnapshot): Promise<void> {
     const capture = frames[0]!.capture
@@ -549,7 +550,7 @@ export class WorkflowNativeProofServices {
     return capture
   }
 
-  async appendEventLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3, event: HarnessNativeEvent,
+  async appendEventLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent, event: HarnessNativeEvent,
     evidence: RepeatNativeEvidence, owner: RunOwnership, lease?: WorkflowNativeLease,
     approval?: WorkflowApprovalCorrelation, continuation?: WorkflowContinuationProof): Promise<void> {
     this.eventCapture(event, evidence, lease)
@@ -559,7 +560,7 @@ export class WorkflowNativeProofServices {
     await this.persistOriginalLocked(sql, run, evidence, owner)
   }
 
-  private async publishContinuations(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+  private async publishContinuations(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
     stored: StoredRepeatExecution, scope: RepeatScope, capture: WorkflowNativeCapture,
     original: WorkflowNativeProofRecord, owner: RunOwnership): Promise<void> {
     if (capture.source.type !== 'history' || !capture.lane) return fail('NATIVE_ORIGINAL_HISTORY_REQUIRED')
@@ -601,7 +602,7 @@ export class WorkflowNativeProofServices {
     }
   }
 
-  async assertNativeUpdateLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+  async assertNativeUpdateLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
     previous: HarnessExecution, incoming: HarnessExecution, ref: RepeatNodeRef,
     evidence: RepeatNativeEvidence, owner: RunOwnership,
     resultEffectFailure?: WorkflowResultEffectFailure): Promise<WorkflowNativeProofRecord> {
@@ -664,7 +665,7 @@ export class WorkflowNativeProofServices {
   /** A marked result/F1 transaction already committed before the Worker closed.
    * Retain the same original native terminal with its final physical proof; this
    * path cannot mutate the execution, spend repair budget, or apply effects. */
-  async publishWorkflowTerminalSettlementLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+  async publishWorkflowTerminalSettlementLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
     execution: HarnessExecution, evidence: RepeatNativeEvidence, owner: RunOwnership): Promise<void> {
     assertGraphTransaction(sql)
     try {

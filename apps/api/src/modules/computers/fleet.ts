@@ -1,7 +1,7 @@
 import { errorMessage } from '@foreman-code/contracts/server-kit'
 import type { ReadObservation } from '@foreman-code/contracts'
-import { componentLogger } from '../diagnostics/logger.js'
-import { failedReadObservation, successfulReadObservation } from '../diagnostics/readObservation.js'
+import { componentLogger } from '../diagnostics/index.js'
+import { failedReadObservation, successfulReadObservation } from '../diagnostics/index.js'
 import type pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import { APP_MCP_SERVER_NAMES } from '@foreman-code/contracts/product'
@@ -20,13 +20,13 @@ import { sameDeviceProvisioningTarget, type DeviceProvisioningTarget } from '@fo
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import type { ClaudePluginCatalog } from './claudePlugins.js'
 import type { ComputerMaintenance } from './maintenance.js'
 import { syncFingerprint } from './syncFingerprint.js'
 import { assertComputerTarget } from './target.js'
-import { ignoreError, logIgnoredError } from '../diagnostics/ignoredError.js'
+import { ignoreError, logIgnoredError } from '../diagnostics/index.js'
 
 export interface MaintenanceEndpoint {
   capabilities(deviceId: string): readonly { namespace: string; mainCanRequest: boolean }[]

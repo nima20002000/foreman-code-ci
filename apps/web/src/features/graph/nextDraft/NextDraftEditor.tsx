@@ -1,17 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { GraphDraftV3Schema, sameAuthoredWorkflow } from '@foreman-code/contracts/wave25'
+import { GraphDraftCurrentSchema, sameAuthoredWorkflow } from '@foreman-code/contracts/current'
 import { errorMessage } from '../../../shared/errorMessage'
 import { Button } from '../../../shared/ui/nocturne'
 import { GraphPresentationProvider } from '../GraphPresentation'
 import { useGraphDraftStore } from '../store'
-import { hasLocalChanges } from './model'
-import { nextDraftKey, type NextDraftEdit } from './state'
+import { hasLocalChanges, nextDraftKey, type NextDraftEdit, boardDraftContextKey } from '../../board-core'
 import { nextDraftApi, type AuthoringContext } from './transport'
 import { claimEditTabOwnership, readEditSnapshot, readConflictRecoveries } from './editIntentStorage'
-import { type BoardUpdateFailure } from '../../workflow-board/BoardAlerts'
-import { boardDraftContextKey } from '../../workflow-board/keys'
-import { BoardLoading } from '../../workflow-board/BoardLoading'
+import { type BoardUpdateFailure, BoardLoading } from '../../workflow-board'
 import { useDraftEditorController } from './useDraftEditorController'
 import { DraftEditorView } from './DraftEditorView'
 import '../graph.css'
@@ -71,7 +68,7 @@ function DraftLoader({ draftKey, workspaceId, workflowId, initialContext, update
           graph: retained.graph, agentEdits: retained.agentEdits, agentForms: retained.agentForms,
           workflowForms: retained.workflowForms, remoteEditIntent: retained.remoteEditIntent, conflictRecovery }))
       } else if (source.data && !source.isError) {
-        useGraphDraftStore.getState().installNextDraft(draftKey, { draft: GraphDraftV3Schema.parse(source.data.draft), agents: source.data.agents, savedDraft: source.data.savedDraft })
+        useGraphDraftStore.getState().installNextDraft(draftKey, { draft: GraphDraftCurrentSchema.parse(source.data.draft), agents: source.data.agents, savedDraft: source.data.savedDraft })
         useGraphDraftStore.getState().updateNextDraft(draftKey, state => ({ ...state, conflictRecovery }))
       }
     } catch (error) { setStorageError(errorMessage(error, 'Retained edits are unavailable.')) }

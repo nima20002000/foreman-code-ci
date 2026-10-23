@@ -1,20 +1,20 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useBlocker, useLocation, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import type { CurrentWorkspaceDetails } from '@foreman-code/contracts/wave25'
-import { boardSearchForInspection, type WorkspaceBoardInspection, boardSearchForRun, staysOnWorkflowBoard, type RepeatGraphScopeV3, type WorkflowBoardLocation } from '@foreman-code/contracts/wave25'
+import type { CurrentWorkspaceDetails } from '@foreman-code/contracts/current'
+import { boardSearchForInspection, type WorkspaceBoardInspection, boardSearchForRun, staysOnWorkflowBoard, type RepeatGraphScopeCurrent, type WorkflowBoardLocation } from '@foreman-code/contracts/current'
 import { Button, ErrorState } from '../shared/ui/nocturne'
-import { PersistedWorkflowBoundary } from '../features/graph/PersistedWorkflowBoundary'
+import { PersistedWorkflowBoundary } from '../features/graph'
 import { WorkflowBoard } from '../features/workflow-board/WorkflowBoard'
-import { BoardLoading } from '../features/workflow-board/BoardLoading'
+import { BoardLoading, clearCurrentRunAccess, revokeCurrentRunWorkspace } from '../features/workflow-board'
 import { useProtectedAccessError } from '../shared/api/useProtectedAccessError'
-import { clearCurrentRunAccess, revokeCurrentRunWorkspace } from '../features/workflow-board/currentRunQuery'
 import { ApiError } from '../shared/api/client'
 import { queryKeys, useManagedWorkflowQuery, useWorkspaceDetailsQuery } from '../shared/api/query'
 import { WorkspaceSelection } from './WorkspaceRoute'
-import { RunsSelectorSearchSchema, withoutRunsSelectorSearch,
-  resolveRunsSelectorBoardLocation as resolveWorkflowBoardLocation } from '../features/runs-selector'
-import { clearSelectedSubagentHash } from '../features/runs-selector/search'
+import {
+  RunsSelectorSearchSchema, withoutRunsSelectorSearch,
+  resolveRunsSelectorBoardLocation as resolveWorkflowBoardLocation, clearSelectedSubagentHash,
+} from '../features/runs-selector'
 import { UnsavedChangesContext, type EditorRegistration, type LeaveTarget } from '../shared/ui/unsavedChanges'
 
 function cacheWorkspaceProjection(client: ReturnType<typeof useQueryClient>, workspaceId: string, details: CurrentWorkspaceDetails) {
@@ -86,7 +86,7 @@ function WorkspaceBoardRoute({ selection }: { selection: WorkflowBoardLocation }
       return next
     } })
   }, [requestedId, run, selectedRunId, search.workflowId, workspaceId, navigate, client, details, managed.data, managed.fetchStatus])
-  const selectRun = useCallback((scope?: RepeatGraphScopeV3) => {
+  const selectRun = useCallback((scope?: RepeatGraphScopeCurrent) => {
     if (!workflowId) return
     if (scope && (scope.workspaceId !== workspaceId || scope.workflowId !== workflowId)) throw new Error('Run selection belongs to a different board.')
     // Explicit legacy Run/Current actions replace, rather than combine, history pins.

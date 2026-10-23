@@ -1,8 +1,12 @@
 import { isDeepStrictEqual } from 'node:util'
 import { HarnessExecutionSchema, NativeSessionReferenceSchema, type HarnessExecution } from '@foreman-code/contracts'
-import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction,
-  type GraphTransactionSql } from '../run-graph/connection.js'
-import { readExecutionPlacements } from '../placement/persistence.js'
+import {
+  assertGraphTransaction,
+  beforeGraphCommit,
+  poisonGraphTransaction
+} from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { readExecutionPlacements } from '../placement/index.js'
 import { closedWorkflowSession, type ClosureRow } from './workflowClosure.js'
 import { assertRepeatNativeClosure, repeatNativePending } from './repeatNativeEvidence.js'
 import { settleRepeatNativeExecutionWithProofLocked, type RepeatNativeSettlementCheckpoint } from './repeatNativeSettlement.js'
@@ -12,7 +16,7 @@ interface SettlementRow extends ClosureRow {
   configuration: { harness: string; agent_id: string; pinned: boolean } | null
 }
 
-async function closedAttempts(sql: GraphTransactionSql, runId: string, executions: readonly HarnessExecution[]) {
+async function closedAttempts(sql: SqlTransaction, runId: string, executions: readonly HarnessExecution[]) {
   const ids = executions.map(execution => execution.id)
   const placements = await readExecutionPlacements(sql, ids)
   const rows = await sql.query<SettlementRow>(`with sessions as materialized (
@@ -67,7 +71,7 @@ async function closedAttempts(sql: GraphTransactionSql, runId: string, execution
 }
 
 /** Ordinary closed attempts share their resource, session, configuration and generation reads. */
-export async function settleRepeatNativeExecutionsWithProofLocked(sql: GraphTransactionSql, runId: string,
+export async function settleRepeatNativeExecutionsWithProofLocked(sql: SqlTransaction, runId: string,
   executions: readonly HarnessExecution[]): Promise<void> {
   assertGraphTransaction(sql)
   if (!executions.length) return

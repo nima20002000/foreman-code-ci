@@ -1,5 +1,5 @@
-import { RUN_GRAPH_LIMITS, type RunGraphScope } from '@foreman-code/contracts/wave25'
-import type { GraphTransactionSql } from './connection.js'
+import { RUN_GRAPH_LIMITS, type RunGraphScope } from '@foreman-code/contracts/current'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { assertGraphTransaction } from './connection.js'
 import { REPEAT_GRAPH_PINS_SQL, type RepeatGraphPinsRow } from './repeatProjectionRows.js'
 import { PUBLIC_ATTENTION_SQL, type PublicAttentionRow } from './currentAttention.js'
@@ -11,7 +11,7 @@ import {
 } from './publicProjection.js'
 import {
   CURRENT_INTERACTIONS_SQL, CURRENT_REVIEWS_SQL, type CurrentInteractionRow, type CurrentReviewRow,
-} from '../interactions/wave25/currentExchanges.js'
+} from '../interactions/current/currentExchanges.js'
 
 export interface CurrentBindingRow {
   record: { bindingId: string; recipient: unknown; inputDigest: string;
@@ -42,7 +42,7 @@ function parameters(statement: string, values: readonly string[]): string {
 
 /** Read each projection cut in one statement. The existing readers still validate every row and bound.
  * Run/head locks already fence writers; finalization calls this again for a fresh cut. */
-export async function readCompactProjectionRows(sql: GraphTransactionSql, scope: RunGraphScope,
+export async function readCompactProjectionRows(sql: SqlTransaction, scope: RunGraphScope,
   nodeIds?: readonly string[]): Promise<CompactProjectionRows> {
   assertGraphTransaction(sql)
   const nodes = '(select ids from projection_nodes)::text[]'

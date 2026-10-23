@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../../../infrastructure/transaction.js'
+import { rollbackAfterFailure, withTransaction } from '../../../infrastructure/transaction.js'
 import type { ArtifactPhysicalDeletionOwnership } from '../distributed/cleanup.js'
 
 import { PostgresFileArtifactCleanupRepository } from './artifacts.js'
@@ -59,7 +59,7 @@ export class PostgresFileCleanupRepository implements FileCleanupRepository {
   async remove(expected: FileCleanupCandidate, removeBytes: () => Promise<boolean>): Promise<FileCleanupOutcome> {
     const client = await this.pool.connect()
     const locks: { key: string; seed: number }[] = []
-    let broken = false, inTransaction = false
+    let broken = false
     const onError = () => { broken = true }
     client.on('error', onError)
     const check = () => { if (broken) throw new Error('File cleanup database ownership was lost.') }
@@ -71,15 +71,24 @@ export class PostgresFileCleanupRepository implements FileCleanupRepository {
       if (result.rows[0]?.locked !== true) return false
       locks.push({ key, seed }); return true
     }
-    const begin = async () => {
+    // Both transactions run on this connection, which also holds the session locks between them. A failure while
+    // sending BEGIN or COMMIT leaves the connection's state unknown, and so does a failed rollback: discard it.
+    const transaction = async <T>(perform: () => Promise<T>): Promise<T> => {
       check()
-      await beginTransaction(client).catch((error: unknown) => { broken = true; throw error }); inTransaction = true
-      await client.query("set local lock_timeout='1s'; set local statement_timeout='5s'")
-    }
-    const commit = async () => {
+      const value = await withTransaction({ client }, async () => {
+        await client.query("set local lock_timeout='1s'; set local statement_timeout='5s'")
+        const result = await perform()
+        check()
+        return result
+      }, {
+        rollback: async (connection, { phase }) => {
+          const rollbackError = await rollbackAfterFailure(connection)
+          if (rollbackError || phase !== 'work') broken = true
+          return rollbackError
+        },
+      })
       check()
-      await commitTransaction(client).catch((error: unknown) => { broken = true; throw error })
-      inTransaction = false; check()
+      return value
     }
     const read = async () => {
       check()
@@ -99,33 +108,32 @@ export class PostgresFileCleanupRepository implements FileCleanupRepository {
       // Session variant of FIL-40's xact lock: same hash/key space, held across the tombstone
       // COMMIT and byte deletion. A missing preference row (revision 0) is protected too.
       if (!await lock(expected.ownerPrincipalId, 273640)) return 'busy'
-      await begin()
-      const before = await read()
-      if (!matches(before, expected)) return 'stale'
-      if (before.state === 'pending' || before.state === 'ready') {
-        const marked = await client.query(`update files set state='expired' where file_id=$1
-          and scope_kind in ('temporary','job_execution') and state in ('pending','ready')
-          and expires_at=$2::timestamptz and expires_at<=clock_timestamp() returning file_id`,
-        [expected.fileId, expected.expiresAt])
-        if (!marked.rowCount) return 'stale'
-      } else if (before.state !== 'expired' && before.state !== 'removed') return 'stale'
       // A crash/failed filesystem operation can never roll this tombstone back to a ready file.
       // An uncertain COMMIT acknowledgment never authorizes an unlink in this process.
-      await commit()
-      await begin()
-      const current = await read()
-      if (!matches(current, expected) || (current.state !== 'expired' && current.state !== 'removed')) return 'stale'
-      check()
-      // Holds defer physical deletion only. The already committed tombstone still denies access.
-      if (this.physicalOwnership && !await this.physicalOwnership.assertCanDelete(expected, client)) return 'busy'
-      check()
-      const complete = await removeBytes()
-      await commit()
-      return complete ? 'cleaned' : 'remaining'
+      const tombstoned = await transaction<FileCleanupOutcome | undefined>(async () => {
+        const before = await read()
+        if (!matches(before, expected)) return 'stale'
+        if (before.state === 'pending' || before.state === 'ready') {
+          const marked = await client.query(`update files set state='expired' where file_id=$1
+            and scope_kind in ('temporary','job_execution') and state in ('pending','ready')
+            and expires_at=$2::timestamptz and expires_at<=clock_timestamp() returning file_id`,
+          [expected.fileId, expected.expiresAt])
+          if (!marked.rowCount) return 'stale'
+        } else if (before.state !== 'expired' && before.state !== 'removed') return 'stale'
+        return undefined
+      })
+      if (tombstoned) return tombstoned
+      return await transaction<FileCleanupOutcome>(async () => {
+        const current = await read()
+        if (!matches(current, expected) || (current.state !== 'expired' && current.state !== 'removed')) return 'stale'
+        check()
+        // Holds defer physical deletion only. The already committed tombstone still denies access.
+        if (this.physicalOwnership && !await this.physicalOwnership.assertCanDelete(expected, client)) return 'busy'
+        check()
+        const complete = await removeBytes()
+        return complete ? 'cleaned' : 'remaining'
+      })
     } finally {
-      if (inTransaction) {
-        try { await rollbackTransaction(client) } catch { broken = true }
-      }
       for (const held of locks.reverse()) {
         if (broken) break
         try {

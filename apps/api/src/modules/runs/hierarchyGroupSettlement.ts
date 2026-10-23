@@ -3,13 +3,13 @@ import { AcceptedCurrentNodeResultSchema, HierarchyWorkGroupSchema, HierarchyWor
   HierarchyWorkFailureInputSchema, WorkActivationIdentitySchema,
   WorkActivationInputSchema, WorkRequestSchema, WorkReturnSchema, canonicalGraphJson,
   type HierarchyWorkGroup, type WorkActivationInput, type WorkRequest,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import type { HierarchyGroupContext } from './hierarchyGroupAdmission.js'
 import { repeatConflict, repeatDigest, sameRepeatValue } from './repeatResolution.js'
 import { readParentWorkRequestLocked } from './workReturnValidation.js'
 import { parseHierarchyWorkResult } from './hierarchyResults.js'
-import { readWorkflowControlDispositionLocked } from '../collaboration/workflowControlDisposition.js'
-import { closeWorkflowControlInputLocked } from '../collaboration/workflowControlQueue.js'
+import { readWorkflowControlDispositionLocked } from '../collaboration/index.js'
+import { closeWorkflowControlInputLocked } from '../collaboration/index.js'
 import { workflowControlFailure } from './workflowControlFailure.js'
 import { workflowLifecycleLocked } from './workflowCollaborationRuntime.js'
 

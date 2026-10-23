@@ -1,5 +1,5 @@
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { JobLogChunkSchema, type JobLogChunk } from '@foreman-code/contracts/jobs'
 import {
   JobDefinitionRecordSchema,
@@ -13,7 +13,7 @@ import {
 import { SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import { DomainError } from '../errors.js'
 import { JobQueueTicketSchema, type JobQueueTicket } from '@foreman-code/contracts/job-admission'
-export type JobSql = GraphSqlClient
+export type JobSql = SqlQuery
 
 export class JobRepository {
   async runScope(sql: JobSql, workspaceId: string, runId: string) {

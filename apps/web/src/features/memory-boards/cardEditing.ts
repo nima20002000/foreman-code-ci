@@ -1,4 +1,4 @@
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import type { MemoryBoardMutation, MemoryCardWorkSelection } from '@foreman-code/contracts'
 import type { CardDraft, CardFields } from './drafts'
 import { nodeKey } from './presentation'

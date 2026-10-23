@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { AgentConfigurationVersionSchema, COORDINATION_RESULT_PROTOCOL,
   type HarnessExecutionRequest } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture, WorkActivationInputSchema,
-  type WorkActivationInput, type WorkHandoffResult } from '@foreman-code/contracts/wave25'
+  type WorkActivationInput, type WorkHandoffResult } from '@foreman-code/contracts/current'
 
 export const hierarchyChildren = {
   master: ['build', 'test', 'bugs'], build: ['builder'], test: ['tester'], bugs: ['inspector'],

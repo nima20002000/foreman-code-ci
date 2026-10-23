@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import pg from 'pg'
 import { expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
 import { createFixtureDatabase, dropFixtureDatabase, removeFixtureDirectory } from './helpers/testResources.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
@@ -122,7 +122,7 @@ async function fixture(host: 'main' | 'device' = 'main') {
     saved.entryNodeId = node.id
     saved.definition.entryNodeId = node.id
     saved.agentConfigurationVersionIds = { [node.agentId]: 'configuration' }
-    const version = WorkflowVersionV3Schema.parse(saved)
+    const version = WorkflowVersionCurrentSchema.parse(saved)
     await pool.query('insert into workflow_versions values($1,$2)', [version.id, version])
     await pool.query('update runs set workflow_version_id=$1', [version.id])
     return { pool, dispose, ports, binding, root, manifest, materializer, sources, bytes }

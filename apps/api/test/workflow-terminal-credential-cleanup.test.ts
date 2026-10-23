@@ -2,13 +2,13 @@ import { expect, it, vi } from 'vitest'
 import { HarnessExecutionRequestSchema } from '@foreman-code/contracts'
 import { DEFAULT_WORKER_CREDENTIAL_TTL_MS } from '../src/modules/access/workerCredentials.js'
 import { DomainError } from '../src/modules/errors.js'
-import { native2Fixture } from './native-reviewer-fixtures.js'
+import { nativeReviewerFixture } from './native-reviewer-fixtures.js'
 
 it('stops workflow credential maintenance once terminal publication commits, before native closure', async () => {
   vi.useFakeTimers()
   let terminalPublished = false
   let terminalChecks = 0
-  const fixture = native2Fixture(false, async () => {
+  const fixture = nativeReviewerFixture(false, async () => {
     if (terminalPublished) {
       terminalChecks += 1
       throw new DomainError('AUTH_REVOKED', 'Workflow credential authority ended.', 401)

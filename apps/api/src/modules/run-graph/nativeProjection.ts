@@ -1,5 +1,5 @@
-import type { GraphActivity, NativeGraphCorrelationRecord, NativeGraphProjectionKey } from '@foreman-code/contracts/wave25'
-import { graphJsonBytes } from '@foreman-code/contracts/wave25'
+import type { GraphActivity, NativeGraphCorrelationRecord, NativeGraphProjectionKey } from '@foreman-code/contracts/current'
+import { graphJsonBytes } from '@foreman-code/contracts/current'
 import { nativeAction, nativeObject, nativeString } from '../runs/nativeAction.js'
 import { sha256Hex } from '../../shared/hash.js'
 

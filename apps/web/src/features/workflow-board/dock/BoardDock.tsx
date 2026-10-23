@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
 import { type MemoryBoardScope } from '@foreman-code/contracts'
 import { Icon } from '../../../shared/ui/nocturne'
-import { createMemoryBoardClient } from '../../memory-boards/client'
-import { useMemoryBoard } from '../../memory-boards/queries'
+import { createMemoryBoardClient, useMemoryBoard } from '../../memory-boards'
 import type { CiServerSummary } from '../inspect/ciServer'
 import './boardDock.css'
 

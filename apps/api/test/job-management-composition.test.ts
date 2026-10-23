@@ -8,19 +8,18 @@ import type { PostgresAccessService } from '../src/modules/access/postgres.js'
 import type { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { JobService } from '../src/modules/jobs/service.js'
 import { jobSpec } from './helpers/jobFixture.js'
+import { liveAuthorityQuery, livePrincipalRow } from './helpers/livePrincipal.js'
 
 it('mounts supplied Jobs through shared management composition with authenticated HTTP/MCP reads and denied writes', async () => {
   const principal = ManagementPrincipalSchema.parse({ id: 'job-reader', name: 'Job reader', audience: 'operator',
     expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null,
     grants: [{ actions: ['job_definitions:read'], scope: { workspaceIds: ['workspace-fixture'] } }] })
-  const query = vi.fn(async (sql: string) => {
-    if (sql === 'begin' || sql === 'commit' || sql === 'rollback') return { rows: [], rowCount: 0 }
-    if (sql.startsWith('select id,name,audience,grants')) return { rows: [{ id: principal.id, name: principal.name,
-      audience: principal.audience, grants: principal.grants, expires_at: new Date(principal.expiresAt),
-      revoked_at: null, delegated_from: null }], rowCount: 1 }
-    if (sql.startsWith('select record from job_definitions')) return { rows: [], rowCount: 0 }
-    throw new Error(`Unexpected Job read SQL: ${sql}`)
-  })
+  const query = vi.fn(liveAuthorityQuery(id => id === principal.id ? livePrincipalRow(principal) : undefined,
+    (sql, values) => {
+      // Transaction control binds nothing; the Job definition list binds only its workspace.
+      if (values.length === 0 || values[0] === 'workspace-fixture') return { rows: [], rowCount: 0 }
+      throw new Error(`Unexpected Job read SQL: ${sql}`)
+    }))
   const connect = vi.fn(async () => ({ query, release: vi.fn() })), recordDenied = vi.fn(async () => undefined)
   const commands = { recordDenied } as unknown as PostgresCommandCoordinator
   const accept = vi.fn()

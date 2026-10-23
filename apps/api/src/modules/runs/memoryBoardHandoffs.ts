@@ -1,9 +1,9 @@
 import { memoryFindingReason } from './memoryFindings.js'
 import type { BoardLifecycleFact } from '@foreman-code/contracts'
-import { WorkReturnSchema, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
-import { memoryExecution } from '../collaboration/memoryExecution.js'
-import type { MemoryBoardPort } from '../collaboration/ports.js'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import { WorkReturnSchema, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+import { memoryExecution } from '../collaboration/index.js'
+import type { MemoryBoardPort } from '../collaboration/index.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { selectedWorkHandoffRoutes } from './workHandoffRouting.js'
 import { parseWorkflowWorkResult } from './workflowCoordinationResult.js'
 import { repeatConflict } from './repeatResolution.js'
@@ -13,7 +13,7 @@ type Settlement = Pick<BoardLifecycleFact, 'reason' | 'outstandingRequestIds'> &
 }
 const waiting: Settlement = { phase: 'waiting_children', reason: null, outstandingRequestIds: [] }
 
-function memoryWorkRoutes(definition: WorkflowDefinitionV3, nodeId: string,
+function memoryWorkRoutes(definition: WorkflowDefinitionCurrent, nodeId: string,
   result: ReturnType<typeof parseWorkflowWorkResult>): string[] {
   if (!definition.hierarchy) return selectedWorkHandoffRoutes(definition, nodeId, result)
   const routing = result.routing
@@ -27,11 +27,11 @@ function memoryWorkRoutes(definition: WorkflowDefinitionV3, nodeId: string,
   })
 }
 
-export function memoryWorkSettlement(tx: GraphTransactionSql, executionId: string): Promise<Settlement> {
+export function memoryWorkSettlement(tx: SqlTransaction, executionId: string): Promise<Settlement> {
   return settlement(tx, executionId, new Set())
 }
 
-async function settlement(tx: GraphTransactionSql, executionId: string, visited: Set<string>): Promise<Settlement> {
+async function settlement(tx: SqlTransaction, executionId: string, visited: Set<string>): Promise<Settlement> {
   if (visited.has(executionId)) return waiting
   visited.add(executionId)
   const saved = await memoryExecution(tx, executionId)
@@ -99,7 +99,7 @@ async function settlement(tx: GraphTransactionSql, executionId: string, visited:
 }
 
 /** Only the affected request ancestry is read; no card history or native transcript is scanned. */
-export async function reconcileMemoryHandoffsLocked(tx: GraphTransactionSql, service: MemoryBoardPort,
+export async function reconcileMemoryHandoffsLocked(tx: SqlTransaction, service: MemoryBoardPort,
   executionId: string, sourceEventKey: string): Promise<void> {
   const source = await memoryExecution(tx, executionId)
   if (source.work.kind !== 'activation' || !source.version.definition.handoffs) return
@@ -114,7 +114,7 @@ export async function reconcileMemoryHandoffsLocked(tx: GraphTransactionSql, ser
   }
 }
 
-async function parentExecutions(tx: GraphTransactionSql, runId: string, activationId: string): Promise<string[]> {
+async function parentExecutions(tx: SqlTransaction, runId: string, activationId: string): Promise<string[]> {
   const seen = new Set([activationId])
   const executions = new Set<string>()
   let frontier = [activationId]

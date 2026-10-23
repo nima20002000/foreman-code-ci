@@ -10,24 +10,29 @@ import {
   GraphEffectSchema, GraphEffectFenceSchema, assertGraphEffectAuthority, RunGraphErrorCodeSchema,
   type GraphEffect, type GraphEffectFence, type GraphEffectAccessState, type GraphEffectIdentity,
   type GraphEvidence, type GraphFact, type RunGraphEvent, type RunGraphScope,
-  CanonicalRunGraphScopeSchema, sameCanonicalGraphScope, RepeatGraphScopeV3Schema,
-  RepeatGraphFactV3Schema, RepeatGraphEffectV3Schema, RepeatGraphEventContentV3Schema, RepeatGraphBatchV3Schema,
+  CanonicalRunGraphScopeSchema, sameCanonicalGraphScope, RepeatGraphScopeCurrentSchema,
+  RepeatGraphFactCurrentSchema, RepeatGraphEffectCurrentSchema, RepeatGraphEventContentCurrentSchema, RepeatGraphBatchCurrentSchema,
   assertRepeatGraphFactScope,
-  GraphSequenceSchema, AcceptedWorkflowRunV3Schema,
-  type AcceptedWorkflowRunV3, type RepeatGraphScopeV3, type RepeatGraphBatchV3,
-  type CanonicalRunGraphScope, type RepeatGraphFactV3,
-  type RepeatGraphEventV3, type RepeatGraphEffectV3,
-} from '@foreman-code/contracts/wave25'
+  GraphSequenceSchema, AcceptedWorkflowRunCurrentSchema,
+  type AcceptedWorkflowRunCurrent, type RepeatGraphScopeCurrent, type RepeatGraphBatchCurrent,
+  type CanonicalRunGraphScope, type RepeatGraphFactCurrent,
+  type RepeatGraphEventCurrent, type RepeatGraphEffectCurrent,
+} from '@foreman-code/contracts/current'
 import {
-  assertGraphTransaction, beforeGraphCommit, beforeGraphCommitChecks, didGraphTransactionCommit, poisonGraphTransaction,
-  type ExclusiveGraphConnection, type GraphTransactionSql,
+  assertGraphTransaction,
+  beforeGraphCommit,
+  beforeGraphCommitChecks,
+  didGraphTransactionCommit,
+  poisonGraphTransaction,
+  type ExclusiveGraphConnection
 } from './connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { activeNativeBatch, memoizeNativeRead, nativeCommitCollect, seedNativeRead } from './nativeBatch.js'
 import { RunGraphError } from './errors.js'
 import { DomainError } from '../errors.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { workflowJobGraphSourceChangesLocked } from './workflowJobProjection.js'
-import { componentLogger } from '../diagnostics/logger.js'
+import { componentLogger } from '../diagnostics/index.js'
 import { ZodError } from 'zod'
 import { isClosedRunState } from '../runs/runState.js'
 
@@ -48,7 +53,7 @@ function throwPublicationFailure(error: unknown, runId: string): never {
  * source table. Per-source digests alone cannot prove source-group ordering.
  * This reserved source never emits another event or allocates another counter.
  */
-export function repeatGraphBatchReceipt(batch: Pick<RepeatGraphBatchV3,
+export function repeatGraphBatchReceipt(batch: Pick<RepeatGraphBatchCurrent,
   'protocolVersion' | 'scope' | 'batchId' | 'previousSequence' | 'sequence' | 'events'>) {
   const digest = graphSourceDigest(batch)
   return { evidence: { sourceKind: 'run' as const, sourceId: `repeat-batch:${batch.batchId}`, sourceRevision: '1' },
@@ -60,23 +65,23 @@ export function repeatGraphBatchReceipt(batch: Pick<RepeatGraphBatchV3,
  * a new counter. Reusing a historical state after an intervening transition
  * therefore cannot be mistaken for a duplicate source.
  */
-export async function readRepeatRunSourceLocked(sql: GraphTransactionSql, input: RepeatGraphScopeV3) {
+export async function readRepeatRunSourceLocked(sql: SqlTransaction, input: RepeatGraphScopeCurrent) {
   assertGraphTransaction(sql)
-  const scope = RepeatGraphScopeV3Schema.parse(input)
+  const scope = RepeatGraphScopeCurrentSchema.parse(input)
   const row = (await sql.query<{ record: unknown; workspace_id: string; workflow_id: string; workflow_version_id: string;
     execution_state: string; stopped: boolean; written_here: boolean; created_here: boolean }>(
     `select record,workspace_id,workflow_id,workflow_version_id,execution_state,stop_requested_at is not null as stopped,
        xmin=pg_current_xact_id_if_assigned()::xid as written_here,
        created_at=transaction_timestamp() as created_here from runs where id=$1`, [scope.runId])).rows[0]
   if (!row) throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
-  const run = AcceptedWorkflowRunV3Schema.parse(row.record)
+  const run = AcceptedWorkflowRunCurrentSchema.parse(row.record)
   if (row.workspace_id !== scope.workspaceId || row.workflow_id !== scope.workflowId || row.workflow_version_id !== scope.workflowVersionId
     || run.id !== scope.runId || run.workspaceId !== scope.workspaceId || run.workflowId !== scope.workflowId
     || run.workflowVersionId !== scope.workflowVersionId || run.executionState !== row.execution_state) {
     throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
   }
   const state = await readPublicRunStateLocked(sql, scope)
-  const fact = RepeatGraphFactV3Schema.parse({ type: 'repeat.run.state', state })
+  const fact = RepeatGraphFactCurrentSchema.parse({ type: 'repeat.run.state', state })
   const semanticDigest = graphSourceDigest([fact])
   const sourceDigest = graphSourceDigest({ scope, record: run, state })
   const head = (await sql.query<{ head_sequence: string; source_revision: string | null;
@@ -113,7 +118,7 @@ export interface RetainSourceRow { proof_id: string; record: unknown; source_dig
   saved_digest: string | null; semantic_digest: string | null; sequence: string }
 function retainRowKey(runId: string, proofId: string): string { return `retain-row:${runId}:${proofId}` }
 
-async function queryRetainRows(sql: GraphTransactionSql, runId: string, proofIds: readonly string[]): Promise<Map<string, RetainSourceRow>> {
+async function queryRetainRows(sql: SqlTransaction, runId: string, proofIds: readonly string[]): Promise<Map<string, RetainSourceRow>> {
   const rows = await sql.query<RetainSourceRow>(
     `select p.proof_id,p.record,p.source_digest,s.source_digest as saved_digest,s.semantic_digest,
       h.head_sequence::text as sequence from workflow_native_proofs p
@@ -125,13 +130,13 @@ async function queryRetainRows(sql: GraphTransactionSql, runId: string, proofIds
 }
 
 /** Once per group, after its proofs are persisted: the retention rows for every proof, locked for share. */
-export async function seedRetainRows(sql: GraphTransactionSql, runId: string, proofIds: readonly string[]): Promise<void> {
+export async function seedRetainRows(sql: SqlTransaction, runId: string, proofIds: readonly string[]): Promise<void> {
   const rows = await queryRetainRows(sql, runId, proofIds)
   for (const proofId of proofIds) seedNativeRead(sql, retainRowKey(runId, proofId), rows.get(proofId) ?? null)
 }
 
 /** Retained-source rows: the group's seeded rows when present, otherwise one locked read. */
-async function readRetainRows(sql: GraphTransactionSql, runId: string, proofIds: readonly string[]): Promise<Map<string, RetainSourceRow>> {
+async function readRetainRows(sql: SqlTransaction, runId: string, proofIds: readonly string[]): Promise<Map<string, RetainSourceRow>> {
   const batch = activeNativeBatch(sql)
   if (batch && proofIds.every((proofId) => batch.reads.has(retainRowKey(runId, proofId)))) {
     const rows = await Promise.all(proofIds.map((proofId) => batch.reads.get(retainRowKey(runId, proofId))!))
@@ -145,7 +150,7 @@ export function graphSourceRowKey(runId: string, sourceKind: string, sourceId: s
 }
 
 /** The persisted source row, read once per batch; staged sources are checked by the caller first. */
-export function readGraphSourceRow(sql: GraphTransactionSql, runId: string, sourceKind: string, sourceId: string,
+export function readGraphSourceRow(sql: SqlTransaction, runId: string, sourceKind: string, sourceId: string,
   sourceRevision: string): Promise<{ source_digest: string; semantic_digest: string } | undefined> {
   return memoizeNativeRead(sql, graphSourceRowKey(runId, sourceKind, sourceId, sourceRevision), async () => (await sql.query<{
     source_digest: string; semantic_digest: string }>(
@@ -166,12 +171,12 @@ export interface GraphEffectGuard {
    * Return exact scope/subject/session binding, live owner/fence/generation and
    * qualified security. Cached snapshots or echoing expected is NOT an implementation.
    */
-  readCurrentLocked(sql: GraphTransactionSql, scope: RunGraphScope, effect: GraphEffectIdentity): Promise<GraphEffectAccessState>
+  readCurrentLocked(sql: SqlTransaction, scope: RunGraphScope, effect: GraphEffectIdentity): Promise<GraphEffectAccessState>
 }
 export interface GraphEffectChange extends GraphSourceChange { effect: GraphEffect }
-interface StagedEffect { effect: GraphEffect | RepeatGraphEffectV3; semanticDigest: string }
+interface StagedEffect { effect: GraphEffect | RepeatGraphEffectCurrent; semanticDigest: string }
 interface StagedSource {
-  evidence: GraphEvidence; sourceDigest: string; semanticDigest: string; events: (RunGraphEvent | RepeatGraphEventV3)[]
+  evidence: GraphEvidence; sourceDigest: string; semanticDigest: string; events: (RunGraphEvent | RepeatGraphEventCurrent)[]
   /** Aliases of already committed effects point at their original publication. */
   firstSequence?: string
 }
@@ -180,18 +185,18 @@ export interface GraphPublicationReceipt {
   batchId: string | null
   kind: 'none' | 'events' | 'reset'
 }
-const publications = new WeakMap<GraphTransactionSql, Map<string, RunGraphPublication<CanonicalRunGraphScope>>>()
+const publications = new WeakMap<SqlTransaction, Map<string, RunGraphPublication<CanonicalRunGraphScope>>>()
 const constructionKey = Symbol('RunGraphPublication')
 
 /** Domain producers for each Run share one finalized batch on the transaction. */
 export interface RepeatGraphSourceChange {
   evidence: GraphEvidence
   sourceDigest: string
-  effect: RepeatGraphEffectV3 | null
+  effect: RepeatGraphEffectCurrent | null
 }
 
 export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScope> {
-  readonly sql: GraphTransactionSql
+  readonly sql: SqlTransaction
   readonly scope: S
   readonly #hasJobNodes: boolean
   readonly #sources = new Map<string, StagedSource>()
@@ -202,7 +207,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
   readonly #ownerCommitChecks = new WeakMap<RunOwnership, (expected: readonly { ownerId: string; fence: string }[]) => Promise<void>>()
   #finalized = false
   #receipt: GraphPublicationReceipt = { sequence: null, batchId: null, kind: 'none' }
-  constructor(key: symbol, sql: GraphTransactionSql, scope: S, version: { hasJobNodes: boolean },
+  constructor(key: symbol, sql: SqlTransaction, scope: S, version: { hasJobNodes: boolean },
     private readonly readPublicProjection: PublicProjectionReader) {
     if (key !== constructionKey) throw new RunGraphError('GRAPH_TRANSACTION_CLOSED')
     this.sql = sql
@@ -213,17 +218,17 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
   }
   /** Source/projection bookkeeping; grants no authority for a workflow effect.
    * Exact duplicate sources do not call mutate; conflicts poison the transaction. */
-  async source<T>(input: GraphSourceChange, mutate: (sql: GraphTransactionSql) => Promise<T>): Promise<{ replayed: true } | { replayed: false; value: T }> {
+  async source<T>(input: GraphSourceChange, mutate: (sql: SqlTransaction) => Promise<T>): Promise<{ replayed: true } | { replayed: false; value: T }> {
     return this.change(input, undefined, mutate)
   }
   /** Persisted workflow effects use BOTH source and stable effect deduplication.
    * This records database effects/intents, never performs a network/native write.
    */
-  async effect<T>(input: GraphEffectChange, guard: GraphEffectGuard, mutate: (sql: GraphTransactionSql) => Promise<T>): Promise<{ replayed: true } | { replayed: false; value: T }> {
+  async effect<T>(input: GraphEffectChange, guard: GraphEffectGuard, mutate: (sql: SqlTransaction) => Promise<T>): Promise<{ replayed: true } | { replayed: false; value: T }> {
     return this.change(input, { effect: input.effect, guard }, mutate)
   }
   private async change<T>(input: GraphSourceChange, guarded: { effect: GraphEffect; guard: GraphEffectGuard } | undefined,
-    mutate: (sql: GraphTransactionSql) => Promise<T>): Promise<{ replayed: true } | { replayed: false; value: T }> {
+    mutate: (sql: SqlTransaction) => Promise<T>): Promise<{ replayed: true } | { replayed: false; value: T }> {
     let entered = false
     try {
       assertGraphTransaction(this.sql)
@@ -243,7 +248,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
       const facts = input.facts.map((fact) => GraphFactSchema.parse(fact))
       const effect = guarded ? GraphEffectSchema.parse(guarded.effect) : undefined
       const semanticDigest = graphSourceDigest(effect ? { effect, facts } : facts)
-      const events = facts.map((fact) => RepeatGraphEventContentV3Schema.parse({ eventId: randomUUID(), evidence,
+      const events = facts.map((fact) => RepeatGraphEventContentCurrentSchema.parse({ eventId: randomUUID(), evidence,
         sourceDigest, semanticDigest, effect: effect ?? null, fact }))
       const key = canonicalGraphJson(evidence)
       const staged = this.#sources.get(key)
@@ -471,8 +476,8 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
    * Source-only run readback is deliberately separate: it grants no mutation.
    */
   async repeatChange<T>(input: RepeatGraphSourceChange, owner: RunOwnership,
-    mutate: (sql: GraphTransactionSql) => Promise<T>,
-    projectLocked: (sql: GraphTransactionSql) => Promise<readonly RepeatGraphFactV3[]>,
+    mutate: (sql: SqlTransaction) => Promise<T>,
+    projectLocked: (sql: SqlTransaction) => Promise<readonly RepeatGraphFactCurrent[]>,
   ): Promise<{ replayed: boolean; semanticDigest: string; value?: T }> {
     return this.repeatChangeInternal(input, owner, mutate, projectLocked, 'progress')
   }
@@ -480,7 +485,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
   /** Enlist the already authorized Run writer's exact SQL state. This method
    * cannot mutate a Run, request Stop, launch work or waive native settlement. */
   async repeatRunReadback(input: Omit<RepeatGraphSourceChange, 'effect'>, owner: RunOwnership,
-    projectLocked: (sql: GraphTransactionSql) => Promise<readonly RepeatGraphFactV3[]>,
+    projectLocked: (sql: SqlTransaction) => Promise<readonly RepeatGraphFactCurrent[]>,
   ): Promise<{ replayed: boolean; semanticDigest: string }> {
     return this.repeatChangeInternal({ ...input, effect: null }, owner, async () => undefined, projectLocked, 'run_readback')
   }
@@ -489,8 +494,8 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
    * After Stop/terminal only terminal execution metadata may be enlisted. This
    * does not accept a business result, route work, or create a launch permit. */
   async repeatObservation<T>(input: Omit<RepeatGraphSourceChange, 'effect'>, owner: RunOwnership,
-    mutate: (sql: GraphTransactionSql) => Promise<T>,
-    projectLocked: (sql: GraphTransactionSql) => Promise<readonly RepeatGraphFactV3[]>,
+    mutate: (sql: SqlTransaction) => Promise<T>,
+    projectLocked: (sql: SqlTransaction) => Promise<readonly RepeatGraphFactCurrent[]>,
   ): Promise<{ replayed: boolean; semanticDigest: string; value?: T }> {
     return this.repeatChangeInternal({ ...input, effect: null }, owner, mutate, projectLocked, 'native_evidence')
   }
@@ -499,8 +504,8 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
    * coverage. This readback cannot write a Run, enter a block or mint an owner.
    * The authorized Start caller still owns command/live-authority validation.
    */
-  repeatInsertedRunReadback(run: AcceptedWorkflowRunV3) {
-    return this.repeatSqlRunReadback(AcceptedWorkflowRunV3Schema.parse(JSON.parse(canonicalGraphJson(run))))
+  repeatInsertedRunReadback(run: AcceptedWorkflowRunCurrent) {
+    return this.repeatSqlRunReadback(AcceptedWorkflowRunCurrentSchema.parse(JSON.parse(canonicalGraphJson(run))))
   }
 
   /** An ownerless authenticated Stop writer may enlist its actual same-tx SQL
@@ -509,17 +514,17 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
    */
   repeatStoppedRunReadback() { return this.repeatSqlRunReadback() }
 
-  private async repeatSqlRunReadback(accepted?: AcceptedWorkflowRunV3) {
+  private async repeatSqlRunReadback(accepted?: AcceptedWorkflowRunCurrent) {
     let entered = false
     try {
       assertGraphTransaction(this.sql)
       if (this.#finalized) throw new RunGraphError('GRAPH_TRANSACTION_CLOSED')
       if (this.#busy) throw new RunGraphError('GRAPH_TRANSACTION_CONCURRENT')
       this.#busy = true; entered = true
-      const scope = RepeatGraphScopeV3Schema.parse(this.scope)
+      const scope = RepeatGraphScopeCurrentSchema.parse(this.scope)
       if (this.#admissionOnly) throw new RunGraphError('GRAPH_TRANSACTION_NESTED')
       const current = await readRepeatRunSourceLocked(this.sql, scope)
-      const sameRecord = (run: AcceptedWorkflowRunV3) => canonicalGraphJson(run) === canonicalGraphJson(current.run)
+      const sameRecord = (run: AcceptedWorkflowRunCurrent) => canonicalGraphJson(run) === canonicalGraphJson(current.run)
       if (accepted) {
         if (!sameRecord(accepted) || !current.writtenHere || !current.createdHere || current.stopped
           || current.head !== '0' || this.#sources.size || accepted.executionState !== 'queued' || accepted.outcome !== 'pending'
@@ -548,7 +553,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
       if (staged) this.assertSame(staged, sourceDigest, semanticDigest)
       const replayed = !accepted && current.replayed || Boolean(staged)
       if (!replayed) {
-        const event = RepeatGraphEventContentV3Schema.parse({ eventId: randomUUID(), evidence, sourceDigest, semanticDigest,
+        const event = RepeatGraphEventContentCurrentSchema.parse({ eventId: randomUUID(), evidence, sourceDigest, semanticDigest,
           effect: null, fact: current.fact })
         const bytes = graphJsonBytes(event)
         if (this.#sources.size >= RUN_GRAPH_LIMITS.transactionSources || this.#bytes + bytes > RUN_GRAPH_LIMITS.transactionBytes) {
@@ -581,19 +586,19 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
   /** Read back the concrete N1 writer's physical execution metadata without
    * accepting a result, changing native state or granting another launch. */
   repeatExecutionReadback(input: Omit<RepeatGraphSourceChange, 'effect'>, owner: RunOwnership,
-    projectLocked: (sql: GraphTransactionSql) => Promise<readonly RepeatGraphFactV3[]>,
+    projectLocked: (sql: SqlTransaction) => Promise<readonly RepeatGraphFactCurrent[]>,
   ) {
     return this.repeatChangeInternal({ ...input, effect: null }, owner, async () => undefined, projectLocked, 'native_evidence')
   }
 
   private async repeatChangeInternal<T>(input: RepeatGraphSourceChange, owner: RunOwnership,
-    mutate: (sql: GraphTransactionSql) => Promise<T>,
-    projectLocked: (sql: GraphTransactionSql) => Promise<readonly RepeatGraphFactV3[]>, mode: 'progress' | 'run_readback' | 'native_evidence',
+    mutate: (sql: SqlTransaction) => Promise<T>,
+    projectLocked: (sql: SqlTransaction) => Promise<readonly RepeatGraphFactCurrent[]>, mode: 'progress' | 'run_readback' | 'native_evidence',
   ): Promise<{ replayed: boolean; semanticDigest: string; value?: T }> {
     let entered = false
     try {
       assertGraphTransaction(this.sql)
-      const scope = RepeatGraphScopeV3Schema.parse(this.scope)
+      const scope = RepeatGraphScopeCurrentSchema.parse(this.scope)
       if (this.#admissionOnly) throw new RunGraphError('GRAPH_TRANSACTION_NESTED')
       if (this.#finalized) throw new RunGraphError('GRAPH_TRANSACTION_CLOSED')
       if (this.#busy) throw new RunGraphError('GRAPH_TRANSACTION_CONCURRENT')
@@ -609,7 +614,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
       }
       const evidence = GraphEvidenceSchema.parse(input.evidence)
       const sourceDigest = GraphDigestSchema.parse(input.sourceDigest)
-      const effect = input.effect === null ? null : RepeatGraphEffectV3Schema.parse(input.effect)
+      const effect = input.effect === null ? null : RepeatGraphEffectCurrentSchema.parse(input.effect)
       const runReadback = mode === 'run_readback'
       if (mode === 'native_evidence' && (evidence.sourceKind !== 'execution' || effect !== null)) throw new RunGraphError('GRAPH_INVALID_FACT')
       if (runReadback && (evidence.sourceKind !== 'run' || effect !== null)) throw new RunGraphError('GRAPH_INVALID_FACT')
@@ -651,7 +656,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
       const projected = await projectLocked(this.sql)
       canonicalGraphJson(projected, RUN_GRAPH_LIMITS.transactionBytes)
       if (!projected.length && effect?.operation !== 'run.complete') throw new RunGraphError('GRAPH_INVALID_FACT')
-      const facts = projected.map((fact) => RepeatGraphFactV3Schema.parse(fact))
+      const facts = projected.map((fact) => RepeatGraphFactCurrentSchema.parse(fact))
       for (const fact of facts) assertRepeatGraphFactScope(scope, fact)
       if (mode === 'native_evidence' && (facts.length !== 1 || facts[0]!.type !== 'repeat.execution'
         || terminalEvidenceOnly && facts[0]!.execution.state !== 'completed')) throw new RunGraphError('GRAPH_STOP_CONFLICT')
@@ -670,7 +675,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
         && (stagedEffect?.semanticDigest ?? savedEffect!.semantic_digest) !== semanticDigest) throw new RunGraphError('GRAPH_EFFECT_CONFLICT')
       if (saved && savedEffect && saved.first_sequence !== savedEffect.first_sequence) throw new RunGraphError('GRAPH_EFFECT_CONFLICT')
       if (!staged && !saved) {
-        const events = (replayed ? [] : facts.map((fact) => RepeatGraphEventContentV3Schema.parse({
+        const events = (replayed ? [] : facts.map((fact) => RepeatGraphEventContentCurrentSchema.parse({
           eventId: randomUUID(), evidence, sourceDigest, semanticDigest, effect, fact,
         })))
         const bytes = Buffer.byteLength(canonicalGraphJson({ evidence, sourceDigest, semanticDigest, events }, RUN_GRAPH_LIMITS.transactionBytes))
@@ -719,7 +724,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
       if (staged) this.assertSame(staged, current.sourceDigest, current.semanticDigest)
       else if (!current.replayed) this.#sources.set(key, { evidence: current.evidence,
         sourceDigest: current.sourceDigest, semanticDigest: current.semanticDigest,
-        events: [RepeatGraphEventContentV3Schema.parse({ eventId: randomUUID(), evidence: current.evidence,
+        events: [RepeatGraphEventContentCurrentSchema.parse({ eventId: randomUUID(), evidence: current.evidence,
           sourceDigest: current.sourceDigest, semanticDigest: current.semanticDigest, effect: null, fact: current.fact })] })
       beforeGraphCommit(this.sql, async () => {
         const final = await readRepeatRunSourceLocked(this.sql, this.scope)
@@ -740,7 +745,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
       const key = canonicalGraphJson(change.evidence)
       if (this.#sources.has(key)) throw new RunGraphError('GRAPH_SOURCE_CONFLICT')
       this.#sources.set(key, { evidence: change.evidence, sourceDigest: change.sourceDigest,
-        semanticDigest: change.semanticDigest, events: [RepeatGraphEventContentV3Schema.parse({
+        semanticDigest: change.semanticDigest, events: [RepeatGraphEventContentCurrentSchema.parse({
           eventId: randomUUID(), evidence: change.evidence, sourceDigest: change.sourceDigest,
           semanticDigest: change.semanticDigest, effect: null, fact: change.fact,
         })] })
@@ -775,7 +780,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
       const key = canonicalGraphJson(projection.evidence)
       if (this.#sources.has(key)) throw new RunGraphError('GRAPH_SOURCE_CONFLICT')
       this.#sources.set(key, { evidence: projection.evidence, sourceDigest: projection.sourceDigest,
-        semanticDigest: projection.semanticDigest, events: [RepeatGraphEventContentV3Schema.parse({ eventId: randomUUID(),
+        semanticDigest: projection.semanticDigest, events: [RepeatGraphEventContentCurrentSchema.parse({ eventId: randomUUID(),
           evidence: projection.evidence, sourceDigest: projection.sourceDigest, semanticDigest: projection.semanticDigest,
           effect: null, fact: projection.fact })] })
       beforeGraphCommit(this.sql, () => timeRuntimeOperation('db', 'graph.recheck_projection',
@@ -806,9 +811,9 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
         || graphJsonBytes(candidate) > RUN_GRAPH_LIMITS.batchBytes
       kind = oversized ? 'reset' : 'events'
       if (!oversized) batchProof = repeatGraphBatchReceipt({
-        ...candidate, scope: RepeatGraphScopeV3Schema.parse(this.scope), events: events as RepeatGraphEventV3[],
+        ...candidate, scope: RepeatGraphScopeCurrentSchema.parse(this.scope), events: events as RepeatGraphEventCurrent[],
       })
-      const parsed = oversized ? undefined : RepeatGraphBatchV3Schema.safeParse(candidate)
+      const parsed = oversized ? undefined : RepeatGraphBatchCurrentSchema.safeParse(candidate)
       if (parsed && !parsed.success) throw new RunGraphError('GRAPH_INVARIANT_VIOLATION')
       // A size barrier preserves domain state and ALL source receipts. Invalid
       // semantic content is instead a rollback, never disguised as an oversized batch.
@@ -855,7 +860,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
  * No arbitrary ClientBase overload exists. The commit finalizer cannot be forgotten.
  */
 export async function openRunGraphPublication<S extends CanonicalRunGraphScope>(
-  sql: GraphTransactionSql, input: S, readPublicProjection: PublicProjectionReader,
+  sql: SqlTransaction, input: S, readPublicProjection: PublicProjectionReader,
   initialize?: { historyCoverage: 'from_admission' | 'from_snapshot' },
 ): Promise<RunGraphPublication<S>> {
   assertGraphTransaction(sql)
@@ -903,7 +908,7 @@ export async function openRunGraphPublication<S extends CanonicalRunGraphScope>(
   } catch (error) { poisonGraphTransaction(sql); throw error }
 }
 
-export function assertRunGraphPublication(sql: GraphTransactionSql, scope: CanonicalRunGraphScope): void {
+export function assertRunGraphPublication(sql: SqlTransaction, scope: CanonicalRunGraphScope): void {
   assertGraphTransaction(sql)
   const publication = publications.get(sql)?.get(scope.runId)
   if (!publication || !sameCanonicalGraphScope(publication.scope, scope)) throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
@@ -925,12 +930,12 @@ export async function withRunGraphPublication<T>(
 
 /** False while a publication is still being opened (its committed projection is
  * being re-read), so read-only proof verification can skip enlistment. */
-export function hasRunGraphPublication(sql: GraphTransactionSql, scope: CanonicalRunGraphScope): boolean {
+export function hasRunGraphPublication(sql: SqlTransaction, scope: CanonicalRunGraphScope): boolean {
   const publication = publications.get(sql)?.get(scope.runId)
   return !!publication && sameCanonicalGraphScope(publication.scope, scope)
 }
 
-export function currentRunGraphPublication<S extends CanonicalRunGraphScope>(sql: GraphTransactionSql, scope: S): RunGraphPublication<S> {
+export function currentRunGraphPublication<S extends CanonicalRunGraphScope>(sql: SqlTransaction, scope: S): RunGraphPublication<S> {
   assertRunGraphPublication(sql, scope)
   return publications.get(sql)!.get(scope.runId)! as RunGraphPublication<S>
 }

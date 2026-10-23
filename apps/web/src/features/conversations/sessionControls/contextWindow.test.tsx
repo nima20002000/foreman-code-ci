@@ -5,9 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { SessionControlStateSchema, unavailableSessionControls } from '@foreman-code/contracts'
 import { agentChatFixtures } from '@foreman-code/contracts/agent-chat'
 import { server } from '../../../mocks/server'
-import { OperatorChat } from '../../operator-chat/OperatorChat'
-import { OperatorChatVisibilityProvider } from '../../operator-chat/visibility'
-import { useOperatorChatStore } from '../../operator-chat/operatorChatStore'
+import { OperatorChat, OperatorChatVisibilityProvider, useOperatorChatStore } from '../../operator-chat'
 import { mountChat } from '../agentChat/testSupport'
 
 const clients: QueryClient[] = []

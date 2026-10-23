@@ -4,7 +4,7 @@ import { HarnessExecutionError } from '../errors.js'
 import { unavailableNativeResponse, type NativeResponseAvailability } from '../responseAvailability.js'
 import type { ClaudeResponseAvailabilityQuery, ClaudeNativeCallbackContext, ClaudeCallbackAuthority,
   ClaudePendingNotification } from './callbackAvailability.js'
-import { componentLogger } from '../../diagnostics/logger.js'
+import { componentLogger } from '../../diagnostics/index.js'
 import { failRuntime } from './sessionFailure.js'
 import type { ClaudeManagerContext, Runtime, Turn } from './sessionTypes.js'
 import { record } from './sessionState.js'

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { AcceptedRepeatStartV1Schema, WorkflowVersionV3Schema, makeCurrentWorkflowFixture, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { AcceptedRepeatStartV1Schema, WorkflowVersionCurrentSchema, makeCurrentWorkflowFixture, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { RunBoardSnapshotSchema } from '@foreman-code/contracts/run-snapshots'
 import { publicRunActivity, type ActivityReadRow } from '../src/modules/runs/activityProjection.js'
 import { projectRunBoardSnapshot } from '../src/modules/runs/boardSnapshotProjection.js'
@@ -25,7 +25,7 @@ function mixed() {
   f.version.definition.executionPolicy!.maxNodeExecutions = 2
   f.version.contentHash = repeatDigest({ definition: f.version.definition,
     configurations: f.version.agentConfigurationVersionIds, entryNodeId: f.version.entryNodeId })
-  WorkflowVersionV3Schema.parse(f.version)
+  WorkflowVersionCurrentSchema.parse(f.version)
   const snapshot = { run: f.run, version: f.version, configurations: f.configurations, stopRequested: false, cleanupPending: false }
   return { f, snapshot }
 }
@@ -112,7 +112,7 @@ describe('mixed-node admission and immutable history projections', () => {
   })
   it('uses the real Agent reviewer alongside Jobs and refuses Job entry bootstrap', () => {
     const f = makeCurrentWorkflowFixture('mixed-review-bootstrap', 'approval')
-    const version: WorkflowVersionV3 = f.version
+    const version: WorkflowVersionCurrent = f.version
     version.definition.nodes.push(job)
     expect(() => validateReviewerBootstrap(version.definition, version.approval, f.configurations[0]!.harness)).not.toThrow()
     version.definition.entryNodeId = job.id

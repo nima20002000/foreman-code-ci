@@ -5,9 +5,10 @@ import { CodexStdioTransport } from './codexStdioTransport.js'
 import { runCommand } from './process.js'
 import { pluginHash } from './codexPluginIdentity.js'
 import type { PluginConfiguration } from './codexPluginCatalog.js'
+import { hostEnvironment } from '../../shared/process.js'
 
 export function pluginCommandEnvironment(): NodeJS.ProcessEnv {
-  const environment: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1' }
+  const environment: NodeJS.ProcessEnv = { ...hostEnvironment(), NO_COLOR: '1' }
   for (const key of Object.keys(environment)) if (/^(?:GRAPHQL_|FOREMAN_CODE_|OPERATOR_|DATABASE_URL$|TEST_DATABASE_URL$|PGPASSWORD$)/.test(key)) delete environment[key]
   return environment
 }

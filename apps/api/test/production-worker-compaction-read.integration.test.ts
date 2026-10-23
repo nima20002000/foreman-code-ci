@@ -5,7 +5,7 @@ import {
   AgentConfigurationVersionSchema, SessionControlStateSchema, unavailableSessionControls,
 } from '@foreman-code/contracts'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { WorkerConversationBindingSchema, type WorkerConversationReceipt,
   type WorkerConversationRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
 import { loadConfig } from '../src/config.js'
@@ -22,14 +22,15 @@ import type { DeviceEndpoint } from '../src/modules/devices/deviceEndpoint.js'
 import { DomainError } from '../src/modules/errors.js'
 import { legacyProviderAccountBinding } from '../src/modules/provider-accounts/acceptedBindings.js'
 import type { NativeCompactInput, NativeSessionStart } from '../src/modules/harnesses/port.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { ChatManager } from './helpers/operatorChatFixture.js'
 import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { productionClaudeFixture } from './support/claudeProduction.js'
 
 it.each(['completed', 'failed'] as const)(
   'reads uncertain then %s Worker compaction through production without releasing its native owner', async status => {
-    const db = await agent3Database()
+    const db = await migratedDatabase()
     const f = workerConversationFixture('agent', 'claude')
     const definition = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
     definition.configurations = definition.configurations.map(value => AgentConfigurationVersionSchema.parse({ ...value,
@@ -41,7 +42,7 @@ it.each(['completed', 'failed'] as const)(
     let host: WorkerConversationHost | undefined
     let nativeProfile: ReturnType<typeof productionClaudeFixture> | undefined
     try {
-      const seeded = await seedAgent3(db.pool, db.directory, definition, { run: false })
+      const seeded = await seedWorkflowFixture(db.pool, db.directory, definition, { run: false })
       const node = seeded.version.definition.nodes[0]!
       const configuration = seeded.configurations.find(value => value.agentId === node.agentId)!
       const context = { workspaceId: configuration.workspaceId, workflowId: seeded.scope.workflowId,

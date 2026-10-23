@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { WorkflowRunSummary } from '@foreman-code/contracts'
-import type { RepeatGraphCurrentV3 } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphCurrentState } from '@foreman-code/contracts/current'
 import type { AgentNodeState, Tone } from '../../shared/ui/nocturne'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { currentRunKey } from './currentRunQuery'
-import { useBoardSelection } from './context'
+import { useBoardSelection } from '../board-core'
 import { checkingView, pinnedNodeStates, runningIntervalChecks, type PinnedNodeDisplayCut } from './inspect/pinnedTopology'
 
 /** Cache-only subscriber: no Query observer with a competing queryFn. Only
@@ -17,10 +17,10 @@ export function useSelectedRunQueryState() {
     ? currentRunKey({ workspaceId, workflowId, runId, workflowVersionId, executionSemanticsVersion }, generation) : undefined,
     [workspaceId, workflowId, runId, workflowVersionId, executionSemanticsVersion, generation])
   const subscribe = useCallback((notify: () => void) => cache.getQueryCache().subscribe(notify), [cache])
-  const snapshot = useCallback(() => key ? cache.getQueryState<RepeatGraphCurrentV3>(key) : undefined, [cache, key])
+  const snapshot = useCallback(() => key ? cache.getQueryState<RepeatGraphCurrentState>(key) : undefined, [cache, key])
   return useSyncExternalStore(subscribe, snapshot, () => undefined)
 }
-export function useSelectedRunRecord(): RepeatGraphCurrentV3 | undefined {
+export function useSelectedRunRecord(): RepeatGraphCurrentState | undefined {
   const state = useSelectedRunQueryState()
   return state?.status === 'error' || state?.fetchStatus === 'paused' ? undefined : state?.data
 }
@@ -32,7 +32,7 @@ const words: Record<string, [AgentNodeState, string]> = {
   uncertain: ['unavailable', 'Unconfirmed'], unknown: ['unavailable', 'Unavailable'],
 }
 export const lifecycleView = (lifecycle?: string): [AgentNodeState, string] => words[lifecycle ?? 'unknown'] ?? words.unknown!
-export function runNodeView(record: (PinnedNodeDisplayCut & Pick<RepeatGraphCurrentV3, 'topology'>) | undefined,
+export function runNodeView(record: (PinnedNodeDisplayCut & Pick<RepeatGraphCurrentState, 'topology'>) | undefined,
   selected: boolean, nodeId: string, agentId: string): RunNodeView {
   if (!selected) return { state: 'idle', label: 'Idle', inRun: false }
   if (!record) return { state: 'unavailable', label: 'Unavailable', inRun: false }

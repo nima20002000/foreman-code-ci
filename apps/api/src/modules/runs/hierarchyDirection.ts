@@ -1,8 +1,8 @@
 import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
 import { ZodError } from 'zod'
 import { HierarchyDirectionSchema, WorkActivationIdentitySchema, WorkActivationInputSchema,
-  canonicalGraphJson, type HierarchyDirection, type WorkActivationInput } from '@foreman-code/contracts/wave25'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+  canonicalGraphJson, type HierarchyDirection, type WorkActivationInput } from '@foreman-code/contracts/current'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { assertGraphTransaction } from '../run-graph/connection.js'
 import type { HierarchyGroupContext } from './hierarchyGroupAdmission.js'
 import { hasWorkflowExecutionCapacityLocked } from './workflowExecutionBudget.js'
@@ -130,7 +130,7 @@ async function refuseDirection(context: HierarchyGroupContext, execution: Harnes
 }
 
 /** Defense at the real dispatch boundary, independent of checkpoint scheduling. */
-export async function assertHierarchyDirectionReleasedLocked(sql: GraphTransactionSql,
+export async function assertHierarchyDirectionReleasedLocked(sql: SqlTransaction,
   runId: string, executionId: string): Promise<void> {
   const row = (await sql.query<{ state: string }>(`select state from run_hierarchy_direction_waits
     where run_id=$1 and held_execution_id=$2`, [runId, executionId])).rows[0]
@@ -139,7 +139,7 @@ export async function assertHierarchyDirectionReleasedLocked(sql: GraphTransacti
 }
 
 /** Caller must hold the authenticated Run lock and insert this exact durable receipt atomically. */
-export async function releaseHierarchyDirectionLocked(sql: GraphTransactionSql,
+export async function releaseHierarchyDirectionLocked(sql: SqlTransaction,
   input: { runId: string; executionId: string; receiptId: string }): Promise<'released' | 'already_released' | 'not_direction'> {
   assertGraphTransaction(sql)
   const run = (await sql.query<{ stopped: boolean; state: string }>(`select stop_requested_at is not null as stopped,
@@ -160,7 +160,7 @@ export async function releaseHierarchyDirectionLocked(sql: GraphTransactionSql,
 
 /** Stop fences every reserved business continuation. Native execution cleanup
  * remains with the existing owner and its exact-session settlement path. */
-export async function cancelHierarchyContinuationsLocked(sql: GraphTransactionSql, runId: string): Promise<void> {
+export async function cancelHierarchyContinuationsLocked(sql: SqlTransaction, runId: string): Promise<void> {
   assertGraphTransaction(sql)
   await sql.query(`update run_hierarchy_direction_waits set state='canceled'
     where run_id=$1 and state in ('waiting','released')`, [runId])

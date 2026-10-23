@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { afPublicationFixture } from './helpers/afPublicationFixture.js'
+import { nativePublicationFixture } from './helpers/nativePublicationFixture.js'
 import { postgresEnabled } from './helpers/database.js'
 import { bindingIdentity } from '../src/modules/files/tools/context.js'
 import { PostgresFileToolRepository } from '../src/modules/files/tools/postgres.js'
@@ -10,7 +10,7 @@ afterEach(() => vi.restoreAllMocks())
 describe.skipIf(!postgresEnabled)('publication binding recovery', { timeout: 90_000 }, () => {
   for (const selectedRun of [false, true]) {
     it(`cold ${selectedRun ? 'selected-Run' : 'Agent'} readback excludes every foreign immutable publication binding`, async () => {
-      const f = await afPublicationFixture({ selectedRun })
+      const f = await nativePublicationFixture({ selectedRun })
       const foreignContexts: Array<(bound: FileToolContext) => FileToolContext> = [
         bound => ({ ...bound, ownerPrincipalId: 'foreign-owner' }),
         bound => ({ ...bound, nativeSessionId: 'foreign-thread' }),

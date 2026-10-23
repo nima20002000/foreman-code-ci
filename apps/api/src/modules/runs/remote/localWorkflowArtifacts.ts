@@ -4,7 +4,7 @@ import type { Readable } from 'node:stream'
 import type pg from 'pg'
 import type { HarnessExecution, ResultProtocol } from '@foreman-code/contracts'
 import { AgentFilePublishInputSchema, AgentFilePublishResultSchema } from '@foreman-code/contracts/files'
-import { type AcceptedWorkflowRunV3, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { type AcceptedWorkflowRunCurrent, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { DomainError } from '../../errors.js'
 import type { FileQuery } from '../../files/repository.js'
 import type { TemporaryFileService } from '../../files/service.js'
@@ -15,8 +15,12 @@ import { PostgresFileToolRepository } from '../../files/tools/postgres.js'
 import type { FileToolContext, PublicationLink } from '../../files/tools/types.js'
 import { codexChatFileTools } from '../../harnesses/codexFiles/declarations.js'
 import type { WorkflowNativeCapture } from '../../interactions/workflowNativeCapture.js'
-import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction,
-  type GraphTransactionSql } from '../../run-graph/connection.js'
+import {
+  assertGraphTransaction,
+  beforeGraphCommit,
+  poisonGraphTransaction
+} from '../../run-graph/connection.js'
+import type { SqlTransaction } from '../../../infrastructure/transaction.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../../run-graph/repeatReceipts.js'
 import { openRunGraphPublication } from '../../run-graph/publication.js'
 import { repeatDigest, repeatExecutionIdentity } from '../repeatResolution.js'
@@ -38,7 +42,7 @@ const conflict = (): never => {
   throw new DomainError('WORKFLOW_ARTIFACT_OUTPUTS_CONFLICT', 'Local artifact publications differ from the saved native result.', 409)
 }
 
-function mappings(version: WorkflowVersionV3, execution: HarnessExecution, resultProtocol?: ResultProtocol) {
+function mappings(version: WorkflowVersionCurrent, execution: HarnessExecution, resultProtocol?: ResultProtocol) {
   const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
   if (!node || node.kind === 'job' || !node.artifactOutputs || !execution.result) return conflict()
   try {
@@ -57,7 +61,7 @@ export class LocalWorkflowArtifacts {
     this.metadata = new PostgresFileRepository(pool)
   }
 
-  async admitContextLocked(sql: GraphTransactionSql, capture: WorkflowNativeCapture,
+  async admitContextLocked(sql: SqlTransaction, capture: WorkflowNativeCapture,
     proof: WorkflowNativeProofRecord): Promise<void> {
     assertGraphTransaction(sql)
     if (capture.session.harness !== 'codex' || !capture.lane?.providerId
@@ -194,8 +198,8 @@ export class LocalWorkflowArtifacts {
     }
   }
 
-  async assertOutputsLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
-    version: WorkflowVersionV3, execution: HarnessExecution): Promise<void> {
+  async assertOutputsLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
+    version: WorkflowVersionCurrent, execution: HarnessExecution): Promise<void> {
     const verify = async () => {
       const current = await this.authority.execution(sql, execution.id)
       if (current.run.id !== run.id || current.version.id !== version.id || !same(current.execution, execution)) return conflict()

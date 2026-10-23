@@ -8,6 +8,7 @@ import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { ComputerAccountsService } from './accounts.js'
 import { FleetMaintenanceService } from './fleet.js'
 import type { ComputerMaintenance } from './maintenance.js'
+import { liveAuthorityQuery, livePrincipalRow } from '../../../test/helpers/livePrincipal.js'
 
 function fixture(kind: 'accounts' | 'maintenance', running = false) {
   const mainId = randomUUID()
@@ -17,13 +18,7 @@ function fixture(kind: 'accounts' | 'maintenance', running = false) {
   }
   let revoked = false
   let now = 0
-  const query = vi.fn(async (text: string) => {
-    if (text.includes('from management_principals')) {
-      return { rows: [{ ...principal, expires_at: new Date(principal.expiresAt),
-        revoked_at: revoked ? new Date() : null, delegated_from: null }] }
-    }
-    return { rows: [] }
-  })
+  const query = vi.fn(liveAuthorityQuery(id => id === principal.id ? livePrincipalRow(principal, { revoked }) : undefined))
   const pool = { connect: async () => ({ query, release() {} }) } as unknown as pg.Pool
   const commands = { recordDenied: vi.fn() } as unknown as PostgresCommandCoordinator
   const accounts: ComputerAccounts = { observedAt: '2026-10-09T00:00:00Z', accounts: [] }

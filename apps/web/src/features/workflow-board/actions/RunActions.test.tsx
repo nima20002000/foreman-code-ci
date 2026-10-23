@@ -8,11 +8,11 @@ import { http, HttpResponse } from 'msw'
 import { DurableInteractionSchema, NATIVE_INTERACTION_FIXTURES, RespondToInteractionRequestSchema } from '@foreman-code/contracts'
 import { LocalHumanAccessSchema, ManagedWorkspaceSchema, type ManagementAction } from '@foreman-code/contracts/management'
 import { CURRENT_WORKFLOW_CAPABILITIES, CurrentWorkflowCapabilitiesSchema, RunExecutionDetailSchema,
-  RunExecutionSummarySchema, RunInspectionRunSchema, RunRecordDetailSchema, RunStartV3InputSchema, WorkflowRunV3Schema,
-  makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+  RunExecutionSummarySchema, RunInspectionRunSchema, RunRecordDetailSchema, RunStartCurrentInputSchema, WorkflowRunCurrentSchema,
+  makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { server } from '../../../mocks/server'
-import { useGraphDraftStore } from '../../graph/store'
-import { nextDraftKey } from '../../graph/nextDraft/state'
+import { useGraphDraftStore } from '../../graph'
+import { nextDraftKey } from '../../board-core'
 import { readBoardStop, clearBoardStopStorage } from '../stopOutbox'
 import { readBoardStart, reserveBoardStart, clearBoardStartStorage } from '../startOutbox'
 import { RunActions } from './index'
@@ -31,7 +31,7 @@ function fixture(outcome: 'pending' | 'failed' | 'canceled' = 'pending') {
   const workflowPath = `/api/management/workspaces/${workspaceId}/workflows/${workflowId}`
   const location = { runnerId: 'synthetic-runner', rootPath: '/synthetic/new-run-folder' }
   const state = {
-    run: WorkflowRunV3Schema.parse({ ...f.run, input: { instruction: 'exact original Run input' },
+    run: WorkflowRunCurrentSchema.parse({ ...f.run, input: { instruction: 'exact original Run input' },
       executionState: outcome === 'pending' ? 'running' : 'completed', outcome,
       ...(outcome === 'pending' ? {} : { finishedAt: f.createdAt, result: outcome === 'failed'
         ? { outcome, error: { code: 'SYNTHETIC_FAILURE', message: 'Exact native failure', retryable: true } }
@@ -113,10 +113,10 @@ function fixture(outcome: 'pending' | 'failed' | 'canceled' = 'pending') {
       return HttpResponse.json({ runId, status: state.stopStatus, processStopped: false, replayed: state.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/stop')).length > 1 })
     }),
     http.post(`*${workflowPath}/runs`, async ({ request }) => {
-      const input = RunStartV3InputSchema.parse(await record(request))
+      const input = RunStartCurrentInputSchema.parse(await record(request))
       if (state.startFailures-- > 0) return failed()
       return HttpResponse.json({ accepted: true, replayed: state.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/runs')).length > 1,
-        run: WorkflowRunV3Schema.parse({ ...f.run, id: `${runId}-new`, workflowVersionId: input.workflowVersionId,
+        run: WorkflowRunCurrentSchema.parse({ ...f.run, id: `${runId}-new`, workflowVersionId: input.workflowVersionId,
           input: input.input, executionLocation: { ...location, locationRevision: input.expectedLocationRevision, identityHash: `sha256:${'a'.repeat(64)}` } }) })
     }),
     http.get('*/api/user/interactions', async ({ request }) => {
@@ -242,7 +242,7 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
     expect(writes(mock, '/stop').map((request) => request.body)).toEqual([first.request, first.request])
     expect(readBoardStop(mock.f.scope)?.receipt?.processStopped).toBe(false)
     expect(screen.getByRole('button', { name: 'Verify cleanup settlement' })).toBeDisabled()
-    mock.state.run = WorkflowRunV3Schema.parse({ ...mock.f.run, executionState: 'completed', outcome: 'canceled', result: { outcome: 'canceled' }, finishedAt: mock.f.createdAt })
+    mock.state.run = WorkflowRunCurrentSchema.parse({ ...mock.f.run, executionState: 'completed', outcome: 'canceled', result: { outcome: 'canceled' }, finishedAt: mock.f.createdAt })
     mock.state.cleanupPending = false
     await user.click(screen.getByRole('button', { name: 'Refresh / reconnect client state' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Verify cleanup settlement' })).toBeEnabled())
@@ -295,7 +295,7 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
     await user.click(screen.getByRole('button', { name: 'Start new full Run' }))
     const accepted = await screen.findByText(/Accepted Run/)
     expect(accepted).toHaveTextContent(`Accepted Run ${mock.f.run.id}-new, saved version ${old.workflowVersionId}.`)
-    const sent = RunStartV3InputSchema.parse(writes(mock, '/runs')[0]!.body)
+    const sent = RunStartCurrentInputSchema.parse(writes(mock, '/runs')[0]!.body)
     expect(sent).toMatchObject({ workspaceId: mock.f.scope.workspaceId, workflowId: mock.f.scope.workflowId,
       workflowVersionId: old.workflowVersionId, input: old.input, executionSemanticsVersion: 3,
       expectedWorkflowRevision: 7, expectedLocationRevision: 9, expectedAgentConfigurationVersionIds: mock.f.version.agentConfigurationVersionIds })
@@ -332,7 +332,7 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
   })
   it('reconciles an uncertain Start with the exact retained original pins, never a fresh command', async () => {
     const mock = fixture('failed'), user = userEvent.setup()
-    const request = RunStartV3InputSchema.parse({ workspaceId: mock.f.scope.workspaceId, workflowId: mock.f.scope.workflowId,
+    const request = RunStartCurrentInputSchema.parse({ workspaceId: mock.f.scope.workspaceId, workflowId: mock.f.scope.workflowId,
       workflowVersionId: mock.f.version.id, executionSemanticsVersion: 3, commandId: 'retained-start-command',
       expectedWorkflowRevision: 2, expectedLocationRevision: 4, expectedAgentConfigurationVersionIds: mock.f.version.agentConfigurationVersionIds, input: { original: true } })
     await reserveBoardStart(nextDraftKey(mock.f.scope.workspaceId, mock.f.scope.workflowId), request)
@@ -359,7 +359,7 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
   })
   it('uses the human Run-filtered inbox and exact revision, with decision distinct from native acknowledgement', async () => {
     const mock = fixture(), user = userEvent.setup()
-    mock.state.run = WorkflowRunV3Schema.parse({ ...mock.state.run, executionState: 'waiting' })
+    mock.state.run = WorkflowRunCurrentSchema.parse({ ...mock.state.run, executionState: 'waiting' })
     await mount(mock); await openApproval(user, mock)
     await user.click(screen.getByRole('button', { name: approveOption(mock).label }))
     await screen.findByText(/Human decision recorded\. Approval response is not native acknowledgement/)
@@ -396,7 +396,7 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
       message: 'The Run reached its execution limit and cannot start more work.',
       retryable: false,
     }
-    mock.state.run = WorkflowRunV3Schema.parse({ ...mock.state.run, result: { outcome: 'failed', error } })
+    mock.state.run = WorkflowRunCurrentSchema.parse({ ...mock.state.run, result: { outcome: 'failed', error } })
     await mount(mock)
     const status = screen.getByText(/Run failed:/)
     expect(status).toHaveAttribute('role', 'status')
@@ -475,7 +475,7 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
   })
   it('does not turn an interrupted Run into a supported manual Resume or full retry', async () => {
     const mock = fixture()
-    mock.state.run = WorkflowRunV3Schema.parse({ ...mock.state.run, executionState: 'interrupted' })
+    mock.state.run = WorkflowRunCurrentSchema.parse({ ...mock.state.run, executionState: 'interrupted' })
     await mount(mock)
     expect(screen.getByRole('button', { name: 'Resume execution — unavailable' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Review new full Run' })).toBeDisabled()

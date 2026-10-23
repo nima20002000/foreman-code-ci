@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 import { fixture } from './core.cases'
-import { newNextDraft } from './state'
+import { newNextDraft } from '../../board-core'
 import { WorkflowSettings } from './WorkflowSettings'
 
 const explanations = [

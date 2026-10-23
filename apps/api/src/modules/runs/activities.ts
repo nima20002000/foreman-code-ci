@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { GraphSequenceSchema, RunActivitiesInputSchema, RunActivitiesPageSchema,
   RUN_ACTIVITIES_RETAINED, RUN_ACTIVITIES_PAGE_BYTES,
-  canonicalGraphJson, graphJsonBytes, type RunActivitiesPage } from '@foreman-code/contracts/wave25'
+  canonicalGraphJson, graphJsonBytes, type RunActivitiesPage } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
 import { withCurrentRunRead } from './currentRead.js'
 import { RUN_ACTIVITIES_BOUNDS_SQL, RUN_ACTIVITIES_PAGE_SQL } from './activitiesSql.js'
@@ -11,7 +11,7 @@ import { publicRunActivity, type ActivityReadRow } from './activityProjection.js
 
 /** The original Run audit remains immutable. Activities expose its latest 1000
  * rows and make a cursor outside that bounded window explicitly expire. */
-export { RUN_ACTIVITIES_RETAINED } from '@foreman-code/contracts/wave25'
+export { RUN_ACTIVITIES_RETAINED } from '@foreman-code/contracts/current'
 const Cursor = z.object({ version: z.literal(1), runId: z.string().min(1).max(200),
   workflowVersionId: z.string().min(1).max(200), mode: z.enum(['older','newer']),
   position: GraphSequenceSchema, through: GraphSequenceSchema }).strict()

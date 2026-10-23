@@ -1,15 +1,15 @@
 import type pg from 'pg'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
-import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
-import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
+import type { DeviceEndpoint } from '../devices/index.js'
+import { DeviceApplicationError } from '../devices/index.js'
+import { assertDeviceHostInstallation } from '../devices/index.js'
 import { DomainError } from '../errors.js'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
 import { ApprovedRootAllowlistSchema, WORKSPACE_ROOT_EXTENSION } from '@foreman-code/contracts/workspace-root-policies'
 import { SourceRootRecordSchema, type SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { MaterializationAttempt } from './ports.js'
 import type { RegisteredSourceRootPort } from './admissionPorts.js'
 import type { SourceAttemptAuthority } from './executionHosts.js'
@@ -93,7 +93,7 @@ export function rootPolicySourceAttempts(input: {
   prepareIdentity(root: SourceRootRecord, attempt: MaterializationAttempt): Promise<unknown>
 }): SourceAttemptAuthority {
   const { roots, originalAttempts } = input
-  const assertRootPolicy = async (sql: GraphSqlClient, principal: ManagementPrincipal, root: SourceRootRecord) => {
+  const assertRootPolicy = async (sql: SqlQuery, principal: ManagementPrincipal, root: SourceRootRecord) => {
     const current = await roots.authorize(sql, principal, {
       workspaceId: root.binding.workspaceId, selection: root.selection, accessMode: root.binding.accessMode,
     })
@@ -105,7 +105,7 @@ export function rootPolicySourceAttempts(input: {
         'Current root authority differs from the exact accepted source namespace.', 409)
     }
   }
-  const readRoot = async (sql: GraphSqlClient, record: Parameters<SourceAttemptAuthority['revalidateMaterialization']>[0]) => {
+  const readRoot = async (sql: SqlQuery, record: Parameters<SourceAttemptAuthority['revalidateMaterialization']>[0]) => {
     const row = (await sql.query<{ record: unknown }>('select record from source_root_bindings where root_id=$1 and binding_revision=$2 for share',
       [record.receipt.binding.rootId, record.receipt.binding.bindingRevision])).rows[0]
     return SourceRootRecordSchema.parse(row?.record)

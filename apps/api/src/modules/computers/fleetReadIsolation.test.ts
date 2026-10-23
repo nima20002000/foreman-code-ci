@@ -10,6 +10,7 @@ import { registerGraphqlMcp } from '../../mcp/unified/transport.js'
 import type { OperatorServices } from '../../mcp/operator/types.js'
 import type { PostgresAccessService } from '../access/postgres.js'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import { liveAuthorityQuery, livePrincipalRow } from '../../../test/helpers/livePrincipal.js'
 import type { ComputerMaintenance } from './maintenance.js'
 import { FleetMaintenanceService } from './fleet.js'
 import { ComputerAccountsService } from './accounts.js'
@@ -21,9 +22,8 @@ function fixture() {
   const registrations = Array.from({ length: 2 }, () => ({ mainId, deviceId: randomUUID(),
     workerInstallationId: randomUUID(), keyRevision: 1, authorizationRevision: 1, status: 'paired',
     scopes: ['connect'], publicKeyFingerprint: 'a'.repeat(64) }))
-  const query = async (text: string) => ({ rows: text.includes('from management_principals')
-    ? [{ ...principal, expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }]
-    : registrations.map(record => ({ record })) })
+  const query = liveAuthorityQuery(id => id === principal.id ? livePrincipalRow(principal) : undefined,
+    () => ({ rows: registrations.map(record => ({ record })) }))
   const pool = { connect: async () => ({ query, release() {} }) } as unknown as pg.Pool
   const commands = { recordDenied: vi.fn(async () => undefined) } as unknown as PostgresCommandCoordinator
   const status = { observedAt: '2026-10-14T00:00:00Z', harnesses: [], tasks: [],
@@ -70,24 +70,24 @@ function fixture() {
 }
 
 it.each(['status', 'readiness'] as const)(
-  'keeps all three maintenance results when one Worker loses %s and recovers through MCP', async failure => {
+  'keeps all three maintenance results when one Worker loses %s and recovers', async failure => {
     const f = fixture()
     try {
       expect((await f.fleet.list(f.principal)).computers).toHaveLength(3)
       f.readiness.mockClear()
       f.state.failure = failure
-      const result = await f.call('computers_maintenance_status')
-      expect(result.isError).not.toBe(true)
-      expect(decodeMcpToolResult(result)).toMatchObject({ computers: [
+      const result = await f.fleet.list(f.principal, 'http', true)
+      expect(result).toMatchObject({ computers: [
         { status: f.status, observation: { status: 'available' } },
         { status: f.status, observation: { status: 'unavailable', lastError: expect.stringContaining('DEVICE_LINK_DROPPED') } },
         { status: f.status, observation: { status: 'available' }, workerReadiness: { ready: true } },
       ] })
       expect(JSON.stringify(result)).not.toContain('private connection details')
       if (failure === 'status') expect(f.readiness).not.toHaveBeenCalledWith(f.registrations[0]!.deviceId)
-      expect((await f.call('computers_maintenance_status', 'denied')).isError).toBe(true)
+      await expect(f.fleet.list({ ...f.principal, id: 'denied', grants: [] }, 'http', true))
+        .rejects.toMatchObject({ code: 'ACCESS_DENIED' })
       f.state.failure = 'none'
-      const recovered = decodeMcpToolResult(await f.call('computers_maintenance_status'))
+      const recovered = await f.fleet.list(f.principal, 'http', true)
       expect(recovered).toMatchObject({ computers: Array.from({ length: 3 }, () => ({ observation: { status: 'available' } })) })
     } finally { await f.close() }
   })

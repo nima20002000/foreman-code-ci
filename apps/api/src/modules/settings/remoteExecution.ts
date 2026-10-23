@@ -6,7 +6,7 @@ import {
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { DomainError } from '../errors.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import type { ProductionDeviceRuntime } from '../devices/productionRuntime.js'
 import { readDeviceTlsMaterials, readOwnedDeviceTlsFile } from '../devices/tlsMaterials.js'
 import type { PostgresFoundationSettingsRepository } from './foundation.js'

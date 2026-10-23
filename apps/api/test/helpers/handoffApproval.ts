@@ -4,20 +4,20 @@ import { randomUUID } from 'node:crypto'
 import { expect, vi } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import { WorkActivationInputSchema, makeCurrentWorkflowFixture, parseWorkHandoffResult } from '@foreman-code/contracts/wave25'
+import { WorkActivationInputSchema, makeCurrentWorkflowFixture, parseWorkHandoffResult } from '@foreman-code/contracts/current'
 import { buildApp } from '../../src/app.js'
 import { DomainError } from '../../src/modules/errors.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { PostgresAppInteractionService } from '../../src/modules/interactions/app.js'
 import { assertOrchestratorGraphAuthority } from '../../src/modules/interactions/graphAuthority.js'
 import { PostgresRepeatReviewerBindings } from '../../src/modules/interactions/repeatReviewer.js'
-import { deliverApproval } from '../../src/modules/interactions/wave25/service.js'
+import { deliverApproval } from '../../src/modules/interactions/current/service.js'
 import { object } from '../../src/modules/harnesses/codexStdioTransport.js'
 import { RepeatRunRepository } from '../../src/modules/runs/repeatPostgres.js'
 import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
 import { codexApprovalRuntime } from './codexApprovalRuntime.js'
 import { approvalResponse } from './approvalResponse.js'
-import { br1002At } from './continuationCuts.js'
+import { continuationAt } from './continuationCuts.js'
 import { agentWorkflowNode } from './agentWorkflowFixture.js'
 import { rejectableDeferred } from './deferred.js'
 
@@ -96,7 +96,7 @@ async function reviewThroughMcp(f: Fixture, runtime: Runtime, origin: string, pr
   let completed = false
   let readOnlyPrincipalId: string | undefined
   try {
-    await br1002At(live.promise, dispatch)
+    await continuationAt(live.promise, dispatch)
     const issued = issuance.mock.results.at(-1)
     if (issued?.type !== 'return') throw new Error('Dispatcher did not issue its reviewer credential')
     const credential = await issued.value
@@ -183,7 +183,7 @@ export async function runHandoffApproval({ restart }: { restart: boolean }): Pro
     if (restart) {
       start = runtime.engine.start(f.f.run.id)
       const settledStart = Promise.allSettled([start])
-      const executionId = await br1002At(cut.promise, start)
+      const executionId = await continuationAt(cut.promise, start)
       expect((await f.db.pool.query('select execution_id from run_work_results where run_id=$1', [f.f.run.id])).rows)
         .toEqual([{ execution_id: executionId }])
       expect((await f.db.pool.query('select request_id from run_work_requests where run_id=$1', [f.f.run.id])).rows)

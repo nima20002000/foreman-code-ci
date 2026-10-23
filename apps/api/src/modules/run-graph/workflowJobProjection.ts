@@ -1,10 +1,11 @@
 import {
-  GraphSequenceSchema, REPEAT_GRAPH_LIMITS, RepeatGraphExecutionV3Schema, RepeatOccurrenceV1Schema,
+  GraphSequenceSchema, REPEAT_GRAPH_LIMITS, RepeatGraphExecutionCurrentSchema, RepeatOccurrenceV1Schema,
   qualifyRepeatGraphExecution, sameCanonicalGraphScope,
-  type GraphEvidence, type RepeatGraphExecutionV3, type RepeatGraphScopeV3,
-} from '@foreman-code/contracts/wave25'
+  type GraphEvidence, type RepeatGraphExecutionCurrent, type RepeatGraphScopeCurrent,
+} from '@foreman-code/contracts/current'
 import { repeatSlotId } from '../runs/repeatResolution.js'
-import { assertGraphTransaction, type GraphTransactionSql } from './connection.js'
+import { assertGraphTransaction } from './connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { RunGraphError } from './errors.js'
 import { graphSourceDigest } from './graphDigest.js'
 import { repeatExecutionStateDigest } from './graphDigest.js'
@@ -29,7 +30,7 @@ interface JobProjectionRow {
 
 /** A workflow Job's lifecycle as graph and status readers show it. */
 export function workflowJobLifecycle(row: Pick<JobProjectionRow, 'phase' | 'outcome' | 'stopped' | 'finished_at'
-  | 'publication' | 'result_issue'>): Pick<RepeatGraphExecutionV3, 'state' | 'resultOutcome'> {
+  | 'publication' | 'result_issue'>): Pick<RepeatGraphExecutionCurrent, 'state' | 'resultOutcome'> {
   const terminal = row.phase === 'terminal' && row.stopped === true && !!row.finished_at
     && ['complete', 'failed', 'expired'].includes(row.publication ?? '')
   if (!terminal) return { state: row.phase === 'queued' || row.phase === 'running' ? row.phase : 'starting', resultOutcome: null }
@@ -39,8 +40,8 @@ export function workflowJobLifecycle(row: Pick<JobProjectionRow, 'phase' | 'outc
 }
 
 /** The preparation reserves the execution identity before a Job is admitted. */
-export async function readWorkflowJobGraphExecutionsLocked(sql: GraphTransactionSql, scope: RepeatGraphScopeV3,
-  executionIds?: readonly string[]): Promise<RepeatGraphExecutionV3[]> {
+export async function readWorkflowJobGraphExecutionsLocked(sql: SqlTransaction, scope: RepeatGraphScopeCurrent,
+  executionIds?: readonly string[]): Promise<RepeatGraphExecutionCurrent[]> {
   assertGraphTransaction(sql)
   const rows = await sql.query<JobProjectionRow>(`
     select p.preparation->>'executionId' as execution_id,s.workflow_node_id,s.slot_id,s.occurrence_id,
@@ -102,7 +103,7 @@ export async function readWorkflowJobGraphExecutionsLocked(sql: GraphTransaction
       throw new RunGraphError('GRAPH_INVARIANT_VIOLATION')
     }
     const { state, resultOutcome } = workflowJobLifecycle(row)
-    return RepeatGraphExecutionV3Schema.parse({ identity: qualifyRepeatGraphExecution({
+    return RepeatGraphExecutionCurrentSchema.parse({ identity: qualifyRepeatGraphExecution({
       kind: 'job', workflowNodeId: row.workflow_node_id, executionId: row.execution_id,
       jobDefinitionId: row.definition_id, jobDefinitionVersionId: row.definition_version_id, attempt: 1,
     }, occurrence), inputDigest: row.input_digest, previousExecutionId: null, state, resultOutcome })
@@ -113,12 +114,12 @@ interface JobExecutionSource {
   evidence: GraphEvidence
   sourceDigest: string
   semanticDigest: string
-  fact: { type: 'repeat.execution'; execution: RepeatGraphExecutionV3 }
+  fact: { type: 'repeat.execution'; execution: RepeatGraphExecutionCurrent }
 }
 
 /** Changes use positions from the shared Run head, including preparation. */
-export async function workflowJobGraphSourceChangesLocked(sql: GraphTransactionSql,
-  scope: RepeatGraphScopeV3): Promise<JobExecutionSource[]> {
+export async function workflowJobGraphSourceChangesLocked(sql: SqlTransaction,
+  scope: RepeatGraphScopeCurrent): Promise<JobExecutionSource[]> {
   const executions = await readWorkflowJobGraphExecutionsLocked(sql, scope)
   if (!executions.length) return []
   const head = (await sql.query<{ sequence: string }>(

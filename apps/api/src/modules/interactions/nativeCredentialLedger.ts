@@ -3,7 +3,7 @@ import { remainingCredentialLifetime } from '../access/credentialLifetime.js'
 import { WORKER_CREDENTIAL_RENEWAL_WINDOW_MS, type IssuedWorkerCredential } from '../access/workerCredentials.js'
 import type { ExecutionCredentialProvider } from '../harnesses/mcpDetection.js'
 import type { NativeHarnessSessionManager } from '../harnesses/port.js'
-import type { OwnedLease } from '../leases/ownerLeases.js'
+import type { OwnedLease } from '../leases/index.js'
 
 /** The credential each native manager was issued, and the renewals that replace it one at a time. */
 export class NativeCredentialLedger {

@@ -7,7 +7,7 @@ import { openWorkflowLifecycleLocked } from '../src/modules/runs/repeatLifecycle
 import { latestWorkflowCorrelation } from '../src/modules/runs/workflowNativeCorrelation.js'
 import { readCompactProjectionRows } from '../src/modules/run-graph/compactProjectionRows.js'
 import { readPublicProjectionLocked, createCompactSnapshotAssembler } from '../src/modules/run-graph/compactSnapshot.js'
-import { readCurrentGraphExchanges } from '../src/modules/interactions/wave25/currentExchanges.js'
+import { readCurrentGraphExchanges } from '../src/modules/interactions/current/currentExchanges.js'
 
 let db: Awaited<ReturnType<typeof currentDatabase>>
 const owners: Array<Awaited<ReturnType<typeof nativeStreamFixture>>['owner']> = []

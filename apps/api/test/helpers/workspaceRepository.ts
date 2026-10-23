@@ -15,6 +15,7 @@ import { WorkspaceBoundLocationService } from '../../src/modules/workspace-roots
 import { registerWorkspaceRootRoutes } from '../../src/modules/workspace-roots/transports.js'
 import { WorkspaceRepositoryService } from '../../src/modules/workspaces/repositoryService.js'
 import { registerWorkspaceRepositoryRoutes } from '../../src/routes/workspaceRepository.js'
+import { withTransaction } from '../../src/infrastructure/transaction.js'
 import { workspaceMcpFixture } from './workspaceMcp.js'
 import { gitFixtureEnvironment } from './gitFixture.js'
 
@@ -62,19 +63,9 @@ export async function workspaceRepositoryFixture() {
       return null
     }, { request: unavailable })
     policies = new PostgresWorkspaceRootPolicies(mainId, hosts)
-    const sql = await pool.connect()
-    try {
-      await sql.query('begin')
-      await policies.publishApprovedHostConfiguration(sql, allowlist, { mainId, hostRef: allowlist.hostRef,
-        applicationInstallationId: mainId, configurationRevision: allowlist.configurationRevision,
-        configurationDigest: sourceSha256(Buffer.from(JSON.stringify(allowlist))) })
-      await sql.query('commit')
-    } catch (error) {
-      await sql.query('rollback')
-      throw error
-    } finally {
-      sql.release()
-    }
+    await withTransaction(pool, sql => policies.publishApprovedHostConfiguration(sql, allowlist, { mainId, hostRef: allowlist.hostRef,
+      applicationInstallationId: mainId, configurationRevision: allowlist.configurationRevision,
+      configurationDigest: sourceSha256(Buffer.from(JSON.stringify(allowlist))) }))
     rootPolicies.current = policies
     roots = new WorkspaceBoundLocationService(pool, commands, policies)
     const sourceRoots = new RegisteredWorkspaceSourceRoots(policies, hosts)

@@ -1,10 +1,10 @@
 import { enqueueGroupChatFact } from './groupChatFacts.js'
 import { AgentIdentitySchema, canonicalJson, ChatDeliveryReceiptSchema, type ChatDeliveryReceipt } from '@foreman-code/contracts'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
 
 /** Run receipt updates join the same transaction as the channel journal. */
-export async function synchronizeGroupDelivery(sql: GraphTransactionSql, receipt: ChatDeliveryReceipt) {
+export async function synchronizeGroupDelivery(sql: SqlTransaction, receipt: ChatDeliveryReceipt) {
   const stored = (await sql.query<{ receipt: unknown; owner_admission: string; owner_binding: { agentIdentity?: unknown } }>(
     'select receipt,owner_admission,owner_binding from chat_delivery_commands where id=$1 for update', [receipt.id])).rows[0]
   if (!stored) return
@@ -28,7 +28,7 @@ export async function synchronizeGroupDelivery(sql: GraphTransactionSql, receipt
 }
 
 
-async function enqueueReply(sql: GraphTransactionSql, receipt: ChatDeliveryReceipt) {
+async function enqueueReply(sql: SqlTransaction, receipt: ChatDeliveryReceipt) {
   const target = receipt.target
   if (target.kind === 'agent_conversation' || target.kind === 'operator_conversation') return
   const command = (await sql.query<{ owner_binding: { agentIdentity?: unknown } }>(

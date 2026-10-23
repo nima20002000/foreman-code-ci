@@ -1,0 +1,7 @@
+export { discoverInstalledClaudeSdk } from '../modules/harnesses/claudeSdk/currentPin.js'
+export { passiveDriverPayloads } from '../modules/harnesses/payloadDiscovery.js'
+export { inventoryPayloadFingerprints } from '../modules/harnesses/payloadFingerprintCache.js'
+export { qualificationRevisionWithIdentity } from '../modules/harnesses/qualification/identity.js'
+export { codexQualificationSuite } from '../modules/harnesses/qualification/suites/codex.js'
+export { NativeProcessRegistry } from '../modules/harnesses/recovery/processRegistry.js'
+export { registerWorkerMcpInstallation } from '../modules/harnesses/workerMcpInstallation.js'

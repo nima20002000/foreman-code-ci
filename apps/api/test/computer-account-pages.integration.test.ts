@@ -8,14 +8,14 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { ComputerAccountsService } from '../src/modules/computers/accounts.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('computer account pagination through HTTP and Operator MCP', () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
   const apps: ReturnType<typeof buildApp>[] = []
   const clients: Client[] = []
-  beforeAll(async () => { database = await agent3Database() }, 60000)
+  beforeAll(async () => { database = await migratedDatabase() }, 60000)
   afterAll(async () => {
     await Promise.allSettled(clients.map(client => client.close()))
     await Promise.allSettled(apps.map(app => app.close()))

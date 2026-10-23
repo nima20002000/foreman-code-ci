@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, expect, it, vi } from 'vitest'
 import { postgresEnabled } from './helpers/database.js'
-import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { readWorkflowJobSourceLocked } from '../src/modules/jobs/workflowSource.js'
 import { snapshot, timeout, useWorkflowJobBudgetFixture } from './helpers/workflowJobBudgetFixture.js'
 
@@ -18,7 +18,7 @@ describe.skipIf(!postgresEnabled)('accepted Job result binding', () => {
       const entry = graph.entryNodeId
       assert.ok(entry, 'Expected an Agent entry node')
       const nodes = repeated ? graph.nodes : [graph.nodes[0]!]
-      const definition: WorkflowDefinitionV3 = { ...graph, entryNodeId: job.id, nodes: [job, ...nodes],
+      const definition: WorkflowDefinitionCurrent = { ...graph, entryNodeId: job.id, nodes: [job, ...nodes],
         requiredAgentCount: nodes.length,
         edges: [{ id: 'job-agent', kind: 'execution', source: job.id, target: entry }, ...(repeated ? graph.edges : [])],
         executionPolicy: { maxParallelism: 1, maxNodeExecutions: repeated ? 7 : 2 } }

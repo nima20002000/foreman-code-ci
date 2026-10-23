@@ -5,12 +5,12 @@ import { canonicalJson, BrowserSessionSchema, type AgentSubject } from '@foreman
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import { requireAuthorization } from '../access/policy.js'
-import { readChatPrincipal } from '../access/conversationCredentials.js'
+import { requireAuthorization } from '../access/index.js'
+import { readChatPrincipal } from '../access/index.js'
 import { DomainError } from '../errors.js'
-import { createBrowserProfiles } from '../browser-profiles/factory.js'
-import type { BrowserProfileEndpoint, BrowserProfileTransport } from '../browser-profiles/host.js'
-import type { BrowserInstallationBinding } from '../browser-profiles/keys.js'
+import { createBrowserProfiles } from '../browser-profiles/index.js'
+import type { BrowserProfileEndpoint, BrowserProfileTransport } from '../browser-profiles/index.js'
+import type { BrowserInstallationBinding } from '../browser-profiles/index.js'
 import { createBrowserOperationHandlers } from '../browser-runtime/operations.js'
 import { BrowserSessionService, type BrowserSessionPort } from '../browser-runtime/service.js'
 import { createBrowserSessionLocations, createBrowserSessionRouter,
@@ -23,7 +23,7 @@ import { MainBrowserRuntime } from './mainBrowserRuntime.js'
 import { createBrowserCanonicalCodecs } from './browserCodecs.js'
 import { prepareOrReconcileSettled } from './settledBrowserPreparation.js'
 import { ChatBrowserSessions } from './chatBrowser.js'
-import { componentLogger } from '../diagnostics/logger.js'
+import { componentLogger } from '../diagnostics/index.js'
 
 export interface BrowserRemote {
   profiles: BrowserProfileTransport

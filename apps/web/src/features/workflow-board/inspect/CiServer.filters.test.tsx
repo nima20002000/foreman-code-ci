@@ -2,13 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { expect, it } from 'vitest'
-import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { server } from '../../../mocks/server'
 import { deferred } from '../../../test/deferred'
 import { CiServerDialog } from './CiServer'
 import { ciResultJob, ciResultTests } from './ciResults.testSupport'
 
-const scope: RepeatGraphScopeV3 = { workspaceId: 'workspace-a', workflowId: 'workflow-a', runId: 'run-a',
+const scope: RepeatGraphScopeCurrent = { workspaceId: 'workspace-a', workflowId: 'workflow-a', runId: 'run-a',
   workflowVersionId: 'version-a', executionSemanticsVersion: 3 }
 
 it('does not display the previous status filter while the matching tests are loading', async () => {

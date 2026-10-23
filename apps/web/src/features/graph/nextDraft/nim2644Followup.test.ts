@@ -4,8 +4,7 @@ import { inFollowupTab, nim2644FollowupCases } from './nim2644Followup.cases'
 
 import { protectedKey } from '../../../shared/api/protectedChatStorage'
 import { repairFixture } from './nim2644State.cases'
-import { newNextDraft, nextDraftKey } from './state'
-import { removeNode } from './model'
+import { newNextDraft, nextDraftKey, removeNode } from '../../board-core'
 import { acknowledgeEditIntentSnapshot } from './useGraphEditIntent'
 import { acknowledgeEditOutbox, editSnapshotAcknowledged, readEditOutbox, readEditSnapshot, readEditSubmission,
   reserveEditOutbox, storeEditSnapshot, type EditIntentOutbox } from './editIntentStorage'

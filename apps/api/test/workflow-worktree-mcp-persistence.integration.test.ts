@@ -7,7 +7,7 @@ import {
   CurrentWorkflowReadResultSchema,
   SavedManagedWorkflowCommandResultSchema,
   SavedManagedWorkflowSchema,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
 import { postgresEnabled } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'

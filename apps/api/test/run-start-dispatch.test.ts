@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RunStartV3InputSchema } from '@foreman-code/contracts/wave25'
+import { RunStartCurrentInputSchema } from '@foreman-code/contracts/current'
 import { runStartSemantics } from '../src/modules/runs/repeatStartDispatch.js'
 import { startFixture } from './start-fixtures.js'
 
@@ -18,17 +18,17 @@ describe('semantics-3 Start discrimination', () => {
 
   it('requires full displayed revision/configuration/version/location and paired draft pins', () => {
     const f = startFixture()
-    expect(RunStartV3InputSchema.parse(f.request)).toEqual(f.request)
+    expect(RunStartCurrentInputSchema.parse(f.request)).toEqual(f.request)
     for (const field of ['expectedWorkflowRevision', 'expectedAgentConfigurationVersionIds', 'workflowVersionId',
       'expectedLocationRevision', 'executionSemanticsVersion']) {
       const incomplete: Record<string, unknown> = { ...f.request }; delete incomplete[field]
-      expect(RunStartV3InputSchema.safeParse(incomplete).success).toBe(false)
+      expect(RunStartCurrentInputSchema.safeParse(incomplete).success).toBe(false)
     }
     const { commandId, ...withoutCommand } = f.request
-    expect(RunStartV3InputSchema.parse(withoutCommand).commandId).toMatch(/^[0-9a-f-]{36}$/)
-    expect(RunStartV3InputSchema.parse(f.request).commandId).toBe(commandId)
-    expect(RunStartV3InputSchema.safeParse({ ...f.request, draftId: 'draft-test' }).success).toBe(false)
-    expect(RunStartV3InputSchema.safeParse({ ...f.request, expectedDraftRevision: 1 }).success).toBe(false)
-    expect(RunStartV3InputSchema.safeParse({ ...f.request, runtimeReady: true }).success).toBe(false)
+    expect(RunStartCurrentInputSchema.parse(withoutCommand).commandId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(RunStartCurrentInputSchema.parse(f.request).commandId).toBe(commandId)
+    expect(RunStartCurrentInputSchema.safeParse({ ...f.request, draftId: 'draft-test' }).success).toBe(false)
+    expect(RunStartCurrentInputSchema.safeParse({ ...f.request, expectedDraftRevision: 1 }).success).toBe(false)
+    expect(RunStartCurrentInputSchema.safeParse({ ...f.request, runtimeReady: true }).success).toBe(false)
   })
 })

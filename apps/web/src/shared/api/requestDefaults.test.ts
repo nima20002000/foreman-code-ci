@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { providerAccountsClient } from '../../features/provider-accounts/providerAccountsClient'
+import { providerAccountsClient } from '../../features/provider-accounts'
 import { apiClient } from './client'
 
 it('creates an Operator conversation without a caller-supplied command ID', async () => {

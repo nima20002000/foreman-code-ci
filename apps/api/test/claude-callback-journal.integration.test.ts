@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { PostgresClaudeCallbackJournal, type ClaudeCallbackRecord } from '../src/modules/harnesses/claudeSdk/callbackJournal.js'
-import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { withTaskDatabase } from './helpers/taskDatabase.js'
 
 it('preserves callback acknowledgment and retirement across delayed writes and repository replacement', async () => {
-  await nim2691TaskDatabase(async pool => {
+  await withTaskDatabase(async pool => {
     await applyApplicationMigrations(pool)
     const journal = new PostgresClaudeCallbackJournal(pool, 'operator:callback-owner')
     const record: ClaudeCallbackRecord = { identity: { ownerPrincipalId: 'principal', attemptId: 'request',

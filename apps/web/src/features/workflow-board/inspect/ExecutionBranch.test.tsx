@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { expect, it } from 'vitest'
-import type { RunExecutionSummary } from '@foreman-code/contracts/wave25'
+import type { RunExecutionSummary } from '@foreman-code/contracts/current'
 import { ExecutionBranch } from './ExecutionBranch'
 
 const base = { executionId: 'execution-1', workflowNodeId: 'coder', agentId: 'coder', agentConfigurationVersionId: 'coder-v1',

@@ -1,4 +1,4 @@
-import { RunStartV3InputSchema } from '@foreman-code/contracts/wave25'
+import { RunStartCurrentInputSchema } from '@foreman-code/contracts/current'
 import { randomUUID } from 'node:crypto'
 import { vi } from 'vitest'
 import { buildApp } from '../../src/app.js'
@@ -29,7 +29,7 @@ export async function streamingOperator(f: Awaited<ReturnType<typeof checkpointR
   })
   const row = (await f.db.pool.query<{ revision: string }>(
     'select revision::text from workflows where id=$1', [f.f.scope.workflowId])).rows[0]!
-  const input = RunStartV3InputSchema.parse({
+  const input = RunStartCurrentInputSchema.parse({
     workspaceId: f.f.scope.workspaceId, workflowId: f.f.scope.workflowId, workflowVersionId: f.f.version.id,
     commandId: randomUUID(), executionSemanticsVersion: 3, expectedWorkflowRevision: Number(row.revision),
     expectedAgentConfigurationVersionIds: f.f.version.agentConfigurationVersionIds,

@@ -26,7 +26,7 @@ import { WorkspaceRootListResultSchema } from '@foreman-code/contracts/workspace
 import { WorkspaceBoundLocationSetResultSchema,
   WorkspaceRootConfigurationAdoptResultSchema } from '@foreman-code/contracts/workspace-bound-location'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
-  ManualRunStartResultSchema, SavedRunDetailsSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+  ManualRunStartResultSchema, SavedRunDetailsSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { loadConfig } from '../../src/config.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { installManagedLauncher } from '../../src/modules/harnesses/appMcpLauncher.js'
@@ -35,7 +35,7 @@ import { qualifyApprovedRootAllowlist } from '../../src/modules/sources/rootAtte
 import { RemoteOperationReceiptSchema, RemoteOwnerControlSchema } from '@foreman-code/contracts/remote-execution'
 import { InstalledWorkflowRecovery } from '../../src/modules/runs/remote/installedWorkflowRecovery.js'
 import { privateFixtureDirectory } from './privateFixtureDirectory.js'
-import { seedAgent3 } from './workflowDatabase.js'
+import { seedWorkflowFixture } from './workflowDatabase.js'
 import { migratedDatabase } from './migratedDatabase.js'
 import { buildRemoteReviewWorkerRelease, createRemoteReviewProvider, createRemoteReviewTls,
   createRemoteReviewClaudeInventory } from './remoteReviewProvider.js'
@@ -243,7 +243,7 @@ export async function remoteReviewProduction(options: {
           } } : {}) },
       })
     })
-    const saved = await seedAgent3(db.pool, project, seed, { run: false })
+    const saved = await seedWorkflowFixture(db.pool, project, seed, { run: false })
     const config = loadConfig({ DATABASE_URL: db.databaseUrl, PORT: String(await freePort()),
       HARNESS_WORKSPACE_ROOT: runtime, FILE_STORAGE_ROOT: join(directory, 'files'),
       CODEX_BINARY: provider.binary,

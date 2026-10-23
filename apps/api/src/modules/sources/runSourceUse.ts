@@ -1,8 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
-import type { GraphSqlClient } from '../run-graph/connection.js'
-import { bootIdentity, identityAlive, processIdentity } from '../harnesses/recovery/linuxIdentity.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
+import { bootIdentity, identityAlive, processIdentity } from '../harnesses/index.js'
 import { DomainError } from '../errors.js'
 
 type SourceUseOwner = { bootId: string; pid: number; startTicks: string }
@@ -11,7 +11,7 @@ const preparing = new AsyncLocalStorage<SourceUse>()
 const activeUses = new Set<string>()
 
 /** Commit the reference through the connection already reading the snapshot. */
-export async function retainRunSource(pool: pg.Pool, sql: GraphSqlClient, snapshotId: string): Promise<void> {
+export async function retainRunSource(pool: pg.Pool, sql: SqlQuery, snapshotId: string): Promise<void> {
   const use = preparing.getStore()
   if (!use || use.pool !== pool) return
   if (!activeUses.has(use.id)) {

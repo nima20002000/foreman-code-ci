@@ -1,10 +1,10 @@
 import { AgentConfigurationVersionSchema, AgentIdentitySchema, HarnessExecutionSchema,
   type AgentSubject, type LogicalWorkRef } from '@foreman-code/contracts'
-import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
 
-export async function memoryExecution(tx: GraphTransactionSql, executionId: string) {
+export async function memoryExecution(tx: SqlTransaction, executionId: string) {
   const row = (await tx.query<{
     execution: unknown; version: unknown; configuration: unknown; slot_id: string;
     work_activation_id: string | null; accepted: boolean; previous_execution_id: string | null;
@@ -20,7 +20,7 @@ export async function memoryExecution(tx: GraphTransactionSql, executionId: stri
     where e.id=$1`, [executionId])).rows[0]
   if (!row) throw new DomainError('NOT_FOUND', 'The saved workflow execution is unavailable.', 404)
   const execution = HarnessExecutionSchema.parse(row.execution)
-  const version = WorkflowVersionV3Schema.parse(row.version)
+  const version = WorkflowVersionCurrentSchema.parse(row.version)
   const configuration = AgentConfigurationVersionSchema.parse(row.configuration)
   const node = version.definition.nodes.find(candidate => candidate.id === execution.workflowNodeId)
   if (!node || node.kind === 'job' || node.agentId !== execution.agentId

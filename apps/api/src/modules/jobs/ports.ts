@@ -1,6 +1,6 @@
 import { type JobAuthoringChoicesRecord } from '@foreman-code/contracts/job-verification'
 import type { JobRunCleanup } from '@foreman-code/contracts/job-run-cleanup'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import type { JobSql } from './repository.js'
 import type { JobArtifact, JobValidation } from '@foreman-code/contracts/jobs'
@@ -23,7 +23,7 @@ export interface JobDispatchPort {
   accept(client: JobSql, input: { workspaceId: string; executionId: string; attemptId:string; operationId:string; spec: JobAcceptedSpecRecord;
     workflow: JobExecutionRecord['workflow']; principal: ManagementPrincipal }): Promise<Pick<JobExecutionRecord, 'operationId' | 'attemptId' | 'owner'>>
   cancel(client: JobSql, execution: JobExecutionRecord, commandId: string, principal:ManagementPrincipal,action?:'jobs:cancel'|'runs:stop'): Promise<void>
-  cancelForRunCleanup(client:GraphTransactionSql,execution:JobExecutionRecord,owner:RunOwnership,reason:JobRunCleanup['reason']):Promise<JobRunCleanup>
+  cancelForRunCleanup(client:SqlTransaction,execution:JobExecutionRecord,owner:RunOwnership,reason:JobRunCleanup['reason']):Promise<JobRunCleanup>
   /** Called after COMMIT only. A lost wakeup is recovered by W08's durable dispatch. */
   wake(executionId: string): Promise<void>
 }

@@ -1,7 +1,7 @@
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { describe, expect, it, vi } from 'vitest'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { repeatDigest } from './repeatResolution.js'
 import { admitWorkHandoffLocked } from './workHandoffAdmission.js'
 
@@ -18,9 +18,9 @@ function fixture() {
       data: { latestDeliverable: 'Ready', remainingFindings: [] } } } })
   const source = { record: execution, accepted: true, work_activation_id: 'source-activation' }
   const receipt = { result_json: canonicalGraphJson(execution.result), result_digest: repeatDigest(execution.result) }
-  const query = vi.fn<GraphTransactionSql['query']>()
+  const query = vi.fn<SqlTransaction['query']>()
   const context: Parameters<typeof admitWorkHandoffLocked>[0] = {
-    sql: { transaction: true, query: query as GraphTransactionSql['query'] }, scope: saved.scope,
+    sql: { transaction: true, query: query as SqlTransaction['query'] }, scope: saved.scope,
     version: { ...saved.version, definition: { ...saved.version.definition, handoffs: { contractVersion: 1 } } },
     now: saved.createdAt, assertActive: vi.fn(),
     hooks: {

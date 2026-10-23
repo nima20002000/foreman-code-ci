@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { CollectionChallengeSchema, TelemetryIdentitySchema, TelemetryCollectedBatchSchema, telemetryCanonical, type CollectionChallenge, type ResourceCollector, type TelemetryCollectedBatch, type TelemetryIdentity } from '@foreman-code/contracts/resource-telemetry'
 import { LinuxSampler, type SamplerPorts } from './sampler.js'
-import { logIgnoredError } from '../../diagnostics/ignoredError.js'
+import { logIgnoredError } from '../../diagnostics/index.js'
 
 export interface CollectorClock { now(): bigint; wall(): number; setTimer(work: () => void, ms: number): ReturnType<typeof setTimeout>; clearTimer(timer: ReturnType<typeof setTimeout>): void }
 const defaultClock: CollectorClock = { now: () => process.hrtime.bigint(), wall: Date.now, setTimer: setTimeout, clearTimer: clearTimeout }

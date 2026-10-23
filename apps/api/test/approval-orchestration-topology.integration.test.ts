@@ -2,12 +2,12 @@ import { approvalOrchestrationDatabase } from './helpers/approvalOrchestrationDa
 import { approvalFixture } from './helpers/approvalFixture.js'
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 afterEach(() => vi.restoreAllMocks())
@@ -18,7 +18,7 @@ describe.skipIf(!postgresEnabled)('current durable approval orchestration', () =
     const db = getDatabase()
     const f = makeCurrentWorkflowFixture(randomUUID(), 'approval')
     f.configurations[0]!.harness = structuredClone(approvalFixture().configurations[0]!.harness)
-    await seedAgent3(db.pool, db.directory, f, { run: false })
+    await seedWorkflowFixture(db.pool, db.directory, f, { run: false })
     const access = new PostgresAccessService(db.pool)
     const writer = await access.issue({ name: 'Approval author', audience: 'operator', expiresAt: new Date(Date.now() + 600000),
       grants: [{ actions: ManagementActionSchema.options, scope: {} }] })

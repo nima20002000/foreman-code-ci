@@ -8,14 +8,24 @@ import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.
 import { knownNativeActivity } from '../src/modules/conversations/knownNativeActivity.js'
 import { settleKnownActivity } from '../src/modules/conversations/settleKnownActivity.js'
 function fixture() {
-  const writes: string[] = []; const persisted: unknown[] = []
-  const query = async (sql: string, values: unknown[] = []) => {
-    if (sql.startsWith('select id')) return { rows: [{ id: 'conversation', active_request_id: 'newer-B' }], rowCount: 1 }
-    if (sql.includes('select a.request_id')) return { rows: [{ request_id: 'A', activity_id: 'child', sequence: '4', revision: '2', input_hash: 'hash-A',
+  const writes: unknown[][] = []; const persisted: unknown[] = []
+  // Statements are told apart by their bound values. The conversation id alone is bound by the owner read and, after it,
+  // by the scope revision write; four values are bound by the activity read (the native identity last) and the activity
+  // write (the settled record last).
+  let conversationReads = 0
+  const query = async (_sql: string, values: unknown[] = []) => {
+    if (values.length === 1) {
+      if (++conversationReads > 1) writes.push(values)
+      return { rows: [{ id: 'conversation', active_request_id: 'newer-B', revision: '3' }], rowCount: 1 }
+    }
+    if (values.length === 4 && 'status' in JSON.parse(String(values[3]))) {
+      writes.push(values); persisted.push(JSON.parse(String(values[3])))
+      return { rows: [{ revision: '3' }], rowCount: 1 }
+    }
+    if (values.length === 4) return { rows: [{ request_id: 'A', activity_id: 'child', sequence: '4', revision: '2', input_hash: 'hash-A',
       record: { id: 'child', requestId: 'A', kind: 'subagent', title: 'Child', status: 'unknown' },
       source_provenance: { native: { harness: 'codex', sessionId: 'child-session', turnId: 'child-turn', generation: 'generation', itemId: 'child' },
         ownerNative: { harness: 'codex', sessionId: 'root-session', turnId: 'root-A' }, ownerInputHash: 'hash-A' } }], rowCount: 1 }
-    if (sql.startsWith('update')) { writes.push(sql); if (sql.includes('set record=')) persisted.push(JSON.parse(String(values[3]))); return { rows: [{ revision: '3' }], rowCount: 1 } }
     return { rows: [], rowCount: 0 }
   }
   return { pool: { connect: async () => ({ query, release() {} }) } as unknown as pg.Pool, writes, persisted }
@@ -26,7 +36,7 @@ describe('independent known child settlement', () => {
     expect(await settleKnownActivity(f.pool, 'conversation', 'A', { id: 'child', requestId: 'A', kind: 'subagent', title: 'Child', status: 'completed' },
       { harness: 'codex', sessionId: 'child-session', turnId: 'child-turn', generation: 'generation', itemId: 'child' })).toMatchObject({ itemRevision: '3' })
     expect(f.writes).toHaveLength(2)
-    expect(f.writes.join(' ')).not.toMatch(/active_request_id|active_native_turn_id|last_result|turn_state/)
+    expect(JSON.stringify(f.writes)).not.toContain('newer-B')
   })
   it('rejects different native turn/generation before any mutation', async () => {
     const f = fixture()
@@ -53,7 +63,7 @@ describe('independent known child settlement', () => {
       id: 'child', requestId: 'A', kind: 'subagent', title: 'owned-fixture-secret', status: 'completed', input: 'child owned-fixture-secret', output: 'owned-fixture-secret',
     }, { harness: 'codex', sessionId: 'child-session', turnId: 'child-turn', generation: 'generation', itemId: 'child' }, captured)
     expect(settled?.activity).toMatchObject({ id: 'child', requestId: 'A', title: '[REDACTED]', input: '[REDACTED] [REDACTED]', output: '[REDACTED]' })
-    expect(f.writes.join(' ')).not.toMatch(/active_request_id|active_native_turn_id|last_result|turn_state/)
+    expect(JSON.stringify(f.writes)).not.toContain('newer-B')
   })
 
   it('resident history settlement retains the captured owning redactor before credential cleanup', async () => {

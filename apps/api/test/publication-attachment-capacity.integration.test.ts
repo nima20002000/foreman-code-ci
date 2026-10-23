@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { afPublicationFixture } from './helpers/afPublicationFixture.js'
+import { nativePublicationFixture } from './helpers/nativePublicationFixture.js'
 import { postgresEnabled } from './helpers/database.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { AgentChatStateSchema } from '@foreman-code/contracts/agent-chat'
-import { withAfMcp } from './helpers/afMcp.js'
+import { withPublicationMcp } from './helpers/afMcp.js'
 import type { MessageAttachmentRef } from '@foreman-code/contracts/files'
 import { preparePublication, publicationValue, publicationPin } from './helpers/codexPublication.js'
 
@@ -13,7 +13,7 @@ afterEach(() => vi.restoreAllMocks())
 describe.skipIf(!postgresEnabled)('publication attachment capacity', { timeout: 90_000 }, () => {
   for (const count of [10, 1]) {
     it(`Codex ${count} inputs plus twelve publications remain attachable and restart-safe`, async () => {
-      const f = await afPublicationFixture(), t = await preparePublication(f, count)
+      const f = await nativePublicationFixture(), t = await preparePublication(f, count)
       const published: MessageAttachmentRef[] = []
       for (let index = 0; index < 12; index++) {
         published.push(publicationPin(publicationValue(await t.publish())))
@@ -28,7 +28,7 @@ describe.skipIf(!postgresEnabled)('publication attachment capacity', { timeout: 
       expect(resumed!.accepted.attachments).toEqual(t.attachments)
       await resumed!.dependencies.host.close()
       expect(await f.publications(t.active.turn.messageId)).toHaveLength(12)
-      if (count === 10) await withAfMcp(f, async (_writer, reader) => {
+      if (count === 10) await withPublicationMcp(f, async (_writer, reader) => {
           const result = await reader.callTool({ name: 'agent_chat_read', arguments: { workspaceId: f.workspaceId, query: f.context } })
         const readback = AgentChatStateSchema.parse(decodeMcpToolResult(result)).messages.find((message) => message.id === t.active.turn.messageId)!
         expect(readback.attachments).toHaveLength(22)

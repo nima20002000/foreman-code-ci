@@ -5,7 +5,7 @@ import { AgentConfigurationVersionSchema, type NativeSessionReference } from '@f
 import { AgentChatStateSchema } from '@foreman-code/contracts/agent-chat'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import type { WorkerConversationReceipt } from '@foreman-code/contracts/remote-execution-rpc'
 import { buildApp } from '../src/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -30,12 +30,13 @@ import { conversationChatTools } from '../src/modules/access/conversationCredent
 import { prepareAgentChatInput } from '../src/modules/collaboration/chatInputPreparation.js'
 import { prepareWorkerInput } from './helpers/workerChatPreparation.js'
 import { ChatManager, waitFor } from './helpers/operatorChatFixture.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { deferred } from './helpers/deferred.js'
 
 async function fixture() {
-  const db = await agent3Database()
+  const db = await migratedDatabase()
   const recorded = workerConversationFixture('agent', 'claude')
   const definition = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
   definition.configurations = definition.configurations.map(value => AgentConfigurationVersionSchema.parse({ ...value,
@@ -51,7 +52,7 @@ async function fixture() {
     await db.close()
   }
   try {
-    const seeded = await seedAgent3(db.pool, db.directory, definition, { run: false })
+    const seeded = await seedWorkflowFixture(db.pool, db.directory, definition, { run: false })
     const node = seeded.version.definition.nodes[0]!
     const configuration = seeded.configurations.find(value => value.agentId === node.agentId)!
     const context = { workspaceId: seeded.scope.workspaceId, workflowId: seeded.scope.workflowId,
@@ -243,12 +244,12 @@ class RecordedNative extends ChatManager {
 }
 
 async function replacementFixture() {
-  const db = await agent3Database()
+  const db = await migratedDatabase()
   const recorded = workerConversationFixture('agent')
   const seed = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
   seed.configurations = seed.configurations.map(value => AgentConfigurationVersionSchema.parse({ ...value,
     harness: recorded.configuration.harness, harnessProfileSelection: recorded.binding.profile }))
-  const seeded = await seedAgent3(db.pool, db.directory, seed, { run: false })
+  const seeded = await seedWorkflowFixture(db.pool, db.directory, seed, { run: false })
   const node = seeded.version.definition.nodes[0]!
   const configuration = seeded.configurations.find(value => value.agentId === node.agentId)!
   const context = { workspaceId: seeded.scope.workspaceId, workflowId: seeded.scope.workflowId,

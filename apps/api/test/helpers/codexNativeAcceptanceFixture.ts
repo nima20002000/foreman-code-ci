@@ -6,20 +6,21 @@ import { join } from 'node:path'
 import { AgentConfigurationVersionSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION, HarnessExecutionSchema,
   type HarnessExecutionRequest } from '@foreman-code/contracts'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import { makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { buildApp } from '../../src/app.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
-import { Wave25WorkerCredentialService as WorkerCredentialService } from '../../src/modules/interactions/wave25/credentials.js'
+import { Wave25WorkerCredentialService as WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { AppMcpRoutes } from '../../src/modules/harnesses/appMcpRoutes.js'
 import { installAppLauncher } from '../../src/modules/harnesses/appMcpLauncher.js'
 import { PostgresAppInteractionService } from '../../src/modules/interactions/app.js'
 import { PostgresInteractionRepository } from '../../src/modules/interactions/postgres.js'
-import { agent3Database, seedAgent3 } from './workflowDatabase.js'
+import { seedWorkflowFixture } from './workflowDatabase.js'
+import { migratedDatabase } from './migratedDatabase.js'
 
 /** Real execution-bound credentials and authenticated MCP; no ambient token or authority is borrowed. */
 export async function codexNativeAcceptanceFixture(approvalPolicy: 'never' | 'on-request' = 'never') {
-  const database = await agent3Database(process.env.ENG03_A_TEST_DATABASE_URL)
+  const database = await migratedDatabase()
   const { pool, directory } = database
   const workingDirectory = join(directory, 'work')
   await mkdir(workingDirectory, { mode: 0o700 })
@@ -47,11 +48,11 @@ export async function codexNativeAcceptanceFixture(approvalPolicy: 'never' | 'on
     }
   }
   try {
-    await seedAgent3(pool, workingDirectory, fixture)
+    await seedWorkflowFixture(pool, workingDirectory, fixture)
     const configuration = fixture.configurations[0]!
     const node = fixture.version.definition.nodes.find(row => row.agentId === configuration.agentId)
     assert(node)
-    const run = WorkflowRunV3Schema.parse({ ...fixture.run, executionState: 'running' })
+    const run = WorkflowRunCurrentSchema.parse({ ...fixture.run, executionState: 'running' })
     await pool.query('update runs set execution_state=$2,record=$3 where id=$1', [run.id, run.executionState, run])
     const execution = HarnessExecutionSchema.parse({ id: randomUUID(), runId: run.id, workflowNodeId: node.id,
       agentId: configuration.agentId, agentConfigurationVersionId: configuration.id, attempt: 1,

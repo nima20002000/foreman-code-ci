@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { describe, expect, it } from 'vitest'
 import { OperatorRunCompactSchema } from '@foreman-code/contracts/operator-mcp'
 import { HarnessExecutionSchema, type AgentConfigurationVersion, type NativeHarnessEvent } from '@foreman-code/contracts'
-import { RunActivitiesPageSchema, SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
+import { RunActivitiesPageSchema, SavedRunDetailsSchema } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { RunManagementService } from '../src/modules/runs/management.js'
@@ -15,7 +15,7 @@ import { claudeNativeEvent } from '../src/modules/harnesses/claudeSdk/nativeEven
 import type { ClaudeDecodedChange } from '../src/modules/harnesses/claudeSdk/normalization.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import type { currentDatabase } from './helpers/database.js'
-import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { withTaskDatabase } from './helpers/taskDatabase.js'
 import { graphFixture, graphHeaders, graphRpc, graphRpcValue, ownedGraph } from './graph-composition-fixture.js'
 
 const occurredAt = '2026-10-04T10:00:00.000Z'
@@ -60,7 +60,7 @@ async function captureExecution(db: Awaited<ReturnType<typeof currentDatabase>>,
 
 async function activityFixture(work: (pool: pg.Pool, fixture: Awaited<ReturnType<typeof graphFixture>>,
   app: ReturnType<typeof buildApp>) => Promise<void>, options: { harness?: AgentConfigurationVersion['harness'] } = {}) {
-  await nim2691TaskDatabase(async (pool, directory) => {
+  await withTaskDatabase(async (pool, directory) => {
     await applyApplicationMigrations(pool)
     const db = { pool, directory, schema: 'public', close: async () => {} } as Awaited<ReturnType<typeof currentDatabase>>
     const fixture = await graphFixture(db, { form: 'single', qualifiedReads: true, ...options })

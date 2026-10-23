@@ -1,10 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { ZodError } from 'zod'
-import { WorkflowSaveIssuesSchema, workflowSaveIssues, type WorkflowSaveIssue } from '@foreman-code/contracts/wave25'
+import { WorkflowSaveIssuesSchema, workflowSaveIssues, type WorkflowSaveIssue } from '@foreman-code/contracts/current'
 import { ApiError } from '../../shared/api/client'
 import { Button, Dialog, Icon } from '../../shared/ui/nocturne'
-import type { AuthoringIssue } from '../graph/nextDraft/model'
-import type { NextDraftEdit } from '../graph/nextDraft/state'
+import type { AuthoringIssue, NextDraftEdit } from '../board-core'
 import { useInspectionPresentation } from './inspect/presentation'
 
 /** The saved-workflow field each local authoring hint is about. */

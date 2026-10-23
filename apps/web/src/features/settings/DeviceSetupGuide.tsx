@@ -1,7 +1,7 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
 import type { DeviceRegistration } from '@foreman-code/contracts/device-identity'
 import { Button } from '../../shared/ui/nocturne'
-import { askOperator } from '../operator-chat/operatorChatStore'
+import { askOperator } from '../operator-chat'
 
 /** Static guidance shown before a request code exists. It never installs, logs in or changes a network. */
 export function DeviceSetupGuide() {

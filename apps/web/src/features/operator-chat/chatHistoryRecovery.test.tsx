@@ -6,7 +6,7 @@ import type { OperatorActivity, OperatorConversationState } from '@foreman-code/
 import { agentChatFixtures, type AgentChatState } from '@foreman-code/contracts/agent-chat'
 import { server } from '../../mocks/server'
 import { installChatSource, mountChat } from '../conversations/agentChat/testSupport'
-import { useConversationDraftStore } from '../conversations/conversationDraftStore'
+import { useConversationDraftStore } from '../conversations'
 import { OperatorHistory } from './OperatorHistory'
 import { OperatorTranscript } from './OperatorTranscript'
 import { newerOperatorConversationState } from './operatorConversationReadback'

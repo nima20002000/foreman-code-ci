@@ -1,7 +1,7 @@
 import { asRecord } from '../../shared/records.js'
 import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { runtimeTimingPoint, runtimeTimingPublisher, type RuntimeTimingRecord } from '../diagnostics/runtimeTiming.js'
+import { runtimeTimingPoint, runtimeTimingPublisher, type RuntimeTimingRecord } from '../diagnostics/index.js'
 
 const transportEvents = new Set([
   'codex.api_request', 'codex.sse_event', 'codex.websocket_request', 'codex.websocket_event',

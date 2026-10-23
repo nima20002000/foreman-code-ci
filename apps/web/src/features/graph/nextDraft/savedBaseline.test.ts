@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { CURRENT_WORKFLOW_ROUTES, CurrentManagedWorkflowSchema, CurrentWorkflowReadResultSchema } from '@foreman-code/contracts/wave25'
+import { CURRENT_WORKFLOW_ROUTES, CurrentManagedWorkflowSchema, CurrentWorkflowReadResultSchema } from '@foreman-code/contracts/current'
 import { ApiClient, ApiError } from '../../../shared/api/client'
 import { fixture } from './core.cases'
-import { discardMeaningfulChanges } from './model'
+import { discardMeaningfulChanges, newNextDraft, nextDraftDirty, nextDraftKey } from '../../board-core'
 import { createNextDraftApi } from './transport'
 import { createNextDraftWriter } from './writer'
 import { readEditSnapshot, storeEditSnapshot } from './editIntentStorage'
-import { newNextDraft, nextDraftDirty, nextDraftKey } from './state'
 
 /** Unit boundary: a definitive PUT conflict leaves the saved server definition unchanged. */
 async function rejectedSave() {

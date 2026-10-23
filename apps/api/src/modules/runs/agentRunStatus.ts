@@ -1,10 +1,11 @@
 import type pg from 'pg'
-import { AgentRunStatusSchema, CiRunRecordSchema, ciActivityFromRecord, RUN_STATUS_LIMITS, type AgentRunStatus } from '@foreman-code/contracts'
+import { AgentRunStatusSchema, ciActivityFromRecord, RUN_STATUS_LIMITS, type AgentRunStatus } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { workerScope, workerScopesForAction } from '../access/appPolicy.js'
 import { DomainError } from '../errors.js'
 import { workflowJobLifecycle } from '../run-graph/workflowJobProjection.js'
+import { readRunInitiatedCi } from '../ci/reads.js'
 
 const clip = (text: string) => text.slice(0, RUN_STATUS_LIMITS.messageLength)
 
@@ -27,7 +28,7 @@ export class AgentRunStatusService {
       scope.workspaceIds?.includes(binding.workspace_id) && scope.workflowIds?.includes(binding.workflow_id)
       && scope.runIds?.includes(binding.run_id))
     if (!binding || !scoped) throw new DomainError('ACCESS_DENIED', 'The caller is not authorized to read this Run.', 403)
-    const version = WorkflowVersionV3Schema.parse(binding.version)
+    const version = WorkflowVersionCurrentSchema.parse(binding.version)
     const self = version.definition.nodes.find(node => node.id === binding.node_id)
     if (!self || self.kind === 'job' || !self.interval) {
       throw new DomainError('TOOL_NOT_ENABLED', 'Run status is available only to workflow nodes with interval checks.', 403)
@@ -71,12 +72,7 @@ export class AgentRunStatusService {
         lastStartedAt: latest?.started_at ?? null, lastFinishedAt: latest?.finished_at ?? null,
       }
     })
-    const tickets = (await this.pool.query<{ node_id: string; record: unknown }>(
-      `select e.workflow_node_id as node_id,c.record from ci_runs c join harness_executions e on e.id=c.record#>>'{initiator,executionId}'
-       where e.run_id=$1 and c.workspace_id=$2 order by c.created_at desc,c.id desc limit $3`,
-    [binding.run_id, binding.workspace_id, RUN_STATUS_LIMITS.ci])).rows.map(row => ({
-      nodeId: row.node_id, record: CiRunRecordSchema.parse(row.record),
-    }))
+    const tickets = await readRunInitiatedCi(this.pool, binding.run_id, binding.workspace_id, RUN_STATUS_LIMITS.ci)
     const errors = [
       ...executions.filter(execution => execution.state === 'running' && execution.stuck_message).map(execution => ({
         nodeId: execution.node_id, executionId: execution.id, ciTicketId: null,

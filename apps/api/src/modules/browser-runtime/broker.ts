@@ -3,7 +3,7 @@ import { BrowserSessionSchema, BrowserControlSchema, BrowserTabLeaseSchema } fro
 import { DEFAULT_AGENT_BROWSER_TABS } from '@foreman-code/contracts/browser-profiles'
 import { browserInputHash } from '../browser-profiles/identity.js'
 import { DomainError } from '../errors.js'
-import type { BrowserLifecyclePort } from '../collaboration/ports.js'
+import type { BrowserLifecyclePort } from '../collaboration/index.js'
 import { BrowserDispatchGate } from './dispatchGate.js'
 import type { AgentSubject, BrowserActor, BrowserControl, BrowserHostAction, BrowserNativeDispatch,
   BrowserNativeDriver, BrowserPageInput, BrowserPrepareResult, BrowserReleaseResult, BrowserRuntimeJournal,

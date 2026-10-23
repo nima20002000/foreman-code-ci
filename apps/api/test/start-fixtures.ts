@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import type pg from 'pg'
 import {
-  AcceptedWorkflowRunV3Schema, WorkflowVersionV3Schema, makeCurrentWorkflowFixture, canonicalGraphJson,
-  type AcceptedWorkflowRunV3,
-} from '@foreman-code/contracts/wave25'
+  AcceptedWorkflowRunCurrentSchema, WorkflowVersionCurrentSchema, makeCurrentWorkflowFixture, canonicalGraphJson,
+  type AcceptedWorkflowRunCurrent,
+} from '@foreman-code/contracts/current'
 import { RunBoardSnapshotSchema, type RunBoardSnapshot } from '@foreman-code/contracts/run-snapshots'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { beforeGraphCommit } from '../src/modules/run-graph/connection.js'
@@ -17,7 +17,7 @@ import type { WorkspaceLocationService } from '../src/modules/workspaces/locatio
 export function startFixture() {
   const f = makeCurrentWorkflowFixture('eng04-start-native3')
   const entry = f.version.definition.nodes[0]!, exit = f.version.definition.nodes[1]!
-  const version = WorkflowVersionV3Schema.parse({ ...f.version, id: `${f.version.id}-v3`, executionSemanticsVersion: 3,
+  const version = WorkflowVersionCurrentSchema.parse({ ...f.version, id: `${f.version.id}-v3`, executionSemanticsVersion: 3,
     definition: { ...f.version.definition, executionSemanticsVersion: 3,
       nodes: [entry, { ...exit, choice: { outcomes: [
         { outcome: 'pass', target: { kind: 'branch_end' } }, { outcome: 'issues', target: { kind: 'branch_end' } },
@@ -34,7 +34,7 @@ export function startFixture() {
       { actions: ['runs:start', 'runs:read'], scope: { workspaceIds: [version.workspaceId], workflowIds: [version.workflowId] } },
       { actions: ['workspace_locations:read'], scope: { workspaceIds: [version.workspaceId] } },
     ] }
-  const run = AcceptedWorkflowRunV3Schema.parse({ ...f.run, workflowVersionId: version.id, executionSemanticsVersion: 3,
+  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run, workflowVersionId: version.id, executionSemanticsVersion: 3,
     executionState: 'queued', outcome: 'pending', input: {}, executionLocation: location,
     authorizationPrincipalId: principal.id, approval: version.approval })
   const request = { workspaceId: version.workspaceId, workflowId: version.workflowId, workflowVersionId: version.id,
@@ -57,7 +57,7 @@ type Receipt = { input_hash: string; target_key: string; result: unknown }
 type Binding = { principal_id: string; run_id: string; owner_principal_id: string; caller_principal_id: string;
   grant_ceiling: unknown; accepted_expires_at: Date }
 interface Database {
-  run: AcceptedWorkflowRunV3 | undefined
+  run: AcceptedWorkflowRunCurrent | undefined
   boardSnapshot?: RunBoardSnapshot
   admissionTrigger?: string
   principals: PrincipalRow[]
@@ -78,11 +78,17 @@ export function startSqlFixture() {
   let database: Database = { run: undefined, principals: [rootRow], bindings: [], receipt: undefined,
     source: undefined, head: false, succeededAudit: false }
   const calls: { sql: string; values: unknown[]; transaction: boolean }[] = []
+  // What the fixture's database was asked to do, named by effect so tests need not read statements: each write, whether
+  // it ran inside the transaction, every read of the mutable workflow head or current Agents, and each failure audit.
+  const writes: { kind: string; transaction: boolean }[] = []
+  const mutableHeadReads: unknown[][] = []
+  const failureAudits: unknown[][] = []
   const releases: boolean[] = []
   const state = { filesystemCalls: 0, publications: 0, activeTransactions: 0, count: '0',
     loseCommit: false, missingSource: false, denyClock: false, stopped: false, cleanupPending: false,
-    failBoardSnapshot: false, filesystemError: false, maintenanceActive: false,
+    failBoardSnapshot: false, filesystemError: false, maintenanceActive: false, crossedRunScope: false,
     onSnapshot: undefined as (() => void) | undefined,
+    onCommandLock: undefined as (() => void) | undefined,
     rows: undefined as ((sql: string, values: unknown[], rows: Record<string, unknown>[]) => Record<string, unknown>[]) | undefined }
   const result = (sql: string, values: unknown[], rows: Record<string, unknown>[]) => {
     const actual = state.rows ? state.rows(sql, values, structuredClone(rows)) : structuredClone(rows)
@@ -97,6 +103,8 @@ export function startSqlFixture() {
       const sql = text.replace(/\s+/g, ' ').trim()
       calls.push({ sql, values: structuredClone(values), transaction: this.inTransaction })
       const answer = (rows: Record<string, unknown>[] = []) => result(sql, values, rows)
+      const wrote = (kind: string) => writes.push({ kind, transaction: this.inTransaction })
+      if (sql.includes('from workflows where') || sql.includes('from agents a')) mutableHeadReads.push(structuredClone(values))
       if (sql.startsWith('begin')) {
         if (this.inTransaction) throw new Error('nested fixture transaction')
         this.transaction = structuredClone(database); this.inTransaction = true; state.activeTransactions++
@@ -115,17 +123,19 @@ export function startSqlFixture() {
         return answer()
       }
       const db = this.transaction ?? database
-      if (sql.includes('pg_try_advisory_xact_lock_shared')) return answer([{ available: !state.maintenanceActive }])
-      if (sql.includes('pg_try_advisory_xact_lock')) return answer([{ locked: true }])
+      if (sql.includes('pg_try_advisory_xact_lock_shared')) { state.onCommandLock?.(); return answer([{ available: !state.maintenanceActive }]) }
+      if (sql.includes('pg_try_advisory_xact_lock')) { state.onCommandLock?.(); return answer([{ locked: true }]) }
       if (sql.startsWith('select 1 where clock_timestamp()')) return answer(state.denyClock ? [] : [{}])
       if (sql.includes('from management_principals where id=$1')) return answer(db.principals.filter((row) => row.id === values[0]))
       if (sql.startsWith('select id from management_principals where id=any')) return answer(db.principals.filter((row) => (values[0] as string[]).includes(row.id)))
       if (sql.startsWith('insert into management_principals')) {
+        wrote('principal')
         db.principals.push({ id: String(values[0]), name: String(values[1]), audience: 'operator',
           grants: JSON.parse(String(values[3])), expires_at: new Date(String(values[4])), revoked_at: null, delegated_from: String(values[5]) })
         return answer()
       }
       if (sql.startsWith('insert into run_authority_principals')) {
+        wrote('authority binding')
         db.bindings.push({ principal_id: String(values[0]), run_id: String(values[1]), owner_principal_id: String(values[2]),
           caller_principal_id: String(values[3]), grant_ceiling: JSON.parse(String(values[4])), accepted_expires_at: new Date(String(values[5])) })
         return answer()
@@ -134,11 +144,17 @@ export function startSqlFixture() {
       if (sql.startsWith('select input_hash,target_key,result from management_command_receipts')) return answer(db.receipt ? [db.receipt] : [])
       if (sql.startsWith('select 1 from management_audit')) return answer(db.succeededAudit ? [{}] : [])
       if (sql.startsWith('insert into management_command_receipts')) {
+        wrote('command receipt')
         if (db.receipt) throw new Error('duplicate fixture receipt')
         db.receipt = { target_key: String(values[2]), input_hash: String(values[3]), result: JSON.parse(String(values[4])) }
         return answer()
       }
-      if (sql.startsWith('insert into management_audit')) { if (sql.includes("'succeeded'")) db.succeededAudit = true; return answer() }
+      if (sql.startsWith('insert into management_audit')) {
+        wrote('audit')
+        if (sql.includes("'failed'")) failureAudits.push(structuredClone(values))
+        if (sql.includes("'succeeded'")) db.succeededAudit = true
+        return answer()
+      }
       if (/^\s*with pinned_version as materialized/.test(sql)) return answer([{ versions: [f.versionRow], configurations: f.configurations }])
       if (sql.includes('from workflow_versions where')) return answer([f.versionRow])
       if (sql.includes('from agent_configuration_versions where') || sql.includes('from agents a')) return answer(f.configurations)
@@ -149,11 +165,13 @@ export function startSqlFixture() {
       // Recovery fence: no interrupted Run or pending cleanup in this workflow.
       if (sql.startsWith('select 1 from runs r where r.workspace_id=$1 and r.workflow_id=$2')) return answer([])
       if (sql.startsWith('insert into runs(')) {
+        wrote('run')
         if (db.run) throw new Error('duplicate fixture Run')
-        db.run = AcceptedWorkflowRunV3Schema.parse(JSON.parse(String(values[4])))
+        db.run = AcceptedWorkflowRunCurrentSchema.parse(JSON.parse(String(values[4])))
         return answer()
       }
       if (sql.startsWith('insert into run_board_snapshots')) {
+        wrote('board snapshot')
         if (state.failBoardSnapshot) throw new Error('synthetic snapshot storage failure')
         if (!this.inTransaction || !db.run || db.boardSnapshot) throw new Error('invalid snapshot admission')
         db.boardSnapshot = RunBoardSnapshotSchema.parse(JSON.parse(String(values[6])))
@@ -165,10 +183,11 @@ export function startSqlFixture() {
         return answer(run ? [{ id: run.id, workspace_id: run.workspaceId, workflow_id: run.workflowId,
           workflow_version_id: run.workflowVersionId, execution_state: run.executionState, runner_id: run.executionLocation.runnerId,
           working_directory: run.executionLocation.rootPath, location_revision: String(run.executionLocation.locationRevision),
-          record: run, stopped: state.stopped, cleanup_pending: state.cleanupPending }] : [])
+          record: run, stopped: state.stopped, cleanup_pending: state.cleanupPending }]
+          .map(row => state.crossedRunScope ? { ...row, workflow_id: 'crossed-workflow' } : row) : [])
       }
-      if (sql.startsWith('insert into run_graph_heads')) { db.head = true; return answer() }
-      if (sql.startsWith('insert into run_graph_sources')) { db.source = { digest: String(values[1]), semantic: String(values[2]) }; return answer() }
+      if (sql.startsWith('insert into run_graph_heads')) { wrote('graph head'); db.head = true; return answer() }
+      if (sql.startsWith('insert into run_graph_sources')) { wrote('graph source'); db.source = { digest: String(values[1]), semantic: String(values[2]) }; return answer() }
       if (sql.startsWith('select run_id from run_graph_heads')) return answer(db.head ? [{ run_id: db.run?.id }] : [])
       if (sql.startsWith('select r.workspace_id,r.workflow_id,r.workflow_version_id')) {
         return answer(db.run && db.head && db.source ? [{ workspace_id: db.run.workspaceId, workflow_id: db.run.workflowId,
@@ -200,7 +219,7 @@ export function startSqlFixture() {
     })
     return { semanticDigest }
   } }
-  return { ...f, pool, locations, publication, calls, releases, state,
+  return { ...f, pool, locations, publication, calls, writes, mutableHeadReads, failureAudits, releases, state,
     database: () => database, replaceDatabase: (next: Database) => { database = structuredClone(next) },
     serialized: () => canonicalGraphJson(database) }
 }

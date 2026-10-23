@@ -2,20 +2,21 @@ import { memoryExecution } from './memoryExecution.js'
 import { memoryWorkSettlement } from '../runs/memoryBoardHandoffs.js'
 import { repeatTickIndex } from '../runs/repeatResolution.js'
 import {
+  isReadOnlyHarnessConfiguration,
   effectiveGraphqlTools, memoryBoardTools, sameAgentNode, sameExecution,
   type AgentSubject, type LogicalWorkRef, type MemoryBoardScope,
 } from '@foreman-code/contracts'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
-import { WORKER_BINDING_ELIGIBLE } from '../access/workerEligibility.js'
-import type { MemoryBoardAuthority, ResolvedWork, SubjectAccess } from '../memory-boards/types.js'
+import { WORKER_BINDING_ELIGIBLE } from '../access/index.js'
+import type { MemoryBoardAuthority, ResolvedWork, SubjectAccess } from '../memory-boards/index.js'
 
 function unavailable(message: string): never {
   throw new DomainError('NOT_FOUND', message, 404)
 }
 
 
-async function subjectAccess(tx: GraphTransactionSql, supplied: AgentSubject): Promise<SubjectAccess> {
+async function subjectAccess(tx: SqlTransaction, supplied: AgentSubject): Promise<SubjectAccess> {
   if (supplied.kind !== 'execution') {
     throw new DomainError('ACCESS_DENIED', 'Memory tools require a bound workflow execution.', 403)
   }
@@ -26,7 +27,7 @@ async function subjectAccess(tx: GraphTransactionSql, supplied: AgentSubject): P
     || !sameExecution(saved.subject.execution, supplied.execution)) {
     throw new DomainError('ACCESS_DENIED', 'The memory subject does not match its saved execution.', 403)
   }
-  const readOnly = saved.configuration.harness.harness === 'opencode' || saved.configuration.harness.sandbox === 'read-only'
+  const readOnly = isReadOnlyHarnessConfiguration(saved.configuration.harness)
   const tools = effectiveGraphqlTools(saved.subject.agent.productRole, saved.configuration.graphqlTools,
     saved.node.graphqlTools, Boolean(saved.node.interval), memoryBoardTools('write'))
     .filter(tool => !readOnly || !memoryBoardTools('write').some(name => name === tool) || memoryBoardTools('read').some(name => name === tool))
@@ -34,7 +35,7 @@ async function subjectAccess(tx: GraphTransactionSql, supplied: AgentSubject): P
     branchNodeIds: [saved.node.id] }
 }
 
-export async function resolveMemoryWork(tx: GraphTransactionSql, work: LogicalWorkRef): Promise<ResolvedWork> {
+export async function resolveMemoryWork(tx: SqlTransaction, work: LogicalWorkRef): Promise<ResolvedWork> {
   const column = work.kind === 'activation' ? 'work_activation_id' : 'slot_id'
   const id = work.kind === 'activation' ? work.activationId : work.slotId
   const row = (await tx.query<{ execution_id: string }>(`select x.execution_id from run_repeat_executions x
@@ -74,7 +75,7 @@ export async function resolveMemoryWork(tx: GraphTransactionSql, work: LogicalWo
     currentExecutionId: execution.id, reason, isBusinessWork: repeatTickIndex(execution.input) === undefined }
 }
 
-async function assertScope(tx: GraphTransactionSql, scope: MemoryBoardScope): Promise<void> {
+async function assertScope(tx: SqlTransaction, scope: MemoryBoardScope): Promise<void> {
   const workspace = await tx.query('select id from workspaces where id=$1', [scope.workspaceId])
   if (!workspace.rowCount) return unavailable('The board workspace is unavailable.')
   if (scope.kind === 'workflow') {

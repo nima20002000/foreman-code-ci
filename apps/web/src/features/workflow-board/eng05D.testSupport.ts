@@ -9,12 +9,12 @@ import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/rea
 import { afterEach, beforeEach, expect, vi } from 'vitest'
 import { http } from 'msw'
 import {
-  boardSearchForInspection, CANONICAL_RUN_GRAPH_ROUTES, CurrentRunDetailsSchema, RepeatGraphCurrentV3Schema,
-  type RepeatGraphScopeV3, type WorkspaceBoardInspection,
-} from '@foreman-code/contracts/wave25'
+  boardSearchForInspection, CANONICAL_RUN_GRAPH_ROUTES, CurrentRunDetailsSchema, RepeatGraphCurrentStateSchema,
+  type RepeatGraphScopeCurrent, type WorkspaceBoardInspection,
+} from '@foreman-code/contracts/current'
 import { routeTree } from '../../app/router'
 import { server } from '../../mocks/server'
-import { useGraphDraftStore } from '../graph/store'
+import { useGraphDraftStore } from '../graph'
 import { useInspectionPresentation } from './inspect/presentation'
 import { inspectionBoardFixture } from './inspect/inspectionFixtures'
 import { clearBoardStartStorage } from './startOutbox'
@@ -81,7 +81,7 @@ export function isCurrentRequest(request: Request) {
 }
 
 /** Fixture state only. Never copy these server facts to a local presentation store. */
-export function setRunState(fixture: InspectionFixture, scope: RepeatGraphScopeV3,
+export function setRunState(fixture: InspectionFixture, scope: RepeatGraphScopeCurrent,
   state: 'running' | 'completed', cleanupPending = false) {
   const detail = fixture.mock.runs.get(scope.runId)!
   const { finishedAt: _finishedAt, result: _result, ...run } = detail.run
@@ -91,16 +91,16 @@ export function setRunState(fixture: InspectionFixture, scope: RepeatGraphScopeV
       ...(state === 'completed' ? { finishedAt: fixture.before.createdAt,
         result: { outcome: 'succeeded', output: { test: 'ENG05-D terminal fixture' } } } : {}) } }))
   const current = fixture.mock.currents.get(scope.runId)!
-  fixture.mock.currents.set(scope.runId, RepeatGraphCurrentV3Schema.parse({ ...current,
+  fixture.mock.currents.set(scope.runId, RepeatGraphCurrentStateSchema.parse({ ...current,
     state: { ...current.state, run: { ...current.state.run, executionState: state,
       outcome: state === 'running' ? 'pending' : 'succeeded', cleanupPending } } }))
 }
-export function advanceCurrentSequence(fixture: InspectionFixture, scope: RepeatGraphScopeV3) {
+export function advanceCurrentSequence(fixture: InspectionFixture, scope: RepeatGraphScopeCurrent) {
   const current = fixture.mock.currents.get(scope.runId)!
-  fixture.mock.currents.set(scope.runId, RepeatGraphCurrentV3Schema.parse({ ...current,
+  fixture.mock.currents.set(scope.runId, RepeatGraphCurrentStateSchema.parse({ ...current,
     asOfSequence: String(BigInt(current.asOfSequence) + 1n) }))
 }
-export function boardHref(scope: RepeatGraphScopeV3, inspection: WorkspaceBoardInspection = {}) {
+export function boardHref(scope: RepeatGraphScopeCurrent, inspection: WorkspaceBoardInspection = {}) {
   const search = boardSearchForInspection({}, scope.workflowId, scope, inspection)
   const params = new URLSearchParams(Object.entries(search).filter(([, value]) => value !== undefined)
     .map(([key, value]) => [key, String(value)]))

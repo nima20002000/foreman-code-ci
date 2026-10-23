@@ -1,6 +1,6 @@
 .settings-form small, .agent-settings-advanced small,
 .settings-form .settings-help { font-size: 13px; line-height: 1.5; }
-.settings-save-actions { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; padding: 1rem 0; border-top: 1px solid var(--color-border); background: var(--color-surface); }
+.settings-save-actions { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; padding: 1rem 0; border-top: 1px solid var(--border); background: var(--surface); }
 .settings-save-actions > p { flex: 1 1 12rem; margin: 0; }
 .settings-form-feedback { margin-block: 1rem; }
 .settings-save-actions > .settings-save-state { flex: 1 1 12rem; width: fit-content; padding: .5rem .75rem; border-radius: var(--radius-md); font-weight: 600; }
@@ -9,7 +9,7 @@
 .settings-save-state[data-tone='danger'] { color: var(--n-danger); background: var(--n-danger-subtle); }
 
 .settings-defaults-conflict-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: .75rem; }
-.settings-field-error { display: block; color: var(--color-text-strong); font-size: 13px; line-height: 1.5; }
+.settings-field-error { display: block; color: var(--text-strong); font-size: 13px; line-height: 1.5; }
 .settings-field-error::before { content: 'Error: '; font-weight: 600; }
 .settings-readiness { grid-column: 1 / -1; font-size: 13px; line-height: 1.5; }
 .settings-readiness p { margin-block: .5rem; }
@@ -35,10 +35,10 @@
 
 .agent-settings-form { display: grid; gap: var(--space-3); min-width: 0; }
 
-.settings-note { margin: 0 0 16px; padding: 11px 13px; border-radius: var(--radius-md); background: var(--color-status-bg); color: var(--color-text-muted); font-size: 13px; line-height: 1.5; }
+.settings-note { margin: 0 0 16px; padding: 11px 13px; border-radius: var(--radius-md); background: var(--surface-raised); color: var(--text-muted); font-size: 13px; line-height: 1.5; }
 .settings-enrollment-form { display: flex; align-items: flex-end; gap: var(--space-3); margin-block: 0 12px; }
 .settings-enrollment-field { flex: 1 1 auto; min-width: 0; }
-.settings-primary-button { border: 0; border-radius: var(--radius-sm); padding: 10px 14px; color: var(--color-accent-contrast); background: var(--color-accent); font-weight: 600; white-space: nowrap; cursor: pointer; }
+.settings-primary-button { border: 0; border-radius: var(--radius-sm); padding: 10px 14px; color: var(--on-accent); background: var(--accent); font-weight: 600; white-space: nowrap; cursor: pointer; }
 .settings-primary-button:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 600px) {
   .settings-enrollment-form { align-items: stretch; flex-direction: column; }
@@ -48,5 +48,5 @@
 .settings-location-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .mcp-detection-card-body { display: grid; align-content: start; gap: var(--space-2); }
 .mcp-detection-details { display: grid; gap: var(--space-2); margin: 0; }
-.mcp-detection-details dt { color: var(--color-text-faint); font-size: 11px; font-weight: 600; text-transform: uppercase; }
-.mcp-detection-details dd { margin: 2px 0 0; color: var(--color-text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.mcp-detection-details dt { color: var(--text-faint); font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.mcp-detection-details dd { margin: 2px 0 0; color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }

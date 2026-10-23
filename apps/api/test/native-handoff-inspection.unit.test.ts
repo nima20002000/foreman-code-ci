@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { inspectionExecutionRowSummary } from '../src/modules/runs/inspection.js'
 import { repeatDigest, repeatSlotId, workActivationSlotId } from '../src/modules/runs/repeatResolution.js'
 import { currentUnitSnapshot } from './helpers/currentUnitSnapshot.js'
@@ -9,7 +9,7 @@ function fixture(outcome: 'succeeded' | 'failed' = 'succeeded') {
   f.version.definition.handoffs = { contractVersion: 1 }
   f.version.contentHash = repeatDigest({ definition: f.version.definition,
     configurations: f.version.agentConfigurationVersionIds, entryNodeId: f.version.entryNodeId })
-  WorkflowVersionV3Schema.parse(f.version)
+  WorkflowVersionCurrentSchema.parse(f.version)
   const snapshot = { run: f.run, version: f.version, configurations: f.configurations, stopRequested: false, cleanupPending: false }
   const identity = f.identities[0]!
   const activationId = 'work-activation-original'

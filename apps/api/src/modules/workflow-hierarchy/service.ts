@@ -4,11 +4,11 @@ import { AgentIdentitySchema, WorkflowHierarchyReadInputSchema, WorkflowHierarch
   WorkflowReportsReadInputSchema, WorkflowReportsPageSchema, WorkflowHierarchyChangeSchema,
   type AgentIdentity, type WorkflowHierarchyReadResult, type WorkflowReportsReadInput } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import { requireAuthorization } from '../access/policy.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
+import { requireAuthorization } from '../access/index.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import type { WorkflowManagementService } from '../workflows/management.js'
 import { IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion, readPinnedAgentConfigurations,

@@ -2,21 +2,21 @@ import { expect, it } from 'vitest'
 import { MemorySaver } from '@langchain/langgraph'
 import { HarnessExecutionSchema, HarnessExecutionRequestSchema, ScopedMcpDetectionSchema,
   type HarnessExecution } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import type { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
 import type { RepeatNativeLaunchStore } from '../src/modules/interactions/repeatObservation.js'
 import { repeatNativeObserver } from '../src/modules/runs/repeatRuntime.js'
 import { RunnerAdmission } from '../src/modules/runs/runnerAdmission.js'
 import { buildRepeatGraph } from '../src/modules/runs/repeatGraph.js'
 import { repeatTerminalResolution } from '../src/modules/runs/repeatNode.js'
-import { native2Fixture } from './native-reviewer-fixtures.js'
+import { nativeReviewerFixture } from './native-reviewer-fixtures.js'
 import { nativeCompleted } from './native-repeat-fixtures.js'
 
 it('honors saved workflow parallelism above the startup capacity default', async () => {
   const f = makeCurrentWorkflowFixture('parallel-starts', 'single')
   const nodes = Array.from({ length: 6 }, (_, index) => ({ id: `node-${index}`,
     agentId: f.configurations[0]!.agentId, name: `Worker ${index}` }))
-  const version = WorkflowVersionV3Schema.parse({ ...f.version, entryNodeId: nodes[0]!.id,
+  const version = WorkflowVersionCurrentSchema.parse({ ...f.version, entryNodeId: nodes[0]!.id,
     definition: { ...f.version.definition, entryNodeId: nodes[0]!.id, nodes,
       executionPolicy: { maxParallelism: 5, maxNodeExecutions: 6 },
       edges: nodes.slice(1).map(node => ({ id: `edge-${node.id}`, kind: 'execution',
@@ -66,7 +66,7 @@ it('admits the next Run after native startup without waiting for the first Agent
   let finish!: () => void
   const working = new Promise<void>(resolve => { finish = resolve })
   async function observer(runId: string) {
-    const f = native2Fixture(false)
+    const f = nativeReviewerFixture(false)
     const run = { ...f.run, id: runId }
     const execution = { ...f.get(), id: `execution-${runId}`, runId }
     const owner = { ...f.owner, runId }
@@ -109,7 +109,7 @@ it('admits the next Run after native startup without waiting for the first Agent
 })
 
 it('announces recovered native startup before observing the ongoing model turn', async () => {
-  const f = native2Fixture(false)
+  const f = nativeReviewerFixture(false)
   f.installResident()
   f.internals.resolveManager = () => ({ manager: f.manager, processState: 'resident' })
   f.internals.prepareEnvironment = async () => undefined
@@ -130,7 +130,7 @@ it('announces recovered native startup before observing the ongoing model turn',
 })
 
 it('announces a new native session after persisted readback and before waiting for model output', async () => {
-  const f = native2Fixture(false)
+  const f = nativeReviewerFixture(false)
   f.set({ ...f.get(), nativeSessionId: undefined })
   f.store.consumeLaunch = () => true
   let started = false
@@ -165,7 +165,7 @@ it('announces a new native session after persisted readback and before waiting f
 })
 
 it('uses the persisted computer for an Agent whose saved node inherits its placement', async () => {
-  const f = native2Fixture(false)
+  const f = nativeReviewerFixture(false)
   const admission = new RunnerAdmission(1)
   let release!: () => void
   const held = admission.run('other-run', new AbortController().signal,

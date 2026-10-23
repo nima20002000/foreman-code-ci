@@ -3,10 +3,10 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { JobWorkflowExecutionReference } from '@foreman-code/contracts/job-workflow'
-import { runInspectionKey, type RepeatGraphScopeV3, type RunExecutionDetail, type RunExecutionSummary, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { runInspectionKey, type RepeatGraphScopeCurrent, type RunExecutionDetail, type RunExecutionSummary, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { server } from '../../../mocks/server'
 import { definition, execution as jobFixture } from '../../jobs/fixtures'
-import { WorkflowBoardProvider } from '../context'
+import { WorkflowBoardProvider } from '../../board-core'
 import { ExecutionInspector } from './ExecutionInspector'
 
 // Component scenario with MSW for the Jobs API. The Run-inspection reads are stubbed at the query-hook
@@ -21,11 +21,11 @@ vi.mock('./queries', async (original) => {
   }
 })
 
-const scope = { workspaceId: 'workspace-a', workflowId: 'workflow-a', runId: 'run-a', workflowVersionId: 'workflow-version-a' } as RepeatGraphScopeV3
+const scope = { workspaceId: 'workspace-a', workflowId: 'workflow-a', runId: 'run-a', workflowVersionId: 'workflow-version-a' } as RepeatGraphScopeCurrent
 const jobNode = { kind: 'job', id: 'build', name: 'Build', jobDefinitionId: definition.id, jobDefinitionRevision: 1, jobDefinitionVersionId: definition.versionId }
 const agentNode = { id: 'review', name: 'Review', agentId: 'agent-1' }
 const version = { id: scope.workflowVersionId, agentConfigurationVersionIds: { 'agent-1': 'configuration-1' },
-  definition: { nodes: [jobNode, agentNode], edges: [] } } as unknown as WorkflowVersionV3
+  definition: { nodes: [jobNode, agentNode], edges: [] } } as unknown as WorkflowVersionCurrent
 const mapping = '*/api/management/workspaces/:workspaceId/jobs/workflow-executions/:runId/:nodeExecutionId'
 const jobs = '*/api/management/workspaces/:workspaceId/jobs/executions/:id'
 

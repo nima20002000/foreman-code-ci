@@ -8,6 +8,7 @@ import { gitAcquisitionFailure, gitFailure } from './gitErrors.js'
 import { directoryFlags, withPrivateDirectoryLock } from './privateFilesystem.js'
 import { runGitProcess } from './gitProcess.js'
 import { runGitWithCacheStorage } from './gitCacheStorage.js'
+import { hostEnvironment } from '../../shared/process.js'
 
 export interface WorktreeRequest { repository: string; branch: string }
 export interface GitWorktreePorts {
@@ -214,7 +215,7 @@ async function runGit(ports: GitWorktreePorts, args: string[], cwd: string | und
   return result.stdout
 }
 
-export function systemGitWorktreePorts(environment: NodeJS.ProcessEnv = process.env): GitWorktreePorts {
+export function systemGitWorktreePorts(environment: NodeJS.ProcessEnv = hostEnvironment()): GitWorktreePorts {
   const home = environment.HOME ?? homedir()
   const gitEnvironment = Object.fromEntries(Object.entries(environment).filter(([key]) => !key.startsWith('GIT_')))
   return {

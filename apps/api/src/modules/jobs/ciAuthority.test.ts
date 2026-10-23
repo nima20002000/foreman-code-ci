@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ciFixture } from '../../../test/helpers/ciFixture.js'
-import * as credentials from '../interactions/wave25/credentialAuthority.js'
+import * as credentials from '../interactions/current/credentialAuthority.js'
 import { deferred } from '../../../test/helpers/deferred.js'
 import { DomainError } from '../errors.js'
 import { CI_RUN_ACTIONS, RunCiAuthority } from './ciAuthority.js'

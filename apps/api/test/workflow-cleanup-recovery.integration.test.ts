@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { RunRecordDetailSchema } from '@foreman-code/contracts/wave25'
+import { RunRecordDetailSchema } from '@foreman-code/contracts/current'
 import { DomainError } from '../src/modules/errors.js'
 import { runPath, scenarioHarness } from './helpers/scenarioHarness.js'
 import { scenarioFixture } from './helpers/scenarioFixtures.js'

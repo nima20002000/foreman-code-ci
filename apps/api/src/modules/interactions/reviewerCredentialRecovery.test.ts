@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { recoveryExecution } from '../../../test/helpers/recoveryExecution.testSupport.js'
 import type { PostgresAccessService } from '../access/postgres.js'
 import { readRecoverableRemoteReviewer } from './retainedRemoteReviewer.js'
-import { assertWave25WorkerBinding } from './wave25/credentialAuthority.js'
-import { Wave25WorkerCredentialService } from './wave25/credentials.js'
+import { assertWave25WorkerBinding } from './current/credentialAuthority.js'
+import { Wave25WorkerCredentialService } from './current/credentials.js'
 
 vi.mock('./retainedRemoteReviewer.js', () => ({
   readRecoverableRemoteReviewer: vi.fn(), readRetainedRemoteReviewer: vi.fn(async () => undefined),

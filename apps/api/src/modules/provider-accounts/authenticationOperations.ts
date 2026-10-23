@@ -1,27 +1,26 @@
 import { randomUUID } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
 import { commandInputHash } from '../commands/postgres.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { ProviderAccountAuthenticationOperationSchema, ProviderAccountAuthenticationPrepareInputSchema,
   ProviderAccountAuthenticationCancelInputSchema, ProviderAccountNativeAuthenticationObservationSchema,
   type ProviderAccountAuthenticationOperation, type ProviderAccountNativeAuthenticationObservation,
   type ProviderAccount } from '@foreman-code/contracts/provider-accounts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import type { ProviderAccountsRepository } from './repository.js'
 import type { ProviderAccountCredentials } from './ports.js'
 import type { ProviderAccountOperationNativePort } from './ports.js'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
 import { sameDeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 
 type Source = 'http' | 'mcp'
-type Authorize = (sql: GraphSqlClient, principal: ManagementPrincipal, manage: boolean,
+type Authorize = (sql: SqlQuery, principal: ManagementPrincipal, manage: boolean,
   accountId: string) => Promise<void>
 
-export async function assertAccountUnused(sql: GraphSqlClient, accountId: string): Promise<void> {
+export async function assertAccountUnused(sql: SqlQuery, accountId: string): Promise<void> {
   const used = await sql.query(`select 1 from (
     select account_id::text as account_id from provider_account_accepted_bindings where account_id=$1
     union all
@@ -49,7 +48,7 @@ export class ProviderAccountAuthenticationOperations {
     private readonly credentials: ProviderAccountCredentials, private readonly native: ProviderAccountOperationNativePort,
     private readonly commands: PostgresCommandCoordinator, private readonly authorize: Authorize) {}
 
-  async read(id: string, sql: GraphSqlClient = this.pool): Promise<ProviderAccountAuthenticationOperation> {
+  async read(id: string, sql: SqlQuery = this.pool): Promise<ProviderAccountAuthenticationOperation> {
     const row = (await sql.query<{ record: unknown }>(
       'select record from provider_account_authentication_operations where id=$1', [id])).rows[0]
     if (!row) throw new DomainError('PROVIDER_AUTHENTICATION_NOT_FOUND', 'The sign-in operation is unavailable.', 404)
@@ -291,7 +290,7 @@ export class ProviderAccountAuthenticationOperations {
     }
   }
 
-  private async write(sql: GraphSqlClient, operation: ProviderAccountAuthenticationOperation) {
+  private async write(sql: SqlQuery, operation: ProviderAccountAuthenticationOperation) {
     await sql.query('update provider_account_authentication_operations set record=$2::jsonb,native_closed=$3 where id=$1',
       [operation.id, JSON.stringify(operation), operation.nativeClosed])
   }

@@ -224,8 +224,9 @@ describe('canonical Job artifact projection', () => {
     const principalRow = { id: principal.id, name: principal.name, audience: principal.audience,
       grants: principal.grants, expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }
     // A standalone Job has no persisted workflow or Agent origin to authorize against.
-    const query = vi.fn(async (sql: string) => ({ rows: sql.includes('from job_executions') ? [] : [principalRow],
-      rowCount: sql.includes('from job_executions') ? 0 : 1, command: 'SELECT', oid: 0, fields: [] }) as unknown as pg.QueryResult)
+    // The Job origin read binds the execution and workspace ids; the live principal read binds only the principal id.
+    const query = vi.fn(async (_sql: string, values: unknown[] = []) => ({ rows: values.length === 2 ? [] : [principalRow],
+      rowCount: values.length === 2 ? 0 : 1, command: 'SELECT', oid: 0, fields: [] }) as unknown as pg.QueryResult)
     const files = new CanonicalJobArtifactPort(new pg.Pool(), f.service, {
       link: async () => { throw new Error('Listing must not mutate a publication receipt') },
       list: async () => [{ link, value }],
@@ -235,7 +236,7 @@ describe('canonical Job artifact projection', () => {
       path: 'result.bin', fileId: value.file.fileId, revisionId: value.revision.revisionId, sha256: metadata.sha256,
       byteSize: metadata.byteSize, mediaType: metadata.mediaType, state: 'available', expiresAt: '2026-10-01T14:00:00.000Z' }])
     // Listing only reads: each authorization pass checks the live principal and the Job's persisted origin.
-    const statements = query.mock.calls.map(([sql]: [string]) => sql.includes('from job_executions') ? 'execution-scope' : sql.includes('from management_princi') ? 'principal' : sql)
+    const statements = query.mock.calls.map(([, values]) => values?.length === 2 ? 'execution-scope' : values?.length === 1 ? 'principal' : 'other')
     assert.deepEqual(statements, ['principal', 'execution-scope', 'principal', 'execution-scope'])
     assert.equal('expiresAt' in value.file && value.file.expiresAt, '2026-10-01T14:00:00.000Z')
   })

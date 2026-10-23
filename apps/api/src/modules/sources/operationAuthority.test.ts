@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { expect, it, vi } from 'vitest'
 import type { SourceMaterializationRecord, SourceRootRecord } from '@foreman-code/contracts/source-admission'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { DomainError } from '../errors.js'
@@ -16,7 +16,7 @@ function fixture() {
     rootPolicyId: 'actual-policy', rootPolicyRevision: '1' }, registration: { keyRevision: 3, authorizationRevision: 4 } } as SourceRootRecord
   const record = { receipt: { binding }, rootPolicyId: 'actual-policy', rootPolicyRevision: '1' } as SourceMaterializationRecord
   const query = vi.fn(async () => ({ rows: [{}], rowCount: 1 }))
-  return { root, record, query, sql: { query } as unknown as GraphSqlClient }
+  return { root, record, query, sql: { query } as unknown as SqlQuery }
 }
 it('permits original terminal cleanup from positive Main closure and current exact device without regranting Run execution', async () => {
   const f = fixture(), closure = vi.fn(async () => true)

@@ -1,6 +1,6 @@
 import type { AgentSubject, BoardDigest, LogicalWorkRef, MemoryBoardScope, MemoryCard } from '@foreman-code/contracts'
 import { MemoryNoteSchema } from '@foreman-code/contracts'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { MemoryBoardAuthority } from './types.js'
 import { agentCard, findScopeBoard } from './repository.js'
 import { same } from './identity.js'
@@ -21,7 +21,7 @@ export function clipUtf8(value: string, budget: number): string {
 export const KANBAN_WORK_RECORD = (card: Pick<MemoryCard, 'id' | 'title'>) =>
   `Your card on this workflow's Kanban is ${card.id} "${card.title}"; `
   + 'keep its body current with memory_card_update: what you are working on, then what you found. Do not create new cards for your own work.'
-export async function readDigest(tx: GraphTransactionSql, authority: MemoryBoardAuthority,
+export async function readDigest(tx: SqlTransaction, authority: MemoryBoardAuthority,
   input: { subject: AgentSubject; work?: LogicalWorkRef }): Promise<BoardDigest> {
   const access = await authority.subject(tx,input.subject)
   if (!same(access.subject,input.subject)) throw new DomainError('ACCESS_DENIED','The saved agent identity has changed.',403)

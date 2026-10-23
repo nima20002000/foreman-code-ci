@@ -5,10 +5,10 @@ import {
   type ChatControlReceipt, type ChatStopRequest, type ChatQueueCancelRequest,
 } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { ExecutionChatPort } from '../collaboration/ports.js'
+import type { ExecutionChatPort } from '../collaboration/index.js'
 import { withTransaction, type TransactionSql } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
-import { componentLogger } from '../diagnostics/logger.js'
+import { componentLogger } from '../diagnostics/index.js'
 import { validateChatInput } from '../conversations/nativeChatInput.js'
 import { effectiveInput } from './validation.js'
 import type { PostgresChatDeliveryRepository } from './deliveryRepository.js'

@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
 import { HarnessExecutionContextSchema, HarnessExecutionSchema, type HarnessExecutionRequest } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, WorkActivationInputSchema,
-  makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, WorkActivationInputSchema,
+  makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { buildHarnessPrompt } from '../src/modules/harnesses/prompt.js'
 import { repeatNativeObserver } from '../src/modules/runs/repeatRuntime.js'
 import { RunnerAdmission } from '../src/modules/runs/runnerAdmission.js'
 
 it('the native observer supplies caller context separately from a historical continuation input', async () => {
   const fixture = makeCurrentWorkflowFixture('work-context')
-  const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
+  const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
     ...fixture.version.definition, handoffs: { contractVersion: 1 },
   } })
   const node = fixture.version.definition.nodes[1]!
-  const run = AcceptedWorkflowRunV3Schema.parse({ ...fixture.run,
+  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...fixture.run,
     authorizationPrincipalId: 'context-author', executionState: 'running',
     executionLocation: { runnerId: 'runner-local', rootPath: '/accepted/project',
       locationRevision: 1, identityHash: `sha256:${'1'.repeat(64)}` },

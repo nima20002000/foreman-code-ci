@@ -5,10 +5,10 @@ import {
   SkillUsageSchema, SkillUsersUpdateInputSchema, SkillUsersUpdateResultSchema,
   type ManagementPrincipal, type SkillUsage, type SkillUsersUpdateInput, type SkillUsersUpdateResult,
 } from '@foreman-code/contracts/management'
-import { WorkflowDefinitionV3Schema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { WorkflowDefinitionCurrentSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import { lockActiveWorkspace } from '../workspaces/admission.js'
 import type { OperatorAgentMutationService } from '../workspaces/operatorAgents.js'
@@ -165,9 +165,9 @@ async function readUsage(client: pg.Pool | pg.ClientBase, workspaceId: string, s
     from workflows w join workflow_versions v on v.id=w.current_version_id and v.workspace_id=w.workspace_id
     where w.workspace_id=$1 and w.archived_at is null and v.execution_semantics_version=3 order by w.id`, [workspaceId])).rows
   const workflows = workflowRows.flatMap(row => {
-    const version = WorkflowVersionV3Schema.parse(row.version)
+    const version = WorkflowVersionCurrentSchema.parse(row.version)
     const pins = version.agentConfigurationVersionIds
-    const graph = WorkflowDefinitionV3Schema.parse(row.record)
+    const graph = WorkflowDefinitionCurrentSchema.parse(row.record)
     const nodeOutdated = graph.nodes.some(node => node.kind !== 'job'
       && node.skills?.add?.some(skill => skill.skillId === skillId && skill.version !== head))
     const affected = Object.keys(pins).some(id => consumers.has(id)

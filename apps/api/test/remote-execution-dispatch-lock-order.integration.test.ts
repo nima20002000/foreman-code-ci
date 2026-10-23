@@ -3,13 +3,13 @@ import { expect, it } from 'vitest'
 import { DispatchIntentSchema } from '@foreman-code/contracts/node-placement'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { readReconciledDispatchIntent } from '../src/modules/runs/remote/persistence.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
 import { readUntil } from './helpers/observableCondition.js'
 
 it.runIf(postgresEnabled)('reads artifact dispatch authority alongside an execution writer without a lock cycle', async () => {
-  const database = await agent3Database()
+  const database = await migratedDatabase()
   const schema = `execution_locks_${randomUUID().replaceAll('-', '')}`
   const intent = DispatchIntentSchema.parse({ schemaVersion: 1, protocolVersion: 1,
     mainId: randomUUID(), runId: 'run', nodeId: 'node', executionId: 'execution',

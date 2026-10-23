@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '../../shared/api/client'
 import { assertSession, sessionGeneration, sessionIsSwitching } from '../../shared/api/sessionBoundary'
-import { useRevisionedForm } from '../settings/revisionedForm'
+import { useRevisionedForm } from '../settings'
 import { pendingRetentionCommand, useRetentionCommand, type RetentionCommand } from './retentionCommand'
 import { matchesRetentionPreview, retentionDraft, retentionSeconds, type RetentionDraft } from './retentionDraft'
 import {

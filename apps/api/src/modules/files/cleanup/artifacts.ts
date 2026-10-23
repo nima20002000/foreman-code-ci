@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../../../infrastructure/transaction.js'
+import { rollbackAfterFailure, withTransaction } from '../../../infrastructure/transaction.js'
 
 import { cleanupBatchSize, type FileArtifactCleanupCandidate,
   type FileCleanupOutcome } from './repository.js'
@@ -31,20 +31,28 @@ export class PostgresFileArtifactCleanupRepository {
 
   async remove(expected: FileArtifactCleanupCandidate, removeBytes: () => Promise<boolean>): Promise<FileCleanupOutcome> {
     const client = await this.pool.connect()
-    let broken = false, inTransaction = false, locked = false
+    let broken = false, locked = false
     const onError = () => { broken = true }
     client.on('error', onError)
     const check = () => { if (broken) throw new Error('Artifact cleanup database ownership was lost.') }
-    const begin = async () => {
+    // Both transactions run on this connection, which also holds the session locks between them. A failure while
+    // sending BEGIN or COMMIT leaves the connection's state unknown, and so does a failed rollback: discard it.
+    const transaction = async <T>(perform: () => Promise<T>): Promise<T> => {
       check()
-      await beginTransaction(client).catch((error: unknown) => { broken = true; throw error })
-      inTransaction = true
-      await client.query("set local lock_timeout='1s'; set local statement_timeout='5s'")
-    }
-    const commit = async () => {
+      const value = await withTransaction({ client }, async () => {
+        await client.query("set local lock_timeout='1s'; set local statement_timeout='5s'")
+        const result = await perform()
+        check()
+        return result
+      }, {
+        rollback: async (connection, { phase }) => {
+          const rollbackError = await rollbackAfterFailure(connection)
+          if (rollbackError || phase !== 'work') broken = true
+          return rollbackError
+        },
+      })
       check()
-      await commitTransaction(client).catch((error: unknown) => { broken = true; throw error })
-      inTransaction = false; check()
+      return value
     }
     const read = async () => {
       check()
@@ -64,29 +72,28 @@ export class PostgresFileArtifactCleanupRepository {
         .catch((error: unknown) => { broken = true; throw error })
       locked = lock.rows[0]?.locked === true
       if (!locked) return 'busy'
-      await begin()
-      const before = await read()
-      if (!before?.eligible) return 'stale'
-      if (before.retired_at === null) {
-        await client.query(`update file_tool_artifacts set record=record ||
-          jsonb_build_object('state','failed','retiredAt',clock_timestamp())
-          where artifact_id=$1 and binding=$2 and record->>'retiredAt' is null`,
-        [expected.artifactId, expected.binding])
-      }
       // This terminal marker must survive a failed unlink, restart or uncertain acknowledgement.
       // beginWrite/finishWrite/registerStorage cannot change a retired artifact back to ready.
-      await commit()
-      await begin()
-      const current = await read()
-      if (!current?.retired_at) return 'stale'
-      check()
-      const complete = await removeBytes()
-      await commit()
-      return complete ? 'cleaned' : 'remaining'
+      const retired = await transaction<FileCleanupOutcome | undefined>(async () => {
+        const before = await read()
+        if (!before?.eligible) return 'stale'
+        if (before.retired_at === null) {
+          await client.query(`update file_tool_artifacts set record=record ||
+            jsonb_build_object('state','failed','retiredAt',clock_timestamp())
+            where artifact_id=$1 and binding=$2 and record->>'retiredAt' is null`,
+          [expected.artifactId, expected.binding])
+        }
+        return undefined
+      })
+      if (retired) return retired
+      return await transaction<FileCleanupOutcome>(async () => {
+        const current = await read()
+        if (!current?.retired_at) return 'stale'
+        check()
+        const complete = await removeBytes()
+        return complete ? 'cleaned' : 'remaining'
+      })
     } finally {
-      if (inTransaction) {
-        try { await rollbackTransaction(client) } catch { broken = true }
-      }
       if (locked && !broken) {
         try {
           const result = await client.query<{ unlocked: boolean }>(

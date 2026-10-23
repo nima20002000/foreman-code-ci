@@ -2,7 +2,7 @@ import { readPublicProjectionLocked } from '../src/modules/run-graph/compactSnap
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import type pg from 'pg'
 import { currentOperatorAuthority } from '../src/modules/access/runAuthority.js'
 import { requireAuthorization } from '../src/modules/access/policy.js'
@@ -16,18 +16,19 @@ import { openRepeatCanonicalPublicationLocked, publishRepeatRunStateLocked } fro
 import { bindRepeatNodeInput, freezeRepeatEntry, makeRepeatOccurrence, repeatDigest, repeatExecutionIdentity,
   repeatSlotId } from '../src/modules/runs/repeatResolution.js'
 import type { RepeatEffect } from '../src/modules/runs/repeatPostgres.js'
-import { agent3Database, candidateFor, graphHead, seedAgent3 } from './helpers/workflowDatabase.js'
+import { candidateFor, graphHead, seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { createRepeatFixtureWriter, insertFixtureRepeatRun, repeatReadyAgent3Fixture } from './repeat-fixture-writer.js'
+import { createRepeatFixtureWriter, insertFixtureRepeatRun, repeatReadyWorkflowFixture } from './repeat-fixture-writer.js'
 
 // REAL PostgreSQL, migrations, owner sessions, canonical producer and receipts.
 // Synthetic database setup is not authenticated Start/admission or native proof.
 // No native/authority service is faked as successful: unused dependencies THROW.
 // Existing helper requires explicit loopback *test* DB and isolated random schema.
 describe.skipIf(!postgresEnabled)('ENG04 repository activation PostgreSQL boundary', () => {
-  let db: Awaited<ReturnType<typeof agent3Database>>
+  let db: Awaited<ReturnType<typeof migratedDatabase>>
   const owners: RunOwnership[] = []
-  beforeAll(async () => { db = await agent3Database() }, 60000)
+  beforeAll(async () => { db = await migratedDatabase() }, 60000)
   afterAll(async () => { for (const owner of owners) await owner.release(); await db?.close() })
   const unavailable = async (): Promise<never> => { throw new Error('No native/authority service is supplied by this read fixture') }
   const workflows = { getCurrentVersion: unavailable } as unknown as PostgresWorkflowRepository
@@ -39,8 +40,8 @@ describe.skipIf(!postgresEnabled)('ENG04 repository activation PostgreSQL bounda
     owners.push(owner); return owner
   }
   async function fixture() {
-    const f = repeatReadyAgent3Fixture(makeCurrentWorkflowFixture(randomUUID()))
-    await seedAgent3(db.pool, db.directory, f, { run: false })
+    const f = repeatReadyWorkflowFixture(makeCurrentWorkflowFixture(randomUUID()))
+    await seedWorkflowFixture(db.pool, db.directory, f, { run: false })
     const fixtureWriter = await createRepeatFixtureWriter(db.pool, f)
     const saved = await fixtureWriter.publish(3)
     const { run, version, scope } = await insertFixtureRepeatRun(db.pool, f, saved, fixtureWriter.writer.principal.id)

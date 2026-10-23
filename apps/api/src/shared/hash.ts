@@ -1,16 +1,9 @@
-import { createHash } from 'node:crypto'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
+import { sha256Hex } from '@foreman-code/contracts/server-kit'
 
-// One-shot SHA-256 digests. Strings are hashed as UTF-8, exactly like `createHash('sha256').update(string)`.
+// One-shot SHA-256 digests live in the contracts server kit so the API and CI share them.
 // Incremental hashing (several `update` calls or a stream) still uses `createHash` directly.
-
-export function sha256Hex(data: string | NodeJS.ArrayBufferView): string {
-  return createHash('sha256').update(data).digest('hex')
-}
-
-export function sha256Digest(data: string | NodeJS.ArrayBufferView): Buffer {
-  return createHash('sha256').update(data).digest()
-}
+export { sha256Hex, sha256Digest } from '@foreman-code/contracts/server-kit'
 
 /** SHA-256 of the shared canonical JSON form, so equal values hash equally wherever they are built. */
 export function sha256CanonicalJsonHex(value: unknown): string {

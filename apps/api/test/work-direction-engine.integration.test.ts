@@ -4,7 +4,7 @@ import { RespondToInteractionResponseSchema } from '@foreman-code/contracts'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { CanonicalRunGraphCurrentSchema, CANONICAL_RUN_GRAPH_MCP_TOOLS,
   CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveInputSchema,
-  CurrentWorkflowSaveResultSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+  CurrentWorkflowSaveResultSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { buildApp } from '../src/app.js'
 import { OperatorInteractionService } from '../src/modules/interactions/operator.js'

@@ -1,6 +1,6 @@
 import type { FileHandle } from 'node:fs/promises'
 import { SourceError } from './manifest.js'
-import { componentLogger } from '../diagnostics/logger.js'
+import { componentLogger } from '../diagnostics/index.js'
 import { spawnProcess } from '../../shared/process.js'
 
 // Node has no sync_file_range, syncfs or ioctl, so this helper stays in Python. Data waits run on inherited original

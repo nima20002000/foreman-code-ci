@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import type pg from 'pg'
-import type { RunRecordDetail } from '@foreman-code/contracts/wave25'
+import type { RunRecordDetail } from '@foreman-code/contracts/current'
 
 /** Read-only barrier for successful fixture Runs, ordinary or repeated.
  * completeRunLocked commits the terminal Run WITH its pending cleanup intent.

@@ -5,8 +5,8 @@ import { createCurrentBoardMock } from '../../shared/mocks/currentBoard'
 import { fixture } from '../graph/nextDraft/core.cases'
 import { savedPlacementFixture as placement } from '../node-placement/fixtures'
 import { ApiClient } from '../../shared/api/client'
-import { createNextDraftApi } from '../graph/nextDraft/transport'
-import { newNextDraft, nextDraftDirty } from '../graph/nextDraft/state'
+import { createNextDraftApi } from '../graph'
+import { newNextDraft, nextDraftDirty } from '../board-core'
 import { boardStartPins, createBoardPreflightClient, type BoardStartPreflight } from './startPreflight'
 
 function metadataHarness() {

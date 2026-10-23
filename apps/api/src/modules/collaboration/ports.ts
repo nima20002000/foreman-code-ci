@@ -5,10 +5,10 @@ import type {
   EngineChatReadback, ExecutionRef, LogicalWorkRef, NodeBrowserSettings,
 } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 
 /** The existing owner transaction and authenticated principal, not new authorities. */
-export type GraphTransaction = GraphTransactionSql
+export type GraphTransaction = SqlTransaction
 export type Principal = ManagementPrincipal
 
 export interface MemoryBoardPort {

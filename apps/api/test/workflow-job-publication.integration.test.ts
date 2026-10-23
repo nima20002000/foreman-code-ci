@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { describe, expect, it } from 'vitest'
 import {
   CANONICAL_RUN_GRAPH_MCP_TOOLS,
-  RepeatGraphSnapshotV3Schema,
-} from '@foreman-code/contracts/wave25'
+  RepeatGraphSnapshotCurrentSchema,
+} from '@foreman-code/contracts/current'
 import { openRunGraphPublication } from '../src/modules/run-graph/publication.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { workflowJobAttemptIdentityMigration } from '../src/infrastructure/workflowJobAttemptIdentityMigration.js'
@@ -42,7 +42,7 @@ async function snapshot(f: Fixture) {
   const response = await f.call(CANONICAL_RUN_GRAPH_MCP_TOOLS.snapshot, { protocolVersion: 1, scope: f.scope })
   expect(response.status).toBe(200)
   expect(response.result?.isError, JSON.stringify(graphRpcValue(response.result))).not.toBe(true)
-  return RepeatGraphSnapshotV3Schema.parse(graphRpcValue(response.result))
+  return RepeatGraphSnapshotCurrentSchema.parse(graphRpcValue(response.result))
 }
 
 describe.skipIf(!postgresEnabled)('workflow Job Run publication', () => {

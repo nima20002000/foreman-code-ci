@@ -1,9 +1,9 @@
 import { worktreeComputerConflict, type WorktreeComputerSelection } from '@foreman-code/contracts/worktree-settings'
-import { computerNameKey, readComputerNames } from '../computers/names.js'
+import { computerNameKey, readComputerNames } from '../computers/index.js'
 import { DomainError } from '../errors.js'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 
-export async function assertWorktreeComputers(sql: GraphSqlClient,
+export async function assertWorktreeComputers(sql: SqlQuery,
   selections: readonly WorktreeComputerSelection[]): Promise<void> {
   const conflict = worktreeComputerConflict(selections)
   if (!conflict) return

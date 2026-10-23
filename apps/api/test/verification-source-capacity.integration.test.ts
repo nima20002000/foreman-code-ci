@@ -7,18 +7,18 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresSourceReservations } from '../src/modules/sources/reservations.js'
 import { sourceStorageLimits } from '../src/modules/sources/storageCapacity.js'
 import { sourceStorageCapacityFixture } from './helpers/sourceStorageCapacityFixture.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
 import { verificationFixture } from './helpers/jobVerificationFixture.js'
 
-let database: Awaited<ReturnType<typeof agent3Database>> | undefined
+let database: Awaited<ReturnType<typeof migratedDatabase>> | undefined
 afterEach(async () => { await database?.close(); database = undefined })
 
 // Real reservation/history SQL. The runtime metadata fixture makes no physical qualification claim.
 it.each([['main', 4], ['device', 2]] as const)(
   'retains the qualified %s source allowance for %i large concurrent preparations without enlarging capture storage',
   async (host, count) => {
-    database = await agent3Database()
+    database = await migratedDatabase()
     const pool = database.pool
     const profile = verificationCapacityFixture(host)
     const writer = await new PostgresAccessService(pool).issue({ name: 'Source capacity fixture', audience: 'operator',

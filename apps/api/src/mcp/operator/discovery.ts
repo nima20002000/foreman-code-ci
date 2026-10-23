@@ -1,5 +1,7 @@
 import type { McpServer, ServerContext, Tool, ToolAnnotations } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import { OperatorToolSchemaInputSchema } from '@foreman-code/contracts/operator-mcp'
+import type { ManagementAction } from '@foreman-code/contracts/management'
 import { DomainError } from '../../modules/errors.js'
 import { toolFailure, toolResult } from '../shared/results.js'
 import { compactJsonSchema, firstSentence } from '../shared/schemaCompaction.js'
@@ -13,8 +15,8 @@ import type { OperatorCatalog } from './presentation.js'
  */
 export const OPERATOR_CORE_TOOLS: ReadonlySet<string> = new Set([
   'workspace_list', 'workspace_get', 'workspace_create',
-  'workflow_list', 'workflow_get', 'workflow_create',
-  'agent_list', 'agent_get', 'agent_defaults_get',
+  'workflow_list', 'workflow_get',
+  'agent_list', 'agent_get',
   'run_list', 'run_get', 'run_start', 'run_stop',
   'workflow_chat_read', 'workflow_chat_post', 'agent_chat_read', 'agent_chat_send',
   'interaction_list', 'interaction_respond', 'bug_report',
@@ -32,7 +34,7 @@ export function operatorListedTool(name: string): boolean {
 export const OPERATOR_DISCOVERY_INSTRUCTIONS = 'tools/list shows only core tools. For anything else, call tools_find '
   + 'with a short query, then tool_schema for the chosen tool, then tool_run_read (read-only tools) or tool_run '
   + '(changes) with { name, arguments }. tool_run behaves exactly like calling the tool directly. '
-  + 'tool_schema also returns a tool\'s detail: read it before a tool\'s first use. '
+  + 'tool_schema also returns a tool\'s detail and required actions: read it before a tool\'s first use. '
   + 'Tools that take a commandId are idempotent: after an uncertain reply, retry with the same commandId and input; '
   + 'different input under a used commandId conflicts. A stale expectedRevision returns REVISION_CONFLICT; '
   + 'where expectedRevision is optional, omitting it means last write wins. Every call rechecks your grants and scope; '
@@ -63,8 +65,21 @@ export function findTools(tools: readonly Tool[], query: string | undefined) {
     readOnly: tool.annotations?.readOnlyHint === true }))
 }
 
+/** The actions a tool needs and how they combine, for callers allowed to read capabilities. */
+export type OperatorToolRequirement = (name: string) => { actions?: ManagementAction[]; detail: string } | undefined
+
+/**
+ * What discovery needs to know about the caller. requirement is supplied only for callers holding
+ * capabilities:read, as operator_get_capabilities requires. recordDenied audits a lookup of a tool the caller cannot use.
+ */
+export interface OperatorDiscoveryCaller {
+  requirement?: OperatorToolRequirement | undefined
+  recordDenied(toolName: string): Promise<void>
+}
+
 /** Discovery reads the caller's own grant-filtered catalog; it never exposes another tool. */
-export function registerOperatorDiscoveryTools(server: McpServer, catalog: () => OperatorCatalog | undefined): void {
+export function registerOperatorDiscoveryTools(server: McpServer, catalog: () => OperatorCatalog | undefined,
+  caller?: OperatorDiscoveryCaller): void {
   const tools = async (extra: ServerContext) => (await catalog()?.(extra)) ?? []
   server.registerTool('tools_find', {
     description: 'Find available tools that are not in the core list, by name and one-line summary. '
@@ -76,19 +91,24 @@ export function registerOperatorDiscoveryTools(server: McpServer, catalog: () =>
     return toolResult({ tools: found, next: 'Call tool_schema for one name, then tool_run_read or tool_run.' })
   })
   server.registerTool('tool_schema', {
-    description: 'Read one available tool’s description, detail, input schema and annotations before calling it with tool_run.',
-    inputSchema: z.object({ name: z.string().min(1).max(200) }),
+    description: 'Read one available tool’s description, detail, input schema, annotations and permission requirements before calling it with tool_run. '
+      + 'Set includeOutputSchema:true for its output schema. This read never invokes the tool.',
+    inputSchema: OperatorToolSchemaInputSchema,
     annotations: read,
-  }, async (input: { name: string }, extra: ServerContext) => {
+  }, async (input: { name: string; includeOutputSchema?: boolean | undefined }, extra: ServerContext) => {
     const tool = (await tools(extra)).find(candidate => candidate.name === input.name)
     if (!tool || OPERATOR_DISCOVERY_TOOLS.has(tool.name)) {
-      return toolFailure(new DomainError('TOOL_NOT_FOUND', 'No available tool has this name. Use tools_find.', 404))
+      await caller?.recordDenied('tool_schema')
+      return toolFailure(new DomainError('ACCESS_DENIED', 'The requested tool is unavailable to this caller. Use tools_find.', 403))
     }
     const readOnly = tool.annotations?.readOnlyHint === true
     const detail = readToolDetail(tool)
+    const permissions = caller?.requirement?.(tool.name)
     return toolResult({ name: tool.name, description: tool.description ?? '', ...(detail ? { detail } : {}),
       inputSchema: compactJsonSchema(tool.inputSchema),
-      ...(tool.annotations ? { annotations: tool.annotations } : {}), callWith: readOnly ? TOOL_RUN_READ : TOOL_RUN })
+      ...(input.includeOutputSchema && tool.outputSchema ? { outputSchema: compactJsonSchema(tool.outputSchema) } : {}),
+      ...(tool.annotations ? { annotations: tool.annotations } : {}),
+      ...(permissions ? { permissionRequirements: permissions } : {}), callWith: readOnly ? TOOL_RUN_READ : TOOL_RUN })
   })
   // The /mcp endpoint dispatches valid tool_run calls as direct calls of the named tool (dispatchToolRun),
   // so these handlers run only when that dispatch is not composed.

@@ -3,12 +3,12 @@ import { access, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, RunWorktreeSchema } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, RunWorktreeSchema } from '@foreman-code/contracts/current'
 import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
 import { repeatRuntimeDirectory } from '../src/modules/runs/repeatRepositoryHost.js'
 import { systemGitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
 import { PostgresWorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
@@ -16,7 +16,7 @@ import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
 afterEach(() => vi.restoreAllMocks())
 
 async function fixture() {
-  const db = await agent3Database()
+  const db = await migratedDatabase()
   const env = gitFixtureEnvironment()
   const git = (...args: string[]) => execFileSync('git', args, { cwd: db.directory, env, encoding: 'utf8' })
   try {
@@ -88,7 +88,7 @@ describe.runIf(postgresEnabled)('Reviewer checkout ownership', () => {
     try {
       if (failed) await f.failReview()
       const execution = await f.incoming()
-      const tree = (await f.trees.prepare(AcceptedWorkflowRunV3Schema.parse(f.run),
+      const tree = (await f.trees.prepare(AcceptedWorkflowRunCurrentSchema.parse(f.run),
         AbortSignal.timeout(30_000), execution.id))!
       expect(tree.workingDirectory).not.toBe(f.reviewer.workingDirectory)
       expect(await f.coordination.findReviewJob(f.interaction.id, f.reviewer.agentId))

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ExecutionResult, HarnessExecution } from '@foreman-code/contracts'
 import { MAX_FILE_BYTES } from '@foreman-code/contracts/files'
 import type { VerifiedTransferReceipt } from '@foreman-code/contracts/byte-transfer'
-import { WorkflowVersionV3Schema, parseWorkHandoffResult } from '@foreman-code/contracts/wave25'
+import { WorkflowVersionCurrentSchema, parseWorkHandoffResult } from '@foreman-code/contracts/current'
 import { fileToolFixture } from '../../../../test/support/fileTools.js'
 import { DomainError } from '../../errors.js'
 import { TemporaryFileService } from '../../files/service.js'
@@ -40,7 +40,7 @@ async function fixture(keys = ['report']) {
   const execution: HarnessExecution = { id: accepted.attempt.executionId, runId: accepted.attempt.runId,
     workflowNodeId: 'producer', agentId: f.scope.chat.agentId, agentConfigurationVersionId: 'configuration', attempt: 1,
     nativeSessionId: f.context.nativeSessionId, state: 'running', input: {}, createdAt: f.clock().toISOString() }
-  const version = WorkflowVersionV3Schema.parse({ id: randomUUID(), workspaceId: accepted.attempt.workspaceId,
+  const version = WorkflowVersionCurrentSchema.parse({ id: randomUUID(), workspaceId: accepted.attempt.workspaceId,
     workflowId: accepted.attempt.workflowId, version: 1, executionSemanticsVersion: 3, entryNodeId: 'producer',
     definition: { id: accepted.attempt.workflowId, workspaceId: accepted.attempt.workspaceId, name: 'Original', version: 1,
       executionSemanticsVersion: 3, entryNodeId: 'producer', executionCondition: { kind: 'manual' }, approval: { handler: 'user' },

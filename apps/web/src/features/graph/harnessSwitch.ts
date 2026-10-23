@@ -2,7 +2,7 @@ import {
   DEFAULT_HARNESS_DEFAULTS, validateHarnessWorkflowCompatibility, withAdvancedDefaults,
   type AgentHarness, type ApprovalHandler, type HarnessConfiguration, type HarnessDefaults,
 } from '@foreman-code/contracts'
-import { prepareHarnessEditor, switchHarnessEditor, type HarnessEditor } from '../settings/harnessEditor'
+import { prepareHarnessEditor, switchHarnessEditor, type HarnessEditor } from '../settings'
 
 type Workflow = { approvalHandler?: ApprovalHandler | undefined; designatedOrchestrator: boolean }
 

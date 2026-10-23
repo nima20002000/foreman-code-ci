@@ -2,12 +2,10 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it } from 'vitest'
-import { GraphEditStageInputV3Schema, type GraphEditStageInputV3 } from '@foreman-code/contracts/wave25'
+import { GraphEditStageInputCurrentSchema, type GraphEditStageInputCurrent } from '@foreman-code/contracts/current'
 import { nativeNode } from '../../shared/mocks/nativeFixtureTypes'
-import { useGraphDraftStore } from '../graph/store'
-import { nextDraftDirty } from '../graph/nextDraft/state'
-import { readEditOutbox } from '../graph/nextDraft/editIntentStorage'
-import { graphEditIntentKey } from '../graph/nextDraft/useGraphEditIntent'
+import { useGraphDraftStore, readEditOutbox, graphEditIntentKey } from '../graph'
+import { nextDraftDirty } from '../board-core'
 import { savedPlacementFixture } from '../node-placement/fixtures'
 import { installBoardTestLifecycle, measureBoardWire, mountMeasuredBoard } from './eng05D.testSupport'
 import { meaningfulSaveFixture } from './meaningfulSave.testSupport'
@@ -26,7 +24,7 @@ async function recoveryFixture() {
   const f = await meaningfulSaveFixture()
   const project = worktreeFixture(f.workspaceId)
   const path = `/api/management/workspaces/${f.workspaceId}`
-  const attempts: GraphEditStageInputV3[] = []
+  const attempts: GraphEditStageInputCurrent[] = []
   const reply = f.reply
   f.reply = async request => {
     const url = new URL(request.url)
@@ -47,7 +45,7 @@ async function recoveryFixture() {
     if (request.method === 'POST' && url.pathname === `${f.path}/definition/edits`) {
       const payload: unknown = await request.clone().json()
       if (payload && typeof payload === 'object' && 'action' in payload && payload.action === 'stage_edits') {
-        const input = GraphEditStageInputV3Schema.parse(payload)
+        const input = GraphEditStageInputCurrentSchema.parse(payload)
         attempts.push(input)
         if (input.graph.defaultWorktree?.branchPrefix === sharedPrefix) {
           return Response.json({ error: { code: 'WORKTREE_COMPUTER_CONFLICT', message: conflictMessage } }, { status: 409 })

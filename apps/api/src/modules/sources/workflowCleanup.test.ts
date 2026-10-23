@@ -4,7 +4,7 @@ import type pg from 'pg'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
 import { RetainedSourceFootprintSchema } from '@foreman-code/contracts/source-operations'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { readUnboundWorkflowClosure, readWorkflowClosure } from '../interactions/workflowClosure.js'
 import { hasRetainedRemoteReviewerSource, readRetainedRemoteReviewer } from '../interactions/retainedRemoteReviewer.js'
 import { closeCompletedWorkflowSources, localWorkflowSourceClosed } from './workflowCleanup.js'
@@ -35,7 +35,7 @@ function fixture(bound: boolean, state: 'completed' | 'starting' = 'completed') 
       result: { outcome: 'canceled' }, finishedAt: '2026-10-04T00:01:00Z',
     } : {}),
   })
-  const sql = { query: vi.fn(async () => ({ rows: [{ record: execution }] })) } as unknown as GraphSqlClient
+  const sql = { query: vi.fn(async () => ({ rows: [{ record: execution }] })) } as unknown as SqlQuery
   return { execution, sql }
 }
 

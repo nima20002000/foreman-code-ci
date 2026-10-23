@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema, type ExecutionResult } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { DomainError } from '../src/modules/errors.js'
 import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'

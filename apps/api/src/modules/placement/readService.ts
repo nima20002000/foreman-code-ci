@@ -5,9 +5,9 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
   RunPlacementGetInputSchema, RunPlacementGetResultSchema, type RunPlacementGetInput, type RunPlacementGetResult,
 } from '@foreman-code/contracts/placement-readback'
-import { SavedRunVersionSnapshotSchema, workflowUsesAgentPlacements } from '@foreman-code/contracts/wave25'
-import { requireAuthorization } from '../access/policy.js'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
+import { SavedRunVersionSnapshotSchema, workflowUsesAgentPlacements } from '@foreman-code/contracts/current'
+import { requireAuthorization } from '../access/index.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
 import { DomainError } from '../errors.js'
 import { readPlacement } from './binding.js'
 import { readNativePlacement } from './persistence.js'

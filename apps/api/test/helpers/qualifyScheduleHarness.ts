@@ -19,12 +19,12 @@ import { withQualificationIdentity } from '../../src/modules/harnesses/qualifica
 import { runWithReadOnlyQualification } from '../../src/modules/harnesses/qualification/gate.js'
 import { scopedCompatibilityProbe } from '../../src/modules/harnesses/compatibility/scopedProbe.js'
 import { PostgresSettingsRepository } from '../../src/modules/settings/postgres.js'
-import type { Sch11Fixture } from './scheduleFixture.js'
+import type { ScheduleDispatchFixture } from './scheduleFixture.js'
 import { completeTestResourceCleanup, registerTestResourceCleanup } from '../../../../scripts/test-resources.mjs'
 import { writeNativeAcceptanceEvidence } from './nativeAcceptanceEvidence.js'
 
 /** Native acceptance only: the same qualifiers, owner guards and persistence as production. */
-export async function qualifyScheduleHarness(f: Sch11Fixture, principal: ManagementPrincipal,
+export async function qualifyScheduleHarness(f: ScheduleDispatchFixture, principal: ManagementPrincipal,
   registry: ProductionHarnessRegistry, settings: HostHarnessOverride[], authority: HostHarnessOverrideAuthority) {
   const configuration = settings[0]?.configuration
   if (!configuration || configuration.harness !== 'codex') {

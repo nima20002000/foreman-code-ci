@@ -1,9 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
-  CANONICAL_RUN_GRAPH_MCP_TOOLS, RepeatGraphPageV3Schema, RepeatGraphSnapshotV3Schema,
-  reduceRepeatGraphPageV3, type CurrentFixtureForm,
-} from '@foreman-code/contracts/wave25'
-import { currentDatabase as agent3Database, postgresEnabled } from './helpers/database.js'
+  CANONICAL_RUN_GRAPH_MCP_TOOLS, RepeatGraphPageCurrentSchema, RepeatGraphSnapshotCurrentSchema,
+  reduceRepeatGraphPageCurrent, type CurrentFixtureForm,
+} from '@foreman-code/contracts/current'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import {
   graphFixture, graphUrl, graphHeaders, graphRpc, graphRpcValue, changeRunState, privateCanary,
   type GraphFixture, type GraphTestDatabase, graphCatalogNames } from './graph-composition-fixture.js'
@@ -15,7 +15,7 @@ import {
 describe.skipIf(!postgresEnabled)('graph composition / authenticated HTTP and Operator MCP', () => {
   let db: GraphTestDatabase
   const fixtures: GraphFixture[] = []
-  beforeAll(async () => { db = await agent3Database() }, 60000)
+  beforeAll(async () => { db = await currentDatabase() }, 60000)
   afterEach(async () => { await Promise.all(fixtures.splice(0).map((t) => t.app.close())) })
   afterAll(async () => { await db?.close() })
   async function fixture(qualifiedReads = true, form: CurrentFixtureForm = 'repeat') {
@@ -33,17 +33,17 @@ describe.skipIf(!postgresEnabled)('graph composition / authenticated HTTP and Op
     expect(await graphCatalogNames(t.app, t.writer.token)).toContain(CANONICAL_RUN_GRAPH_MCP_TOOLS.current)
     const baseline = await http(t, 'snapshot')
     expect(baseline.statusCode, baseline.body).toBe(200)
-    const initial = RepeatGraphSnapshotV3Schema.parse(baseline.json())
+    const initial = RepeatGraphSnapshotCurrentSchema.parse(baseline.json())
     let previous = initial
     for (const state of ['running', 'waiting'] as const) {
       await changeRunState(db, t, state)
-      const snapshot = RepeatGraphSnapshotV3Schema.parse((await http(t, 'snapshot')).json())
+      const snapshot = RepeatGraphSnapshotCurrentSchema.parse((await http(t, 'snapshot')).json())
       expect(snapshot.state.run.executionState).toBe(state)
       expect((await http(t, 'current')).json().state.run.executionState).toBe(state)
       expect(graphRpcValue((await mcp(t, 'current')).result)).toMatchObject({
         state: { run: { executionState: state } }, asOfSequence: snapshot.asOfSequence,
       })
-      const delta = RepeatGraphPageV3Schema.parse((await http(t, 'events', previous.asOfSequence)).json())
+      const delta = RepeatGraphPageCurrentSchema.parse((await http(t, 'events', previous.asOfSequence)).json())
       expect(delta.baseSequence).toBe(previous.asOfSequence)
       expect(BigInt(delta.throughSequence)).toBe(BigInt(previous.asOfSequence) + 1n)
       expect(delta.headSequence).toBe(snapshot.asOfSequence)
@@ -56,7 +56,7 @@ describe.skipIf(!postgresEnabled)('graph composition / authenticated HTTP and Op
         })]),
       })
       expect(graphRpcValue((await mcp(t, 'events', previous.asOfSequence)).result)).toEqual(delta)
-      expect(reduceRepeatGraphPageV3(previous, delta)).toEqual(snapshot)
+      expect(reduceRepeatGraphPageCurrent(previous, delta)).toEqual(snapshot)
       previous = snapshot
     }
     for (const kind of ['current', 'snapshot', 'events'] as const) {
@@ -72,8 +72,8 @@ describe.skipIf(!postgresEnabled)('graph composition / authenticated HTTP and Op
       expect(read.body).not.toContain(db.directory)
       expect(read.body).not.toContain(t.writer.principal.id)
     }
-    const page = RepeatGraphPageV3Schema.parse((await http(t, 'events', initial.asOfSequence)).json())
-    expect(reduceRepeatGraphPageV3(initial, page)).toEqual((await http(t, 'snapshot')).json())
+    const page = RepeatGraphPageCurrentSchema.parse((await http(t, 'events', initial.asOfSequence)).json())
+    expect(reduceRepeatGraphPageCurrent(initial, page)).toEqual((await http(t, 'snapshot')).json())
     expect(page.hasMore).toBe(false)
   })
 

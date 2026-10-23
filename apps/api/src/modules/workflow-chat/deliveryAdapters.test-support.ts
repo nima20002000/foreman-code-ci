@@ -4,9 +4,9 @@ import { toNodeHandler } from '@modelcontextprotocol/node'
 import { z } from 'zod'
 import type { ManagementGrant } from '@foreman-code/contracts/management'
 import { buildApp } from '../../app.js'
-import { requireLocalRequest, registerOperatorHttpSecurity } from '../access/http.js'
-import { bearerToken } from '../access/postgres.js'
-import { PostgresCommandCoordinator } from '../commands/postgres.js'
+import { requireLocalRequest, registerOperatorHttpSecurity } from '../access/index.js'
+import { bearerToken } from '../access/index.js'
+import { PostgresCommandCoordinator } from '../commands/index.js'
 import { conversationDeliveryFixture } from '../conversations/conversationDelivery.test-support.js'
 import { DomainError } from '../errors.js'
 import { registerAgentChatRoutes } from '../../routes/agentChat.js'
@@ -17,9 +17,9 @@ import { workflowChatTools } from '../../mcp/operator/tools/workflowChat.js'
 import { registerToolDefinition, toolAvailable } from '../../mcp/operator/definition.js'
 import { invokeOperatorTool } from '../../mcp/operator/invoke.js'
 import type { OperatorServices } from '../../mcp/operator/types.js'
-import type { ExecutionChatPort } from '../collaboration/ports.js'
+import type { ExecutionChatPort } from '../collaboration/index.js'
 import { ChatDeliveryRouter, type ConversationDeliveryPort } from './delivery.js'
-import { LegacyChatDeliveryBridge } from './legacyBridge.js'
+import { ChatDeliveryBridge } from './deliveryBridge.js'
 import { retainedExecutionFixture } from './retainedExecution.test-support.js'
 
 const callSchema = z.object({ id: z.union([z.string(), z.number()]), method: z.literal('tools/call'),
@@ -43,7 +43,7 @@ export async function deliveryAdaptersFixture(options: { beforeOwnerAdoption?: b
   const execution = options.executionKind ? retainedExecutionFixture(fixture, options.executionKind, retainedOwnerState) : undefined
   if (execution) {
     router = execution.router
-    const bridge = new LegacyChatDeliveryBridge(router, endpoints.agent, endpoints.operator, {
+    const bridge = new ChatDeliveryBridge(router, endpoints.agent, endpoints.operator, {
       resolve: async () => execution.target,
     })
     endpoints.agent.installDeliveryBridge(bridge); endpoints.operator.installDeliveryBridge(bridge)
@@ -62,7 +62,7 @@ export async function deliveryAdaptersFixture(options: { beforeOwnerAdoption?: b
     const execution: ExecutionChatPort = { deliver: async () => unavailable(), read: async () => unavailable(),
       stop: async () => unavailable(), cancel: async () => unavailable() }
     router = new ChatDeliveryRouter(original.repository, fixture.feature.targetAuthority, execution, owner, owner)
-    const bridge = new LegacyChatDeliveryBridge(router, endpoints.agent, endpoints.operator, {
+    const bridge = new ChatDeliveryBridge(router, endpoints.agent, endpoints.operator, {
       resolve: async (principal, workspaceId, query) => {
         const read = await fixture.agent.read(principal, workspaceId, query)
         if (!read.deliveryTarget) throw new Error('No exact delivery target is readable.')

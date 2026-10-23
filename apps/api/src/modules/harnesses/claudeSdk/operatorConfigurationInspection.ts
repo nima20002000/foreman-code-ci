@@ -7,6 +7,7 @@ import { loadOfficialClaudeSdk } from './official.js'
 import { createClaudeSdkRunner } from './runner.js'
 import { decodeClaudeMcpControl } from './mcpInspection.js'
 import { DomainError } from '../../errors.js'
+import { hostEnvironment } from '../../../shared/process.js'
 
 /** Actual read-authorized zero-input SDK inspection, separate from a turn's
  * callback/MCP authority. It never offers an input or issues a credential. */
@@ -18,7 +19,7 @@ export async function inspectClaudeOperatorConfiguration(input: {
 }): Promise<OperatorChatSetup> {
   if (input.accepted.override.configuration.harness !== 'claude') throw new DomainError('HARNESS_CONFIGURATION_MISMATCH', 'Claude inspection requires the exact Claude profile.', 409)
   const compiled = compileClaudeConfiguration(input.accepted.override.configuration, input.workingDirectory,
-    input.accepted, process.env, input.apiKey)
+    input.accepted, hostEnvironment(), input.apiKey)
   const serverName = appMcpServerName(compiled.mcpServers)
   const server = compiled.mcpServers[serverName]
   const result = { harness: 'claude' as const, endpoint: input.endpoint, checkedAt: new Date().toISOString(), routing: 'fixed' as const }

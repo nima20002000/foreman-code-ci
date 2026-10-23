@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { DurableInteractionSchema } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
+import { SavedRunDetailsSchema } from '@foreman-code/contracts/current'
 import { admittedRun, closeActivityReplay, setup } from './helpers/activityReplayFixture.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'

@@ -14,7 +14,7 @@ import { AgentConfigurationVersionSchema, AgentSchema, HarnessExecutionSchema,
 import { ManagementActionSchema, RunEventsPageSchema } from '@foreman-code/contracts/management'
 import { CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema,
   RunActivitiesPageSchema, RunHandoffsReadSchema, SavedManagedWorkflowCommandResultSchema, ManualRunStartResultSchema,
-  makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+  makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { createDatabase } from '../src/infrastructure/database.js'
 import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
@@ -30,7 +30,7 @@ import { detectedClaudeProfilePath } from '../src/modules/harnesses/claudeSdk/pr
 import { PostgresSettingsRepository } from '../src/modules/settings/postgres.js'
 import { describeNativeFailure, type NativeFailureDetail } from './helpers/nativeFailureEvidence.js'
 import { LocalWorkflowArtifactAuthority } from '../src/modules/runs/remote/localWorkflowArtifactAuthority.js'
-import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { withTaskDatabase } from './helpers/taskDatabase.js'
 import { configureNativeAcceptanceMcp } from './helpers/nativeAcceptanceMcp.js'
 import { writeNativeAcceptanceEvidence } from './helpers/nativeAcceptanceEvidence.js'
 import { LocalNativeArtifactOutputSchema } from '../src/modules/runs/remote/nativeArtifactOutputs.js'
@@ -89,7 +89,7 @@ describe.skipIf(!enabled)('NIM-2691 real native workflow qualification', () => {
     const finalAccepted = 'finalAccepted' in scenario && scenario.finalAccepted
     const artifacts = 'artifacts' in scenario && scenario.artifacts
     const restartOnArtifacts = 'restartOnArtifacts' in scenario && scenario.restartOnArtifacts
-    await nim2691TaskDatabase(async (pool, directory, suppliedUrl) => {
+    await withTaskDatabase(async (pool, directory, suppliedUrl) => {
       const projectPath = join(directory, 'workspaces')
       const runtimeRoot = join(directory, 'runtime')
       await mkdir(projectPath, { mode: 0o700 })

@@ -1,5 +1,5 @@
-import { browserAgentTools, chatToolOverride } from '../collaboration/browserTools.js'
-import { AgentConfigurationVersionSchema, AgentSubjectSchema, canonicalJson, effectiveGraphqlTools,
+import { browserAgentTools, chatToolOverride } from '../collaboration/index.js'
+import { isReadOnlyHarnessConfiguration, AgentConfigurationVersionSchema, AgentSubjectSchema, canonicalJson, effectiveGraphqlTools,
   COLLABORATION_AGENT_TOOLS, type GraphqlAgentTool } from '@foreman-code/contracts'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
@@ -14,7 +14,7 @@ const groupTools = new Set<GraphqlAgentTool>([
 export function conversationChatTools(context: ConversationFeatureContext): GraphqlAgentTool[] {
   // A draft chat has no saved workflow yet, so no Group chat; its browser is the chat's own and works anyway.
   const configuration = context.configuration
-  const readOnly = configuration.harness.harness === 'opencode' || configuration.harness.sandbox === 'read-only'
+  const readOnly = isReadOnlyHarnessConfiguration(configuration.harness)
   const implemented = [...context.workflowVersionId === null ? [] : groupTools,
     ...(context.node.browser?.enabled ? browserAgentTools : [])]
   return effectiveGraphqlTools(context.subject.agent.productRole, configuration.graphqlTools,

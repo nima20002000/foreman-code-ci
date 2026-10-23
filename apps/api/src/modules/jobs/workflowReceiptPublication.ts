@@ -4,7 +4,8 @@ import { graphSourceDigest } from '../run-graph/publication.js'
 import { assertRunGraphPublication,currentRunGraphPublication,type RunGraphPublication } from '../run-graph/publication.js'
 import { readPublicNodeProjection,publicNodeProjectionFacts } from '../run-graph/publicProjection.js'
 import type { RepeatScope } from '../runs/repeatResolution.js'
-import { beforeGraphCommit,type GraphTransactionSql } from '../run-graph/connection.js'
+import { beforeGraphCommit } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { repeatId } from '../runs/repeatResolution.js'
 import { DomainError } from '../errors.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
@@ -35,7 +36,7 @@ export async function publishWorkflowJobReceiptLocked(publication:RunGraphPublic
 
 /** Readback shares the Run host's publication, which verifies canonical/domain
  * consistency before any Job mutation. */
-export async function publishWorkflowJobStateReadbackLocked(sql:GraphTransactionSql,scope:RepeatScope,execution:JobExecutionRecord):Promise<void> {
+export async function publishWorkflowJobStateReadbackLocked(sql:SqlTransaction,scope:RepeatScope,execution:JobExecutionRecord):Promise<void> {
   if(execution.workflow?.runId!==scope.runId||execution.workflow.workflowId!==scope.workflowId||execution.workspaceId!==scope.workspaceId)throw new DomainError('JOB_WORKFLOW_PIN_CONFLICT','The actual Job observation belongs to another Run.',409)
   const publication=currentRunGraphPublication(sql,scope)
   const facts=publicNodeProjectionFacts(await readPublicNodeProjection(sql,scope,[execution.workflow.nodeId],{jobs:[execution]}))

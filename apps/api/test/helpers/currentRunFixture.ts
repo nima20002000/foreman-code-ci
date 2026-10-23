@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
-import { AcceptedRepeatStartV1Schema, AcceptedWorkflowRunV3Schema,
-  type CurrentWorkflowSavedSchema, type RepeatGraphScopeV3, type makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { AcceptedRepeatStartV1Schema, AcceptedWorkflowRunCurrentSchema,
+  type CurrentWorkflowSavedSchema, type RepeatGraphScopeCurrent, type makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import type { z } from 'zod'
 import { withExclusiveGraphConnection } from '../../src/modules/run-graph/connection.js'
 import { repeatStartPublication } from '../../src/modules/run-graph/repeatStartPublication.js'
@@ -14,7 +14,7 @@ export async function insertCurrentRunFixture(pool: pg.Pool, fixture: ReturnType
   saved: z.infer<typeof CurrentWorkflowSavedSchema>, authorizationPrincipalId: string,
   options: { insert?: boolean; input?: unknown } = {}) {
   const version = saved.version
-  const run = AcceptedWorkflowRunV3Schema.parse({ ...fixture.run, workflowId: version.workflowId,
+  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...fixture.run, workflowId: version.workflowId,
     workflowVersionId: version.id, authorizationPrincipalId, approval: version.approval,
     agentConfigurationVersionIds: version.agentConfigurationVersionIds,
     ...(options.input === undefined ? {} : { input: options.input }) })
@@ -28,7 +28,7 @@ export async function insertCurrentRunFixture(pool: pg.Pool, fixture: ReturnType
       definition: version.definition }, workspace: { id: version.workspaceId, archived: false, location: run.executionLocation }, draft: null } })
   if (options.insert !== false) await withExclusiveGraphConnection(pool,
     (connection) => connection.transaction((sql) => insertRepeatRun(sql, accepted, repeatStartPublication)))
-  const scope: RepeatGraphScopeV3 = { workspaceId: run.workspaceId, workflowId: run.workflowId,
+  const scope: RepeatGraphScopeCurrent = { workspaceId: run.workspaceId, workflowId: run.workflowId,
     workflowVersionId: version.id, runId: run.id, executionSemanticsVersion: 3 }
   return { version, run, accepted, scope }
 }

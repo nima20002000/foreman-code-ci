@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { chatStatus } from './chatStatus'
-import { operatorTurnStatus } from '../operator-chat/operatorChatStatus'
+import { operatorTurnStatus } from '../operator-chat'
 import { operatorState } from '../operator-chat/pr17-test-fixtures'
 
 it.each([

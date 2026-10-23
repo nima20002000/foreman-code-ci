@@ -19,6 +19,7 @@ import type { HostHarnessProfileQualifier } from './instanceSettings/profileChec
 import { runCommand } from './process.js'
 import type { NativeProcessRegistry } from './recovery/processRegistry.js'
 import { runOwnedClaudeOperation } from './claudeSdk/ownedOperation.js'
+import { hostEnvironment } from '../../shared/process.js'
 
 export function createInstalledClaudeQualifier(input: {
   stateDirectory: string
@@ -38,7 +39,7 @@ export function createInstalledClaudeQualifier(input: {
       if (!isDeepStrictEqual(connection, input.current())) throw new DomainError(
         'HARNESS_INVENTORY_STALE', 'The Claude profile check connection changed.', 409)
       const selected = await inspectInstalledClaude({ binding: connection, configuration: input.configuration,
-        environment: process.env, cwd: input.stateDirectory, signal })
+        environment: hostEnvironment(), cwd: input.stateDirectory, signal })
       const target = selected.currentTarget
       if (!target || !isDeepStrictEqual(target.target, value.target)
         || original && (!isDeepStrictEqual(target.target, original.target)

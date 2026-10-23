@@ -1,4 +1,4 @@
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { ApprovedSource, ApprovedSourcePin, SourceRootRecord, SourceRootSelection, SourceMaterializationRecord, VerifiedSourceWorkingTree } from '@foreman-code/contracts/source-admission'
 import type { RootBinding } from '@foreman-code/contracts/source-materialization'
@@ -14,10 +14,10 @@ export interface AuthorizedSourceRoot {
  * Host I/O runs outside SQL; fence only rechecks persisted live authority.
  */
 export interface RegisteredSourceRootPort {
-  authorize(sql: GraphSqlClient, principal: ManagementPrincipal,
+  authorize(sql: SqlQuery, principal: ManagementPrincipal,
     input: { workspaceId: string; selection: SourceRootSelection; accessMode: RootBinding['accessMode'] }): Promise<AuthorizedSourceRoot>
   attest(root: AuthorizedSourceRoot): Promise<{ canonicalPath: string; filesystem: RootBinding['filesystem']; attestationId: string; attestationDigest: string }>
-  fence(sql: GraphSqlClient, root: AuthorizedSourceRoot): Promise<void>
+  fence(sql: SqlQuery, root: AuthorizedSourceRoot): Promise<void>
 }
 export interface SourceAdmissionPort {
   bindRoot(principal: ManagementPrincipal, source: 'http' | 'mcp', input: {
@@ -27,9 +27,9 @@ export interface SourceAdmissionPort {
   prepareRunSources(principal: ManagementPrincipal, input: {
     workspaceId: string; commandId: string; source: 'http' | 'mcp'; roots: readonly SourceRootRecord[]
   }): Promise<readonly SourceRootRecord[]>
-  resolveApprovedSource(sql: GraphSqlClient, principal: ManagementPrincipal,
+  resolveApprovedSource(sql: SqlQuery, principal: ManagementPrincipal,
     workspaceId: string, pin: ApprovedSourcePin): Promise<ApprovedSource>
-  resolveRootBinding(sql: GraphSqlClient, principal: ManagementPrincipal,
+  resolveRootBinding(sql: SqlQuery, principal: ManagementPrincipal,
     input: { workspaceId: string; rootId: string; bindingRevision: number; source: ApprovedSourcePin }): Promise<SourceRootRecord>
   /** The caller allocates the real execution/attempt first; no synthetic Run or Agent. */
   prepareExecution(input: { principal: ManagementPrincipal; workspaceId: string; rootId: string; bindingRevision: number;

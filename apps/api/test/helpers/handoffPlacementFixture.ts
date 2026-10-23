@@ -6,9 +6,9 @@ import { vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { HostHarnessProfileEvidenceSchema } from '@foreman-code/contracts/harness-registry'
 import {
-  CurrentWorkflowSaveResultSchema, RunStartV3ResultSchema, SavedRunDetailsSchema,
+  CurrentWorkflowSaveResultSchema, RunStartCurrentResultSchema, SavedRunDetailsSchema,
   makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { RunManagementService } from '../../src/modules/runs/management.js'
 import { WorkflowManagementService } from '../../src/modules/workflows/management.js'
 import { createCurrentNativeProductionFactory } from '../../src/modules/runs/workflowProduction.js'
@@ -17,7 +17,7 @@ import { placedContinuationValidator } from '../../src/modules/placement/continu
 import { readDispatchIntent, readExecutionPlacement, readNativePlacement } from '../../src/modules/placement/persistence.js'
 import { readLiveManagementPrincipal } from '../../src/modules/access/liveManagementPrincipal.js'
 import { deliveryTransactionClient } from '../../src/modules/interactions/connection.js'
-import { credentialAuthority } from '../../src/modules/interactions/wave25/credentialAuthority.js'
+import { credentialAuthority } from '../../src/modules/interactions/current/credentialAuthority.js'
 import * as continuation from '../../src/modules/runs/continuation.js'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { mixedComputerPlacement } from './mixedComputerPlacement.js'
@@ -149,7 +149,7 @@ export async function handoffPlacementFixture(options: { checkOutcome?: 'qualifi
       async start() {
         const result = await base.client.callTool({ name: 'run_start', arguments: startInput })
         if (result.isError) throw new Error(JSON.stringify(result))
-        const accepted = RunStartV3ResultSchema.parse(decodeMcpToolResult(result))
+        const accepted = RunStartCurrentResultSchema.parse(decodeMcpToolResult(result))
         runId = accepted.run.id
         return accepted
       },

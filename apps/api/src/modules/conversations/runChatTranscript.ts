@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import type { HarnessExecution } from '@foreman-code/contracts'
 import { AgentChatSourceTranscriptSchema, type AgentChatSourceTranscript } from '@foreman-code/contracts/agent-chat'
-import { nativePersistenceRedactor } from '../interactions/nativePersistence.js'
+import { nativePersistenceRedactor } from '../interactions/index.js'
 
 interface TextRow {
   item_key: string

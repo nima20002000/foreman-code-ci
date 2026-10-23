@@ -8,18 +8,15 @@ import { http, HttpResponse } from 'msw'
 import { WorkflowRunSummarySchema } from '@foreman-code/contracts'
 import { RunBoardSnapshotGetResultSchema } from '@foreman-code/contracts/run-snapshots'
 import { server } from '../../mocks/server'
-import { AgentChatPanel } from '../graph/AgentPanels'
+import { AgentChatPanel } from '../graph'
 import { installFlowLayout } from '../run-board/testFlowLayout'
-import { RunsSelectorSearchSchema } from '../runs-selector/search'
-import { useRunsSelectorUi } from '../runs-selector/uiStore'
-import { useConversationDraftStore } from '../conversations/conversationDraftStore'
+import { RunsSelectorSearchSchema, useRunsSelectorUi } from '../runs-selector'
+import { useConversationDraftStore, agentChatContextKey } from '../conversations'
 import { installChatSource } from '../conversations/agentChat/testSupport'
-import { agentChatContextKey } from '../conversations/agentChat/model'
 import { activitiesRoute, activityPage, clients, context,
   installSelectedHandlers, scope, snapshot, snapshotRoute } from '../conversations/agentChat/sch10.testSupport'
-import { boardDraftContextKey } from './keys'
+import { boardDraftContextKey, useWorkflowBoard } from '../board-core'
 import { WorkflowBoard } from './WorkflowBoard'
-import { useWorkflowBoard } from './context'
 
 function CurrentNavigation() { return useWorkflowBoard()?.navigationControls }
 

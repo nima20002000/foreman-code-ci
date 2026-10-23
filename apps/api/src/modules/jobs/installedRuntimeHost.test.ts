@@ -13,7 +13,7 @@ import type { JobSql } from './repository.js'
 import { jobSpec } from '../../../test/helpers/jobFixture.js'
 import { captureInstalledRuntimeConfiguration, createInstalledJobRuntimeHost, inspectInstalledJobRuntime, inspectInstalledJobRuntimeCandidate, InstalledJobRuntimeCaptureInputSchema, InstalledJobRuntimeConfigurationSchema, readInstalledRuntimeConfiguration } from './installedRuntimeHost.js'
 import * as qualification from './qualification.js'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 
 const id = '11111111-1111-4111-8111-111111111111'
 const digest = '1'.repeat(64)

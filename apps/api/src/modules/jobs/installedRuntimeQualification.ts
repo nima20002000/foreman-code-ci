@@ -12,7 +12,7 @@ import { nativeAgentEnvironment } from '../harnesses/secrets.js'
 import { bootIdentity } from '../harnesses/recovery/linuxIdentity.js'
 import { NativeProcessRegistry, spawnNativeProcess, nativeProcessExit, type NativeProcessRecovery } from '../harnesses/recovery/processRegistry.js'
 import { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
-import { fallbackOnError } from '../diagnostics/ignoredError.js'
+import { fallbackOnError } from '../diagnostics/index.js'
 import { qualificationCleanupCommandAllowed, qualificationCreationStopped,
   QUALIFICATION_CLEANUP_COMMAND_LIMIT } from './qualificationJournal.js'
 import { inspectInstalledJobRuntimeCandidate, type InstalledRuntimeHostDependencies, type InstalledRuntimeConfigurationLocation } from './installedRuntimeHost.js'

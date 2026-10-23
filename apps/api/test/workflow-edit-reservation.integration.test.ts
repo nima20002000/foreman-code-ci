@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, CurrentWorkflowSaveResultSchema,
-  } from '@foreman-code/contracts/wave25'
+  } from '@foreman-code/contracts/current'
 import { writerFixture } from './writer-fixtures.js'
 import { graphHeaders, graphRpcValue } from './graph-composition-fixture.js'
 import { insertCurrentRunFixture } from './helpers/currentRunFixture.js'

@@ -1,8 +1,8 @@
 import type { JobLogChunk } from '@foreman-code/contracts/jobs'
-import { componentLogger } from '../../diagnostics/logger.js'
+import { componentLogger } from '../../diagnostics/index.js'
 import { isDeepStrictEqual } from 'node:util'
 import { JobExecutionRecordSchema, type JobExecutionRecord } from '@foreman-code/contracts/job-verification'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { RemoteJobExecutionRpcRequestRecordSchema, type RemoteJobDispatchIntent, type RemoteJobConnectionIdentity,
   type RemoteJobOwnerControl, type RemoteJobOperationReceiptRecord, type RemoteJobOperationStatusRecord,
   type RemoteJobTerminalEvidence } from '@foreman-code/contracts/remote-job-execution'
@@ -12,7 +12,7 @@ import { executeJob, executeVerificationJob, jobSupervisorIdentity, type JobExec
 import type { PodmanJobSupervisor } from '../../jobs/executorPodman.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
 import { jobContainerNonEntryObserved } from '../../jobs/executorJournal.js'
-import { logIgnoredError } from '../../diagnostics/ignoredError.js'
+import { logIgnoredError } from '../../diagnostics/index.js'
 import { isTransientExecutionError } from '../executionRetryPolicy.js'
 import { sha256Hex } from '../../../shared/hash.js'
 

@@ -1,6 +1,6 @@
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
-import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/wave25'
+import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { postgresEnabled } from './database.js'

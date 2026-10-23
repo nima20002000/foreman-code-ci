@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../../mocks/server'
 import { ApiError } from '../../../shared/api/client'
-import { RunExecutionDetailSchema, type RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
+import { RunExecutionDetailSchema, type RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import {
   assertExecutionVersion, digestCurrentValue, readRunExecution, readRunExecutionBindings,
   readRunExecutions, readRunInspectionVersion,
@@ -15,7 +15,7 @@ import { inspectionBoardFixture } from './inspectionFixtures'
 
 let fixture: Awaited<ReturnType<typeof inspectionBoardFixture>>
 let sequence = 0
-const prefix = (scope: RepeatGraphScopeV3) => `/api/management/workspaces/${scope.workspaceId}/runs/${scope.runId}`
+const prefix = (scope: RepeatGraphScopeCurrent) => `/api/management/workspaces/${scope.workspaceId}/runs/${scope.runId}`
 beforeEach(async () => {
   vi.stubGlobal('crypto', webcrypto)
   fixture = await inspectionBoardFixture(`client-inspection-${++sequence}`)
@@ -198,7 +198,7 @@ describe('authenticated current-semantics Run inspection', () => {
 
   it('rejects retired execution tags before any request', async () => {
     for (const executionSemanticsVersion of [1, 2]) {
-      const scope = { ...fixture.runs.before.scope, executionSemanticsVersion } as RepeatGraphScopeV3
+      const scope = { ...fixture.runs.before.scope, executionSemanticsVersion } as RepeatGraphScopeCurrent
       await expect(readRunInspectionVersion(scope)).rejects.toThrow()
       await expect(readRunExecutions(scope)).rejects.toThrow()
     }

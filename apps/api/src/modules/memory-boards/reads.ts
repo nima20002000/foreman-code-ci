@@ -3,7 +3,7 @@ import { readBindingsPage, readClaimsPage, readWorkSummary } from './workReads.j
 import { z } from 'zod'
 import { MemoryBoardScopeSchema, MemoryCardSchema, MemoryNoteSchema,
   type MemoryCard, type MemoryNote } from '@foreman-code/contracts'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { BoardChange, BoardRow, ChangesPage, Page, ReadRequest, ReadResult } from './types.js'
 import { inputHash, invalid, normalizeTitle } from './identity.js'
 import { cardById, commandReceipt } from './repository.js'
@@ -26,7 +26,7 @@ export const MemoryChangesInputSchema = z.object({ boardId: z.string().min(1),
   afterSequence: z.number().int().nonnegative().optional(), cursor: z.string().max(2048).optional(),
   limit: z.number().int().min(1).max(100).optional(),
 }).strict()
-export async function readCards(tx: GraphTransactionSql, row: BoardRow, request: ReadRequest): Promise<Page<MemoryCard>> {
+export async function readCards(tx: SqlTransaction, row: BoardRow, request: ReadRequest): Promise<Page<MemoryCard>> {
   const limit = request.limit ?? 20, query = normalizeTitle(request.query ?? '')
   const key = inputHash({ boardId: row.board.id, status: request.status, completionKind: request.completionKind ?? null,
     query, order: query ? 'title' : 'recent' })
@@ -48,7 +48,7 @@ export async function readCards(tx: GraphTransactionSql, row: BoardRow, request:
   return page(result.rows.map(result => MemoryCardSchema.parse(result.record)),limit,row.board.revision,key,
     card => [query ? normalizeTitle(card.title) : card.updatedAt,card.id])
 }
-export async function readNotes(tx: GraphTransactionSql, row: BoardRow, request: ReadRequest): Promise<Page<MemoryNote>> {
+export async function readNotes(tx: SqlTransaction, row: BoardRow, request: ReadRequest): Promise<Page<MemoryNote>> {
   const limit = request.limit ?? 20, archived = request.archived ?? false
   const key = inputHash({ boardId: row.board.id, archived, kind: 'notes' })
   const cursor = decodeCursor(request.cursor,key,row.board.revision)
@@ -60,7 +60,7 @@ export async function readNotes(tx: GraphTransactionSql, row: BoardRow, request:
     order by rank,id limit $${args.length}`,args)
   return page(result.rows.map(result => MemoryNoteSchema.parse(result.record)),limit,row.board.revision,key,note => [note.rank,note.id])
 }
-async function history(tx: GraphTransactionSql, row: BoardRow, request: ReadRequest): Promise<Page<BoardChange>> {
+async function history(tx: SqlTransaction, row: BoardRow, request: ReadRequest): Promise<Page<BoardChange>> {
   const key = inputHash({ boardId: row.board.id, cardId: request.cardId, kind: 'history' }), limit = request.limit ?? 20
   const cursor = decodeCursor(request.cursor,key,row.board.revision), args: unknown[] = [row.board.id,request.cardId]
   let after = ''
@@ -70,7 +70,7 @@ async function history(tx: GraphTransactionSql, row: BoardRow, request: ReadRequ
     order by sequence desc limit $${args.length}`,args)
   return page(result.rows.map(result => result.record),limit,row.board.revision,key,change => [change.sequence,change.id])
 }
-export async function readProjection(tx: GraphTransactionSql, row: BoardRow, request: ReadRequest, principalId: string): Promise<ReadResult> {
+export async function readProjection(tx: SqlTransaction, row: BoardRow, request: ReadRequest, principalId: string): Promise<ReadResult> {
   if (request.view === 'cards') return readCards(tx,row,request)
   if (request.view === 'notes') return readNotes(tx,row,request)
   if (request.view === 'bindings' || request.view === 'claims') {
@@ -94,7 +94,7 @@ export async function readProjection(tx: GraphTransactionSql, row: BoardRow, req
   for (const status of ['todo','doing','waiting_for_user','blocked'] as const) openColumns.push({ status, ...await readCards(tx,row,{ status,limit:20 }) })
   return { board: row.board, openColumns, notes: await readNotes(tx,row,{ limit:20 }), counts: row.counts, sequence: row.sequence }
 }
-export async function readChanges(tx: GraphTransactionSql, row: BoardRow, request: z.infer<typeof MemoryChangesInputSchema>): Promise<ChangesPage> {
+export async function readChanges(tx: SqlTransaction, row: BoardRow, request: z.infer<typeof MemoryChangesInputSchema>): Promise<ChangesPage> {
   const limit = request.limit ?? 50
   let after = request.afterSequence ?? row.sequence
   if (request.cursor) {

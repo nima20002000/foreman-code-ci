@@ -2,16 +2,16 @@ import { WorkspaceLocationIdentitySchema } from '@foreman-code/contracts/workspa
 import { ExecutionLocationSchema, type RunExecutionLocation } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
-  RepeatStartSnapshotV1Schema, RunStartV3InputSchema, RunExecutionLocationV3Schema,
-  GraphDraftV3Schema, WorkflowDefinitionV3Schema, sameWorkflowValue,
+  RepeatStartSnapshotV1Schema, RunStartCurrentInputSchema, RunExecutionLocationCurrentSchema,
+  GraphDraftCurrentSchema, WorkflowDefinitionCurrentSchema, sameWorkflowValue,
   type RepeatStartSnapshotV1,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import type { TransactionSql } from '../../infrastructure/transaction.js'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { DomainError } from '../errors.js'
 import { waitForRunStartLock } from '../runs/startLocks.js'
-import { assertNativeWorkflowConfiguration } from '../harnesses/nativeWorkflowConfiguration.js'
+import { assertNativeWorkflowConfiguration } from '../harnesses/index.js'
 import {
   readImmutableWorkflowVersion, readImmutableAgentConfiguration, IMMUTABLE_WORKFLOW_VERSION_COLUMNS,
   type ImmutableWorkflowVersionRow, type ImmutableAgentConfigurationRow,
@@ -39,7 +39,7 @@ export async function readLockedRepeatStartSnapshot(
   client: TransactionSql, principal: ManagementPrincipal, raw: unknown,
   prepared: PreparedRepeatStartLocation,
 ): Promise<RepeatStartSnapshotV1> {
-  const input = RunStartV3InputSchema.parse(raw)
+  const input = RunStartCurrentInputSchema.parse(raw)
   const caller = await readLiveManagementPrincipal(client, principal.id)
   requireAuthorization(caller, 'runs:start', { workspaceId: input.workspaceId, workflowId: input.workflowId })
   requireAuthorization(caller, 'workspace_locations:read', { workspaceId: input.workspaceId })
@@ -47,7 +47,7 @@ export async function readLockedRepeatStartSnapshot(
   const workspaceRows = await client.query<LocationRow>(`select id,execution_location,execution_location_identity,
     location_revision::text,archived_at from workspaces where id=$1 for update`, [input.workspaceId])
   const workspace = workspaceRows.rows[0]
-  const location = RunExecutionLocationV3Schema.parse(prepared.location)
+  const location = RunExecutionLocationCurrentSchema.parse(prepared.location)
   if (!workspace || workspace.id !== input.workspaceId || workspace.archived_at !== null
     || !sameWorkflowValue(workspace, prepared.row)) {
     throw new DomainError('LOCATION_REVISION_CONFLICT', 'The prepared workspace location changed before Start.', 409)
@@ -103,14 +103,14 @@ export async function readLockedRepeatStartSnapshot(
     if (!row || row.id !== input.draftId || row.workspace_id !== input.workspaceId || row.workflow_id !== input.workflowId) {
       throw new DomainError('DISPLAYED_GRAPH_NOT_PUBLISHED', 'The displayed draft is no longer available at its exact scope.', 409)
     }
-    draft = GraphDraftV3Schema.parse(row.record)
+    draft = GraphDraftCurrentSchema.parse(row.record)
     if (row.revision !== String(draft.revision) || row.base_workflow_version_id !== draft.baseWorkflowVersionId) {
       throw new DomainError('DISPLAYED_GRAPH_NOT_PUBLISHED', 'The displayed draft does not match its stored revision/version.', 409)
     }
   }
   const snapshot = RepeatStartSnapshotV1Schema.parse({ request: input, authorizationPrincipalId: caller.id, executable: { version, configurations },
     workflow: { id: workflow.id, workspaceId: workflow.workspace_id, revision: Number(workflow.revision),
-      currentVersionId: workflow.current_version_id, archived: false, definition: WorkflowDefinitionV3Schema.parse(workflow.record) },
+      currentVersionId: workflow.current_version_id, archived: false, definition: WorkflowDefinitionCurrentSchema.parse(workflow.record) },
     workspace: { id: workspace.id, archived: false, location }, draft })
   for (const configuration of configurations) assertNativeWorkflowConfiguration(configuration.harness, version.approval,
     version.approval.handler === 'orchestrator' && configuration.agentId === version.approval.designatedOrchestratorAgentId)

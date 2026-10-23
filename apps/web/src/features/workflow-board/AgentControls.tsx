@@ -1,21 +1,17 @@
 import { storeEditSnapshot } from '../graph/nextDraft/editIntentStorage'
 import { useId, useRef, type ReactNode } from 'react'
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
-import { usePlacementChoices } from '../node-placement/usePlacementChoices'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { usePlacementChoices, type NodePlacementOption } from '../node-placement'
 import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
 import type { AgentWorktreeSettings } from '@foreman-code/contracts/worktree-settings'
-import type { NodePlacementOption } from '../node-placement/NodePlacementField'
 import type { Agent, GraphqlToolOverride } from '@foreman-code/contracts'
 import { Alert } from '../../shared/ui/nocturne'
 import { useGraphDraftStore } from '../graph/store'
 import { AgentSettingsForm } from '../graph/AgentSettingsForm'
-import { changeDraftAgent, editorAgents } from '../graph/nextDraft/agentEdits'
-import type { NextDraftEdit } from '../graph/nextDraft/state'
+import { changeDraftAgent, editorAgents, type NextDraftEdit, roleEvidence } from '../board-core'
 import { useWorktreeChoices } from '../../shared/api/worktreeChoices'
 import { worktreeLabel } from './worktreePresentation'
-import { roleEvidence } from '../graph/nextDraft/model'
-import { hierarchyNodes, reparentHierarchyWorker } from '../workflow-hierarchy/authoring'
-import { WorkerParentField } from '../workflow-hierarchy/WorkerParentField'
+import { hierarchyNodes, reparentHierarchyWorker, WorkerParentField } from '../workflow-hierarchy'
 
 function installAgent(draftKey: string, instanceId: string, agent: Agent, nodeId?: string, prompt?: string,
   graphqlTools?: GraphqlToolOverride, placement?: SavedNodePlacement, worktree?: AgentWorktreeSettings) {
@@ -94,45 +90,43 @@ function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placem
   const parentDirty = selectedParent !== undefined && selectedParent !== edit.graph.hierarchy?.parents.find(member => member.workflowNodeId === nodeId)?.parentNodeId
   // Re-key on the staged agent so a discard or reload never leaves stale values in the open form.
   return <>
-    <AgentSettingsForm key={`${edit.instanceId}:${node.id}:${JSON.stringify(agent)}:${node.initialPrompt ?? ''}:${JSON.stringify(node.graphqlTools ?? null)}:${JSON.stringify(node.placement ?? null)}:${JSON.stringify(node.worktree ?? null)}`} embedded agent={agent} initialPrompt={node.initialPrompt}
-    nodeGraphqlTools={node.graphqlTools} nodePlacement={node.placement} nodeWorktree={node.worktree}
-    workflowWorktree={edit.graph.defaultWorktree}
-    workflowWorktreeLabel={edit.graph.defaultWorktree ? worktreeLabel(edit.graph.defaultWorktree, roots) : undefined}
-    worktreeDisabled={edit.busy || !!edit.pending}
-    placementHidden={!choices.current} placementOptions={options} unavailableComputers={choices.unavailableComputers}
-    placementNote={!choiceScope ? 'Save the workflow to choose another computer.' : choices.isError ? 'Computers can’t be checked right now. Try again shortly.' : undefined}
-    placementStage={sameWorkflowValue(node.placement, savedNode?.placement) ? 'saved' : 'draft'}
-    placementOptionsState={placementOptions ? 'ready' : !choiceScope || choices.isError || choices.isPaused ? 'unavailable' : choices.isPending ? 'loading' : 'ready'}
-    retainedForm={edit.agentForms?.[node.id]}
-    additionalDirty={parentDirty}
-    additionalFields={worker ? <WorkerParentField draftKey={draftKey} edit={edit} nodeId={node.id} /> : undefined}
-    mainFields={mainFields} moreFields={moreFields}
-    onFormChange={(form) => useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => ({ ...current,
-      agentForms: { ...current.agentForms, [node.id]: form } }))}
-    onDiscardForm={() => useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => {
-      const baseline = browserBaseline.current
-      const graph = !baseline ? current.graph : { ...current.graph, nodes: current.graph.nodes.map(item => {
-        if (item.id !== node.id || item.kind === 'job') return item
-        const restored = { ...item }
-        if (baseline.browser) restored.browser = baseline.browser; else delete restored.browser
-        if (baseline.graphqlTools) restored.graphqlTools = baseline.graphqlTools; else delete restored.graphqlTools
-        return restored
-      }) }
-      const agentForms = { ...current.agentForms }; delete agentForms[node.id]
-      const workflowForms = { ...current.workflowForms }, workerParents = { ...workflowForms.workerParents }
-      delete workerParents[node.id]
-      if (Object.keys(workerParents).length) workflowForms.workerParents = workerParents
-      else delete workflowForms.workerParents
-      return { ...current, graph, agentForms, workflowForms }
-    })}
-    canResume={() => {
-      const current = useGraphDraftStore.getState().nextDrafts[draftKey]
-      if (!current) return false
-      try { storeEditSnapshot(draftKey, current); return true } catch { return false }
-    }}
-    workspaceId={edit.graph.workspaceId} workflowApprovalHandler={edit.graph.approval?.handler}
-    designatedOrchestrator={edit.graph.approval?.handler === 'orchestrator' && edit.graph.approval.designatedOrchestratorAgentId === agent.id}
-    executionPolicy={edit.graph.executionPolicy} onClose={close} onRemove={remove} {...(saveWorkflow ? { onSaveWorkflow: saveWorkflow } : {})}
+    <AgentSettingsForm key={`${edit.instanceId}:${node.id}:${JSON.stringify(agent)}:${node.initialPrompt ?? ''}:${JSON.stringify(node.graphqlTools ?? null)}:${JSON.stringify(node.placement ?? null)}:${JSON.stringify(node.worktree ?? null)}`} embedded agent={agent}
+    node={{ initialPrompt: node.initialPrompt, graphqlTools: node.graphqlTools, placement: node.placement, worktree: node.worktree,
+      executionPolicy: edit.graph.executionPolicy }}
+    workflow={{ workspaceId: edit.graph.workspaceId, approvalHandler: edit.graph.approval?.handler,
+      designatedOrchestrator: edit.graph.approval?.handler === 'orchestrator' && edit.graph.approval.designatedOrchestratorAgentId === agent.id,
+      worktree: edit.graph.defaultWorktree,
+      worktreeLabel: edit.graph.defaultWorktree ? worktreeLabel(edit.graph.defaultWorktree, roots) : undefined }}
+    placementChoices={{ options, hidden: !choices.current, unavailableComputers: choices.unavailableComputers,
+      disabled: edit.busy || !!edit.pending,
+      note: !choiceScope ? 'Save the workflow to choose another computer.' : choices.isError ? 'Computers can’t be checked right now. Try again shortly.' : undefined,
+      optionsState: placementOptions ? 'ready' : !choiceScope || choices.isError || choices.isPaused ? 'unavailable' : choices.isPending ? 'loading' : 'ready' }}
+    draft={{ retained: edit.agentForms?.[node.id], extraDirty: parentDirty,
+      onChange: (form) => useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => ({ ...current,
+        agentForms: { ...current.agentForms, [node.id]: form } })),
+      onDiscard: () => useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => {
+        const baseline = browserBaseline.current
+        const graph = !baseline ? current.graph : { ...current.graph, nodes: current.graph.nodes.map(item => {
+          if (item.id !== node.id || item.kind === 'job') return item
+          const restored = { ...item }
+          if (baseline.browser) restored.browser = baseline.browser; else delete restored.browser
+          if (baseline.graphqlTools) restored.graphqlTools = baseline.graphqlTools; else delete restored.graphqlTools
+          return restored
+        }) }
+        const agentForms = { ...current.agentForms }; delete agentForms[node.id]
+        const workflowForms = { ...current.workflowForms }, workerParents = { ...workflowForms.workerParents }
+        delete workerParents[node.id]
+        if (Object.keys(workerParents).length) workflowForms.workerParents = workerParents
+        else delete workflowForms.workerParents
+        return { ...current, graph, agentForms, workflowForms }
+      }),
+      canResume: () => {
+        const current = useGraphDraftStore.getState().nextDrafts[draftKey]
+        if (!current) return false
+        try { storeEditSnapshot(draftKey, current); return true } catch { return false }
+      } }}
+    slots={{ main: mainFields, more: moreFields, additional: worker ? <WorkerParentField draftKey={draftKey} edit={edit} nodeId={node.id} /> : undefined }}
+    onClose={close} onRemove={remove} {...(saveWorkflow ? { onSaveWorkflow: saveWorkflow } : {})}
     onSave={({ agent: next, initialPrompt: prompt, nodeGraphqlTools: graphqlTools, placement, worktree }) => {
       installAgent(draftKey, edit.instanceId, next, node.id, prompt, graphqlTools, placement, worktree)
       const saved = useGraphDraftStore.getState().nextDrafts[draftKey]?.graph.nodes.find(item => item.id === node.id)

@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import { CiRunRecordSchema, type ReadObservation } from '@foreman-code/contracts'
+import type { ReadObservation } from '@foreman-code/contracts'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { z } from 'zod'
 import {
@@ -12,11 +12,12 @@ import type { DevicePresence } from '@foreman-code/contracts/device-connection'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { isAuthorized, requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { buildComputerKey } from '../settings/buildComputers.js'
 import { computerNameKey, readComputerNames, renameComputer } from './names.js'
 import { cloudCiId } from '../ci/values.js'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { countRunningCloudCi, readRunningHostCiJobs } from '../ci/index.js'
+import { logIgnoredError } from '../diagnostics/index.js'
 import type { CircleCreditsReader, CircleSchedulingReading } from '../ci/types.js'
 
 const jobRow = z.object({ target: DeviceProvisioningTargetSchema, activity: ComputerJobActivitySchema })
@@ -143,10 +144,7 @@ async function readCloud(sql: pg.PoolClient, mainId: string, clouds: readonly {
   scheduling?: CircleSchedulingReading | undefined
 }[], credits?: CircleCreditsReader) {
   if (!clouds.length) return []
-  const counts = await sql.query<{ provider: string; running: number }>(`select split_part(host_key, ':', 3) as provider,
-    count(*)::int as running from ci_runs where state in ('starting','running') and host_key like $1
-    group by 1`, [`${mainId}:cloud:%`])
-  const running = new Map(counts.rows.map(row => [row.provider, row.running]))
+  const running = await countRunningCloudCi(sql, mainId)
   const listed: CloudCiActivity[] = []
   for (const cloud of clouds) {
     const { ready, observation } = cloud
@@ -199,13 +197,8 @@ function readAgents(sql: pg.PoolClient, mainId: string) {
 }
 
 async function readCiJobs(sql: pg.PoolClient, mainId: string, computers: ComputerActivity[]) {
-  const rows = await sql.query<{ record: unknown; workspace_name: string }>(`select c.record,
-    w.record->>'name' as workspace_name from ci_runs c join workspaces w on w.id=c.workspace_id
-    where c.state in ('starting','running') and c.record#>>'{computer,hostRef,mainId}'=$2
-      and c.record#>>'{computer,hostRef,kind}' in ('main','device')
-    order by c.created_at,c.id limit $1`, [COMPUTER_ACTIVITY_LIMIT + 1, mainId])
-  return rows.rows.flatMap(row => {
-    const run = CiRunRecordSchema.parse(row.record)
+  const rows = await readRunningHostCiJobs(sql, mainId, COMPUTER_ACTIVITY_LIMIT + 1)
+  return rows.flatMap(({ run, workspaceName }) => {
     const hostRef = run.computer?.hostRef
     if (!hostRef) return []
     const computer = computers.find(value => value.target.hostRef.kind === hostRef.kind
@@ -214,7 +207,7 @@ async function readCiJobs(sql: pg.PoolClient, mainId: string, computers: Compute
         || hostRef.kind === 'device' && value.target.hostRef.deviceId === hostRef.deviceId))
     if (!computer) return []
     return [{ target: computer.target, activity: {
-      id: run.id, name: `CI ${run.suite}`, workspaceId: run.workspaceId, workspaceName: row.workspace_name,
+      id: run.id, name: `CI ${run.suite}`, workspaceId: run.workspaceId, workspaceName,
       phase: run.state === 'starting' ? 'preparing' : 'running', startedAt: run.startedAt,
     } }]
   })

@@ -3,7 +3,7 @@ import type { RemoteOperationReceipt } from '@foreman-code/contracts/remote-exec
 import { RemoteResultDictionarySchema, type RemoteResultDictionary,
   type RemoteWorkflowPhysicalReadout } from '@foreman-code/contracts/remote-workflow-physical'
 import { DEVICE_JSON_CONTINUATION_LIMIT } from '@foreman-code/contracts/device-application'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 
 type ResultPath = Array<string | number>
 type Container = Record<string | number, unknown>

@@ -2,14 +2,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { ReactFlowProvider } from '@xyflow/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { installFlowLayout } from '../../run-board/testFlowLayout'
 import { GraphPresentationProvider } from '../GraphPresentation'
 import { useGraphDraftStore } from '../store'
 import { fixture } from './core.cases'
 import { DraftCanvas } from './DraftCanvas'
-import { nextDraftKey } from './state'
-import { WorkflowBoardProvider, type WorkflowBoardValue } from '../../workflow-board/context'
+import { nextDraftKey, WorkflowBoardProvider, type WorkflowBoardValue } from '../../board-core'
 
 const key = nextDraftKey('workspace', 'workflow')
 // Three Agents with no edges between them, so every connection in these tests is made by the person.
@@ -35,8 +34,8 @@ function mount() {
     panels={(nodeId) => ({ chat: <p>{`Chat of ${nodeId}`}</p>, chatHasHeader: false, settings: null, info: null })} /></ReactFlowProvider></GraphPresentationProvider></WorkflowBoardProvider></QueryClientProvider>)
   return { change, geometry, selectSidePanel }
 }
-const connected = (change: ReturnType<typeof vi.fn>): WorkflowDefinitionV3['edges'] =>
-  change.mock.calls.reduce((graph: WorkflowDefinitionV3, [update]) => update(graph), context.draft.graph).edges
+const connected = (change: ReturnType<typeof vi.fn>): WorkflowDefinitionCurrent['edges'] =>
+  change.mock.calls.reduce((graph: WorkflowDefinitionCurrent, [update]) => update(graph), context.draft.graph).edges
 
 /** A real pointer drag from one Agent's connection port to another Agent, hit-tested on the other Agent's handle. */
 function dragConnection(source: HTMLElement, target: HTMLElement) {

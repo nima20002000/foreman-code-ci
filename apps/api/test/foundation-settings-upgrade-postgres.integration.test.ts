@@ -7,13 +7,13 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { describe, expect, it } from 'vitest'
 
 async function database<T>(perform: (pool: pg.Pool) => Promise<T>, beforeMigration?: (pool: pg.Pool) => Promise<void>): Promise<T> {
   if (!beforeMigration) {
-    const db = await agent3Database()
+    const db = await migratedDatabase()
     try {
       return await perform(db.pool)
     } finally {

@@ -3,8 +3,7 @@ import { Button, ConfirmDialog, Select } from '../../shared/ui/nocturne'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useGraphDraftStore } from '../graph/store'
-import { nodeTitle } from '../graph/nextDraft/model'
-import type { NextDraftEdit } from '../graph/nextDraft/state'
+import { nodeTitle, type NextDraftEdit } from '../board-core'
 import { applyMasterHierarchy, hierarchyNodes, removeMasterHierarchy } from './authoring'
 
 type Props = { draftKey: string; edit: NextDraftEdit; report(error: unknown): void }

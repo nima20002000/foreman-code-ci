@@ -8,7 +8,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { HostHarnessOverrideSaveResultSchema, HostHarnessInstanceCheckResultSchema, HostHarnessOverrideListSchema,
   type HostHarnessOverride, type HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
 import { makeCurrentWorkflowFixture, CurrentWorkflowSaveResultSchema, CurrentWorkflowReadResultSchema,
-  CurrentWorkflowValidationSchema, ManualRunStartResultSchema, canonicalGraphJson } from '@foreman-code/contracts/wave25'
+  CurrentWorkflowValidationSchema, ManualRunStartResultSchema, canonicalGraphJson } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { authorizeDeviceHost } from '../src/modules/devices/hostAuthorization.js'

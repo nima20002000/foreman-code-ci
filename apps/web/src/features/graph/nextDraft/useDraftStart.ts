@@ -3,16 +3,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ApiError } from '../../../shared/api/client'
 import { readLocalHumanAccess, settingsExperienceKeys, useLocalHumanAccessQuery } from '../../../shared/api/settingsExperience'
 import { assertSession, sessionGeneration } from '../../../shared/api/sessionBoundary'
-import { canUseBoardAction } from '../../workflow-board/permissions'
-import { boardRunListKey } from '../../workflow-board/keys'
-import type { useWorkflowBoard } from '../../workflow-board/context'
-import { boardStartPins, changedAgentIds, readBoardStartPreflight, sameBoardStartPins, currentBoardStartRequest, useBoardStartPreflight } from '../../workflow-board/startPreflight'
-import { boardStartClient, type BoardStartInput } from '../../workflow-board/startClient'
-import { acknowledgeBoardStart, readBoardStart, rejectBoardStart, reserveBoardStart, useBoardStartOutbox } from '../../workflow-board/startOutbox'
-import { scopeForBoardRun } from '../../workflow-board/client'
-import { recoverBoardStart } from '../../workflow-board/startRecovery'
+import {
+  canUseBoardAction, boardStartPins, changedAgentIds, readBoardStartPreflight, sameBoardStartPins,
+  currentBoardStartRequest, useBoardStartPreflight, boardStartClient, type BoardStartInput,
+  acknowledgeBoardStart, readBoardStart, rejectBoardStart, reserveBoardStart, useBoardStartOutbox,
+  scopeForBoardRun, recoverBoardStart,
+} from '../../workflow-board'
+import { boardRunListKey, type useWorkflowBoard, nextDraftDirty, type NextDraftEdit } from '../../board-core'
 import { useGraphDraftStore } from '../store'
-import { nextDraftDirty, type NextDraftEdit } from './state'
 import type { DraftEditorCore } from './useDraftEditorCore'
 import type { useDraftEditorSave } from './useDraftEditorSave'
 import type { useGraphEditIntent } from './useGraphEditIntent'

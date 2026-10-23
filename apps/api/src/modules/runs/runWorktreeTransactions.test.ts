@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import type { AcceptedWorkflowRunV3, RunWorktree } from '@foreman-code/contracts/wave25'
+import type { AcceptedWorkflowRunCurrent, RunWorktree } from '@foreman-code/contracts/current'
 import type { GitWorktreePorts } from '../sources/gitWorktree.js'
 import { RunWorktrees } from './runWorktrees.js'
 
@@ -17,7 +17,7 @@ async function fixture(options: { existing?: boolean; stopDuringFetch?: boolean 
   await mkdir(parent, { recursive: true })
   const root = await mkdtemp(join(parent, 'run-worktree-'))
   directories.push(root)
-  const run = { id: 'run', workspaceId: 'workspace', executionLocation: { rootPath: root } } as AcceptedWorkflowRunV3
+  const run = { id: 'run', workspaceId: 'workspace', executionLocation: { rootPath: root } } as AcceptedWorkflowRunCurrent
   let inTransaction = false
   let stopped = false
   let tree: RunWorktree | undefined = options.existing ? {

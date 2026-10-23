@@ -1,0 +1,8 @@
+export { lockActiveWorkspace } from './admission.js'
+export { workspaceStorageRoot } from './storage.js'
+export { configurationInput, lockAgentConfigurations, pinnedConfigurationContent } from './agentConfiguration.js'
+export { authorizeAgentConfiguration } from './operatorAgents.js'
+export { WorkspaceLocationService } from './location.js'
+export { requiredLocationAccess } from './locationAccess.js'
+export { pathsOverlap } from './filesystem.js'
+export { WORKSPACE_FOLDER_LIFECYCLE_LOCK } from './projectFolderCleanup.js'

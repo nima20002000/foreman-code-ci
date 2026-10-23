@@ -40,7 +40,8 @@ function fixture(runId?: string) {
   }
   let live: ManagementPrincipal | null = principal()
   const poolQuery = vi.fn(async (sql: string, values: unknown[]) => {
-    if (sql.includes('from harness_native_events')) {
+    // The source Run transcript read binds four values (execution, Run, node, Agent); the live principal read binds one.
+    if (values.length === 4) {
       return { rows: runId && values[0] === 'execution' && values[1] === runId
         && values[2] === context.workflowNodeId && values[3] === context.agentId
         ? [{ item_key: 'source-reply', role: 'assistant', content: 'Saved Run reply', original_bytes: 15,
@@ -48,9 +49,7 @@ function fixture(runId?: string) {
     }
     if (isSavedChatFolderRead(sql)) return { rows: [], rowCount: 0 }
     if (isLiveWorkflowRead(sql)) return values[0] === context.workflowId && values[1] === context.workspaceId ? { rows: [{ '?column?': 1 }], rowCount: 1 } : { rows: [], rowCount: 0 }
-    if (!sql.startsWith('select ') || !sql.includes('from management_principals')) {
-      throw new Error('Unexpected chat persistence operation')
-    }
+    if (values.length !== 1) throw new Error('Unexpected chat persistence operation')
     return { rows: live && values[0] === live.id ? [{ id: live.id, name: live.name, audience: live.audience, grants: live.grants,
       expires_at: new Date(live.expiresAt), revoked_at: live.revokedAt ? new Date(live.revokedAt) : null, delegated_from: null }] : [] }
   })

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type pg from 'pg'
 import { ManagementPrincipalSchema, type ManagementGrant } from '@foreman-code/contracts/management'
-import { AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture, RepeatOccurrenceV1Schema, RUN_GRAPH_LIMITS, type RunWorktree } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture, RepeatOccurrenceV1Schema, RUN_GRAPH_LIMITS, type RunWorktree } from '@foreman-code/contracts/current'
 import { readCurrentRunDetails } from '../src/modules/runs/currentRead.js'
 import { readAcceptedRepeatRunLocked, readRecordedRepeatRunSnapshot } from '../src/modules/runs/repeatStartRead.js'
 import { readRepeatExecutionLocked, readRepeatExecutionsLocked } from '../src/modules/runs/repeatExecutionRead.js'
@@ -27,7 +27,7 @@ function fixture(queued = false, size = 1, form: 'single' | 'repeat' = 'single')
   const occurrence = form === 'repeat' ? RepeatOccurrenceV1Schema.parse({ contractVersion: 1,
     identity: { scope: f.scope, blockId: 'repair', occurrenceId: 'history-occurrence', occurrenceIndex: 1 },
     input: { bindingId: 'history-entry', inputDigest: repeatDigest(entry), previous: null } }) : null
-  const run = AcceptedWorkflowRunV3Schema.parse({ ...f.run, authorizationPrincipalId: 'private-authority',
+  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run, authorizationPrincipalId: 'private-authority',
     ...(queued ? { executionState: 'running', outcome: 'pending' } : {
       executionState: 'completed', outcome: 'succeeded', result: { outcome: 'succeeded', output: { text: 'saved-result' } },
       finishedAt: f.createdAt }), executionLocation: { runnerId: 'runner', rootPath: '/private/project', locationRevision: 1,

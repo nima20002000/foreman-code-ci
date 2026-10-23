@@ -7,7 +7,7 @@ import {
   WorkspaceListInputSchema, WorkflowListInputSchema,
   AgentListInputSchema, RunListInputSchema, RunGetInputSchema,
 } from './management/index.js'
-import { RunDirectionWaitSchema, SavedManagedWorkflowSchema, SavedRunDetailsSchema, WorkflowRunV3Schema } from './wave25/saved.js'
+import { RunDirectionWaitSchema, SavedManagedWorkflowSchema, SavedRunDetailsSchema, WorkflowRunCurrentSchema } from './current/saved.js'
 import { ExecutionResultSchema, HarnessExecutionSchema } from './index.js'
 import { SourceListInputSchema, SourceListResultSchema, ApprovedSourceSchema } from './sourceAdmission.js'
 import { SourceManifestSchema } from './sourceMaterialization.js'
@@ -32,7 +32,7 @@ export const OperatorSourceListResultSchema = z.union([
 ])
 
 export const OperatorRunGetInputSchema = RunGetInputSchema.extend({ detail })
-export const OperatorRunSummarySchema = z.object(WorkflowRunV3Schema.shape).omit({
+export const OperatorRunSummarySchema = z.object(WorkflowRunCurrentSchema.shape).omit({
   input: true, result: true, executionLocation: true, authorizationPrincipalId: true,
 }).extend({ failure: ExecutionResultSchema.shape.error })
 export const OperatorExecutionSummarySchema = z.object(HarnessExecutionSchema.shape).pick({
@@ -85,7 +85,7 @@ export const WorkflowSummaryPageSchema = z.object({
 export const OperatorCompactCapabilitiesSchema = OperatorCapabilitiesSchema.omit({ requirements: true }).extend({
   detail: z.literal('compact'),
   tools: z.array(z.string()),
-  detailsTool: z.literal('operator_tool_schema_get'),
+  detailsTool: z.literal('tool_schema'),
   fullDetailArguments: z.object({ detail: z.literal('full') }).strict(),
 }).strict()
 
@@ -96,12 +96,15 @@ export const OperatorToolSchemaInputSchema = z.object({
 export const OperatorToolSchemaResultSchema = z.object({
   name: z.string(),
   description: z.string(),
+  detail: z.string().optional(),
   inputSchema: z.record(z.string(), z.unknown()),
   outputSchema: z.record(z.string(), z.unknown()).optional(),
   annotations: z.record(z.string(), z.unknown()).optional(),
+  /** Present only for callers allowed to read capabilities. */
   permissionRequirements: z.object({
     actions: z.array(ManagementActionSchema).optional(), detail: z.string(),
-  }).strict(),
+  }).strict().optional(),
+  callWith: z.enum(['tool_run', 'tool_run_read']),
 }).strict()
 
 /** Operator uses JSON text for small payloads and structured data for large payloads. */

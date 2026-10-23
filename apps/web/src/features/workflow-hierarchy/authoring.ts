@@ -1,8 +1,9 @@
 import type { Agent } from '@foreman-code/contracts'
-import { DEFAULT_WORKFLOW_EXECUTION_POLICY, sameWorkflowValue, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
-import { changeDraftAgents, editorAgents } from '../graph/nextDraft/agentEdits'
-import { nodeTitle, removeNode, reportingRoute, roleEvidence, withoutChoiceTargets } from '../graph/nextDraft/model'
-import type { NextDraftEdit } from '../graph/nextDraft/state'
+import { DEFAULT_WORKFLOW_EXECUTION_POLICY, sameWorkflowValue, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+import {
+  changeDraftAgents, editorAgents, nodeTitle, removeNode, reportingRoute, roleEvidence, withoutChoiceTargets,
+  type NextDraftEdit,
+} from '../board-core'
 
 export function hierarchyNodes(edit: NextDraftEdit, masterNodeId = edit.graph.hierarchy?.masterNodeId) {
   return edit.graph.nodes.filter(node => node.kind !== 'job').map(node => ({ node,
@@ -12,7 +13,7 @@ export function hierarchyNodes(edit: NextDraftEdit, masterNodeId = edit.graph.hi
   }))
 }
 
-function assertHierarchySupported(graph: WorkflowDefinitionV3) {
+function assertHierarchySupported(graph: WorkflowDefinitionCurrent) {
   if (graph.repeat) throw new Error('Remove the repeat configuration before adding a Master hierarchy.')
   if (graph.nodes.some(node => node.kind === 'job')) throw new Error('A Master hierarchy supports Agent nodes. Remove job nodes before applying it.')
   if (graph.nodes.some(node => node.join !== undefined || node.kind !== 'job' && node.interval !== undefined)) {
@@ -21,7 +22,7 @@ function assertHierarchySupported(graph: WorkflowDefinitionV3) {
 }
 
 /** Explicit hierarchy authoring adds missing parent routes and keeps every old connection. */
-function withHierarchyRoutes(graph: WorkflowDefinitionV3): WorkflowDefinitionV3 {
+function withHierarchyRoutes(graph: WorkflowDefinitionCurrent): WorkflowDefinitionCurrent {
   if (!graph.hierarchy) return graph
   const edges = [...graph.edges], nodes = [...graph.nodes]
   for (const member of graph.hierarchy.parents) {
@@ -77,8 +78,8 @@ function withHierarchyRoutes(graph: WorkflowDefinitionV3): WorkflowDefinitionV3 
 /** Drawing a line between a Master and an Orchestrator, or an Orchestrator and a Worker, that does not
  * report yet makes the lower one report to the upper one, with its work route, in either drawing direction.
  * Returns undefined when the line is an ordinary connection. */
-export function connectHierarchyMember(graph: WorkflowDefinitionV3, roles: ReadonlyMap<string, string | undefined>,
-  first: string, second: string): WorkflowDefinitionV3 | undefined {
+export function connectHierarchyMember(graph: WorkflowDefinitionCurrent, roles: ReadonlyMap<string, string | undefined>,
+  first: string, second: string): WorkflowDefinitionCurrent | undefined {
   const hierarchy = graph.hierarchy
   if (!hierarchy) return undefined
   const role = (nodeId: string) => nodeId === hierarchy.masterNodeId ? 'master' : roles.get(nodeId) === 'coder' ? 'coder' : 'orchestrator'
@@ -96,7 +97,7 @@ export function connectHierarchyMember(graph: WorkflowDefinitionV3, roles: Reado
  * removed line also removed its route): routes without a line are dropped, a member without its reporting line
  * stops reporting there, and a member that reports nowhere reports along its only line to an eligible parent.
  * Returns the same graph when nothing needs repair. */
-export function repairHierarchyRoutes(graph: WorkflowDefinitionV3, roles: ReadonlyMap<string, string | undefined>): WorkflowDefinitionV3 {
+export function repairHierarchyRoutes(graph: WorkflowDefinitionCurrent, roles: ReadonlyMap<string, string | undefined>): WorkflowDefinitionCurrent {
   const hierarchy = graph.hierarchy
   if (!hierarchy) return graph
   const ids = new Set(graph.edges.map(edge => edge.id))
@@ -106,7 +107,7 @@ export function repairHierarchyRoutes(graph: WorkflowDefinitionV3, roles: Readon
   const role = (nodeId: string) => nodeId === hierarchy.masterNodeId ? 'master' : roles.get(nodeId) === 'coder' ? 'coder' : 'orchestrator'
   for (const node of nodes) {
     if (node.kind === 'job' || node.id === hierarchy.masterNodeId || parents.some(member => member.workflowNodeId === node.id)) continue
-    const other = (edge: WorkflowDefinitionV3['edges'][number]) => edge.source === node.id ? edge.target : edge.source
+    const other = (edge: WorkflowDefinitionCurrent['edges'][number]) => edge.source === node.id ? edge.target : edge.source
     const eligible = role(node.id) === 'coder' ? 'orchestrator' : 'master'
     const lines = edges.filter(edge => edge.kind === 'execution' && (edge.source === node.id || edge.target === node.id) && role(other(edge)) === eligible)
     const candidates = new Set(lines.map(other))
@@ -124,7 +125,7 @@ export function repairHierarchyRoutes(graph: WorkflowDefinitionV3, roles: Readon
 }
 
 /** Reparenting is an explicit draft edit; the former handoff remains an ordinary connection. */
-export function reparentHierarchyWorker(graph: WorkflowDefinitionV3, nodeId: string, parentNodeId: string): WorkflowDefinitionV3 {
+export function reparentHierarchyWorker(graph: WorkflowDefinitionCurrent, nodeId: string, parentNodeId: string): WorkflowDefinitionCurrent {
   if (!graph.hierarchy) return graph
   return withHierarchyRoutes({ ...graph, hierarchy: { ...graph.hierarchy,
     parents: [...graph.hierarchy.parents.filter(member => member.workflowNodeId !== nodeId),
@@ -170,7 +171,7 @@ export function applyMasterHierarchy(edit: NextDraftEdit, masterNodeId: string, 
     handoffs: edit.graph.handoffs ?? { contractVersion: 1 }, hierarchy: { version: 1, masterNodeId, parents } }))
 }
 
-function withoutNode(graph: WorkflowDefinitionV3, nodeId: string): WorkflowDefinitionV3 {
+function withoutNode(graph: WorkflowDefinitionCurrent, nodeId: string): WorkflowDefinitionCurrent {
   const next = { ...graph, nodes: graph.nodes.filter(node => node.id !== nodeId),
     edges: graph.edges.filter(edge => edge.source !== nodeId && edge.target !== nodeId),
     entryNodeId: graph.entryNodeId === nodeId ? null : graph.entryNodeId }
@@ -226,7 +227,7 @@ export function removeMasterHierarchy(edit: NextDraftEdit): NextDraftEdit {
 
 /** New Agents are private staged configurations until the existing Save transaction publishes them. */
 export function stageHierarchyAgent(edit: NextDraftEdit, agent: Agent, nodeId: string, parentNodeId?: string,
-  fields: Pick<Exclude<WorkflowDefinitionV3['nodes'][number], { kind: 'job' }>, 'initialPrompt' | 'graphqlTools' | 'placement' | 'worktree'> = {}): NextDraftEdit {
+  fields: Pick<Exclude<WorkflowDefinitionCurrent['nodes'][number], { kind: 'job' }>, 'initialPrompt' | 'graphqlTools' | 'placement' | 'worktree'> = {}): NextDraftEdit {
   if (!agent.productRole || agent.configurationVersionId) {
     throw new Error('Create a new board Agent with an explicit role.')
   }

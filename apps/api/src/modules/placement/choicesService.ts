@@ -1,10 +1,10 @@
 import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { NodePlacementChoicesInputSchema, NodePlacementChoicesResultSchema, type NodePlacementChoicesInput, type NodePlacementChoice, type NodePlacementChoicesResult } from '@foreman-code/contracts/placement-readback'
-import { requireAuthorization } from '../access/policy.js'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
+import { requireAuthorization } from '../access/index.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
 import { DomainError } from '../errors.js'
 
 /** Discovery reads authorized destination metadata; Start validates the selected pins again. */
@@ -43,7 +43,7 @@ export class NodePlacementChoicesService {
         join workflow_versions v on v.id=w.current_version_id
         where w.workspace_id=$1 and w.id=$2 and w.archived_at is null`, [input.workspaceId, input.workflowId])).rows[0]
       if (!row) throw new DomainError('WORKFLOW_NOT_SAVED', 'Placement choices require a saved workflow.', 409)
-      const version = WorkflowVersionV3Schema.parse(row.record)
+      const version = WorkflowVersionCurrentSchema.parse(row.record)
       const node = version.definition.nodes.find(n => n.id === input.nodeId)
       if (!node || node.kind === 'job' || version.agentConfigurationVersionIds[node.agentId] !== input.agentConfigurationVersionId) throw new DomainError(
         'PLACEMENT_CONFIGURATION_CONFLICT', 'Placement choices require the saved node configuration.', 409)

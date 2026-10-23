@@ -1,8 +1,8 @@
-import type { GraphEditReadResultV3 } from '@foreman-code/contracts/wave25'
+import type { GraphEditReadResultCurrent } from '@foreman-code/contracts/current'
 import { Alert } from '../../../shared/ui/nocturne'
 
 /** Progress of a save that waits for affected Runs to stop. Recovery stays on the board, never in a second Run page. */
-export function EditIntentStatus({ data }: { data: GraphEditReadResultV3 }) {
+export function EditIntentStatus({ data }: { data: GraphEditReadResultCurrent }) {
   const intent = data.intent
   if (!intent) return null
   const waiting = data.current.filter((item) => !item.settled).length

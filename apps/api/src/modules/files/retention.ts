@@ -9,7 +9,7 @@ import {
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 
 import { isAuthorized, requireAuthorization } from '../access/policy.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import {
   lockFileRetentionOwner, readFileRetentionPreference,

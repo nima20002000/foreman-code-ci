@@ -1,5 +1,5 @@
 import { afterAll, beforeAll } from 'vitest'
-import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { migratedDatabase } from './migratedDatabase.js'
 
@@ -18,7 +18,7 @@ export function setupWorkflowCreateIntegration() {
   }
 }
 
-export function initialSave(graph: WorkflowDefinitionV3, configurations: Record<string, string>) {
+export function initialSave(graph: WorkflowDefinitionCurrent, configurations: Record<string, string>) {
   const { id, workspaceId, name, description, defaultWorktree, version, createdAt, updatedAt, ...definition } = graph
   void id
   void workspaceId

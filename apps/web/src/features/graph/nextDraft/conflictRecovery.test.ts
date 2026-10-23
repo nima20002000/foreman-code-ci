@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { fixture } from './core.cases'
-import { newNextDraft, nextDraftKey } from './state'
+import { newNextDraft, nextDraftKey } from '../../board-core'
 import { retainConflictRecovery, readConflictRecoveries, discardConflictRecovery,
   storeEditSnapshot, readEditSnapshot } from './editIntentStorage'
-import { createHarnessEditor } from '../../settings/harnessEditor'
+import { createHarnessEditor } from '../../settings'
 
 const scope = nextDraftKey('workspace', 'workflow')
 beforeEach(() => { localStorage.clear(); sessionStorage.clear() })

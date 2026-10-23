@@ -1,11 +1,11 @@
 import { isDeepStrictEqual } from 'node:util'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
 import type { RootBinding } from '@foreman-code/contracts/source-materialization'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { outstandingCheckoutReviewSql } from '../runs/worktreeReviewers.js'
 
 /** The saved node, rather than a resolved placement label, decides directory retention. */
-export async function retainsNodeWorkingTree(sql: GraphSqlClient, executionId: string): Promise<boolean> {
+export async function retainsNodeWorkingTree(sql: SqlQuery, executionId: string): Promise<boolean> {
   const result = await sql.query(`select 1 from harness_executions e join runs r on r.id=e.run_id
     join workflow_versions v on v.id=r.workflow_version_id
     where e.id=$1 and r.execution_state not in ('completed','interrupted')
@@ -16,7 +16,7 @@ export async function retainsNodeWorkingTree(sql: GraphSqlClient, executionId: s
 }
 
 /** Only the latest finalized turn of this same unplaced node may supply its directory. */
-export async function retainedNodeReceipt(sql: GraphSqlClient, executionId: string, binding: RootBinding) {
+export async function retainedNodeReceipt(sql: SqlQuery, executionId: string, binding: RootBinding) {
   if (!await retainsNodeWorkingTree(sql, executionId)) return undefined
   const row = (await sql.query<{ record: unknown }>(`select m.record
     from harness_executions incoming

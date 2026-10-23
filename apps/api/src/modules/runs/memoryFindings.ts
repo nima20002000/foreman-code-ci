@@ -1,5 +1,5 @@
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import { clipUtf8 } from '../memory-boards/digest.js'
+import { clipUtf8 } from '../memory-boards/index.js'
 
 /** Findings are JSON values; empty values still represent unresolved work. */
 export function memoryFindingReason(findings: readonly unknown[]): string {

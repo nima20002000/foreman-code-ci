@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { SavedRunVersionSnapshotSchema, repeatGraphTopologyV3 } from '@foreman-code/contracts/wave25'
+import { SavedRunVersionSnapshotSchema, repeatGraphTopologyCurrent } from '@foreman-code/contracts/current'
 import { inspectionBoardFixture } from './inspectionFixtures'
 
 it('keeps renamed entry nodes in saved versions and topology with valid pinned Run records', async () => {
@@ -10,7 +10,7 @@ it('keeps renamed entry nodes in saved versions and topology with valid pinned R
     expect(SavedRunVersionSnapshotSchema.parse({ run, version })).toEqual({ run, version })
     expect(version.entryNodeId).toBe(entryNodeId)
     expect(version.definition.entryNodeId).toBe(entryNodeId)
-    const topology = repeatGraphTopologyV3(version)
+    const topology = repeatGraphTopologyCurrent(version)
     expect(topology.entryNodeId).toBe(entryNodeId)
     expect(topology.nodes[0]!.workflowNodeId).toBe(entryNodeId)
     for (const edge of topology.relationships) {

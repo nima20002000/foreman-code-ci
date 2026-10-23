@@ -3,11 +3,11 @@ import { AgentProductRoleSchema } from '../agentIdentity.js'
 import { OperationalFailureSchema } from '../operationalFailures.js'
 import { NativeInteractionSupportSchema } from '../nativeInteractionSupport.js'
 import { ClaudeFullAccessConfigurationSchema, ClaudeHarnessConfigurationSchema } from '../claude.js';
-import { RunStartV3InputSchema } from '../wave25/startRequest.js'
+import { RunStartCurrentInputSchema } from '../current/startRequest.js'
 import { InteractionActivityProjectionSchema } from '../interaction-activity.js'
 import { z } from "zod";
-import { WorkflowDefinitionV3Schema} from "../wave25/workflowSchemas.js";
-import { AgentActiveTimeoutMsSchema, CurrentWorkflowNodeSchema, CurrentWorkflowRelationshipSchema } from "../wave25/workflowShape.js";
+import { WorkflowDefinitionCurrentSchema} from "../current/workflowSchemas.js";
+import { AgentActiveTimeoutMsSchema, CurrentWorkflowNodeSchema, CurrentWorkflowRelationshipSchema } from "../current/workflowShape.js";
 
 export * from "./extensions.js";
 export * from "./harnessSettings.js";
@@ -108,7 +108,7 @@ export const ManagedWorkspaceCommandResultSchema = z.object({ value: ManagedWork
 export const ManagedWorkflowRecordFields = {
   revision: ExpectedRevisionSchema, currentVersionId: IdSchema.nullable(), archivedAt: TimestampSchema.nullable(),
 };
-export const ManagedWorkflowSchema = z.object({ ...ManagedWorkflowRecordFields, workflow: WorkflowDefinitionV3Schema }).strict();
+export const ManagedWorkflowSchema = z.object({ ...ManagedWorkflowRecordFields, workflow: WorkflowDefinitionCurrentSchema }).strict();
 export type ManagedWorkflow = z.infer<typeof ManagedWorkflowSchema>;
 export const ManagedWorkflowPageSchema = z.object({
   items: z.array(ManagedWorkflowSchema), pageInfo: ManagementPageInfoSchema,
@@ -417,7 +417,7 @@ const GraphDraftRecordFields = {
   updatedByPrincipalId: IdSchema,
   updatedAt: TimestampSchema,
 };
-export const GraphDraftSchema = z.object({ ...GraphDraftRecordFields, graph: WorkflowDefinitionV3Schema }).strict();
+export const GraphDraftSchema = z.object({ ...GraphDraftRecordFields, graph: WorkflowDefinitionCurrentSchema }).strict();
 
 export const GraphDraftApplyInputSchema = z.object({
   ...DraftScopeSchema.shape,
@@ -515,7 +515,7 @@ export const RunEventsListInputSchema = z.object({
   limit: z.number().int().min(1).max(500).default(100),
 }).strict();
 /** Generic management spelling, one canonical explicit V3 Start request. */
-export const RunStartInputSchema = RunStartV3InputSchema;
+export const RunStartInputSchema = RunStartCurrentInputSchema;
 export const RunStopInputSchema = z.object({
   workspaceId: IdSchema,
   runId: IdSchema,
@@ -578,7 +578,7 @@ export const OperatorToolNameSchema = z.enum([
   "job_runtime_profile_list","job_runtime_profile_save","job_runtime_qualification_request","job_runtime_qualification_run","job_runtime_qualification_get","build_computer_prepare","build_computer_prepare_get",
   "ci_enrollment_get", "ci_enrollment_update",
   "job_choices_get","job_workflow_execution_get","job_definition_list","job_definition_get","job_definition_version_get","job_definition_save","job_validate","job_launch_validate","job_start","job_queue_get","job_queue_list","job_queue_cancel","job_get","job_list","job_workflow_list","job_cancel","job_cancellation_recovery_propose","job_cancellation_recovery_get","job_cancellation_recovery_approve","job_logs_read","job_artifacts_list","job_artifact_read",
-  "build_computer_get", "build_computer_update", "build_computers_update", "computer_activity_list", "computer_rename", "computer_accounts_list", "computers_maintenance_status", "computers_maintenance_start", "computer_github_login_start", "computer_github_login_status", "computer_github_logout", "computer_github_setup_git", "computer_sync_status", "computer_sync_update",
+  "build_computer_get", "build_computer_update", "build_computers_update", "computer_activity_list", "computer_rename", "computer_accounts_list", "computer_github_login_start", "computer_github_login_status", "computer_github_logout", "computer_github_setup_git", "computer_sync_status", "computer_sync_update",
   "device_main_identity_get", "devices_list", "device_pairing_grant_create", "device_revoke",
   "device_setup_code_create",
   "device_setup_options_get",
@@ -649,11 +649,10 @@ export const OperatorToolNameSchema = z.enum([
   "interaction_summary",
   "operator_get_capabilities", "harness_list", "harness_get", "harness_defaults_update", "harness_qualifications_list", "harness_qualification_run", "harness_compatibility_list", "harness_compatibility_retry",
   "agent_defaults_get", "agent_defaults_update", "workflow_defaults_get", "workflow_defaults_update",
-  "workspace_folders_list", "workspace_folder_create", "workspace_folder_rename", "workspace_folder_undo", "workspace_folders_delete",
-  "workspace_storage_folders_list", "workspace_storage_folder_delete",
+  "workspace_folders_list", "workspace_folder_create", "workspace_folders_delete",
   "workspace_list", "workspace_get", "workspace_create", "workspace_update", "workspace_archive", "workspace_batch_archive",
   "workspace_location_validate", "workspace_location_set",
-  "workflow_list", "workflow_get", "workflow_create", "workflow_update", "workflow_reorder", "workflow_archive", "workflow_batch_archive", "workflow_kanban_layout_get", "workflow_kanban_layout_set",
+  "workflow_list", "workflow_get", "workflow_create", "workflow_update", "workflow_archive", "workflow_batch_archive",
   "agent_list", "agent_get", "graph_draft_open", "graph_draft_get", "graph_draft_apply",
   "graph_draft_layout", "graph_draft_revert_applied", "graph_validate", "graph_save", "graph_draft_discard", "run_list", "run_get", "run_current_get_v1", "run_history_get_v1",
   "run_events_list", "run_handoffs_get_v1", "run_activities_get_v1", "run_node_placement_get", "workflow_node_placement_choices", "run_start", "run_start_resolve", "run_stop",

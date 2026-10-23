@@ -1,10 +1,11 @@
+import { DEFAULT_HARNESS_WORKSPACE_ROOT } from '../config.js'
 import { harnessBinaries } from '../modules/harnesses/binaries.js'
 import { createHarnessCompatibility } from '../modules/harnesses/compatibility/service.js'
 
 // Deliberately does not load ApiConfig: building needs neither DB nor owner secrets.
 const service = createHarnessCompatibility({
   ...harnessBinaries(process.env),
-  workspaceRoot: process.env.HARNESS_WORKSPACE_ROOT?.trim() || '/tmp/graphql-harness-runs',
+  workspaceRoot: process.env.HARNESS_WORKSPACE_ROOT?.trim() || DEFAULT_HARNESS_WORKSPACE_ROOT,
 })
 try {
   const reports = await service.checkAll()

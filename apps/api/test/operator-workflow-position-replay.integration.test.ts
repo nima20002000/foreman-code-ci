@@ -3,8 +3,8 @@ import { expect, it } from 'vitest'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import {
-  CurrentWorkflowSaveResultSchema, canonicalGraphJson, preserveWorkflowGeometry, type WorkflowDefinitionV3,
-} from '@foreman-code/contracts/wave25'
+  CurrentWorkflowSaveResultSchema, canonicalGraphJson, preserveWorkflowGeometry, type WorkflowDefinitionCurrent,
+} from '@foreman-code/contracts/current'
 import { commandInputHash } from '../src/modules/commands/postgres.js'
 import { setup } from './helpers/workflowWorktreeMcp.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
@@ -38,7 +38,7 @@ it('replays an existing profile-reconciled save without retroactively marking re
       graph: { ...first.value.version.definition, nodes: first.value.version.definition.nodes.map(node => ({
         ...node, position: { x: 100, y: 200 },
       })) } }
-    const graph: WorkflowDefinitionV3 = { ...input.graph, nodes: input.graph.nodes.map(node => {
+    const graph: WorkflowDefinitionCurrent = { ...input.graph, nodes: input.graph.nodes.map(node => {
       const agentNode = agentWorkflowNode(node)
       return agentNode.agentId === configuration.agentId
         ? { ...agentNode, placement: { ...f.placement.local, instanceId: selectedInstanceId } } : node

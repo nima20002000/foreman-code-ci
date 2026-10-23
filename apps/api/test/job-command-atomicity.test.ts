@@ -20,8 +20,10 @@ function fixture(options: { receipt?: unknown; failReceipt?: boolean } = {}) {
   const empty = (): CommandRecords => ({ jobs: [], dispatches: [], receipts: [], audits: [] })
   const committed = empty()
   let pending = empty()
-  const query = async (text: string, values?: unknown[]) => {
-    if (text.includes('pg_try_advisory_lock(')) return { rows: [{ locked: true }], rowCount: 1 }
+  // Statements are told apart by what they bind, not by their text: a lock binds one key, the test's own domain writes
+  // bind a kind and an id, the receipt read binds principals, operation and command id, the receipt write binds six
+  // values ending in the result, and the command audit binds five (success) or six (failed or uncertain) values.
+  const query = async (text: string, values: unknown[] = []) => {
     if (text === 'begin') {
       inTransaction = true
       pending = empty()
@@ -39,17 +41,17 @@ function fixture(options: { receipt?: unknown; failReceipt?: boolean } = {}) {
       rolledBack = true
       pending = empty()
     }
-    if (text.startsWith('insert')) {
-      const records = inTransaction ? pending : committed
-      if (text.includes('job_executions')) records.jobs.push(String(values?.[0]))
-      if (text.includes('job_dispatch_intents')) records.dispatches.push(String(values?.[0]))
-      if (text.includes('management_command_receipts')) {
-        if (options.failReceipt) throw new Error('receipt persistence failed')
-        records.receipts.push(JSON.parse(String(values?.[5])))
-      }
-      if (text.includes('management_audit')) records.audits.push(JSON.parse(String(values?.at(-1))))
+    const records = inTransaction ? pending : committed
+    if (values.length === 1) return { rows: [{ locked: true }], rowCount: 1 }
+    if (values.length === 2 && values[0] === 'job') records.jobs.push(String(values[1]))
+    if (values.length === 2 && values[0] === 'dispatch') records.dispatches.push(String(values[1]))
+    if (values.length === 6 && values[4] === commandInputHash(command.payload)) {
+      if (options.failReceipt) throw new Error('receipt persistence failed')
+      records.receipts.push(JSON.parse(String(values[5])))
     }
-    return { rows: text.startsWith('select principal_id, input_hash') && options.receipt ? [options.receipt] : [], rowCount: 0 }
+    if (values.length === 5) records.audits.push(JSON.parse(String(values[4])))
+    if (values.length === 6 && (values[4] === 'failed' || values[4] === 'uncertain')) records.audits.push(JSON.parse(String(values[5])))
+    return { rows: values.length === 3 && Array.isArray(values[0]) && options.receipt ? [options.receipt] : [], rowCount: 0 }
   }
   const client = { query, release: vi.fn() }
   const pool = { options: {}, connect: async () => client, end: vi.fn(async () => undefined), on: () => undefined }
@@ -68,8 +70,8 @@ describe('job acceptance and original command receipt atomicity', () => {
     const authorize = vi.fn(async () => undefined)
     const result = await f.coordinator.execute({ ...command, authorize, prepare, perform: async sql => {
       expect(f.inTransaction()).toBe(true)
-      await sql.query('insert into job_executions values ($1)', ['job'])
-      await sql.query('insert into job_dispatch_intents values ($1)', ['operation'])
+      await sql.query('insert into job_records (kind, id) values ($1, $2)', ['job', 'job'])
+      await sql.query('insert into job_records (kind, id) values ($1, $2)', ['dispatch', 'operation'])
       return { id: 'job' }
     } })
     expect(result).toEqual({ value: { id: 'job' }, replayed: false })
@@ -83,8 +85,8 @@ describe('job acceptance and original command receipt atomicity', () => {
     const f = fixture({ failReceipt: true })
     await expect(f.coordinator.execute({ ...command, source: 'http', prepare: async () => undefined,
       perform: async sql => {
-        await sql.query('insert into job_executions values ($1)', ['job'])
-        await sql.query('insert into job_dispatch_intents values ($1)', ['operation'])
+        await sql.query('insert into job_records (kind, id) values ($1, $2)', ['job', 'job'])
+        await sql.query('insert into job_records (kind, id) values ($1, $2)', ['dispatch', 'operation'])
         return { id: 'job' }
       },
     })).rejects.toThrow('receipt persistence failed')

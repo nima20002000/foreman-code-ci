@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS, HarnessExecutionSchema } from '@foreman-code/contracts'
 import { canContinueWorkflowSession, readWorkflowSessionContinuation } from './sessionContinuation.js'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import * as closures from '../interactions/workflowClosure.js'
 import * as placement from '../placement/persistence.js'
 import { assertRepeatNativeUpdate } from '../interactions/repeatNativeEvidence.js'
@@ -39,7 +39,7 @@ describe('workflow session continuity', () => {
       const query = vi.fn(async (text: string) => ({
         rows: text.includes('run_control_continuations') ? [] : [{ record: failed, configuration: {} }] }))
       const closure = vi.spyOn(closures, 'readWorkflowClosure')
-      expect(await readWorkflowSessionContinuation({ query } as unknown as GraphTransactionSql, retry)).toBeUndefined()
+      expect(await readWorkflowSessionContinuation({ query } as unknown as SqlTransaction, retry)).toBeUndefined()
       expect(closure).not.toHaveBeenCalled()
     },
   )
@@ -80,7 +80,7 @@ describe('workflow session continuity', () => {
       const sql = {
         query: vi.fn(async (text: string) => ({
           rows: text.includes('run_control_continuations') ? [] : [{ record: previous, configuration }] })),
-      } as unknown as GraphTransactionSql
+      } as unknown as SqlTransaction
       vi.spyOn(placement, 'readExecutionPlacement').mockResolvedValue(undefined)
       vi.spyOn(placement, 'readDispatchIntent').mockResolvedValue(undefined)
       vi.spyOn(closures, 'readWorkflowClosure').mockResolvedValue(scenario === 'live' ? undefined : {

@@ -1,8 +1,8 @@
 import {
   NativeGraphActivityRecordSchema, GraphExecutionIdentitySchema, RUN_GRAPH_LIMITS, canonicalGraphJson,
   type RunGraphScope,
-} from '@foreman-code/contracts/wave25'
-import type { GraphTransactionSql } from './connection.js'
+} from '@foreman-code/contracts/current'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { RunGraphError } from './errors.js'
 
 import { type CurrentNativeActivity, type CurrentActivityContext } from './nativeActivitySelection.js'
@@ -47,7 +47,7 @@ export const CURRENT_NATIVE_ACTIVITIES_SQL = `
   limit $3`
 
 /** The two branches use current-only indexes; completed review history is never loaded. */
-export async function readCurrentNativeActivities(sql: GraphTransactionSql, scope: RunGraphScope,
+export async function readCurrentNativeActivities(sql: SqlTransaction, scope: RunGraphScope,
   nodeIds?: readonly string[], allowClosedForClear = false,
   prefetched?: CurrentNativeActivityRow[]): Promise<CurrentNativeActivity[]> {
   const result = prefetched ? { rows: prefetched } : await sql.query<CurrentNativeActivityRow>(CURRENT_NATIVE_ACTIVITIES_SQL,
@@ -70,7 +70,7 @@ export async function readCurrentNativeActivities(sql: GraphTransactionSql, scop
 }
 
 /** A producer invokes this after its domain change, within the SAME Run publication. */
-export async function readCurrentActivityContext(sql: GraphTransactionSql, scope: RunGraphScope,
+export async function readCurrentActivityContext(sql: SqlTransaction, scope: RunGraphScope,
   workflowNodeId: string): Promise<CurrentActivityContext> {
   const result = await sql.query<{ closed: boolean; workflow_closed: boolean; pending_id: string | null; delivery_blocked: boolean }>(
     `select r.stop_requested_at is not null or r.execution_state in (${CLOSED_RUN_STATES_SQL})

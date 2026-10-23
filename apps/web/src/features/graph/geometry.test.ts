@@ -1,6 +1,6 @@
 import { nativeNode } from '../../shared/mocks/nativeFixtureTypes'
 import { describe, expect, it } from 'vitest'
-import { applyGraphGeometry, createGraphGeometryAdapter } from './geometry'
+import { applyGraphGeometry, createGraphGeometryAdapter } from '../board-core'
 import { createGraphTopologyProjector } from './topology'
 import { makeScaleGraph } from './fixtures/scaleData'
 

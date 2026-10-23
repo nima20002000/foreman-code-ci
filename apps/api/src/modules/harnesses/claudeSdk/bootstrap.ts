@@ -1,6 +1,4 @@
-import { logIgnoredError } from '../../diagnostics/ignoredError.js'
-import { logger } from '../../diagnostics/logger.js'
-import { recordOperationalFailure } from '../../diagnostics/operationalFailures.js'
+import { logger, logIgnoredError, recordOperationalFailure } from '../../diagnostics/index.js'
 import { inventoryPayloadFingerprints } from '../payloadFingerprintCache.js'
 import { createRequire } from 'node:module'
 import { realpath } from 'node:fs/promises'

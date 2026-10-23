@@ -2,14 +2,12 @@ import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useId, useRef, useState } from 'react'
 import { AgentHarnessSchema, AgentEffortSchema, ClaudeEffortSchema, operatorChatSettings, type OperatorChatSettings } from '@foreman-code/contracts'
 import type { ReactNode } from 'react'
-import { useProviderHarnessModels } from '../provider-accounts/useProviderHarnessModels'
+import { useProviderHarnessModels, ProviderAccountSelect } from '../provider-accounts'
 import { useHarnessDefaultsQuery } from '../../shared/api/query'
 import { Button, Icon, SearchField, SegmentedControl, Slider, Switch } from '../../shared/ui/nocturne'
 import { useFloatingSurface } from '../../shared/ui/nocturne/useFloatingSurface'
 import { useDismissableSurface } from '../../shared/ui/useDismissableSurface'
-import { harnessNames } from '../settings/settingsPresentation'
-import { supportedEfforts } from '../settings/harnessModelSelection'
-import { ProviderAccountSelect } from '../provider-accounts/ProviderAccountSelect'
+import { harnessNames, supportedEfforts } from '../settings'
 
 export function OperatorComposerSettings({ value, onChange, disabled, access, hideThinking = false }: {
   value: OperatorChatSettings; onChange(value: OperatorChatSettings): void; disabled: boolean;

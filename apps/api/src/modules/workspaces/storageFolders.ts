@@ -6,7 +6,7 @@ import {
   type ManagementPrincipal, type WorkspaceStorageFolder, type WorkspaceStorageFolderDeleteInput,
 } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../access/policy.js'
-import { PostgresCommandCoordinator } from '../commands/postgres.js'
+import { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import { pathsOverlap } from './filesystem.js'
 import { activeAgentChatDirectories } from '../conversations/activeAgentChats.js'

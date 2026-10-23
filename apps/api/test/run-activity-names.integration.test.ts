@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import {
-  CurrentWorkflowSaveResultSchema, RunActivitiesPageSchema, WorkflowDefinitionV3Schema,
-} from '@foreman-code/contracts/wave25'
+  CurrentWorkflowSaveResultSchema, RunActivitiesPageSchema, WorkflowDefinitionCurrentSchema,
+} from '@foreman-code/contracts/current'
 import { RunBoardSnapshotGetResultSchema } from '@foreman-code/contracts/run-snapshots'
 import { buildApp } from '../src/app.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
@@ -16,11 +16,11 @@ import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { currentRepositoryServices } from './helpers/currentRepository.js'
 import type { currentDatabase } from './helpers/database.js'
-import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { withTaskDatabase } from './helpers/taskDatabase.js'
 import { graphFixture, graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 
 it('keeps admission-time Agent names in the Run board and Activities after presentation-only saves', async () => {
-  await nim2691TaskDatabase(async (pool, directory) => {
+  await withTaskDatabase(async (pool, directory) => {
     await applyApplicationMigrations(pool)
     const db = { pool, directory, schema: 'public', close: async () => {} } as Awaited<ReturnType<typeof currentDatabase>>
     const fixture = await graphFixture(db, { form: 'sequential', handoffs: true, insert: false, qualifiedReads: true })
@@ -40,7 +40,7 @@ it('keeps admission-time Agent names in the Run board and Activities after prese
         const stored = (await pool.query<{ record: unknown; revision: string }>(
           'select record,revision::text from workflows where id=$1 and workspace_id=$2',
           [fixture.scope.workflowId, fixture.scope.workspaceId])).rows[0]!
-        const graph = WorkflowDefinitionV3Schema.parse(stored.record)
+        const graph = WorkflowDefinitionCurrentSchema.parse(stored.record)
         graph.nodes.forEach((node, index) => { node.name = names[index]! })
         const input = {
           workspaceId: fixture.scope.workspaceId, workflowId: fixture.scope.workflowId, commandId: randomUUID(),

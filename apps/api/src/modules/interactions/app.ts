@@ -1,5 +1,5 @@
-import { COLLABORATION_AGENT_TOOLS, memoryBoardTools, HarnessConfigurationSchema } from '@foreman-code/contracts'
-import { browserAgentTools } from '../collaboration/browserTools.js'
+import { isReadOnlyHarnessConfiguration, COLLABORATION_AGENT_TOOLS, memoryBoardTools, HarnessConfigurationSchema } from '@foreman-code/contracts'
+import { browserAgentTools } from '../collaboration/index.js'
 import { readConversationCredential } from '../access/conversationCredentials.js'
 import {
   IdSchema,
@@ -17,17 +17,17 @@ import {
   type AgentSubject,
   type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { WORKER_NATIVE_OUTPUT_TOOL_NAMES, WorkerNativeOutputOperationSchema } from '@foreman-code/contracts/worker-native-output'
-import { resolveImmutableApprovalRoute } from '../workflows/approvalRoutes.js'
-import { assertWave25WorkerBinding } from './wave25/credentialAuthority.js'
+import { resolveImmutableApprovalRoute } from '../workflows/index.js'
+import { assertWave25WorkerBinding } from './current/credentialAuthority.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { AgentRunStatus } from '@foreman-code/contracts'
 import { AgentRunStatusService } from '../runs/agentRunStatus.js'
 import type pg from 'pg'
 
 import { workerScope, workerScopesForAction, hasWorkerAction, requireReadableInteraction, requireRespondableInteraction } from '../access/appPolicy.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import type { PostgresInteractionRepository } from './postgres.js'
 import type { InteractionService } from './service.js'
@@ -35,7 +35,7 @@ import {
   fitsInteractionMcpResponse, interactionMcpGet, interactionMcpSummary, interactionMcpView,
 } from './mcpReadback.js'
 import type { InteractionResponseOptions } from './cancellation.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
+import { ignoreError } from '../diagnostics/index.js'
 import { readConsultationCredentialSubject } from '../access/consultationAuthority.js'
 import { OPEN_RUN_STATES_SQL } from '../runs/runState.js'
 
@@ -180,7 +180,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
       ? await readConsultationCredentialSubject(this.pool, principal.id) : undefined
     const implemented = [...memoryBoardTools('write'), 'workflow_chat_read', 'workflow_chat_post', ...(row.browser?.enabled ? browserAgentTools : [])] as const
     const harness = HarnessConfigurationSchema.parse(row.harness)
-    const readOnly = harness.harness === 'opencode' || harness.sandbox === 'read-only'
+    const readOnly = isReadOnlyHarnessConfiguration(harness)
     const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null, implemented).filter(tool => {
       if (tool.startsWith('browser_') && readOnly && !COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly) return false
       if (subject && tool === 'interaction_respond') return false
@@ -228,8 +228,8 @@ export class PostgresAppInteractionService implements AppInteractionService {
       [principal.id, principal.agentId, JSON.stringify(scopes)],
     )
     return result.rows.some((row) => {
-      const run = AcceptedWorkflowRunV3Schema.safeParse(row.run)
-      const version = WorkflowVersionV3Schema.safeParse(row.version)
+      const run = AcceptedWorkflowRunCurrentSchema.safeParse(row.run)
+      const version = WorkflowVersionCurrentSchema.safeParse(row.version)
       const execution = HarnessExecutionSchema.safeParse(row.execution)
       if (!run.success || !version.success || !execution.success) return false
       const r = run.data, v = version.data, e = execution.data

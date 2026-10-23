@@ -3,8 +3,6 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import pg from 'pg'
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { expect, it, vi } from 'vitest'
 import { fakeComputer } from '../../../test/helpers/fleetSync.js'
@@ -17,7 +15,7 @@ import { ComputerMaintenance } from './maintenance.js'
 import { FleetMaintenanceService, type FleetSources } from './fleet.js'
 import { readWorkerReleasePublication } from './workerArtifacts.js'
 
-it('reads stalled background loops and an overdue Worker publication through authenticated MCP', async () => {
+it('reads stalled background loops and an overdue Worker publication through authenticated HTTP', async () => {
   const parent = join(homedir(), '.cache', 'foreman-tmp')
   await mkdir(parent, { recursive: true })
   const directory = await mkdtemp(join(parent, 'service-health-'))
@@ -41,28 +39,20 @@ it('reads stalled background loops and an overdue Worker publication through aut
   vi.spyOn(access, 'authenticate').mockImplementation(async token => token === 'reader' ? principal : denied)
   const recordDenied = vi.fn()
   const commands = { recordDenied } as unknown as PostgresCommandCoordinator
-  const computerMaintenance = new FleetMaintenanceService(pool, randomUUID(), () => undefined, commands,
+  const mainId = randomUUID()
+  const computerMaintenance = new FleetMaintenanceService(pool, mainId, () => undefined, commands,
     new ComputerMaintenance(fakeComputer().ports),
     { workerPublication: () => readWorkerReleasePublication({ directory, version: '1.1.0' }) } as FleetSources)
   const app = buildApp({ logger: false,
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     operator: { access, services: { commands, computerMaintenance } as unknown as OperatorServices },
   })
-  const address = await app.listen({ host: '127.0.0.1', port: 0 })
-  const clients: Client[] = []
-  const connect = async (token: string) => {
-    const client = new Client({ name: 'service-health-test', version: '1' })
-    clients.push(client)
-    await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
-      authProvider: { token: async () => token },
-    }))
-    return client
-  }
+  const read = (token: string, query = '') => app.inject({ method: 'GET', url: `/api/management/computers/maintenance${query}`,
+    headers: { authorization: `Bearer ${token}` } })
   try {
-    const reader = await connect('reader')
-    const result = await reader.callTool({ name: 'computers_maintenance_status', arguments: { refresh: true } })
-    expect(result.isError).not.toBe(true)
-    const [main] = (decodeMcpToolResult(result) as { computers: { status: { services: unknown[] };
+    const result = await read('reader', '?refresh=true')
+    expect(result.statusCode).toBe(200)
+    const [main] = (result.json() as { computers: { status: { services: unknown[] };
       workerPublication: { state: string; lastError: string } }[] }).computers
     expect(main!.status.services).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'test-missed-loop', status: 'stalled', lastStartedAt: null }),
@@ -71,13 +61,10 @@ it('reads stalled background loops and an overdue Worker publication through aut
     expect(main!.workerPublication).toMatchObject({ state: 'failed', startedAt, deadlineAt })
     expect(main!.workerPublication.lastError).toMatch(/^WORKER_PUBLICATION_DEADLINE_EXCEEDED: phase publishing, age 180 min, over the 120 min limit/u)
 
-    const unauthorized = await connect('denied')
-    const rejection = await unauthorized.callTool({ name: 'computers_maintenance_status', arguments: {} })
-    expect(rejection.isError).toBe(true)
-    expect(recordDenied).toHaveBeenCalledWith(denied.id, 'mcp', 'computers_maintenance_status',
-      'mcp:computers_maintenance_status')
+    const rejection = await read('denied')
+    expect(rejection.statusCode).toBe(403)
+    expect(recordDenied).toHaveBeenCalledWith(denied.id, 'http', 'computers_maintenance_status', mainId)
   } finally {
-    await Promise.all(clients.map(client => client.close()))
     await app.close()
     await pool.end()
     vi.restoreAllMocks()

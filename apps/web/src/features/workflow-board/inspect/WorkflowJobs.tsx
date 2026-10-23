@@ -3,11 +3,8 @@ import { createStore, useStore } from 'zustand'
 import type { JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import { jobQueueHasExecution } from '@foreman-code/contracts/job-admission'
 import { Button, Icon, type IconName } from '../../../shared/ui/nocturne'
-import { JobResult } from '../../jobs/JobResult'
-import { JobQueueFacts } from '../../jobs/JobSpecFacts'
-import { jobError } from '../../jobs/model'
-import { useWorkflowJobHistory, useWorkflowJobQueue } from '../../jobs/query'
-import { formatDuration } from '../../resource-telemetry/telemetryView'
+import { JobResult, JobQueueFacts, jobError, useWorkflowJobHistory, useWorkflowJobQueue } from '../../jobs'
+import { formatDuration } from '../../resource-telemetry'
 
 function createJobsPanelStore() {
   type SelectedJob = Pick<JobExecutionRecord, 'id' | 'initiatingAgent'> & { definitionVersionId: string }

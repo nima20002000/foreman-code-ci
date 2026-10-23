@@ -1,6 +1,7 @@
 import { errorMessage } from '@foreman-code/contracts/server-kit'
-import { isTransientExecutionCode } from '../../shared/executionFailureCodes.js'
-import type { ExecutionResult } from '@foreman-code/contracts'
+import { HarnessExecutionError } from '../../shared/harnessExecutionError.js'
+
+export { HarnessExecutionError }
 
 export function isDefiniteCompactionRejection(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
@@ -8,16 +9,6 @@ export function isDefiniteCompactionRejection(error: unknown): boolean {
     || 'deliveryState' in error && error.deliveryState === 'not-delivered'
     || 'method' in error && error.method === 'thread/compact/start'
       && 'uncertain' in error && error.uncertain === false
-}
-
-export class HarnessExecutionError extends Error {
-  readonly result: ExecutionResult
-
-  constructor(code: string, message: string, retryable = isTransientExecutionCode(code), options?: ErrorOptions) {
-    super(message, options)
-    this.name = 'HarnessExecutionError'
-    this.result = { outcome: 'failed', error: { code, message, retryable } }
-  }
 }
 
 /** Evidence from the native write boundary, scoped to the operation that failed. */

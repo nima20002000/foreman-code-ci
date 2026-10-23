@@ -5,11 +5,8 @@ import { ApprovedRootAllowlistSchema } from '../../../packages/contracts/src/wor
 import { WorkerPairingConfigurationSchema } from '../../../packages/contracts/src/deviceIdentity.ts';
 import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES }
   from '../../../packages/contracts/src/installedRuntimeNode.ts';
-import { fingerprintQualificationPath } from '../../../apps/api/src/modules/jobs/qualificationFingerprint.ts';
-import { readVerificationQuotaPool } from '../../../apps/api/src/modules/jobs/quotaOwnership.ts';
-import { readProtectedRuntimeFile } from '../../../apps/api/src/modules/jobs/installedRuntimeHost.ts';
-import { anchored, identity, openPrivateRoot, openChildDirectory }
-  from '../../../apps/api/src/modules/sources/privateFilesystem.ts';
+import { fingerprintQualificationPath, readVerificationQuotaPool, readProtectedRuntimeFile } from '@foreman-code/api/worker/jobs';
+import { anchored, identity, openPrivateRoot, openChildDirectory } from '@foreman-code/api/worker/sources';
 import { readPrivateBytes, assertRuntimeQuiescent } from './jobRuntimeCapture.mjs';
 import { acquireWorkerLock } from './runtime.mjs';
 import { optionalManagedJson, publishManagedJson } from './managedState.mjs';

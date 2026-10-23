@@ -1,9 +1,10 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import type pg from 'pg'
 import type { HarnessExecution, HarnessNativeEvent } from '@foreman-code/contracts'
-import type { AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
+import type { AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
 import type { WorkflowNativeCapture } from '../interactions/workflowNativeCapture.js'
-import { ExclusiveGraphConnection, assertGraphTransaction, beforeGraphCommit, type GraphTransactionSql } from '../run-graph/connection.js'
+import { ExclusiveGraphConnection, assertGraphTransaction, beforeGraphCommit } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { RunOwnership } from './ownership.js'
 import type { RepeatNativeEvidence } from './repeatNativeRepository.js'
 import type { StoredRepeatExecution } from './repeatPostgres.js'
@@ -19,7 +20,7 @@ vi.mock('../run-graph/publication.js', async (importOriginal) => ({
 vi.mock('../run-graph/repeatReceipts.js', () => ({ requireRepeatCanonicalReceiptBeforeCommit: vi.fn(),
   assertRepeatCanonicalReceiptsLocked: vi.fn() }))
 vi.mock('./nativeEventBatch.js', () => ({
-  appendNormalizedNativeEvents: vi.fn(async (_sql: GraphTransactionSql,
+  appendNormalizedNativeEvents: vi.fn(async (_sql: SqlTransaction,
     frames: Parameters<typeof appendNormalizedNativeEvents>[1]) => frames.map(({ event }: { event: HarnessNativeEvent }) => ({
     inserted: true, rejected: false, sequence: String(event.sequence),
   }))),
@@ -54,18 +55,20 @@ function fixture(retained?: 'same' | 'missing' | 'changed' | 'lost') {
     : { type: 'event', event: { sequence: 1 } }, session: { harness: 'codex', nativeSessionId: 'session' },
   lifetimeGeneration: 1, closureGeneration: '1', lane: null, observedAt: at,
   assertCurrent() { if (!current) throw new Error('original lifetime lost') } } as WorkflowNativeCapture
-  const raw = { query: vi.fn(async (text: string) => {
-    if (text.includes('from harness_native_events n join jsonb_to_recordset')) {
+  const raw = { query: vi.fn(async (text: string, values: unknown[] = []) => {
+    // The retained transcript read binds the execution id, the original rows and the run id.
+    if (values.length === 3 && values[0] === execution.id) {
       if (retained === 'lost') current = false
       return { rows: retained === 'missing' ? [] : [{ connection_id: transcript.connectionId,
         source_sequence: transcript.sequence, sequence: 31, record_matches: retained !== 'changed',
         source_digest: null, semantic_digest: null }], rowCount: 1 }
     }
     if (text === 'commit' || text === 'rollback') events.push(text)
-    return { rows: [], rowCount: text.startsWith('insert') ? 1 : 0 }
+    // The native session binding insert binds the execution id and the session reference.
+    return { rows: [], rowCount: values.length === 2 && values[0] === execution.id ? 1 : 0 }
   }) } as unknown as pg.ClientBase
   const connection = new ExclusiveGraphConnection(raw, () => owner.assertOwned())
-  const callback = vi.fn(async (sql: GraphTransactionSql, _evidence: RepeatNativeEvidence,
+  const callback = vi.fn(async (sql: SqlTransaction, _evidence: RepeatNativeEvidence,
     proof: WorkflowNativeProofRecord) => {
     assertGraphTransaction(sql)
     expect(persistedProof).toBeDefined()
@@ -79,7 +82,7 @@ function fixture(retained?: 'same' | 'missing' | 'changed' | 'lost') {
     scope: { workspaceId: 'workspace', workflowId: 'workflow', runId: 'run', workflowVersionId: 'version', executionSemanticsVersion: 3 } })
   vi.spyOn(validation, 'physical').mockResolvedValue(undefined)
   const persist = () => connection.transaction(sql => {
-    return service.persistOriginalLocked(sql, { id: 'run' } as AcceptedWorkflowRunV3, {} as RepeatNativeEvidence, owner)
+    return service.persistOriginalLocked(sql, { id: 'run' } as AcceptedWorkflowRunCurrent, {} as RepeatNativeEvidence, owner)
   })
   return { events, persist, transcript }
 }

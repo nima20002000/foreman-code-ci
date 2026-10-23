@@ -127,44 +127,48 @@ describe('Job capability summary matches mounted Operator tools',()=>{
     )
     expect(f.choices).not.toHaveBeenCalled()
   })
-  it('does not borrow Job scope from another workspace or advertise absent services',async()=>{
+  it('does not borrow Job scope from another workspace',async()=>{
     const scoped=await fixture(),foreign=await scoped.capabilities('workspace-b')
     expect(jobNames(foreign.tools)).toEqual([])
     expect(jobNames(foreign.requirements!.map(requirement=>requirement.name))).toEqual([])
     expect(foreign.runtimeLimits!.some(limit=>limit.feature==='ci_jobs')).toBe(false)
     expect(runtimeNames(foreign.tools)).toEqual([])
     expect(runtimeNames(foreign.requirements!.map(requirement=>requirement.name))).toEqual([])
-    for(const f of [await fixture(principal(),false,false),await fixture(principal([]))]) {
-      expect(jobNames(await operatorCatalogNames(f.client))).toEqual([])
-      const capabilities=await f.capabilities('workspace-a')
-      expect(jobNames(capabilities.tools)).toEqual([])
-      expect(runtimeNames(capabilities.tools)).toEqual([])
-      expect(capabilities.runtimeLimits!.some(limit=>limit.feature==='ci_jobs')).toBe(false)
-      expect(f.choices).not.toHaveBeenCalled();expect(f.listProfiles).not.toHaveBeenCalled()
-      expect(f.readEnrollment).not.toHaveBeenCalled();expect(f.updateEnrollment).not.toHaveBeenCalled()
-    }
+  })
+  it.each<[string, () => ReturnType<typeof fixture>]>([
+    ['no mounted Job services',()=>fixture(principal(),false,false)],
+    ['no Job grants',()=>fixture(principal([]))],
+  ])('does not advertise absent services with %s',async(_name,create)=>{
+    const f=await create()
+    expect(jobNames(await operatorCatalogNames(f.client))).toEqual([])
+    const capabilities=await f.capabilities('workspace-a')
+    expect(jobNames(capabilities.tools)).toEqual([])
+    expect(runtimeNames(capabilities.tools)).toEqual([])
+    expect(capabilities.runtimeLimits!.some(limit=>limit.feature==='ci_jobs')).toBe(false)
+    expect(f.choices).not.toHaveBeenCalled();expect(f.listProfiles).not.toHaveBeenCalled()
+    expect(f.readEnrollment).not.toHaveBeenCalled();expect(f.updateEnrollment).not.toHaveBeenCalled()
+  })
+  it('advertises Job execution without runtime profile tools when only Jobs are mounted',async()=>{
     const jobsOnly=await fixture(principal(),true,false),capabilities=await jobsOnly.capabilities('workspace-a')
     expect(runtimeNames(await operatorCatalogNames(jobsOnly.client))).toEqual([])
     expect(runtimeNames(capabilities.tools)).toEqual([])
     expect(capabilities.tools).toContain('job_start')
   })
-  it('reports profiles-only tools without Job execution and denies qualification to a reader',async()=>{
-    for(const jobActions of [actions,readerActions]) {
-      const f=await fixture(principal(jobActions),false),listed=await operatorCatalogNames(f.client)
-      const capabilities=await f.capabilities('workspace-a')
-      expect(jobNames(listed)).toEqual([]);expect(jobNames(capabilities.tools)).toEqual([])
-      expect(runtimeNames(capabilities.tools)).toEqual(runtimeNames(listed))
-      expect(runtimeNames(capabilities.requirements!.map(requirement=>requirement.name))).toEqual(runtimeNames(listed))
-      expect(capabilities.runtimeLimits!.some(limit=>limit.feature==='ci_jobs')).toBe(false)
-      if(!jobActions.includes('job_definitions:write')) {
-        expect(runtimeNames(listed)).toEqual(['build_computer_prepare_get','ci_enrollment_get','job_runtime_profile_list','job_runtime_qualification_get'])
-        const denied=await unavailableJobRuntimeToolCall(f.context,call('job_runtime_qualification_run'))
-        expect(denied?.result.isError).toBe(true);expect(JSON.stringify(denied)).toContain('ACCESS_DENIED')
-        expect(f.recordDenied).toHaveBeenCalledWith('job-discovery','mcp','job_runtime_qualification_run','mcp:job_runtime_qualification_run')
-      } else expect(runtimeNames(listed)).toEqual([...JOB_RUNTIME_TOOLS].sort())
-      expect(f.choices).not.toHaveBeenCalled();expect(f.listProfiles).not.toHaveBeenCalled()
-      expect(f.readEnrollment).not.toHaveBeenCalled();expect(f.updateEnrollment).not.toHaveBeenCalled()
-    }
+  it.each<[string, ManagementAction[]]>([['writer',actions],['reader',readerActions]])('reports profiles-only tools without Job execution for a %s',async(_name,jobActions)=>{
+    const f=await fixture(principal(jobActions),false),listed=await operatorCatalogNames(f.client)
+    const capabilities=await f.capabilities('workspace-a')
+    expect(jobNames(listed)).toEqual([]);expect(jobNames(capabilities.tools)).toEqual([])
+    expect(runtimeNames(capabilities.tools)).toEqual(runtimeNames(listed))
+    expect(runtimeNames(capabilities.requirements!.map(requirement=>requirement.name))).toEqual(runtimeNames(listed))
+    expect(capabilities.runtimeLimits!.some(limit=>limit.feature==='ci_jobs')).toBe(false)
+    if(!jobActions.includes('job_definitions:write')) {
+      expect(runtimeNames(listed)).toEqual(['build_computer_prepare_get','ci_enrollment_get','job_runtime_profile_list','job_runtime_qualification_get'])
+      const denied=await unavailableJobRuntimeToolCall(f.context,call('job_runtime_qualification_run'))
+      expect(denied?.result.isError).toBe(true);expect(JSON.stringify(denied)).toContain('ACCESS_DENIED')
+      expect(f.recordDenied).toHaveBeenCalledWith('job-discovery','mcp','job_runtime_qualification_run','mcp:job_runtime_qualification_run')
+    } else expect(runtimeNames(listed)).toEqual([...JOB_RUNTIME_TOOLS].sort())
+    expect(f.choices).not.toHaveBeenCalled();expect(f.listProfiles).not.toHaveBeenCalled()
+    expect(f.readEnrollment).not.toHaveBeenCalled();expect(f.updateEnrollment).not.toHaveBeenCalled()
   })
   it('withholds enrollment tools when the enrollment service is absent', async () => {
     const f = await fixture(principal(), true, true, { enrollment: false })

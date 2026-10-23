@@ -1,4 +1,4 @@
-import { RunDirectionWaitSchema, type RunDirectionWait } from '@foreman-code/contracts/wave25'
+import { RunDirectionWaitSchema, type RunDirectionWait } from '@foreman-code/contracts/current'
 import type { AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
 import { parseHierarchyWorkResult } from './hierarchyResults.js'
 

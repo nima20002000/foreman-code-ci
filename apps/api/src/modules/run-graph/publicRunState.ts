@@ -1,5 +1,6 @@
-import { GraphRunStateSchema, type RunGraphScope } from '@foreman-code/contracts/wave25'
-import { assertGraphTransaction, type GraphTransactionSql } from './connection.js'
+import { GraphRunStateSchema, type RunGraphScope } from '@foreman-code/contracts/current'
+import { assertGraphTransaction } from './connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { publicAttentionTotals, readPublicAttentionCounts, type PublicAttentionCount } from './currentAttention.js'
 import { RunGraphError } from './errors.js'
 
@@ -8,7 +9,7 @@ export const PUBLIC_RUN_STATE_SQL = `select r.execution_state,r.record->>'outcom
       exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending) as cleanup_pending
       from runs r where r.id=$1 and r.workspace_id=$2 and r.workflow_id=$3 and r.workflow_version_id=$4`
 
-export async function readPublicRunStateLocked(sql: GraphTransactionSql, scope: RunGraphScope,
+export async function readPublicRunStateLocked(sql: SqlTransaction, scope: RunGraphScope,
   attention?: ReadonlyMap<string, PublicAttentionCount>, prefetched?: PublicRunStateRow[]) {
   assertGraphTransaction(sql)
   const row = prefetched ? prefetched[0] : (await sql.query<PublicRunStateRow>(

@@ -6,14 +6,14 @@ import {
   redirect,
 } from '@tanstack/react-router'
 import { PageNotFound } from '../shared/ui/PageNotFound'
-import { ComputerSettingsTabs, type ComputerSettingsTab } from '../features/settings/computerSettingsTabs'
+import { ComputerSettingsTabs, type ComputerSettingsTab } from '../features/settings'
 import { ApprovalInboxSearchSchema, UrlSearchSelectionSchema, BrowserProfilesSettingsSearchSchema } from '@foreman-code/contracts'
 import { RunsSelectorSearchSchema } from '../features/runs-selector'
 import { RootShell } from './RootShell'
 import { AgentSettingsSearchSchema, BugsSettingsSearchSchema, SkillSettingsSearchSchema } from '@foreman-code/contracts/management'
 import { AppearanceSettingsRouteEntry, BugsSettingsRouteEntry, GeneralSettingsRouteEntry, NewSkillRouteEntry, SkillDetailRouteEntry, SkillsSettingsRouteEntry, SystemPromptSettingsRouteEntry, WorkspaceDefaultsSettingsRouteEntry } from '../routes/SettingsExperienceRoutes'
 
-import { ProviderAccountsSettingsSearchSchema } from '../features/provider-accounts/providerAccountsNavigation'
+import { ProviderAccountsSettingsSearchSchema } from '../features/provider-accounts'
 import { ComputersSettingsRouteEntry, ComputerDetailsSettingsRouteEntry, BrowserProfilesSettingsRouteEntry } from '../routes/SettingsExperienceRoutes'
 
 import { WorkspaceRouteEntry } from '../routes/WorkspaceRouteEntry'

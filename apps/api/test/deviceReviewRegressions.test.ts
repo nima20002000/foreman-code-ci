@@ -12,6 +12,7 @@ import { adaptDeviceSocket } from '../src/modules/devices/deviceWire.js'
 import { deviceHttpHandler } from '../src/modules/devices/deviceHttp.js'
 import { signMainIdentityProof, signMainEnrollmentProof } from '../src/modules/devices/mainIdentity.js'
 import { PostgresDeviceAccessService } from '../src/modules/devices/access.js'
+import { liveAuthorityQuery, livePrincipalRow } from './helpers/livePrincipal.js'
 import { deviceNegotiationHash } from '../src/modules/devices/deviceApplicationChannel.js'
 
 class Socket extends EventEmitter {
@@ -48,14 +49,16 @@ const manager: ManagementPrincipal = { id: randomUUID(), name: 'Owner', audience
 function commandPool() {
   let record = { ...registration }
   const receipts = new Map<string, { input_hash: string; target_key: string; result: DeviceRegistration }>()
-  const query = vi.fn(async (sql: string, values: unknown[] = []) => {
-    if (sql.includes('from management_principals')) return { rows: [{ id: manager.id, name: manager.name, audience: 'operator', grants: manager.grants, expires_at: new Date(manager.expiresAt), revoked_at: null, delegated_from: null }] }
-    if (sql.includes('from management_command_receipts')) return { rows: receipts.has(String(values[2])) ? [receipts.get(String(values[2]))] : [] }
-    if (sql.startsWith('insert into management_command_receipts')) receipts.set(String(values[2]), { input_hash: String(values[4]), target_key: String(values[3]), result: JSON.parse(String(values[5])) as DeviceRegistration })
-    if (sql.includes('select record from device_registrations')) return { rows: [{ record }] }
-    if (sql.startsWith('update device_registrations')) record = values[1] as DeviceRegistration
+  // Statements are told apart by their bound values: the principal read binds its id, the receipt read the principal ids,
+  // operation and command id, the receipt write six values, and the registration read and write a device id and then a
+  // Main id or the replacement record.
+  const query = vi.fn(liveAuthorityQuery(id => id === manager.id ? livePrincipalRow(manager) : undefined, (_sql, values) => {
+    if (values.length === 3 && Array.isArray(values[0])) return { rows: receipts.has(String(values[2])) ? [receipts.get(String(values[2]))] : [] }
+    if (values.length === 6) receipts.set(String(values[2]), { input_hash: String(values[4]), target_key: String(values[3]), result: JSON.parse(String(values[5])) as DeviceRegistration })
+    if (values.length === 2 && typeof values[1] === 'string') return { rows: [{ record }] }
+    if (values.length === 2) record = values[1] as DeviceRegistration
     return { rows: [] }
-  })
+  }))
   return { pool: { connect: async () => ({ query, release: vi.fn() }) } as unknown as pg.Pool, query, setRecord: (value: DeviceRegistration) => { record = value } }
 }
 function connectTo(endpoint: DeviceEndpoint, tasks: Promise<void>[], sockets: Socket[]) {
@@ -185,7 +188,7 @@ describe('W07 confirmed security and lifecycle regressions', () => {
       supervisor.start(); await flush(); expect(supervisor.status().phase).toBe('ready')
       port.query.mockClear(); expect(await service.revoke(manager, principal.deviceId, 1, commandId)).toEqual(revoked); await flush()
       expect(port.query.mock.calls.filter(([sql]) => sql.includes('device_registrations'))).toHaveLength(0)
-      expect(port.query.mock.calls.find(([sql]) => sql.includes('from management_command_receipts'))?.[1]).toEqual([[manager.id], 'device_revoke', commandId])
+      expect(port.query.mock.calls.find(([, values]) => values?.length === 3 && Array.isArray(values[0]))?.[1]).toEqual([[manager.id], 'device_revoke', commandId])
       expect(sockets[0]!.closed).toBe(false); expect(supervisor.status().phase).toBe('ready')
       const replacement = new Socket(); const task = device.acceptAuthenticated(ticket, adaptDeviceSocket(replacement)); tasks.push(task)
       replacement.frame({ ...identity, authorizationRevision: 3, type: 'hello', protocolVersion: 1, appVersion: 'build', nonce: Buffer.alloc(32).toString('base64url'), connectionGeneration: 1, connectionEpoch: randomUUID() }); await flush()

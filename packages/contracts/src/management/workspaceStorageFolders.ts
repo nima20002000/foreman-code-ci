@@ -21,7 +21,7 @@ export const WorkspaceStorageFoldersPageSchema = z.object({
 }).strict()
 export const WorkspaceStorageFolderDeleteInputSchema = z.object({
   commandId: optionalCommandId(z.string().uuid()), path: Path,
-  expectedIdentity: Identity.describe('Identity returned by workspace_storage_folders_list. A replaced folder is never deleted.'),
+  expectedIdentity: Identity.describe('Identity returned by the storage folder list. A replaced folder is never deleted.'),
 }).strict()
 export type WorkspaceStorageFolderDeleteInput = z.infer<typeof WorkspaceStorageFolderDeleteInputSchema>
 export const WorkspaceStorageFolderDeleteResultSchema = z.object({

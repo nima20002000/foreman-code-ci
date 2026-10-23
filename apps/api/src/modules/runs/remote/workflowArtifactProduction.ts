@@ -1,4 +1,4 @@
-import { settleObserved } from '../../diagnostics/ignoredError.js'
+import { settleObserved } from '../../diagnostics/index.js'
 import { isDeepStrictEqual } from 'node:util'
 import { McpServer } from '@modelcontextprotocol/server'
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node'
@@ -9,7 +9,7 @@ import { WorkflowArtifactTransferInputSchema } from '@foreman-code/contracts/wor
 import { z, ZodError } from 'zod'
 import type { WorkerArtifactMcpExtension } from '../../../mcp/unified/transport.js'
 import { toolFailure, toolResult } from '../../../mcp/shared/results.js'
-import type { PostgresCommandCoordinator } from '../../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../../commands/index.js'
 import { DomainError } from '../../errors.js'
 import { createProductionDistributedArtifacts } from '../../files/production.js'
 import { createDistributedArtifactActions, registerDistributedArtifactRoutes,

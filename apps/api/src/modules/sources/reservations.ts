@@ -4,7 +4,7 @@ import { ResolvedJobDefinitionSpecRecordSchema } from '@foreman-code/contracts/j
 import { readJobRuntimeProfileVersion } from '../jobs/runtimeProfileVersion.js'
 import { JOB_VERIFICATION_OWNER_CONFIGURATION } from '@foreman-code/contracts/job-verification-policy'
 import { randomUUID } from 'node:crypto'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { isDeepStrictEqual } from 'node:util'
 import { DomainError } from '../errors.js'
 import type { SourcePreparationClosure } from '@foreman-code/contracts/source-admission'
@@ -21,7 +21,7 @@ export type SourceReservation = { reservationId: string; scopeId: string; ownerK
   referenceReclaimed?: true;
   cleanupRetry?: { failures: number; nextAttemptAt: string };
   retainedSharedTree?: { id: string; bytes: number } }
-export async function requireUnreclaimedSourceOperation(sql: GraphSqlClient, operationId: string): Promise<void> {
+export async function requireUnreclaimedSourceOperation(sql: SqlQuery, operationId: string): Promise<void> {
   const fenced = await sql.query(`select 1 from source_storage_reservations
     where owner_kind='materialization' and owner_id=$1 and (record ? 'reclamation' or state='reclaimed')`, [operationId])
   if (fenced.rowCount) {
@@ -36,7 +36,7 @@ export function verificationSourceStorageBytes(profile: JobVerificationProfile):
     fingerprint.deviceLimits.diskBytes - fingerprint.quota.controlHardLimitBytes,
     fingerprint.quota.volumeCapacityBytes - fingerprint.quota.controlHardLimitBytes)
 }
-async function materializationCapacity(sql: GraphSqlClient, request: Omit<SourceReservation, 'reservationId'>,
+async function materializationCapacity(sql: SqlQuery, request: Omit<SourceReservation, 'reservationId'>,
   limits: ReturnType<typeof sourceStorageLimits>) {
   const ordinary = { verification: false, bytes: limits.bytes, materializations: limits.materializations }
   if (request.ownerKind !== 'materialization') return ordinary
@@ -64,7 +64,7 @@ async function materializationCapacity(sql: GraphSqlClient, request: Omit<Source
 export class PostgresSourceReservations {
   constructor(private readonly readCapacity?:
     (request: Omit<SourceReservation, 'reservationId'>) => Promise<SourceStorageCapacity>) {}
-  async retainClosedPreparation(sql: GraphSqlClient, reservation: SourceReservation,
+  async retainClosedPreparation(sql: SqlQuery, reservation: SourceReservation,
     closure: SourcePreparationClosure, currentBytes: number): Promise<void> {
     if (reservation.ownerKind !== 'materialization' || reservation.ownerId !== closure.operationId) {
       throw new DomainError('SOURCE_RESERVATION_CONFLICT', 'Preparation closure belongs to another reservation.', 409)
@@ -77,7 +77,7 @@ export class PostgresSourceReservations {
     const retainedBytes = closure.materializationId === null ? Math.min(currentBytes, 16 * 1024) : currentBytes
     await this.retain(sql, reservation, 'retained', retainedBytes)
   }
-  async reserve(sql: GraphSqlClient, request: Omit<SourceReservation, 'reservationId'>,
+  async reserve(sql: SqlQuery, request: Omit<SourceReservation, 'reservationId'>,
     options: { capacity?: SourceStorageCapacity } = {}): Promise<SourceReservation> {
     if (!Number.isSafeInteger(request.reservedBytes) || request.reservedBytes < 0 || request.reservedBytes > SOURCE_AGGREGATE_LIMITS.bytes)
       throw new DomainError('SOURCE_CAPACITY', 'Invalid source disk reservation.', 409)
@@ -178,13 +178,13 @@ export class PostgresSourceReservations {
       values($1,$2,$3,$4,$5,'preparing',$6::jsonb)`, [reservation.reservationId, request.scopeId, request.ownerKind, request.ownerId, request.reservedBytes, JSON.stringify(reservation)])
     return reservation
   }
-  async retain(sql: GraphSqlClient, reservation: SourceReservation, state: 'retained' | 'owned' | 'uncertain', accountedBytes = reservation.reservedBytes): Promise<void> {
+  async retain(sql: SqlQuery, reservation: SourceReservation, state: 'retained' | 'owned' | 'uncertain', accountedBytes = reservation.reservedBytes): Promise<void> {
     if (!Number.isSafeInteger(accountedBytes) || accountedBytes < 0) throw new DomainError('SOURCE_CAPACITY', 'Invalid verified source footprint.', 409)
     await sql.query('select pg_advisory_xact_lock(hashtext($1))', [`source-storage:${reservation.scopeId}`])
     const result = await sql.query(`update source_storage_reservations set state=$2,reserved_bytes=$3 where reservation_id=$1 and state<>'reclaimed'`, [reservation.reservationId, state, accountedBytes])
     if (result.rowCount !== 1) throw new DomainError('SOURCE_RESERVATION_CONFLICT', 'Source reservation is not retained.', 409)
   }
-  async retainMaterialization(sql: GraphSqlClient, reservation: SourceReservation,
+  async retainMaterialization(sql: SqlQuery, reservation: SourceReservation,
     rawFootprint: RetainedSourceFootprint): Promise<void> {
     const footprint = RetainedSourceFootprintSchema.parse(rawFootprint)
     await sql.query('select pg_advisory_xact_lock(hashtext($1))', [`source-storage:${reservation.scopeId}`])
@@ -206,7 +206,7 @@ export class PostgresSourceReservations {
   }
   /** Authoritative physical deletion AND execution closure must precede this.
    * No automatic timer or client input can provide that proof. */
-  async reclaimed(sql: GraphSqlClient, reservation: SourceReservation, prove: () => Promise<boolean>): Promise<void> {
+  async reclaimed(sql: SqlQuery, reservation: SourceReservation, prove: () => Promise<boolean>): Promise<void> {
     if (!await prove()) throw new DomainError('SOURCE_RECLAMATION_UNCONFIRMED', 'Physical source reclamation is not confirmed.', 409)
     await sql.query('select pg_advisory_xact_lock(hashtext($1))', [`source-storage:${reservation.scopeId}`])
     await sql.query(`update source_storage_reservations set state='reclaimed' where reservation_id=$1`, [reservation.reservationId])

@@ -10,7 +10,7 @@ import * as fileContracts from '@foreman-code/contracts/files'
 import { AgentChatStateResponseSchema, AgentChatStateSchema } from '@foreman-code/contracts/agent-chat'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import type { ApiConfig } from '../src/config.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
@@ -23,16 +23,17 @@ import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js
 import { registerProductionFileStorage } from '../src/modules/files/production.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { deferred } from './helpers/deferred.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 
 describe('Operator conversation file MCP parity', () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
   let app: ReturnType<typeof buildApp>
   let access: PostgresAccessService
   let owner: Awaited<ReturnType<PostgresAccessService['issue']>>
   let reader: Awaited<ReturnType<PostgresAccessService['issue']>>
   let foreign: Awaited<ReturnType<PostgresAccessService['issue']>>
-  let fixture: Awaited<ReturnType<typeof seedAgent3>>
+  let fixture: Awaited<ReturnType<typeof seedWorkflowFixture>>
   let files: ReturnType<typeof registerProductionFileStorage>
   let address: string
   const clients: Client[] = []
@@ -41,8 +42,8 @@ describe('Operator conversation file MCP parity', () => {
     byteSize: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') })
 
   beforeAll(async () => {
-    database = await agent3Database()
-    fixture = await seedAgent3(database.pool, database.directory,
+    database = await migratedDatabase()
+    fixture = await seedWorkflowFixture(database.pool, database.directory,
       makeCurrentWorkflowFixture(randomUUID(), 'sequential'), { run: false })
     access = new PostgresAccessService(database.pool)
     owner = await access.issue({ name: 'Conversation editor', audience: 'operator',

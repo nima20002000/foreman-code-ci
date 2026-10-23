@@ -15,8 +15,6 @@ import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, claudeConfiguration, ChatManager, waitFor } from './helpers/operatorChatFixture.js'
 import { postgresEnabled } from './helpers/database.js'
 
-const connectionString = process.env.TEST_DATABASE_URL
-
 let pool: OperatorChatFixture['pool']
 let access: OperatorChatFixture['access']
 let owner: OperatorChatFixture['owner']

@@ -3,7 +3,7 @@ import type { AgentFileReadInput } from '@foreman-code/contracts/files'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { readLiveManagementPrincipal } from '../../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../../access/policy.js'
-import { assertWave25WorkerBinding } from '../../interactions/wave25/credentialAuthority.js'
+import { assertWave25WorkerBinding } from '../../interactions/index.js'
 import type { FileQuery } from '../repository.js'
 import { conversationReferenceContext, referenceIdentityDenied,
   type ReferenceConversationIdentity, type ReferenceExecutionIdentity } from './agentLineage.js'

@@ -1,9 +1,9 @@
 import type { NativeSessionReference, ReadObservation } from '@foreman-code/contracts'
-import { componentLogger } from '../diagnostics/logger.js'
-import { failedReadObservation, successfulReadObservation } from '../diagnostics/readObservation.js'
+import { componentLogger } from '../diagnostics/index.js'
+import { failedReadObservation, successfulReadObservation } from '../diagnostics/index.js'
 import type { NativeHarnessSessionManager } from '../harnesses/port.js'
 import type { PostgresOperatorActivityRepository } from './operatorActivityRepository.js'
-import type { NativePersistenceRedactor } from '../interactions/nativePersistence.js'
+import type { NativePersistenceRedactor } from '../interactions/index.js'
 import { knownNativeActivity } from './knownNativeActivity.js'
 
 /** Existing reconciler only. Idle/cold records never allocate, attach, replay a prompt or infer child success. */

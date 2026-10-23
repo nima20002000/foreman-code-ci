@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { WorkflowVersionGetInputSchema, WorkflowVersionListInputSchema, AgentVersionGetInputSchema,
   AgentVersionResultSchema } from '@foreman-code/contracts/management'
-import { CurrentWorkflowVersionDetailSchema, CurrentWorkflowVersionPageSchema } from '@foreman-code/contracts/wave25'
+import { CurrentWorkflowVersionDetailSchema, CurrentWorkflowVersionPageSchema } from '@foreman-code/contracts/current'
 import type { OperatorServices } from '../mcp/operator/types.js'
 import { requirePrincipal } from '../modules/access/http.js'
 import { DomainError } from '../modules/errors.js'

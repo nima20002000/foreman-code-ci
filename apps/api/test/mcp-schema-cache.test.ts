@@ -137,7 +137,7 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     expect(recordDenied).toHaveBeenCalledWith('reader', 'mcp', 'workspace_get', 'mcp:workspace_get')
     caller = { ...principal, id: 'denied-reader', grants: [{ actions: ['capabilities:read'], scope: {} }] }
     const deniedCatalog = (await catalogNames()).tools.map(tool => tool.name)
-    expect(deniedCatalog).toContain('operator_tool_schema_get')
+    expect(deniedCatalog).toContain('operator_get_capabilities')
     expect(deniedCatalog).not.toContain('workspace_get')
     caller = { ...principal, id: 'settings-reader', grants: [{ actions: ['settings:read'], scope: {} }] }
     const settingsCatalog = (await catalogNames()).tools.map(tool => tool.name)
@@ -150,7 +150,7 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     ]))
     caller = { ...caller, grants: [{ actions: ['settings:read', 'settings:update', 'capabilities:read'], scope: {} }] }
     const schema = await rpc<CallToolResult>('tools/call', {
-      name: 'operator_tool_schema_get', arguments: { name: 'circle_account_add' },
+      name: 'tool_schema', arguments: { name: 'circle_account_add' },
     })
     expect(schema.isError).not.toBe(true)
     expect(JSON.stringify(schema)).toContain('organizations')

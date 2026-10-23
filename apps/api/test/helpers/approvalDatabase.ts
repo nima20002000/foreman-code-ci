@@ -2,14 +2,14 @@ import { vi } from 'vitest'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { codexApprovalRuntime } from './codexApprovalRuntime.js'
 import { rejectableDeferred } from './deferred.js'
-import type { agent3Database } from './workflowDatabase.js'
+import type { migratedDatabase } from './migratedDatabase.js'
 import { masterApprovalFixture, masterApprovalOutput } from './masterApprovalFixture.js'
 
 /** Shared Save/Start and Codex adapter capture with replayed provider IO. */
 export async function approvalDatabase(options: {
   command?: string
   reviewerRole?: 'orchestrator' | 'master'
-  database?: Awaited<ReturnType<typeof agent3Database>>
+  database?: Awaited<ReturnType<typeof migratedDatabase>>
 } = {}) {
   const runtime = await codexApprovalRuntime('orchestrator', {
     ...options,

@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { admitRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { readAcceptedPlacement } from '../src/modules/placement/persistence.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
-import { sch11Fixture, sch11DomainState, type Sch11Database } from './helpers/scheduleFixture.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { scheduleDispatchFixture, scheduleDomainState, type ScheduleDatabase } from './helpers/scheduleFixture.js'
 import { schedulePlacementFixture } from './helpers/schedulePlacementFixture.js'
 import { join } from 'node:path'
 import { NativeProcessRegistry } from '../src/modules/harnesses/recovery/processRegistry.js'
@@ -14,9 +14,9 @@ import { createRequire } from 'node:module'
 import { diagnosticEnvironment, parseInstalledVersion } from '../src/modules/harnesses/compatibility/probe.js'
 
 describe('native scheduled placement recovery', () => {
-  let database: Sch11Database
+  let database: ScheduleDatabase
   beforeAll(async () => {
-    database = await agent3Database(process.env.ENG03_A_TEST_DATABASE_URL ?? process.env.WAVE25_TEST_DATABASE_URL)
+    database = await migratedDatabase()
   }, 60_000)
   afterAll(async () => { await database?.close() })
 
@@ -59,7 +59,7 @@ describe('native scheduled placement recovery', () => {
     const fixture = makeCurrentWorkflowFixture(randomUUID(), 'single')
     fixture.configurations[0]!.harness = { harness: 'codex', model: process.env.ENG03_CODEX_MODEL ?? 'gpt-5.6-luna',
       reasoningEffort: 'medium', serviceTier: 'standard', sandbox: 'read-only' }
-    const f = await sch11Fixture(database, undefined, fixture)
+    const f = await scheduleDispatchFixture(database, undefined, fixture)
     const placement = await schedulePlacementFixture(f)
     const dispatch = () => f.dispatcher(async (principal, input, schedule) => {
       await admitRepeatRun(database.pool, f.locations, principal, 'schedule', input,
@@ -70,9 +70,9 @@ describe('native scheduled placement recovery', () => {
       const saved = await placement.save()
       f.time.now = saved.nextOccurrenceAt!
       placement.restart()
-      const pending = await sch11DomainState(f)
+      const pending = await scheduleDomainState(f)
       await expect(dispatch().dispatch(saved)).rejects.toMatchObject({ code: 'HARNESS_INVENTORY_UNAVAILABLE' })
-      expect(await sch11DomainState(f)).toEqual(pending)
+      expect(await scheduleDomainState(f)).toEqual(pending)
       await placement.recover()
       await placement.harness.qualify()
       await dispatch().dispatch((await f.current())!)

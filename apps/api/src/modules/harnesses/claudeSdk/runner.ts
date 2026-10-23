@@ -6,9 +6,10 @@ import type {
   ClaudeNativeObservation, ClaudeSdkClient, ClaudeSdkOpenInput,
   ClaudeSdkOutput, ClaudeSdkQuery, ClaudeSdkRunner, ClaudeSdkSession, ClaudeSdkUserMessage,
 } from './port.js'
-import { ignoreError } from '../../diagnostics/ignoredError.js'
+import { ignoreError } from '../../diagnostics/index.js'
 import { assertClaudeSessionScope, claudeSessionHistory, readClaudeResponseOwner } from './runnerHistory.js'
 import { claudeQueryControls } from './queryControls.js'
+import { configuredHome } from '../../../config.js'
 
 export { assertClaudeSessionScope } from './runnerHistory.js'
 
@@ -235,7 +236,7 @@ export function createClaudeSdkRunner(input: {
       queryOpening = Promise.resolve(client.query({ prompt: inputQueue, scope: options.scope, options: {
         ...options.options, cwd: options.scope.cwd, abortController: abort,
         env: { ...(options.options.env as Record<string, string> | undefined),
-          ...(process.env.HOME ? { HOME: process.env.HOME } : {}), CLAUDE_CONFIG_DIR: options.scope.profilePath },
+          ...(configuredHome() ? { HOME: configuredHome()! } : {}), CLAUDE_CONFIG_DIR: options.scope.profilePath },
         ...(options.resume ? { resume: options.resume.nativeSessionId } : {}),
       } }))
       query = await queryOpening

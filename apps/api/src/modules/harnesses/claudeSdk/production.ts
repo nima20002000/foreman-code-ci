@@ -32,6 +32,7 @@ import type { ProviderAccountResolver } from '../../provider-accounts/service.js
 import { assertRuntimeProviderAccountProfile, resolveRuntimeProviderAccount } from '../providerAccountRuntime.js'
 import { requireClaudeApiKey } from './productionCredentials.js'
 import { assertConsultationRebind } from '../consultationSession.js'
+import { hostEnvironment } from '../../../shared/process.js'
 
 /** Private lifetime signal is never serialized into accepted configuration or provenance. */
 export type ClaudeProfileOwner = (ClaudeDomainBinding | OperatorProfileObservation | {
@@ -233,7 +234,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
     assertRuntimeProviderAccountProfile(input.accountBinding, accepted.override.target)
     signal.throwIfAborted()
     const compiled = compileClaudeConfiguration(input.configuration, input.workingDirectory, accepted,
-      process.env, apiKey)
+      hostEnvironment(), apiKey)
     const installation = input.registry.pinOverride(accepted.override)
     const binary = installation.installation.launcher.resolvedLauncher
     if (!binary) throw new DomainError('HARNESS_INSTALLATION_UNAVAILABLE', 'The accepted Claude launcher is unavailable.', 409)
