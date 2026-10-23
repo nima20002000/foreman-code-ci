@@ -100,6 +100,7 @@ export async function faultWorkflowFixture(options: {
   loop?: boolean
   mcpUnavailable?: boolean
   database?: Awaited<ReturnType<typeof currentOperatorIntegration>>['db']
+  beforePreparePlacement?(execution: HarnessExecution): Promise<void>
 } = {}) {
   const directory = await privateFixtureDirectory('workflow-fault-')
   const worker = await faultWorkflowWorker(directory, { mcpUnavailable: options.mcpUnavailable })
@@ -149,6 +150,7 @@ export async function faultWorkflowFixture(options: {
         const native = await readNativePlacement(base.db.pool, execution.id)
         if (!native) throw new Error('Expected prepared native source')
         nativePlacements.set(execution.id, native)
+        await options.beforePreparePlacement?.(execution)
         return paths
       } catch (error) {
         preparationFailure = { error }

@@ -217,7 +217,7 @@ it('loads the compiled API using only its deployed production dependencies', asy
       'lock: runtime.parseCiLock(await readFile(join(output, "source-lock/pnpm-lock.yaml"), "utf8")),',
       'containerfile: (await readFile(join(output, "Containerfile"), "utf8")).length,',
       'verification: (await readFile(join(output, "verification/verify-repository.mjs"), "utf8")).length }));',
-    ].join('\n'), pathToFileURL(join(destination, 'dist/modules/jobs/ciRuntimeContext.mjs')).href,
+    ].join('\n'), pathToFileURL(join(destination, 'dist/modules/ci/values.js')).href,
     project, context, captured], { cwd: destination, env: gitEnvironment })
     const runtimeResult = JSON.parse(runtimeOutput) as {
       digest: string; sourceCommit: string; lock: unknown; containerfile: number; verification: number

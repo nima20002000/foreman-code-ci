@@ -144,7 +144,7 @@ it('commits a cloud start before remote I/O and preserves cancellation when its 
     return { operation: 'start', run: { runId: request.runId, state: 'running', step: 'lint',
       exitCode: null, startedAt: new Date().toISOString(), finishedAt: null, logBytes: 0, message: null } }
   } }
-  const dispatch = sendCiDispatch({ pool: db.pool, endpoint,
+  const dispatch = sendCiDispatch({ context: mainCiContext, pool: db.pool, endpoint,
     read: async (id: string, _workspaceId: string, sql: SqlQuery) => {
       const saved = (await sql.query<{ record: unknown }>('select record from ci_runs where id=$1', [id])).rows[0]!
       return CiRunRecordSchema.parse(saved.record)
