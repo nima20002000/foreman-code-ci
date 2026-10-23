@@ -1,7 +1,7 @@
 import { readPublicProjectionLocked } from '../src/modules/run-graph/compactSnapshot.js'
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { AgentSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION, type AgentConfigurationVersion, type GraphqlToolOverride } from '@foreman-code/contracts'
+import { AgentSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION, type AgentConfigurationVersion, type ForemanToolOverride } from '@foreman-code/contracts'
 import { ManagementActionSchema, type ManagementGrant } from '@foreman-code/contracts/management'
 import { makeCurrentWorkflowFixture, CANONICAL_RUN_GRAPH_ROUTES, CurrentWorkflowSaveResultSchema,
   SavedManagedWorkflowCommandResultSchema, type CurrentFixtureForm } from '@foreman-code/contracts/current'
@@ -25,7 +25,7 @@ export const privateCanary = 'ENG04-PRIVATE-INPUT-MUST-NOT-REACH-GRAPH'
  * SQL receipts/audit and canonical publication are actual production services. */
 export async function graphFixture(db: GraphTestDatabase, options: { insert?: boolean; qualifiedReads?: boolean;
   form?: CurrentFixtureForm; handoffs?: boolean; maxNodeExecutions?: number; intervalEverySeconds?: number;
-  harness?: AgentConfigurationVersion['harness']; nodeToolOverrides?: GraphqlToolOverride[] } = {}) {
+  harness?: AgentConfigurationVersion['harness']; nodeToolOverrides?: ForemanToolOverride[] } = {}) {
   const f = makeCurrentWorkflowFixture(randomUUID(), options.form ?? 'repeat')
   if (options.harness) {
     for (const configuration of f.configurations) configuration.harness = structuredClone(options.harness)

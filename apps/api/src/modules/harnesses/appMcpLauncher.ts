@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES, standaloneInstallationSource } from '@foreman-code/contracts/installation-names'
 import { randomUUID } from 'node:crypto'
 import { flockOpenFile } from '../../shared/fileLock.js'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
@@ -12,7 +13,7 @@ import { sha256Hex } from '../../shared/hash.js'
 
 /** One native entry serves every role; the credential decides Operator, Orchestrator or Coder. */
 export const APP_MCP_SERVER_NAME = PRODUCT_SLUG
-export const APP_MCP_TOKEN = 'FOREMAN_CODE_MCP_TOKEN'
+export const APP_MCP_TOKEN = INSTALLATION_NAMES.environment.MCP_TOKEN
 /** Leave twenty seconds after the relay budgets for local HTTP and native reply delivery. */
 export const APP_MCP_TIMEOUTS = {
   startup_timeout_sec: 60,
@@ -35,7 +36,7 @@ export function appLauncherTokenName(entry: Record<string, unknown>): string | u
 }
 export const APP_MCP_PATH = '/mcp'
 /** Pre-unification entries. Recognized only so they can be reported and removed. */
-export const LEGACY_APP_MCP_SERVER_NAMES = ['graphql-app', 'graphql-operator'] as const
+export const LEGACY_APP_MCP_SERVER_NAMES = [INSTALLATION_NAMES.mcp.app, INSTALLATION_NAMES.mcp.operator] as const
 export const chatExcludedAppMcpServerNames = (serverName: string): readonly string[] =>
   [...new Set([serverName, ...APP_MCP_SERVER_NAMES, ...LEGACY_APP_MCP_SERVER_NAMES])]
 export function appLauncherPath(): string {
@@ -123,11 +124,11 @@ export function isStaleAppLauncher(entry: Record<string, unknown>): boolean {
   return isAppLauncher({ ...entry, command: process.execPath })
 }
 export async function installAppLauncher(signal?: AbortSignal): Promise<void> {
-  await installManagedLauncher(new URL('../../../../../scripts/graphql-mcp.mjs', import.meta.url), appLauncherPath(), signal)
+  await installManagedLauncher(new URL('../../../../../scripts/foreman-mcp.mjs', import.meta.url), appLauncherPath(), signal)
 }
 export async function installManagedLauncher(sourceUrl: URL, destination: string, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted()
-  const source = await readFile(sourceUrl, 'utf8')
+  const source = standaloneInstallationSource(await readFile(sourceUrl, 'utf8'))
   await withLauncherLock(destination, async (installationSignal) => {
     const temporary = `${destination}.${randomUUID()}.tmp`
     try {

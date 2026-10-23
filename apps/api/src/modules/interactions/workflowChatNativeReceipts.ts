@@ -1,5 +1,5 @@
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import type { WorkflowNativeProofRecord } from '../runs/index.js'
+import type { WorkflowNativeProofRecord } from '../runs/workflowNativeProof.js'
 import { CONTROL_COMMAND_COLUMNS, WORKFLOW_INPUT_RETRIES, captureWorkflowControlNativeLocked, markWorkflowControlCommandLocked,
   type ControlCommandRow } from '../collaboration/index.js'
 import type { WorkflowChatNativeTarget } from '../collaboration/index.js'

@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { execFileSync, spawn } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -293,7 +294,7 @@ export async function buildWorkerReleaseArtifacts({
       if (!reused) {
         await run(process.execPath, ['scripts/build-worker-artifact.mjs', path, staging], {
           cwd: repository,
-          env: { ...process.env, FOREMAN_CODE_WORKER_BUILD_COMMIT: commit },
+          env: { ...process.env, [INSTALLATION_NAMES.environment.WORKER_BUILD_COMMIT]: commit },
         })
       }
       const identity = reused || await verifyArtifact(staging, target, version, commit)

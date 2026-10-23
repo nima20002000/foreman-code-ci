@@ -11,7 +11,7 @@ import { RemoteNativeHistorySchema, REMOTE_NATIVE_SOURCE_LIMIT,
   REMOTE_PHYSICAL_CONTINUATION_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import { encodeResultCopies, decodeResultCopies, historyResultPaths } from './executionResultCodec.js'
 import { remoteWorkflowNativeHistory } from './workflowPhysicalReadout.js'
-import type { NativeHistory } from '../../harnesses/index.js'
+import type { NativeHistory } from '../../harnesses/port.js'
 import { DispatchIntentSchema, type DispatchIntent } from '@foreman-code/contracts/node-placement'
 import { JobLogChunkSchema, type JobLogChunk } from '@foreman-code/contracts/jobs'
 import { JobExecutionRecordSchema, type JobExecutionRecord } from '@foreman-code/contracts/job-verification'

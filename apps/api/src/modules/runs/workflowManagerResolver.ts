@@ -15,7 +15,7 @@ import { productionSelectedProfileManager } from '../harnesses/selectedProfilePr
 import { workflowProfileSelection } from '../harnesses/workflowProfileSelection.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../interactions/runtimePorts.js'
 import type { createProductionRemoteWorkflow } from '../placement/productionRemoteWorkflow.js'
-import type { ProviderAccountsService } from '../provider-accounts/index.js'
+import type { ProviderAccountsService } from '../provider-accounts/service.js'
 import { createLocalWorkflowNativeOutputs } from './remote/localWorkflowNativeOutputs.js'
 import type { LocalWorkflowArtifacts } from './remote/localWorkflowArtifacts.js'
 import type { PostgresRunRepository } from './postgres.js'

@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { constants } from 'node:fs'
 import { lstat, realpath, mkdir, open } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
@@ -25,7 +26,7 @@ export async function provisionWorkspaceDirectory(configuredRoot: string, worksp
     || directoryStat.uid !== rootStat.uid || await realpath(directory) !== directory) {
     throw new DomainError('PROVISIONING_TARGET_UNSAFE','The reserved workspace directory has unexpected ownership, permissions, or links.',409)
   }
-  const marker = join(directory,'.graphql-workspace.json')
+  const marker = join(directory,INSTALLATION_NAMES.paths.workspaceRecord)
   const expected = JSON.stringify({format:1,workspaceId})
   if (created) {
     const handle = await open(marker,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600)

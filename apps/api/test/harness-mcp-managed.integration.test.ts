@@ -211,7 +211,7 @@ it('requests exact Foreman Code and Linear presets through authenticated MCP, th
       await copyFile(process.execPath, previousNode)
       await mkdir(join(releaseDirectory, 'artifacts'), { recursive: true, mode: 0o700 })
       await mkdir(join(workerHome, '.local/share/graphql/mcp'), { recursive: true, mode: 0o700 })
-      const bridge = new URL('../../../scripts/graphql-mcp.mjs', import.meta.url)
+      const bridge = new URL('../../../scripts/foreman-mcp.mjs', import.meta.url)
       await copyFile(bridge, workerLauncher)
       const workerBridge = join(releaseDirectory, 'artifacts/graphql-mcp.mjs')
       await copyFile(bridge, workerBridge)
@@ -221,7 +221,7 @@ it('requests exact Foreman Code and Linear presets through authenticated MCP, th
         `ExecStart=${previousNode} ${join(workerRoot, 'current/src/cli.mjs')} run --state ${stateDirectory}\n`,
         { mode: 0o600 })
       await registerWorkerMcpInstallation({ home: workerHome, stateDirectory, releaseDirectory })
-      vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', join(workerHome, '.local/share/graphql/mcp'))
+      vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', join(workerHome, '.local/share/graphql/mcp'))
       const oldEntry = { ...installed as Record<string, unknown>, command: previousNode, args: [workerLauncher],
         startup_timeout_sec: 10, tool_timeout_sec: 30,
         timeout: 5000, custom_setting: { retained: true },
