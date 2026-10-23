@@ -142,6 +142,7 @@ it.runIf(postgresEnabled)('reuses a reviewer card with unresolved findings acros
   fixture.version.definition.handoffs = { contractVersion: 1 }
   fixture.version.definition.executionPolicy = { maxParallelism: 2, maxNodeExecutions: 4 }
   let round = 0
+  const reviewExecutionIds: string[] = []
   const runtime = await currentOperatorIntegration({ fixture, approvalNodeIds: [], outputFor: (nodeId, request) => {
     if (nodeId === coder.id) {
       round += 1
@@ -149,6 +150,7 @@ it.runIf(postgresEnabled)('reuses a reviewer card with unresolved findings acros
     }
     const { work } = WorkActivationInputSchema.parse(request.input)
     if (work.kind !== 'work_request') throw new Error('The reviewer needs a handoff request')
+    reviewExecutionIds.push(request.executionId)
     return { routing: { kind: 'return', requestId: work.request.requestId, outcome: round === 1 ? 'needs_changes' : 'accepted' },
       data: { latestDeliverable: { round }, remainingFindings: round === 1 ? ['The source still needs review.'] : [] } }
   } })
@@ -164,14 +166,20 @@ it.runIf(postgresEnabled)('reuses a reviewer card with unresolved findings acros
     const detail = MemoryCardDetailSchema.parse(await memoryCall(runtime.client, 'memory_board_get', {
       boardId: board.board.id, view: 'card', cardId: blocked.items[0]!.id }))
     expect(detail.bindings).toHaveLength(2)
-    expect(detail.bindings).toContainEqual(expect.objectContaining({ state: 'accepted' }))
+    expect(detail.bindings).toContainEqual(expect.objectContaining({ state: 'accepted', currentExecutionId: reviewExecutionIds[1] }))
     const previous = detail.bindings.find(binding => binding.state === 'blocked')
-    expect(previous).toMatchObject({ reason: 'The source still needs review.' })
+    expect(previous).toMatchObject({ reason: 'The source still needs review.', currentExecutionId: reviewExecutionIds[0] })
     expect(previous?.resolution).toBeUndefined()
     const details = await runtime.runs.getDetails(scope.workspaceId, runtime.f.run.id)
     const reviews = details!.executions.filter(execution => execution.workflowNodeId === reviewer.id)
     expect(reviews).toHaveLength(2)
-    expect(reviews[0]!.result).toMatchObject({ outcome: 'succeeded', output: {
-      data: { remainingFindings: ['The source still needs review.'] } } })
+    expect(reviewExecutionIds).toHaveLength(2)
+    // Run details are ordered by execution ID, not handoff round.
+    expect(reviews.find(execution => execution.id === reviewExecutionIds[0])?.result).toMatchObject({ outcome: 'succeeded', output: {
+      routing: { kind: 'return', outcome: 'needs_changes' },
+      data: { latestDeliverable: { round: 1 }, remainingFindings: ['The source still needs review.'] } } })
+    expect(reviews.find(execution => execution.id === reviewExecutionIds[1])?.result).toMatchObject({ outcome: 'succeeded', output: {
+      routing: { kind: 'return', outcome: 'accepted' },
+      data: { latestDeliverable: { round: 2 }, remainingFindings: [] } } })
   } finally { await runtime.close() }
 }, 60000)
