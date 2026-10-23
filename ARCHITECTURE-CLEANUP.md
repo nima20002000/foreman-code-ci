@@ -398,8 +398,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [x] #19 Run state machine: `runs/runState.ts`, with every `execution_state` write going through
   `writeRunStateLocked`.
 - [ ] #20 SQL mixed into orchestration.
-- [x] #21 Monster functions: existing splits retained; `qualifyVerificationRuntime` now also names command,
-  report, ordinary-suite and interruption steps, preserving effect order (branch `fix/a21-qualify`; CI pending).
+- [~] #21 Monster functions: `dispatchReview` split. Open: `openLocked`, `workHandoffAdmission`.
 - [~] #22 Proof/verification/receipt sprawl.
   - Done (7b, written without compiling or running tests): `shared/deepFreeze.ts` (`deepFreeze`, `frozenJsonCopy`, with a
     test) replaces six private copies in `interactions/{workflow,review}NativeCapture.ts`,
