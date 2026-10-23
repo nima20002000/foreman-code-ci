@@ -1,10 +1,10 @@
-import type { HarnessConfiguration } from '@foreman-code/contracts'
+import type { RecordedHarnessConfiguration } from '@foreman-code/contracts'
 import { isDeepStrictEqual } from 'node:util'
 import { DomainError } from '../../errors.js'
 import type { ProviderAccountResolver } from '../../provider-accounts/service.js'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 
-export function requireClaudeApiKey(configuration: HarnessConfiguration, apiKey?: string): string | undefined {
+export function requireClaudeApiKey(configuration: RecordedHarnessConfiguration, apiKey?: string): string | undefined {
   if (configuration.harness !== 'claude' || configuration.authMode !== 'api-key') return undefined
   if (!apiKey?.trim()) throw new DomainError('CLAUDE_API_KEY_DELIVERY_UNAVAILABLE',
     'Select a managed Claude account with a locally provisioned API key before running this profile.', 409)
@@ -12,7 +12,7 @@ export function requireClaudeApiKey(configuration: HarnessConfiguration, apiKey?
 }
 
 /** Secrets are resolved locally after the immutable account configuration is checked. */
-export async function requireClaudeProductionCredentialDelivery(configuration: HarnessConfiguration,
+export async function requireClaudeProductionCredentialDelivery(configuration: RecordedHarnessConfiguration,
   accounts?: ProviderAccountResolver, host?: CanonicalMachineReference, applicationInstallationId?: string): Promise<string | undefined> {
   if (configuration.harness === 'opencode') return undefined
   if (host?.kind === 'device') {

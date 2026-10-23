@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type pg from 'pg'
 import { withTransaction } from '../../../infrastructure/transaction.js'
 import {
@@ -94,7 +93,7 @@ export class CanonicalJobInputs {
         const installation=(await sql.query<{id:string}>('select id from application_installation where singleton=true for share')).rows[0]
         if(installation?.id!==execution.acceptedSpec.target.mainId)throw new DomainError('JOB_INPUT_WRONG_MAIN','Accepted input belongs to a different main installation.',403)
         const currentBinding=this.binding(execution),row=(await sql.query<{record:unknown;credential_expires_at:Date|null}>('select record,credential_expires_at from device_registrations where id=$1 and main_id=$2 for share',[currentBinding.deviceId,currentBinding.mainId])).rows[0]
-        if(!row?.credential_expires_at||!authorizeDevice(DeviceRegistrationSchema.parse(row.record),{audience:INSTALLATION_NAMES.protocol.workerAudience,mainId:currentBinding.mainId,deviceId:currentBinding.deviceId,workerInstallationId:currentBinding.workerInstallationId,keyRevision:currentBinding.keyRevision,authorizationRevision:currentBinding.authorizationRevision,expiresAt:row.credential_expires_at.toISOString()},'heartbeat',this.clock().getTime()))throw new DomainError('JOB_INPUT_DEVICE_REVOKED','Recipient device authority expired or was revoked.',403)
+        if(!row?.credential_expires_at||!authorizeDevice(DeviceRegistrationSchema.parse(row.record),{audience:'graphql-worker',mainId:currentBinding.mainId,deviceId:currentBinding.deviceId,workerInstallationId:currentBinding.workerInstallationId,keyRevision:currentBinding.keyRevision,authorizationRevision:currentBinding.authorizationRevision,expiresAt:row.credential_expires_at.toISOString()},'heartbeat',this.clock().getTime()))throw new DomainError('JOB_INPUT_DEVICE_REVOKED','Recipient device authority expired or was revoked.',403)
         this.binding(execution)
       }
   }

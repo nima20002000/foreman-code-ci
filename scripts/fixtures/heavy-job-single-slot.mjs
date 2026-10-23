@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../../packages/contracts/src/installationNames.mjs'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -15,7 +14,7 @@ const common = realpathSync(commonResult.stdout.trim())
 const state = join(common, 'graphql-heavy-jobs')
 const queue = join(state, 'queue')
 const active = join(state, 'active')
-const baseTmp = process.env[INSTALLATION_NAMES.environment.HEAVY_BASE_TMPDIR] || tmpdir()
+const baseTmp = process.env.GRAPHQL_HEAVY_BASE_TMPDIR || tmpdir()
 const tempRoot = join(baseTmp, `graphql-heavy-${createHash('sha256').update(common).digest('hex').slice(0, 16)}`)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
@@ -120,7 +119,7 @@ if (process.argv[2] === '__hold') {
   // closes it; wait for any token-bearing workers before letting the slot go.
   process.stdin.resume()
   process.stdin.once('end', async () => {
-    while (tokenUsed(process.env[INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN], process.pid)) await sleep(200)
+    while (tokenUsed(process.env.GRAPHQL_HEAVY_JOB_TOKEN, process.pid)) await sleep(200)
     process.exit(0)
   })
 } else {
@@ -203,7 +202,7 @@ async function main() {
   if (!Number.isSafeInteger(stopGraceMs) || stopGraceMs <= 0) throw new Error('Invalid stop grace')
   const command = process.argv.slice(divider + 1)
   const inherited = readJson(join(active, 'owner.json'))
-  const nested = inherited?.token && process.env[INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON] === common && process.env[INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN] === inherited.token
+  const nested = inherited?.token && process.env.GRAPHQL_HEAVY_JOB_COMMON === common && process.env.GRAPHQL_HEAVY_JOB_TOKEN === inherited.token
   mkdirSync(state, { recursive: true })
   if (nested) {
     const freshness = buildKind ? freshBuild(buildKind) : null
@@ -249,7 +248,7 @@ async function main() {
     tempPath = join(tempRoot, randomUUID())
     mkdirSync(tempPath)
     writeFileSync(join(tempPath, 'owner.json'), JSON.stringify({ common, worktree: root, pid: process.pid, start: procStart(process.pid), pgid: null, namespace, token }))
-    const environment = { ...process.env, TMPDIR: tempPath, TMP: tempPath, TEMP: tempPath, [INSTALLATION_NAMES.environment.HEAVY_BASE_TMPDIR]: baseTmp, [INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON]: common, [INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN]: token }
+    const environment = { ...process.env, TMPDIR: tempPath, TMP: tempPath, TEMP: tempPath, GRAPHQL_HEAVY_BASE_TMPDIR: baseTmp, GRAPHQL_HEAVY_JOB_COMMON: common, GRAPHQL_HEAVY_JOB_TOKEN: token }
     child = spawn(command[0], command.slice(1), { stdio: 'inherit', env: environment, detached: true })
     const pgid = child.pid
     for (const path of [join(active, 'owner.json'), join(ticketPath), join(tempPath, 'owner.json')]) {

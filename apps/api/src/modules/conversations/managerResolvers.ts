@@ -1,7 +1,6 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
-import { RETIRED_OPENCODE_MESSAGE, type AgentConfigurationVersion } from '@foreman-code/contracts'
+import { type AgentConfigurationVersion } from '@foreman-code/contracts'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import type { ApiConfig } from '../../config.js'
 import { conversationChatTools } from '../access/index.js'
@@ -9,6 +8,7 @@ import type { ConversationNativeAccess } from '../collaboration/index.js'
 import { DomainError } from '../errors.js'
 import { productionFileTools } from '../files/index.js'
 import {
+  assertActiveHarnessConfiguration, capabilityDescriptorsOf,
   operatorCodexFileAdmissions, productionClaudeManager, productionCodexChatFiles,
   productionOperatorManagers, productionSelectedProfileManager,
   type NativeHarnessFactories, type NativeHarnessSessionManager, type NativeLaunchRecords,
@@ -59,11 +59,9 @@ export function createOperatorManagerResolver(dependencies: ConversationManagerD
     accountBinding: conversationId => operatorAccountBindings.get(conversationId),
     createDevice: (configuration, conversationId, fileInputs) => workerChats.create({
       configuration, conversationId, workingDirectory: operatorWorkingDirectory, fileInputs,
-      appMcpAccess: fileInputs && configuration.harness.harness === 'claude' ? 'none' : 'scoped' }),
+      appMcpAccess: fileInputs && capabilityDescriptorsOf(configuration.harness).files === 'session_bridge' ? 'none' : 'scoped' }),
     createSelected: (configuration, conversationId, fileInputs, recovery) => {
-      if (configuration.harness.harness === 'opencode') {
-        throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
-      }
+      assertActiveHarnessConfiguration(configuration.harness)
       if (!configuration.harnessProfileSelection || configuration.harness.harness === 'claude') throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The selected Operator driver profile is unavailable.', 409)
       return productionSelectedProfileManager({ factories: nativeFactories, registry: harnessRegistry, profiles: selectedProfiles,
         ...(operatorAccountBindings.get(conversationId)
@@ -120,9 +118,7 @@ export function createAgentChatManagerResolver(dependencies: ConversationManager
     agentChatProfileSelection, conversationNativeAccess, chatFileAdmissions } = dependencies
   return async (conversationId: string, configuration: AgentConfigurationVersion, workingDirectory: string,
     accountSource?: { executionId: string }, featureContext?: ConversationFeatureContext): Promise<NativeHarnessSessionManager> => {
-    if (configuration.harness.harness === 'opencode') {
-      throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
-    }
+    assertActiveHarnessConfiguration(configuration.harness)
     const existing = agentChatManagers.get(conversationId)
     if (existing) return existing
     const accountBinding = await providerAccounts.runtimeBinding('agent-conversation', conversationId,
@@ -136,7 +132,7 @@ export function createAgentChatManagerResolver(dependencies: ConversationManager
       const manager = workerChats.create({ configuration, conversationId, workingDirectory, appMcpAccess, fileInputs: true,
         profileSelection: selector, sourceExecution: selected.sourceExecution,
         applicationAccess: start => {
-          const token = start.environment?.variables[INSTALLATION_NAMES.environment.MCP_TOKEN]
+          const token = start.environment?.variables.FOREMAN_CODE_MCP_TOKEN ?? start.environment?.variables.GRAPHQL_MCP_TOKEN
           return token ? { kind: 'agent-chat-mcp', token } : undefined
         } })
       if (featureContext) await conversationNativeAccess.bind(manager, featureContext)

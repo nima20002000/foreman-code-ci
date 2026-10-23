@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from './installationNames.mjs'
 import { ChatDeliveryIntentSchema, ChatDeliveryReceiptSchema } from './chatDelivery.js';
 import { BoardDigestSchema } from './memoryBoards.js';
 import { AgentProductRoleSchema as WorkflowAgentProductRoleSchema, type WorkflowAgentProductRole } from './agentIdentity.js';
@@ -58,7 +57,7 @@ export type {
 import type { ApprovalHandler } from "./current/workflowShape.js";
 import type { RunLiveActivity } from "./runLiveActivity.js";
 import { RunStopCauseSchema } from "./runStopCause.js";
-import { ForemanToolDefaultsSchema, foremanToolsOutsideRole } from "./foremanMcpTools.js";
+import { GraphqlToolDefaultsSchema, graphqlToolsOutsideRole } from "./graphqlMcpTools.js";
 export * from "./runStopCause.js";
 export * from "./runState.js";
 export * from "./runLiveActivity.js";
@@ -67,7 +66,7 @@ export * from "./harnessEditing.js";
 export * from "./harnessCompatibility.js";
 export * from "./harnessQualification.js";
 export * from "./approvalTopology.js";
-export * from "./foremanMcpTools.js";
+export * from "./graphqlMcpTools.js";
 
 import { ExecutionLocationSchema } from "./executionLocation.js";
 export { ExecutionLocationSchema } from "./executionLocation.js";
@@ -233,7 +232,7 @@ const RetiredOpenCodePermissionRuleSchema = z.object({
 const RetiredOpenCodeAdvancedConfigurationSchema = z.object({
   apiVersion: z.literal("v1"),
   permissionRules: z.array(RetiredOpenCodePermissionRuleSchema),
-  permissionHandling: z.enum([INSTALLATION_NAMES.protocol.permissionHandling, "native_auto"]),
+  permissionHandling: z.enum(["graphql_routed", "native_auto"]),
   subagentDepth: z.number().int().nonnegative().optional(),
   plugins: z.object({ mode: z.enum(["inherit", "pure"]) }).strict(),
   compaction: z.object({
@@ -282,9 +281,15 @@ export const RetiredOpenCodeConfigurationSchema = z
 export type RetiredOpenCodeConfiguration = z.infer<typeof RetiredOpenCodeConfigurationSchema>;
 
 /** Readback preserves retired provider settings without authorizing execution. */
-export const HarnessConfigurationSchema = z.discriminatedUnion("harness", [
+export const RecordedHarnessConfigurationSchema = z.discriminatedUnion("harness", [
   CodexHarnessConfigurationSchema,
   RetiredOpenCodeConfigurationSchema,
+  ClaudeHarnessConfigurationSchema,
+]);
+export type RecordedHarnessConfiguration = z.infer<typeof RecordedHarnessConfigurationSchema>;
+/** Executable configuration. Retired providers belong only to recorded readback. */
+export const HarnessConfigurationSchema = z.discriminatedUnion("harness", [
+  CodexHarnessConfigurationSchema,
   ClaudeHarnessConfigurationSchema,
 ]);
 export type HarnessConfiguration = z.infer<typeof HarnessConfigurationSchema>;
@@ -294,12 +299,12 @@ export const SupportedHarnessConfigurationSchema = z.discriminatedUnion("harness
 ]);
 
 /** A retired (saved OpenCode) configuration never gets write access; Codex and Claude follow their sandbox. */
-export function isReadOnlyHarnessConfiguration(configuration: HarnessConfiguration): boolean {
+export function isReadOnlyHarnessConfiguration(configuration: RecordedHarnessConfiguration): boolean {
   return configuration.harness === "opencode" || configuration.sandbox === "read-only";
 }
 
 /** Preserve native variants in harnessConfiguration; this is only a legacy display projection. */
-export function projectHarnessEffort(configuration: HarnessConfiguration): AgentEffort | undefined {
+export function projectHarnessEffort(configuration: RecordedHarnessConfiguration): AgentEffort | undefined {
   const value = configuration.harness === "codex" ? configuration.reasoningEffort : configuration.harness === "opencode" ? configuration.variant : undefined;
   const effort = AgentEffortSchema.safeParse(value);
   return effort.success ? effort.data : undefined;
@@ -335,7 +340,7 @@ export const HarnessWorkflowCompatibilitySchema = z.object({
   }
 });
 export function validateHarnessWorkflowCompatibility(
-  configuration: HarnessConfiguration,
+  configuration: RecordedHarnessConfiguration,
   workflowApprovalHandler?: ApprovalHandler,
   designatedOrchestrator = false,
 ): HarnessConfiguration {
@@ -344,17 +349,17 @@ export function validateHarnessWorkflowCompatibility(
 
 const AgentTemplateSchema = z.object({
   nativeTools: NativeToolsSchema.optional(),
-  [INSTALLATION_NAMES.fields.agentTools]: ForemanToolDefaultsSchema.optional(),
+  graphqlTools: GraphqlToolDefaultsSchema.optional(),
   harnessProfileSelection: z.lazy(() => HarnessProfileSelectionSchema).optional(),
   role: ConfiguredAgentProductRoleSchema,
   boardAddable: z.boolean(),
-  harness: HarnessConfigurationSchema,
+  harness: RecordedHarnessConfigurationSchema,
 }).strict().superRefine((value, context) => {
   if (value.role === "operator" && value.boardAddable) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["boardAddable"], message: "Operator is application-level and cannot be added to a workflow board" });
   }
-  if (value[INSTALLATION_NAMES.fields.agentTools] && (value.role === 'operator' || foremanToolsOutsideRole(value.role, value[INSTALLATION_NAMES.fields.agentTools]).length)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: [INSTALLATION_NAMES.fields.agentTools], message: 'Workflow tool defaults must be allowed for the selected Agent role.' });
+  if (value.graphqlTools && (value.role === 'operator' || graphqlToolsOutsideRole(value.role, value.graphqlTools).length)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['graphqlTools'], message: 'Workflow tool defaults must be allowed for the selected Agent role.' });
   }
 });
 
@@ -416,7 +421,9 @@ export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = AgentDefaultsSchema.parse({
 });
 
 /** New Operator provider selections use full access, without changing board presets or approval routing. */
-export function operatorHarnessDefaults(base: HarnessConfiguration): HarnessConfiguration {
+export function operatorHarnessDefaults(base: HarnessConfiguration): HarnessConfiguration;
+export function operatorHarnessDefaults(base: RecordedHarnessConfiguration): RecordedHarnessConfiguration;
+export function operatorHarnessDefaults(base: RecordedHarnessConfiguration): RecordedHarnessConfiguration {
   if (base.harness === "codex") return changeCodexSandbox(base, "danger-full-access");
   if (base.harness === "claude") return { ...base, sandbox: "danger-full-access" };
   return structuredClone(base);
@@ -734,13 +741,13 @@ export const AgentSchema = z
     model: z.string().trim().min(1).optional(),
     effort: AgentEffortSchema.optional(),
     fastMode: z.boolean().optional(),
-    harnessConfiguration: HarnessConfigurationSchema.optional(),
+    harnessConfiguration: RecordedHarnessConfigurationSchema.optional(),
     harnessProfileSelection: z.lazy(() => HarnessProfileSelectionSchema).optional(),
     configurationVersionId: IdSchema.optional(),
     prompt: AgentPromptSchema.optional(),
     assignedSkills: z.array(AssignedSkillSchema).optional(),
     /** Default Foreman Code MCP tools; absence retains the pre-collaboration role tools. */
-    [INSTALLATION_NAMES.fields.agentTools]: ForemanToolDefaultsSchema.optional(),
+    graphqlTools: GraphqlToolDefaultsSchema.optional(),
     ...OptionalTimestampFields,
   })
   .strict();
@@ -762,12 +769,12 @@ export const AgentConfigurationVersionSchema = z
     prompt: AgentPromptSchema,
     assignedSkills: z.array(AssignedSkillSchema),
     resolvedSkills: z.array(ResolvedSkillSchema).max(100).optional(),
-    [INSTALLATION_NAMES.fields.agentTools]: ForemanToolDefaultsSchema.optional(),
+    graphqlTools: GraphqlToolDefaultsSchema.optional(),
     /** Present on configurations accepted after Skills v1: the persistent prompt and pinned
      * skills are delivered as native app instructions, separate from task text. Absent on
      * earlier accepted configurations, which keep their original in-task delivery. */
     instructionDelivery: z.literal("native-v1").optional(),
-    harness: HarnessConfigurationSchema,
+    harness: RecordedHarnessConfigurationSchema,
     contentHash: z.string().trim().min(1),
     createdAt: TimestampSchema,
   })
@@ -780,7 +787,7 @@ export const OperatorConfigurationVersionSchema = z.object({
   id: IdSchema,
   operatorId: IdSchema,
   version: z.number().int().positive(),
-  harness: HarnessConfigurationSchema,
+  harness: RecordedHarnessConfigurationSchema,
   showThinking: z.boolean().optional(),
   assignedSkills: z.array(WorkspaceSkillReferenceSchema).max(100).optional(),
   resolvedSkills: z.array(ResolvedSkillSchema).max(100).optional(),
@@ -1237,7 +1244,7 @@ export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
 export const ServiceHealthSchema = z
   .object({
     status: z.enum(["ok", "unavailable"]),
-    service: z.literal(INSTALLATION_NAMES.protocol.apiService),
+    service: z.literal("graphql-api"),
     checks: z
       .object({
         database: z.enum(["ok", "unavailable"]).optional(),
@@ -1356,7 +1363,7 @@ export const RecordedOperatorChatSettingsSchema = z.union([
     showThinking: z.boolean() }).strict(),
 ]);
 export type OperatorChatSettings = z.infer<typeof OperatorChatSettingsSchema>;
-export function operatorChatSettings(harness: HarnessConfiguration, showThinking = false): OperatorChatSettings {
+export function operatorChatSettings(harness: RecordedHarnessConfiguration, showThinking = false): OperatorChatSettings {
   if (harness.harness === "opencode") throw new Error(RETIRED_OPENCODE_MESSAGE);
   if (harness.harness === "claude") {
     return { harness: "claude", model: harness.model, ...(harness.accountId ? { accountId: harness.accountId } : {}),
@@ -1367,7 +1374,7 @@ export function operatorChatSettings(harness: HarnessConfiguration, showThinking
     serviceTier: harness.serviceTier, showThinking };
 }
 /** Apply chat controls without replacing the accepted execution permissions. */
-export function applyOperatorChatSettings(base: HarnessConfiguration, settings: OperatorChatSettings) {
+export function applyOperatorChatSettings(base: RecordedHarnessConfiguration, settings: OperatorChatSettings) {
   if (base.harness !== settings.harness) throw new Error("Select the matching harness defaults before applying chat settings.");
   if (settings.harness === "claude") {
     const configuration = ClaudeHarnessConfigurationSchema.parse({ ...base, accountId: settings.accountId, model: settings.model });

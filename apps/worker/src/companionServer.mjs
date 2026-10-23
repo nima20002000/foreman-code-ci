@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { createServer } from 'node:http';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -58,7 +57,7 @@ async function jsonBody(request) {
 // Pairing never starts a service. Its separately confirmed enable action can
 // install only this user's reviewed unit; GUI close never stops the worker.
 export async function createCompanionServer({ stateDirectory, htmlFile = new URL('../artifacts/companion.html', import.meta.url), runCli = (command, input) => cliCommand(stateDirectory, command, input), serviceController = createCompanionService({ home: process.env.HOME ?? '', stateDirectory }), lifetimeMs = 30 * 60_000, readOnly = false,
-  manifestFile = new URL('../manifest.json', import.meta.url), installationRoot = join(process.env.HOME ?? '', INSTALLATION_NAMES.paths.workerApp) }) {
+  manifestFile = new URL('../manifest.json', import.meta.url), installationRoot = join(process.env.HOME ?? '', '.local/lib/graphql-worker') }) {
   await requirePrivateDirectory(stateDirectory);
   const html = await readFile(htmlFile, 'utf8');
   let requiredTarget;
@@ -117,7 +116,7 @@ export async function createCompanionServer({ stateDirectory, htmlFile = new URL
     }
     if (request.method !== 'POST' || !['/api/status', '/api/identity-request', '/api/pair', '/api/close', '/api/service-plan', '/api/service-enable'].includes(request.url)) { respond(response, 404, { error: 'not_found' }); return; }
     if (request.headers.origin !== origin) { respond(response, 403, { error: 'origin_rejected' }); return; }
-    const supplied = request.headers[INSTALLATION_NAMES.protocol.companionSession];
+    const supplied = request.headers['x-graphql-companion-session'];
     if (typeof supplied !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(supplied) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(session))) { respond(response, 401, { error: 'session_rejected' }); return; }
     try {
       const body = await jsonBody(request);

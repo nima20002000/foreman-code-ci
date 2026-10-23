@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from './installationNames.mjs'
 import { z } from 'zod';
 import { APP_MCP_SERVER_NAMES } from './product.js';
 
@@ -13,7 +12,7 @@ export const ClaudeMcpServerSchema = z.object({
   }, 'Use HTTPS or a local HTTP endpoint without credentials'),
 }).strict();
 /** Supplied by the owning API; browser origins are not MCP endpoint authorities. */
-export const ClaudeSetupOptionsSchema = z.object({ [INSTALLATION_NAMES.fields.claudeMcp]: ClaudeMcpServerSchema.nullable() }).strict();
+export const ClaudeSetupOptionsSchema = z.object({ graphqlMcp: ClaudeMcpServerSchema.nullable() }).strict();
 export const ClaudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 /** Explicit accepted policy. Ambient Claude settings and launch flags are never inputs. */
 export const ClaudeHarnessConfigurationSchema = z.object({

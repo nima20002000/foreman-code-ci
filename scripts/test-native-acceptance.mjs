@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
@@ -96,7 +95,7 @@ export async function archiveNativeAcceptanceEvidence(invocation, evidenceRoot, 
 }
 
 async function pendingCleanup(invocation, ownId) {
-  const folder = assertTestPath(invocation, join(invocation.directory, INSTALLATION_NAMES.paths.testCleanup))
+  const folder = assertTestPath(invocation, join(invocation.directory, '.graphql-test-cleanup'))
   for (const name of await readdir(folder)) {
     const record = JSON.parse(await readFile(assertTestPath(invocation, join(folder, name)), 'utf8'))
     if (record.token !== invocation.token) throw new Error('Native acceptance cleanup ownership mismatch')
@@ -109,7 +108,7 @@ export async function withNativeAcceptanceDatabase(configured, evidenceRoot, exe
   const parentUrl = ownedTestDatabaseUrl()
   if (configured !== undefined && configured !== parentUrl) throw new Error('Native acceptance requires its owned test database')
   ownedTestPath(evidenceRoot)
-  const invocation = { directory: process.env[INSTALLATION_NAMES.environment.TEST_ROOT], token: process.env[INSTALLATION_NAMES.environment.TEST_OWNER] }
+  const invocation = { directory: process.env.FOREMAN_CODE_TEST_ROOT, token: process.env.FOREMAN_CODE_TEST_OWNER }
   const admin = await testAdminPool()
   let resource
   let evidence
@@ -170,7 +169,7 @@ export function nativeAcceptanceCommand(arguments_) {
 }
 
 async function runNativeAcceptance(environment, files) {
-  const invocation = { directory: environment[INSTALLATION_NAMES.environment.TEST_ROOT], token: environment[INSTALLATION_NAMES.environment.TEST_OWNER] }
+  const invocation = { directory: environment.FOREMAN_CODE_TEST_ROOT, token: environment.FOREMAN_CODE_TEST_OWNER }
   const cleanupId = registerTestResourceCleanup(invocation,
     { kind: 'native-acceptance-process-group', wrapperPid: process.pid, databaseUrl: environment.TEST_DATABASE_URL })
   const command = nativeAcceptanceCommand([...nativeAcceptanceVitestArguments(files, environment), '--maxWorkers=12'])

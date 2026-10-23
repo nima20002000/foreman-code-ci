@@ -2,10 +2,10 @@ import type { PostgresCommandCoordinator } from '../src/modules/commands/postgre
 import Fastify from 'fastify'
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
-import { DEFAULT_HARNESS_DEFAULTS, type ForemanAgentTool } from '@foreman-code/contracts'
+import { DEFAULT_HARNESS_DEFAULTS, type GraphqlAgentTool } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 
-import { registerForemanMcp } from '../src/mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { DomainError } from '../src/modules/errors.js'
@@ -26,7 +26,7 @@ const savedAccess = () => ({
   override: { add: ['ci_run', 'ci_computers_list', 'ci_logs_read'], remove: ['interaction_list'] },
 })
 
-function fixture(options: { ci?: boolean; defaults?: ForemanAgentTool[] } = {}) {
+function fixture(options: { ci?: boolean; defaults?: GraphqlAgentTool[] } = {}) {
   const saved = savedAccess()
   if (options.defaults) {
     saved.defaults = options.defaults
@@ -51,7 +51,7 @@ function fixture(options: { ci?: boolean; defaults?: ForemanAgentTool[] } = {}) 
     } })
   })
   const services = { access, interactions, operator, references: workerToolServices(pool, commands as unknown as PostgresCommandCoordinator).references }
-  registerForemanMcp(app, services)
+  registerGraphqlMcp(app, services)
   const rpc = (method: string, params?: object, token = 'worker-token') => app.inject({
     method: 'POST', url: '/mcp',
     headers: { authorization: `Bearer ${token}`, accept: 'application/json, text/event-stream' },

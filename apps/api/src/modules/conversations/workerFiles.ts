@@ -1,3 +1,4 @@
+import { capabilityDescriptorsOf } from '../harnesses/index.js'
 import { Readable } from 'node:stream'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
@@ -51,7 +52,7 @@ export class WorkerConversationFiles {
       const source = input.source()
       const missingFileInputs = source.binding.appMcpAccess === 'scoped'
         && !(source.method === 'conversation.start-turn' && source.fileInputs)
-      if (!source.admissionId || source.binding.harness !== 'codex' || missingFileInputs
+      if (!source.admissionId || capabilityDescriptorsOf(source.binding).files !== 'turn_mcp' || missingFileInputs
         || !['conversation.initial-turn', 'conversation.start-turn'].includes(source.method)
         || !('correlationId' in source) || source.correlationId !== turn.clientCorrelationId
         || this.deliveries.has(source.admissionId)) this.denied()

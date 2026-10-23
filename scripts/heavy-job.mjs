@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { sleep } from './sleep.mjs'
 import { readProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
 import { retainedHeavyJobTokens, writeHeavyJobRecord } from './heavy-job-slots.mjs'
@@ -523,7 +522,7 @@ async function main() {
       common, worktree: root, pid: process.pid, start: procStart(process.pid),
       pgid: null, phase: 'acquiring', namespace, token,
     })
-    const environment = { ...process.env, TMPDIR: tempPath, TMP: tempPath, TEMP: tempPath, [INSTALLATION_NAMES.environment.HEAVY_BASE_TMPDIR]: baseTmp, [INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON]: common, [INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN]: token, }
+    const environment = { ...process.env, TMPDIR: tempPath, TMP: tempPath, TEMP: tempPath, FOREMAN_CODE_HEAVY_BASE_TMPDIR: baseTmp, FOREMAN_CODE_HEAVY_JOB_COMMON: common, FOREMAN_CODE_HEAVY_JOB_TOKEN: token, GRAPHQL_HEAVY_BASE_TMPDIR: baseTmp, GRAPHQL_HEAVY_JOB_COMMON: common, GRAPHQL_HEAVY_JOB_TOKEN: token }
     const launch = reported
       ? [process.execPath, fileURLToPath(new URL('./verification-reports.mjs', import.meta.url)), '__command',
         root, process.cwd(), process.env.npm_lifecycle_event, ...command]

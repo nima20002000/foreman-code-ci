@@ -176,25 +176,24 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   (2,824 occurrences; no name collided, so none was skipped). `RepeatGraphCurrentV3` became
   `RepeatGraphCurrentCurrent`, which the owner should review. Left alone: `wave25_*` SQL,
   migration file names, `wave25*` test file names, string literals, JSON keys, prose, docs and history.
-- [~] #35 Code rename integrated on `fix/re-a35-graphql`; MCP symbols and source modules use Foreman names.
-  Frozen installation and saved names are centralized in contracts `installationNames.mjs`; no environment alias layer.
-  Preserved the newer chat-manager extraction, qualification split and verification-runner package while merging.
-  Deployed manifests, migration SQL and historical evidence stay unchanged; standalone artifacts embed frozen names.
-  Foreman CI verification pending on the merged branch; deployed cutover remains owner-only.
-- [~] #36 Retired `opencode` harness (156 refs), `LegacyChatDeliveryBridge`, 24 semantics-version guards.
+- [ ] #35 Unfinished graphql → foreman-code rename (646 files; compose/DB names, rsync path, env compat layer).
+  Deployed names need a migration plan.
+- [~] #36 Retired `opencode` harness: active/recorded configuration split implemented on `fix/a16-provider`; Foreman CI verification pending.
   - Done: one `isReadOnlyHarnessConfiguration` (contracts) replaces 8 copies of the "retired or read-only" check, and one
     `retiredHarnessError()` (`harnesses/retiredHarness.ts`) replaces 20 `HARNESS_RETIRED` throws. The unused
     semantics-2 `workflows/triggerAuthority.ts` is deleted. The bridge is renamed `ChatDeliveryBridge` (see
     corrections).
-  - Kept on purpose: the read schemas and enum values for stored OpenCode rows (`HarnessConfigurationSchema`,
+  - Kept on purpose: the read schemas and enum values for stored OpenCode rows (`RecordedHarnessConfigurationSchema`,
     `RecordedOperatorChatSettingsSchema`, `RecordedHarnessQualificationSchema`, subagent and session-control
     providers, the `check (harness in (...))` constraints), the `HARNESS_RETIRED` 409 for saved OpenCode history, and
     the retired-defaults reads in `settings/postgres.ts`. Write inputs already reject OpenCode
     (`SupportedHarnessConfigurationSchema`, `AgentHarnessSchema`).
-  - Open: the same two helpers are not applied in `production.ts`, `interactions/execution.ts` and
-    `conversations/agentChat|operatorChat|workerProduction.ts` (other streams were editing them), nor in the web
-    (`features/**`, ~90 refs, all retired-history display). Narrowing `HarnessConfiguration` to Codex and Claude, with a
-    separate recorded union for reads, would remove the remaining `=== 'opencode'` branches; it needs a typecheck run.
+  - a16: `HarnessConfiguration`/its schema now contain only Codex and Claude. `RecordedHarnessConfiguration`
+    and its schema preserve all saved/readback rows, including OpenCode. Executable UI controls take the active union;
+    retired display stays at readback boundaries. Shared typed admission keeps the same `HARNESS_RETIRED` 409 in
+    production, interaction execution and Operator/Worker chats. No stored values, migrations or permission rules change.
+  - Verification pending: the base Foreman typecheck ticket `278e7eed-8f33-4668-b832-9b15ece46b70` failed during
+    install (`ERR_PNPM_OUTDATED_LOCKFILE`: worker's new API workspace dependency), before checking source.
   - The 24 semantics-version guards are all `!== 3` fences over historical rows; they stay. The `oneShot*` owner
     fences are not semantics 1/2 (keep, per ENG-07 R04).
 - [x] #37 Ticket-named docs: 34 top-level files (ENG, FEAT, FIL, NIM, SCH, CHAT) and `docs/reviews/` moved under
@@ -396,7 +395,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   Prompt rules are shared (`refineChatPrompt` in contracts): text-or-attachment and no attachments on steer apply to the
   Agent, Operator and canonical send schemas, and the size check to Agent and Operator; only Operator receipt recovery
   skips the size check.
-- [ ] #16 Leaky harness port (capability descriptors not started).
+- [~] #16 Leaky harness port: capability cleanup reconciled on `fix/re-a16-provider`; Foreman CI verification pending (see detailed status below).
 - [~] #17 Durable-write consolidation complete (`fix/a17-durable`); JSON journal storage migration remains deferred.
   - Done (7a, written without compiling or running tests): `shared/durableFile.ts` (`writeDurableFile`,
     `readBoundedText`, `readBoundedTextIfPresent`, with its own test) is the only atomic write and bounded read.
@@ -454,10 +453,12 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   history-match helpers for observe. The engines keep their own settle (Agent `repository.finish`, Operator terminal
   journal and runtime closure), failure classification and recovery, because those turn models genuinely differ. The
   web consolidation is described in #15 above.
-- [~] #16 Leaky harness port: `harnesses/capabilities.ts` holds the steer/compact descriptors, adapters declare
-  `harnessCapabilities` on the port, and the steer qualification (conversations, session writer, Worker host, workflow
-  chat receipts) asks `supportsExpectedTurnSteer` instead of comparing `'codex'`. Open: other provider-name branches
-  outside `harnesses/` (plugin/MCP maintenance, activity normalisation, Claude-only file and journal paths).
+- [~] #16 Leaky harness port: a16 extends the port descriptors to native input identity, file delivery,
+  application MCP credential lifetime and automatic compaction. Conversation/Worker orchestration asks those
+  capabilities; native text/activity normalization lives under `harnesses/`. Plugin/MCP maintenance consumes
+  harness-owned CLI/storage descriptors. Provider-specific configuration discrimination, native adapter selection,
+  wire identities and retired-history display remain explicit. Manager allocation stays in `conversations/managerResolvers.ts` after the composition cleanup;
+  the capability/admission changes are reapplied there. Foreman CI verification pending on the reconciled branch.
 - [ ] #17 `operationJournal` hand-rolled JSON DB; 2–3 sources of truth for run/CI state.
 - [~] #18 LangGraph patched in `dist` and subclassed via internals. `infrastructure/langgraph.ts` is now the one
   module that touches LangGraph: it re-exports the graph primitives and checkpoint types, records the pinned contract

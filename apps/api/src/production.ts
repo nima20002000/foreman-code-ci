@@ -1,5 +1,4 @@
 import { createAgentChatManagerResolver, createOperatorManagerResolver } from './modules/conversations/managerResolvers.js'
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { BROWSER_DEVICE_EXTENSION } from '@foreman-code/contracts'
 import { createProductionBrowser } from './modules/collaboration/browserComposition.js'
 import { createMainBrowserRemote } from './modules/collaboration/browserRemote.js'

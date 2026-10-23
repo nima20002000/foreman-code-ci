@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import {
@@ -35,10 +34,10 @@ export function createClaudeFileTools(input: {
         (args, extra) => invoke('files.publish_result', args, extra)),
     ] : []),
   ]
-  const server = sdk.createSdkMcpServer({ name: INSTALLATION_NAMES.mcp.files, version: '1.0.0', tools: definitions,
+  const server = sdk.createSdkMcpServer({ name: 'graphql-files', version: '1.0.0', tools: definitions,
     instructions: 'File-only admitted native message tools. Scope fields assert the admitted conversation; they cannot select another owner. Permanent references are read-only.' })
-  const manifest: ClaudeMcpToolManifest = { serverName: INSTALLATION_NAMES.mcp.files,
-    source: { kind: 'sdk', name: INSTALLATION_NAMES.mcp.files, version: '1.0.0' },
+  const manifest: ClaudeMcpToolManifest = { serverName: 'graphql-files',
+    source: { kind: 'sdk', name: 'graphql-files', version: '1.0.0' },
     tools: definitions.map(definition => definition.name) }
   return { server, manifest }
 }
