@@ -331,8 +331,8 @@ function inputHash(kind) {
   const list = git('ls-files', '-z', '--cached', '--others', '--exclude-standard')
   if (list.status !== 0) throw new Error('Build cache source inventory could not be read.')
   const hash = createHash('sha256').update(process.version).update(process.platform).update(process.arch).update(common).update(root)
-  const scope = ['contracts', 'contracts-node'].includes(kind) ? `packages/${kind}` : `apps/${kind}`
-  const tools = kind === 'web' ? ['typescript', 'vite', '@vitejs/plugin-react', '@tailwindcss/vite'] : ['typescript']
+  const scope = kind === 'contracts' ? 'packages/contracts' : `apps/${kind}`
+  const tools = kind === 'web' ? ['typescript', 'vite', '@vitejs/plugin-react'] : ['typescript']
   try {
     for (const name of tools) {
       const path = require.resolve(name, { paths: [join(root, scope)] })
@@ -348,7 +348,7 @@ function inputHash(kind) {
   }
   return hash.digest('hex')
 }
-const outputs = { contracts: 'packages/contracts/dist/index.js', 'contracts-node': 'packages/contracts-node/dist/serverKit.js', ci: 'apps/ci/dist/environment.js',
+const outputs = { contracts: 'packages/contracts/dist/index.js', ci: 'apps/ci/dist/environment.js',
   api: 'apps/api/dist/server.js', web: 'apps/web/dist/index.html' }
 function outputHash(kind) {
   const primary = join(root, outputs[kind])

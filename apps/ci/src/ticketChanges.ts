@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 
 export interface CiTicketChange { workspaceId: string; ticketId: string; groupId: string }
 interface Watch {

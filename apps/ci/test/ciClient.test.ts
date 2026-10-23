@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 import { afterEach, expect, it } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { HttpCiClient, type CiTicketClient } from '../src/client.js'
 import { registerHostCiRoutes } from '../src/http.js'
 

@@ -73,7 +73,7 @@ async function main() {
   if (kind !== 'api') throw new Error('Unknown service.')
   stage = 'database-identity'
   const [{ loadConfig }, { createDatabase }, { createCheckpointStore }, { buildProductionApp }, { PostgresAccessService }] = await Promise.all([
-    source('config.ts'), source('infrastructure/database.ts'), source('infrastructure/checkpoints.ts'), source('production.ts'),
+    source('config.ts'), source('infrastructure/database.ts'), source('composition/checkpoints.ts'), source('production.ts'),
     source('modules/access/postgres.ts'),
   ])
   // Same production composition, engine, checkpointer, migrations and native
