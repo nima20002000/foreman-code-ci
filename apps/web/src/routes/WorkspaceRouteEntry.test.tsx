@@ -91,18 +91,7 @@ describe('WorkspaceRouteEntry integration', () => {
     // JSDOM measurements only: the real mounted Board and React Flow stay intact.
     vi.stubGlobal('ResizeObserver', class {
       constructor(private readonly notify: ResizeObserverCallback) {}
-      observe(target: Element) {
-        const seen = ((globalThis as any).__ro ??= { n: 0, by: new Map<string, number>() })
-        seen.n += 1
-        const key = `${target.tagName}.${String(target.className).slice(0, 60)}#${target.id}`
-        seen.by.set(key, (seen.by.get(key) ?? 0) + 1)
-        if (seen.n === 3000) {
-          const top = [...seen.by.entries()].sort((x, y) => y[1] - x[1]).slice(0, 6)
-          console.error('RO TOP', JSON.stringify(top), String(new Error('x').stack).split('\n').filter(l => !l.includes('jsdom')).slice(0, 12).join('\n'))
-          throw new Error('RO LOOP')
-        }
-        queueMicrotask(() => this.notify([{ target, contentRect: target.getBoundingClientRect() } as ResizeObserverEntry], this as unknown as ResizeObserver))
-      }
+      observe(target: Element) { queueMicrotask(() => this.notify([{ target, contentRect: target.getBoundingClientRect() } as ResizeObserverEntry], this as unknown as ResizeObserver)) }
       unobserve() {} disconnect() {}
     })
     if (!globalThis.DOMMatrixReadOnly) vi.stubGlobal('DOMMatrixReadOnly', class { m11 = 1; m22 = 1; m41 = 0; m42 = 0 })
@@ -199,6 +188,8 @@ describe('WorkspaceRouteEntry integration', () => {
   })
 
   it('opens an unselected reloaded Claude Agent settings panel while cross-computer choices are unavailable', async () => {
+    // Apply the canvas CSS so userEvent checks the same pointer access as the browser.
+    render(<style>{canvasStyles}</style>)
     const fixture = getMockFixture('workspace-1')!
     const agent = fixture.agents.find((item) => item.id === 'agent-researcher')!
     agent.harness = 'claude'
@@ -233,6 +224,22 @@ describe('WorkspaceRouteEntry integration', () => {
     expect(node).toHaveAttribute('aria-pressed', 'false')
     await user.hover(node)
     const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
+    {
+      const original = window.getComputedStyle.bind(window)
+      let count = 0
+      const wrapped = ((element: Element, ...rest: unknown[]) => {
+        count += 1
+        let depth = 0
+        for (let e: Element | null = element; e; e = e.parentElement) depth += 1
+        const t0 = performance.now()
+        console.error(`GCS ${count} ${element.tagName}.${String(element.className).slice(0, 80)} depth=${depth} styleAttr=${element.getAttribute('style')?.slice(0, 120)} sheets=${document.styleSheets.length} rules=${[...document.styleSheets].reduce((n, sheet) => n + sheet.cssRules.length, 0)}`)
+        const result = (original as (...args: unknown[]) => CSSStyleDeclaration)(element, ...rest)
+        console.error(`GCS ${count} done ${Math.round(performance.now() - t0)}ms`)
+        return result
+      }) as typeof window.getComputedStyle
+      window.getComputedStyle = wrapped
+      globalThis.getComputedStyle = wrapped
+    }
     await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
     expect(rail).toBeVisible()
