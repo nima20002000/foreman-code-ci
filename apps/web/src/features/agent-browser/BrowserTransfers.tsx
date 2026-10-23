@@ -20,11 +20,13 @@ export function BrowserTransfers({ port, session, tab, uploadSelector, downloads
   const [fileInputKey, setFileInputKey] = useState(0)
   const lifecycle = useRef(0)
   const mounted = useRef(false)
+  const acquireControl = useRef(acquire)
+  acquireControl.current = acquire
   const send = useMutation({ mutationFn: async () => {
-    if (!upload.current || !uploadSelector || !acquire) throw new Error('Choose a file for this browser upload.')
+    if (!upload.current || !uploadSelector || !acquireControl.current) throw new Error('Choose a file for this browser upload.')
     const ready = await upload.current.send(abort.current.signal, setProgress)
     if (ready.state !== 'attached') {
-      const control = await acquire()
+      const control = await acquireControl.current()
       abort.current.signal.throwIfAborted()
       await upload.current.attach(uploadSelector, control)
     }

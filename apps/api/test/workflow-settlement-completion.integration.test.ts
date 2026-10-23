@@ -75,7 +75,7 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement compl
     }, timeout,
   )
 
-  it('preserves a Master finish result with findings as a direction wait across restart', async () => {
+  it('preserves a sole finish result with findings as a direction wait across restart', async () => {
     await withFixture((graph) => ({ ...handoffs(1)(graph),
       executionPolicy: { maxParallelism: 1, maxNodeExecutions: 1 },
     }), async (f) => {
@@ -105,7 +105,7 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement compl
       const persisted = CanonicalRunGraphCurrentSchema.parse(graphRpcValue(read.result))
       expect(persisted.state.run).toMatchObject({ executionState: 'waiting', outcome: 'pending', pendingInteractionCount: 1 })
       expect(persisted.state.executions).toHaveLength(1)
-    }, 'single', { roles: ['master'] })
+    }, 'single')
   }, timeout)
 
 })
