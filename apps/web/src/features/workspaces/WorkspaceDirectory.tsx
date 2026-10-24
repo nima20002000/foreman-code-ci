@@ -19,6 +19,7 @@ import { assertSession, sessionGeneration } from '../../shared/api/sessionBounda
 import { ActionMenu, Alert, Button, Dialog, EmptyState, ErrorState, LoadingState, PageHeader, TextField } from '../../shared/ui/nocturne'
 import { ResourceActionsMenu, ResourceCard } from '../../shared/ui/ResourceCard'
 import '../../shared/ui/resourceDirectory.css'
+import { NewWorkspaceControl } from './NewWorkspaceControl'
 import { WorkspaceStorageFolderCard } from './WorkspaceStorageFolderCards'
 import { folderSelectionId, type WorkspaceSelectionTarget } from './workspaceSelection'
 interface CardCommand { type: 'rename' | 'archive'; workspaceId: string; expectedRevision: number; name?: string }
@@ -223,7 +224,7 @@ export function WorkspaceDirectory() {
               disabled: !selectable.length, onSelect: () => allShownSelected ? selection.clear() : selection.selectMany(selectable) },
             { id: 'cancel-selection', label: 'Cancel selection', onSelect: () => selection.clear() },
           ]} />
-        </div> : undefined}
+        </div> : workspaces.length + visibleFolders.length > 0 ? <NewWorkspaceControl /> : undefined}
       />
       {selection.notice ? <p role="status">{selection.notice}</p> : null}
       {selectedProtected ? <Alert tone="warning" title="A selected folder is now protected.">Deselect it to continue. Its protection reason is shown on its card.</Alert> : null}
@@ -251,7 +252,7 @@ export function WorkspaceDirectory() {
       ) : loading ? <LoadingState label="Loading workspaces…" />
         : failed ? <Alert live tone="danger" title="Workspaces unavailable" />
           : !folders.length ? <div data-testid="workspace-directory-empty">
-            <EmptyState icon="folder" title="No workspaces yet" description="Use New workspace in the navigation to create one." />
+            <EmptyState icon="folder" title="No workspaces yet" action={<NewWorkspaceControl />} />
           </div> : null}
       <LoadMore loadAll label="workspaces" query={managedQuery} />
       {showFolders ? folderQuery.isPending ? <LoadingState label="Checking workspace folders…" />
