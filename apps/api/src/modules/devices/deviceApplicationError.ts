@@ -77,7 +77,6 @@ const classes: Readonly<Record<string, FailureClass>> = {
   WORKER_WORKFLOW_UNAVAILABLE: 'transient',
   HARNESS_INVENTORY_STALE: 'transient',
   HARNESS_QUALIFICATION_TARGET_CHANGED: 'transient',
-  HARNESS_RECOVERY_STORAGE_FULL: 'permanent',
   WORKER_EXECUTION_NOT_FOUND: 'permanent',
   WORKER_EXECUTION_IDENTITY_INVALID: 'permanent',
   PLACEMENT_INVALID_ROOT: 'permanent',

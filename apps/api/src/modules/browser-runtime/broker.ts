@@ -373,7 +373,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
     const tab = await this.options.driver.createTab(profileId, native.generation, allocation.token)
     const { sessionId: id, tabId } = allocation
     const session = BrowserSessionSchema.parse({ id, ...(subject ? { subject } : { setupForProfileId: profileId }),
-      profileId, computerId: this.options.computerId, browserGeneration: native.generation, state: 'ready', selectedTabId: tabId })
+      profileId, computerId: this.options.computerId, startedAt: new Date().toISOString(), browserGeneration: native.generation, state: 'ready', selectedTabId: tabId })
     const control: BrowserControl = { sessionId: id, state: subject ? 'agent' : 'paused', epoch: 0,
       controllingViewerId: null, reason: subject ? null : 'Browser ready for you — click to continue.' }
     const lease: BrowserTabLease = { id: allocation.leaseId, sessionId: id, tabId, browserGeneration: native.generation, title: tab.title, url: tab.url }

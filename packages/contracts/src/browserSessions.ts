@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { IdSchema } from './schemaPrimitives.js';
+import { TimestampSchema, IdSchema } from './schemaPrimitives.js';
 import { AgentSubjectSchema } from './agentIdentity.js';
 
 export const BrowserSessionSchema = z.object({
   id: IdSchema, subject: AgentSubjectSchema.optional(),
   setupForProfileId: IdSchema.optional(),
-  profileId: IdSchema, computerId: IdSchema,
+  profileId: IdSchema, computerId: IdSchema, startedAt: TimestampSchema.optional(),
   browserGeneration: z.number().int().positive(),
   state: z.enum(['starting','ready','paused','recovering','closed','failed']),
   selectedTabId: IdSchema.nullable(),
@@ -13,6 +13,12 @@ export const BrowserSessionSchema = z.object({
   if ((session.subject !== undefined) === (session.setupForProfileId !== undefined)) context.addIssue({ code: 'custom', message: 'Choose exactly one Agent subject or profile setup owner.' });
   if (session.setupForProfileId && session.setupForProfileId !== session.profileId) context.addIssue({ code: 'custom', path: ['setupForProfileId'], message: 'Setup owner must identify the same profile.' });
 });
+export const BrowserRuntimeStatusSchema = z.object({ computerId: IdSchema, ready: z.boolean(),
+  phase: z.string(), reason: z.string().nullable(), runtimeVersion: z.string().optional() }).strict();
+export type BrowserRuntimeStatus = z.infer<typeof BrowserRuntimeStatusSchema>;
+export const BrowserSessionListSchema = z.object({ sessions: z.array(BrowserSessionSchema), nextCursor: z.string().nullable(),
+  runtime: BrowserRuntimeStatusSchema.optional() }).strict();
+export type BrowserSessionList = z.infer<typeof BrowserSessionListSchema>;
 export const BrowserTabLeaseSchema = z.object({
   id: IdSchema, sessionId: IdSchema, tabId: IdSchema,
   browserGeneration: z.number().int().positive(),
