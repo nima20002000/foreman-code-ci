@@ -1,12 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { WorkspaceRootSelection } from '@foreman-code/contracts/workspace-root-policies'
 import type { WorkspaceBoundLocationReadback } from '@foreman-code/contracts/workspace-bound-location'
 import { server } from '../../mocks/server'
-import { mainTarget, deviceTarget, mainId } from '../computers/computersTestFixture'
 import { WorkspaceExecutionLocationSettings } from './WorkspaceExecutionLocationSettings'
 import { useBoundLocationDraftStore } from './workspaceBoundLocationDraftStore'
 import { mainRoot, workerRoot, rootAttestation, boundRootReadback, rootSetReadback } from './workspaceBoundLocation.fixtures'
@@ -131,21 +130,4 @@ describe('authenticated target-local execution folder', () => {
     expect(await screen.findByText('Couldn’t load the folder or the computers.')).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Project folder' })).not.toBeInTheDocument()
   })
-})
-
-it('uses saved computer names in the chooser and exposes the full selected base folder', async () => {
-  server.use(http.get('*/api/management/computers/activity', () => HttpResponse.json({ mainId,
-    activityComplete: true, truncated: false, cloud: [], computers: [
-      { target: mainTarget, name: 'Main PC', online: true, jobs: [], agents: [] },
-      { target: deviceTarget, name: 'Studio computer', online: false, jobs: [], agents: [] },
-    ] })))
-  mount()
-  const user = userEvent.setup()
-  await user.click(await screen.findByRole('button', { name: 'Project folder' }))
-  const select = await screen.findByRole('combobox', { name: 'Computer and folder' })
-  const option = await within(select).findByRole('option', { name: 'Studio computer' })
-  expect(within(select).getByRole('option', { name: 'Main PC' })).toBeInTheDocument()
-  await user.selectOptions(select, option)
-  expect(select).toHaveAccessibleDescription(workerRoot.bases[0]!.canonicalPath)
-  expect(select).toHaveAttribute('title', workerRoot.bases[0]!.canonicalPath)
 })

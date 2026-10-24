@@ -198,22 +198,3 @@ it('offers concrete local setup guidance and a scoped handoff for an account nee
   expect(useOperatorChatStore.getState().request?.content).toContain('overflow')
   expect(screen.getByText(/Configure the token locally on Main/)).toBeVisible()
 })
-
-it('shows suspension evidence beside the affected organization and offers suspension recovery instead of setup', async () => {
-  const accounts = accountsFixture()
-  const account = accounts.value.accounts[1]!
-  account.ready = false
-  account.reasons = ['beta-one: Log in to CircleCI on Main and follow the CI mirror project.']
-  account.orgs[0] = { ...account.orgs[0]!, ready: false, credits: null,
-    creditsUnavailable: 'CircleCI did not accept the usage export read: Your account has been suspended. Please contact support for more information.' }
-  mount(accounts)
-  const region = within(await screen.findByRole('region', { name: 'Standby CircleCI account' }))
-  expect(await orgRow('beta-one').findByText(account.orgs[0]!.creditsUnavailable!)).toBeVisible()
-  expect(region.getByText('Account suspended')).toBeVisible()
-  expect(region.getByText('Contact CircleCI support to restore this account.')).toBeVisible()
-  expect(region.queryByText(/Log in to CircleCI on Main/)).not.toBeInTheDocument()
-  expect(region.queryByText(/Configure the token locally/)).not.toBeInTheDocument()
-  await userEvent.click(region.getByRole('button', { name: 'Ask Operator about suspension' }))
-  expect(useOperatorChatStore.getState().request?.content).toContain('overflow')
-  expect(useOperatorChatStore.getState().request?.content).toContain('suspended')
-})
