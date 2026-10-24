@@ -96,19 +96,19 @@ describe.skipIf(!postgresEnabled)('workflow collaboration preparation and atomic
     try {
       await expect(integration.prepare(f.owner, f.run, f.version, f.execution)).rejects.toMatchObject({ code: 'BROWSER_PREPARATION_UNAVAILABLE' })
       const expected = { executionId: f.execution.id, workflowNodeId: f.execution.workflowNodeId,
-        reason: { kind: 'preparation', message: expect.stringContaining('profile missing') } }
+        reason: { kind: 'preparation', since: f.execution.createdAt, message: expect.stringContaining('profile missing') } }
       expect((await history.snapshot(f.writer.principal, input)).executionQueue).toEqual([expect.objectContaining(expected)])
       expect((await readCurrentRunDetails(db.pool, f.writer.principal, f.run.workspaceId, f.run.id)).executions[0])
         .toMatchObject({ queueReason: expected.reason })
       const unused = async (): Promise<never> => { throw new Error('Queued chat does not dispatch native work') }
+      const subject = b.prepare.mock.calls[0]![0].subject
+      if (subject.kind !== 'execution') throw new Error('Expected the queued execution subject')
       const chat = await readWorkflowExecutionChat(db.pool, { transaction: unused, dispatch: unused, validateAdmission: unused,
         readNative: async () => ({ messages: [], hasMore: false, nextCursor: null, revision: 0 }),
         observe: async () => ({ capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } }),
       }, f.writer.principal, { target: { kind: 'workflow_execution', agent: { workspaceId: f.run.workspaceId,
         workflowId: f.run.workflowId, workflowNodeId: f.execution.workflowNodeId, agentId: f.execution.agentId },
-      execution: { runId: f.run.id, workflowVersionId: f.version.id, executionId: f.execution.id,
-        attempt: f.execution.attempt, activationId: b.prepare.mock.calls[0]![0].subject.kind === 'execution'
-          ? b.prepare.mock.calls[0]![0].subject.execution.activationId : undefined } } })
+      execution: subject.execution } })
       expect(chat).toMatchObject({ queueReason: expected.reason })
       await f.restart()
       expect((await history.snapshot(f.writer.principal, input)).executionQueue).toEqual([expect.objectContaining(expected)])
