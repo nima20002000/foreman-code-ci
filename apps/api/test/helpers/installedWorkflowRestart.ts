@@ -107,7 +107,7 @@ export async function assertInstalledWorkflowRestart(phase: RestartPhase,
       { timeoutMs: 90_000, description: 'settled graph work and interval check' })
     const stop = await fixture.call('run_stop', { workspaceId: started.run.workspaceId,
       runId: started.run.id, commandId: randomUUID() })
-    expect(stop.isError).not.toBe(true)
+    expect(stop.isError, JSON.stringify(stop.content)).not.toBe(true)
     const finished = await readUntil(() => fixture.details(started.run.id),
       details => details.run.executionState === 'completed',
       { timeoutMs: 90_000, description: 'stopped interval Run' })
