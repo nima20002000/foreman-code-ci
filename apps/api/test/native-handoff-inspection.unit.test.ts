@@ -30,7 +30,9 @@ function fixture(outcome: 'succeeded' | 'failed' = 'succeeded') {
 describe('current handoff execution inspection activation pins', () => {
   it.each(['succeeded', 'failed'] as const)('reads exact %s metadata using its original work slot', (outcome) => {
     const { snapshot, row } = fixture(outcome)
-    expect(inspectionExecutionRowSummary(row, snapshot)).toEqual(row.summary)
+    expect(inspectionExecutionRowSummary(row, snapshot)).toEqual({ ...row.summary,
+      logicalWork: { kind: 'activation', runId: snapshot.run.id, workflowVersionId: snapshot.version.id,
+        activationId: 'work-activation-original' } })
   })
 
   it.each(['work_activation_id', 'native_work_activation_id', 'attempt_work_activation_id'] as const)(
