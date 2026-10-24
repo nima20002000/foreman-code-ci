@@ -194,7 +194,7 @@
 .agent-graphql-tool-name span {
   overflow-wrap: anywhere;
   color: var(--text-muted);
-  font-size: var(--text-xs, .75rem);
+  font-size: .75rem;
 }
 
 .node-placement-field { min-width: 0; }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DeviceApplicationAdmissionError, DeviceApplicationError, deviceApplicationFailure }
-  from '../../api/src/modules/devices/deviceApplicationError.ts';
+  from '@foreman-code/api/worker/devices';
 
 test('Worker imports admission errors with strip-only TypeScript and retains the refusal reason', () => {
   const busy = new DeviceApplicationAdmissionError('DEVICE_BUSY');

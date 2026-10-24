@@ -1,6 +1,6 @@
 import { asRecord } from '../../shared/records.js'
 import type { ActivityNativeIdentity, NativeHarnessEvent, NativeSessionReference } from '@foreman-code/contracts'
-import { operatorActivity, type OperatorActivityChange } from './operatorActivity.js'
+import { operatorActivity, type OperatorActivityChange } from '../harnesses/index.js'
 
 /** Late item settlement never relaxes the owning adapter's root terminal guard. No root/message terminal is returned. */
 export function knownNativeActivity(event: NativeHarnessEvent, harness: NativeSessionReference['harness']):

@@ -13,7 +13,6 @@ import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { readUntil } from './helpers/observableCondition.js'
 
 async function fixture() {
   const db = await migratedDatabase()
@@ -88,21 +87,11 @@ describe.runIf(postgresEnabled)('Local execution worktree preparation', () => {
       const started = await f.client.callTool({ name: 'run_start', arguments: input })
       expect(started.isError, JSON.stringify(started)).not.toBe(true)
       const runId = RunStartCurrentResultSchema.parse(decodeMcpToolResult(started)).run.id
+      await expect.poll(async () => (await f.runs.get(runId))?.executionState, { timeout: 10_000 }).toBe('waiting')
       const args = { workspaceId: f.f.run.workspaceId, runId, detail: 'full' }
-      const read = async () => {
-        const response = await f.client.callTool({ name: 'run_get', arguments: args })
-        expect(response.isError, JSON.stringify(response)).not.toBe(true)
-        const details = OperatorRunGetResultSchema.parse(decodeMcpToolResult(response))
-        if ('detail' in details) throw new Error('Expected full Run details')
-        return details
-      }
-      const details = await readUntil(read, value => value.run.executionState === 'waiting', {
-        timeoutMs: 10_000, minimumReadIntervalMs: 100, description: 'prepared executions waiting for approval',
-        // Git preparation and native admission advance independently under CI load.
-        progress: value => ({ state: value.run.executionState,
-          executions: value.executions.map(execution => ({ id: execution.id, state: execution.state })),
-          worktrees: value.worktrees?.map(tree => ({ executionId: tree.executionId, state: tree.state })) }),
-      })
+      const details = OperatorRunGetResultSchema.parse(decodeMcpToolResult(
+        await f.client.callTool({ name: 'run_get', arguments: args })))
+      if ('detail' in details) throw new Error('Expected full Run details')
       expect(details.executions.length).toBeGreaterThan(1)
       expect(details.worktrees).toHaveLength(details.executions.length)
       expect(new Set(details.executions.map(execution => execution.workingDirectory)).size).toBe(details.executions.length)

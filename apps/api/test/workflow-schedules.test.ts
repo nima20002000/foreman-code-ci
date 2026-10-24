@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { graphqlToolRoles } from '@foreman-code/contracts'
+import { foremanToolRoles } from '@foreman-code/contracts'
 import { nextOccurrences, ScheduleConfigurationSchema, ScheduleOccurrenceSchema, scheduleOccurrenceId } from '@foreman-code/contracts/schedules'
 import { DomainError } from '../src/modules/errors.js'
 import type { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -100,7 +100,7 @@ describe('schedule MCP grant discovery and direct-call denial', () => {
     expect(workflowScheduleCapabilities(value, scope).map((entry) => entry.name))
       .toEqual(['workflow_schedule_get', 'workflow_schedule_occurrences_list'])
     expect(workflowScheduleCapabilities(value, { ...scope, workspaceId: 'foreign' })).toEqual([])
-    for (const name of WORKFLOW_SCHEDULE_TOOLS) expect(graphqlToolRoles(name)).toEqual(['operator'])
+    for (const name of WORKFLOW_SCHEDULE_TOOLS) expect(foremanToolRoles(name)).toEqual(['operator'])
   })
   it('audits an explicit call to an unlisted write instead of returning an unknown tool', async () => {
     const { value, recordDenied } = context()

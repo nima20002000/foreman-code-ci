@@ -9,8 +9,7 @@ import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { agentChatKey, PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { deferred } from './helpers/deferred.js'
-import { rollbackTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 /** Real, independent PostgreSQL sessions. No app server, HTTP transport or native provider.
  * The shared helper owns a separate migrated database on the disposable loopback server. */
@@ -51,13 +50,9 @@ describe.skipIf(!postgresEnabled)('G2 A2-PF-06: acknowledgement / unknown Postgr
 
   /** Reserve one physical session per operation. The production repository still owns
    * BEGIN/COMMIT/ROLLBACK; only final client release is deferred to the test's finally. */
-  function onClient(client: pg.PoolClient, afterQuery?: (sql: string) => Promise<void>) {
+  function onClient(client: pg.PoolClient) {
     return new PostgresAgentChatRepository({ connect: async () => ({
-      query: async (sql: string, values?: unknown[]) => {
-        const result = await client.query(sql, values)
-        await afterQuery?.(sql.replace(/\s+/g, ' ').trim())
-        return result
-      },
+      query: (sql: string, values?: unknown[]) => client.query(sql, values),
       release() {},
     }) } as unknown as pg.Pool)
   }
@@ -76,32 +71,33 @@ describe.skipIf(!postgresEnabled)('G2 A2-PF-06: acknowledgement / unknown Postgr
       it(`${steer ? 'steer' : 'turn'}: ${firstOperation} holds its first lock while the other operation enters`, async () => {
         const f = await setup(steer)
         const firstClient = await database.pool.connect(), secondClient = await database.pool.connect()
-        const held = deferred(), release = deferred()
         const pending: Promise<unknown>[] = []
-        let firstLock = true
+        const gateClient = await database.pool.connect()
+        await beginTransaction(gateClient)
+        await gateClient.query('select id from operator_conversations where id=$1 for update', [f.id])
+        await gateClient.query('select request_id from operator_conversation_turns where conversation_id=$1 and request_id=$2 for update', [f.id, f.requestId])
+        const gatePid = (await gateClient.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
         try {
           const firstPid = (await firstClient.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
           const secondPid = (await secondClient.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
-          const first = onClient(firstClient, async (sql) => {
-            // On the broken head unknown() first locks the receipt; on the fixed head
-            // both paths first lock the conversation. Exercise either ordering faithfully.
-            if (firstLock && (sql.endsWith('for update') || sql.startsWith('update operator_conversation_turns '))) {
-              firstLock = false; held.resolve(); await release.promise
-            }
-          })
+          const first = onClient(firstClient)
           const second = onClient(secondClient)
           const acknowledge = (repository: PostgresAgentChatRepository) => steer
             ? repository.steerAccepted(f.id, f.requestId, 'native-A') : repository.accepted(f.id, f.requestId, 'native-A')
           const unknown = (repository: PostgresAgentChatRepository) => repository.unknown(f.id, f.requestId, 'G2 uncertain transport')
           const firstTask = firstOperation === 'acknowledgement' ? acknowledge(first) : unknown(first)
           pending.push(firstTask); void firstTask.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
-          await Promise.race([held.promise, firstTask.then(() => { throw new Error('The first transaction never acquired a tested lock') })])
+          await waitForBlocker(gatePid, firstPid)
+          const waitingRows = await database.pool.query<{ table_name: string }>(`select c.relname as table_name
+            from pg_locks l join pg_class c on c.oid=l.relation
+            where l.pid=$1 and l.locktype='tuple'`, [firstPid])
+          assert.deepEqual(waitingRows.rows.map(row => row.table_name), ['operator_conversations'])
           const secondTask = firstOperation === 'acknowledgement' ? unknown(second) : acknowledge(second)
           pending.push(secondTask); void secondTask.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
-          // No sleep-based guess: PostgreSQL must report the second backend blocked by
-          // the first. Releasing now forms a cycle on the old receipt→conversation path.
+          // Both operations must queue at the conversation before touching the receipt.
+          // PostgreSQL reports the second waiter behind the first tuple-lock owner.
           await waitForBlocker(firstPid, secondPid)
-          release.resolve()
+          await commitTransaction(gateClient)
           const results = await Promise.allSettled(pending)
           for (const result of results) {
             if (result.status === 'rejected') throw result.reason
@@ -118,8 +114,9 @@ describe.skipIf(!postgresEnabled)('G2 A2-PF-06: acknowledgement / unknown Postgr
           assert.equal(row?.cancel_requested, true)
           assert.equal(row?.record.startupDelivered, true)
         } finally {
-          release.resolve()
+          await rollbackTransaction(gateClient)
           await Promise.allSettled(pending)
+          gateClient.release()
           await rollbackTransaction(firstClient).catch(() => /* ignore: best-effort cleanup; the test outcome is already decided */ undefined)
           await rollbackTransaction(secondClient).catch(() => /* ignore: best-effort cleanup; the test outcome is already decided */ undefined)
           firstClient.release(); secondClient.release()

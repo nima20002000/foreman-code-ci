@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../../packages/contracts/src/installationNames.mjs'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
@@ -6,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const state = process.argv[2]
 assert.ok(state && state.startsWith('/') && process.connected)
-const origin = new URL(process.env.FOREMAN_CODE_BROWSER_ORIGIN)
+const origin = new URL(process.env[INSTALLATION_NAMES.environment.BROWSER_ORIGIN])
 const api = new URL(process.env.VITE_API_URL)
 for (const url of [origin, api]) {
   assert.ok(url.protocol === 'http:' && url.hostname === '127.0.0.1' && url.port
