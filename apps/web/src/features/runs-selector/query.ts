@@ -39,13 +39,10 @@ export const runSummariesQuery = ({ workspaceId, workflowId }: RunsSelectorScope
   gcTime: 60_000,
 })
 
-export function useRunSummaries(identity: RunsSelectorScope, enabled = true, windowed = false) {
+export function useRunSummaries(identity: RunsSelectorScope, enabled = true) {
   // Callers may pass a selection that also carries runId; the list is workflow-scoped.
   const query = useInfiniteQuery({
     ...runSummariesQuery(identity),
-    // Paging history must not evict the newest Run used by the retained Board's overlay.
-    ...(windowed ? { queryKey: [...runsSelectorKeys.list(identity), 'history'],
-      getNextPageParam: (...args: Parameters<typeof nextRunsCursor>) => nextRunsCursor(args[0], args[1], args[2], args[3], true) } : {}),
     enabled,
     retry,
     // The Board also reads this list to notice a Run started elsewhere; the read is a small indexed page.

@@ -158,7 +158,7 @@ describe('main-owned job output admission and actual byte receiver',()=>{
     await expect(f.admission.admit(f.input)).rejects.toMatchObject({code:'FILE_EXPIRED'})
   })
   it('uses the real resumable sender/receiver through the typed binary channel, never a substitute byte reader',async()=>{
-    const f=await fixture(),root=await mkdtemp(join(process.env.GRAPHQL_HEAVY_BASE_TMPDIR ?? tmpdir(),'job-output-transfer-unit-'))
+    const f=await fixture(),root=await mkdtemp(join(process.env.FOREMAN_CODE_HEAVY_BASE_TMPDIR ?? tmpdir(),'job-output-transfer-unit-'))
     const receiver=new ResumableByteTransferService(root,{authorize:(intent,context)=>f.admission.authorizeTransfer(intent,context)},()=>new Date(f.job.createdAt).getTime())
     const extension=jobOutputDeviceExtension(f.admission,{} as never,receiver)
     const channel={request:async(_namespace:string,payload:unknown,options?:{bytes?:Uint8Array})=>extension.handle!(payload,{binding:f.binding,signal:AbortSignal.timeout(10_000),...(options?.bytes?{bytes:options.bytes}:{})})}
@@ -178,7 +178,7 @@ describe('main-owned job output admission and actual byte receiver',()=>{
 afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks()})
 async function collectorFixture() {
   vi.useFakeTimers({toFake:['Date']})
-  const f=await fixture(),root=await mkdtemp(join(process.env.GRAPHQL_HEAVY_BASE_TMPDIR ?? tmpdir(),'job-collector-replay-'))
+  const f=await fixture(),root=await mkdtemp(join(process.env.FOREMAN_CODE_HEAVY_BASE_TMPDIR ?? tmpdir(),'job-collector-replay-'))
   await mkdir(join(root,'dist'));await writeFile(join(root,f.input.path),'{"ok":true}')
   f.job.acceptedSpec.target.destination.canonicalProjectRoot=root
   f.job.acceptedSpec.policy.retentionSeconds=7200

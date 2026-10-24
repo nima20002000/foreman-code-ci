@@ -15,7 +15,7 @@ import { VerifiedRemoteEvidence } from '../../src/modules/runs/remote/resultBrid
 import { persistVerifiedRemoteReceipt, readRemoteReceipts } from '../../src/modules/runs/remote/persistence.js'
 import type { DispatchIntent, NativeExecutionPlacement } from '@foreman-code/contracts/node-placement'
 import type { NativeManagerResolutionContext } from '../../src/modules/interactions/runtimePorts.js'
-import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../../src/modules/access/workerCredentials.js'
+import { APP_MCP_TOKEN } from '../../src/modules/harnesses/appMcpLauncher.js'
 import { componentLogger, readOperationalFailures } from '../../src/modules/diagnostics/logger.js'
 import { credentialAuthority } from '../../src/modules/interactions/current/credentialAuthority.js'
 import { readLiveManagementPrincipal } from '../../src/modules/access/liveManagementPrincipal.js'
@@ -194,7 +194,7 @@ export async function faultWorkflowFixture(options: {
       return { harness: input.harness, providerVersion: '0.154.0', runnerId: input.runnerId,
         workingDirectory: input.workingDirectory, inspectedAt: new Date().toISOString(), entry: {
           name: input.serverName, transport: 'streamable-http', endpoint: providerAppEndpoint,
-          enabled: true, credentialEnvironmentVariable: APP_MCP_TOKEN_ENVIRONMENT_VARIABLE,
+          enabled: true, credentialEnvironmentVariable: APP_MCP_TOKEN,
           status: 'connected',
         } }
     } }),

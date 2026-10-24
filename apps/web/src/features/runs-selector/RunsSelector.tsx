@@ -1,11 +1,10 @@
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react'
 import { Button } from '../../shared/ui/nocturne/Button'
-import { useQueryClient } from '@tanstack/react-query'
 import { Icon } from '../../shared/ui/nocturne/Icon'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { RunsWindow } from './RunsWindow'
-import { labelRuns } from './presentation'
-import { isRunAccessError, runReadErrorLabel, runsSelectorKeys, useRunSummaries, useSelectedRunSnapshot } from './query'
+import { labelRuns, RUNS_MAX_PAGES } from './presentation'
+import { isRunAccessError, runReadErrorLabel, useRunSummaries, useSelectedRunSnapshot } from './query'
 import { useRunsSelectorUi } from './uiStore'
 import type { SelectedRunState } from './useSelectedRun'
 import './runsSelector.css'
@@ -16,18 +15,19 @@ export type RunsSelectorProps = { selection: SelectedRunState; className?: strin
 export function RunsSelector({ selection, className = '', triggerLabel = 'Runs' }: RunsSelectorProps) {
   const id = useId()
   const { identity } = selection
-  const cache = useQueryClient()
   const openId = JSON.stringify([id, identity.workspaceId, identity.workflowId])
   const open = useRunsSelectorUi((state) => state.openId === openId)
   const trigger = useRef<HTMLButtonElement>(null)
   const surface = useRef<HTMLDivElement>(null)
   const initialFocus = useRef<'first' | 'last'>('first')
   const typeahead = useRef({ text: '', at: 0 })
-  const history = useRunSummaries(identity, open && selection.active, true)
+  const history = useRunSummaries(identity, open && selection.active)
   const selected = useSelectedRunSnapshot(selection)
   const rows = labelRuns(history.items)
   const denied = isRunAccessError(history.error)
-  const brokenCursor = !history.hasNextPage && history.data?.pages.at(-1)?.pageInfo.nextCursor != null
+  const capped = (history.data?.pages.length ?? 0) >= RUNS_MAX_PAGES
+    && history.data?.pages.at(-1)?.pageInfo.nextCursor !== null
+  const brokenCursor = !capped && !history.hasNextPage && history.data?.pages.at(-1)?.pageInfo.nextCursor != null
   const selectedMessage = selection.invalid ? 'Invalid Run' : identity.runId === null ? null
     // A missing or forbidden Run is explained once, by the Run board body.
     // While the last read is still shown, a failed refresh is reported once, by the Run board.
@@ -124,8 +124,6 @@ export function RunsSelector({ selection, className = '', triggerLabel = 'Runs' 
       {history.isPending && <p role="status" className="runs-selector-state">Loading…</p>}
       {history.isError && <p role="status" className="runs-selector-state">{runReadErrorLabel(history.error, 'list')}</p>}
       {history.isSuccess && rows.length === 0 && <p role="status" className="runs-selector-state">No runs</p>}
-      {history.data?.pageParams[0] !== undefined ? <button type="button" role="menuitem" tabIndex={-1}
-        onClick={() => void cache.resetQueries({ queryKey: [...runsSelectorKeys.list(identity), 'history'], exact: true })}>Newest runs</button> : null}
       {!denied && selected.snapshot && identity.runId !== null && !rows.some(({ run }) => run.runId === identity.runId)
         && <p role="status" className="runs-selector-state">Selected Run outside page</p>}
       {history.isError && !history.isFetchNextPageError && !denied && <button type="button" role="menuitem" tabIndex={-1}
@@ -134,7 +132,7 @@ export function RunsSelector({ selection, className = '', triggerLabel = 'Runs' 
         type="button" role="menuitem" tabIndex={-1} className="runs-selector-more"
         aria-disabled={!history.hasNextPage || (history.isFetching && !history.isRefetching)}
         onClick={() => { if (history.hasNextPage && !history.isFetching) void history.fetchNextPage({ cancelRefetch: false }) }}>
-        {history.isFetchingNextPage ? 'Loading…' : brokenCursor ? 'More unavailable'
+        {history.isFetchingNextPage ? 'Loading…' : capped ? 'Limit reached' : brokenCursor ? 'More unavailable'
           : history.isFetchNextPageError ? 'Retry more' : history.hasNextPage ? 'More' : 'No more'}
       </button>}
       </div>
