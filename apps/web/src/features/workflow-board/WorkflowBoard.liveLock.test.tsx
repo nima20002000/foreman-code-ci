@@ -13,7 +13,6 @@ import { installBoardTestLifecycle, mountMeasuredBoard } from './eng05D.testSupp
 
 installBoardTestLifecycle()
 let serial = 0
-const authoring = () => screen.getByLabelText('Workflow authoring')
 const canvas = () => within(screen.getByLabelText('Editable workflow graph'))
 const controls = () => within(screen.getByLabelText('Workflow controls'))
 
