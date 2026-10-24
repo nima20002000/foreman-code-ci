@@ -53,8 +53,7 @@ export function deriveDraftEditorStatus({ edit, editIntent, agents, startState, 
   const locationValidation = workspace.data?.locationValidation
   let locationMessage = 'Choose an execution folder to run this workflow.'
   if (locationValidation?.status === 'restricted') locationMessage = 'Execution folder access is restricted.'
-  else if (locationValidation?.status === 'unavailable') locationMessage = locationValidation.error.code === 'ROOT_DIRECTORY_CHANGED'
-    ? "This workspace's folder changed. Choose it again to keep using it." : locationValidation.error.message
+  else if (locationValidation?.status === 'unavailable') locationMessage = locationValidation.error.message
   const panelTitle = panel === 'workflow' ? 'Workflow settings' : ''
   return { dirty, needsSave, settingsChanged, canUndo, canRedo, startReloadRequired, startDisabled, startReason, saveBusy, affectedRuns, affectedWorkflows,
     stopBlocked, errorText, locationMessage, panelTitle }

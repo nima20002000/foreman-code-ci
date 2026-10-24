@@ -24,7 +24,8 @@ function parse(content: string): { value: unknown; summary: string | undefined }
   if (!text.startsWith('{')) return undefined
   let value: unknown
   try { value = JSON.parse(text) } catch { return undefined } // ignore: plain text that merely starts with a brace
-  if (!value || typeof value !== 'object' || !('routing' in value || 'board' in value || 'result' in value)) return undefined
+  if (!value || typeof value !== 'object' || !('routing' in value || 'board' in value || 'result' in value
+    || ('data' in value && 'summary' in value && typeof value.summary === 'string'))) return undefined
   return { value, summary: findSummary(value, 0) }
 }
 function findSummary(value: unknown, depth: number): string | undefined {
