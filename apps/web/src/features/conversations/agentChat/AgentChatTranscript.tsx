@@ -2,7 +2,7 @@ import type { AgentChatState, AgentChatTurn, SendAgentChatMessageRequest } from 
 import type { MessageAttachmentRef } from '@foreman-code/contracts/files'
 import { parseSessionCommand, type ChatDeliveryReceipt, type InteractionResponseValue, type Message, type SessionMode } from '@foreman-code/contracts'
 import { X } from 'lucide-react'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { createContext, memo, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { Button, IconButton, Tooltip } from '../../../shared/ui/nocturne'
 import { ChatMessageFiles, ChatDecisionReceipts, HistoryWindowNotice, useChatTurnCompleted, agentChatContextKey, approvalReplyAvailable, mergeChatMessages, applyCanonicalActivityItems } from '../../chat-core'
 import { OperatorApprovalCard } from '../../operator-chat/OperatorApprovalCard'
@@ -17,10 +17,7 @@ import { confirmedCommandReceipt } from './commandRecords'
 import { placeChatActivities } from './activityPlacement'
 import { commandMayHaveBeenAccepted, type AgentChatCommandRecord, type useAgentChat } from './useAgentChat'
 
-export function AgentChatTranscript({
-  state, name, commands, history, readOnly = false, cancelReason, responseReason, resendReason, controlResendReason,
-  onRefresh, refreshing, onCancel, onRespond, onSendAgain, onDenied, onReceipt, children, storageKey,
-}: {
+type TranscriptProps = {
   state: AgentChatState; name: string; commands: AgentChatCommandRecord[]; history: ReturnType<typeof useAgentChat>['history']
   storageKey?: string; children?: ReactNode
   readOnly?: boolean; cancelReason?: string; responseReason?: string; resendReason?: string; controlResendReason?: string
@@ -29,7 +26,12 @@ export function AgentChatTranscript({
   onReceipt?(receipt: ChatDeliveryReceipt): void
   onCancel(requestId: string): void; onRespond(optionId: string, response?: InteractionResponseValue): void
   onSendAgain(content: string, attachments?: MessageAttachmentRef[], mode?: SessionMode): void
-}) {
+}
+
+export function AgentChatTranscript({
+  state, name, commands, history, readOnly = false, cancelReason, responseReason, resendReason, controlResendReason,
+  onRefresh, refreshing, onCancel, onRespond, onSendAgain, onDenied, onReceipt, children, storageKey,
+}: TranscriptProps) {
   const id = state.conversation?.id
   const turnCompleted = useChatTurnCompleted(id, state.activeTurn?.requestId)
   const chatResponding = !turnCompleted && !state.pendingInteraction
@@ -73,34 +75,8 @@ export function AgentChatTranscript({
   const originalCommand = (turn: AgentChatTurn) => commands.find(record => record.command?.kind === 'send'
     && record.command.input.requestId === turn.requestId)?.command
   const initialDelivery = (turn: AgentChatTurn) => commands.find(record => record.result?.turn?.requestId === turn.requestId)?.result?.turn?.delivery
-  const messageActions = (turn: AgentChatTurn, message?: Message) => {
-    const original = originalCommand(turn)
-    let input: Pick<SendAgentChatMessageRequest, 'content' | 'attachments'> | undefined
-    if (original?.kind === 'send') input = original.input
-    if (message?.originalInput?.requestId === turn.requestId) input = message.originalInput
-    let retry
-    if (!readOnly && (turn.delivery === 'failed' || turn.delivery === 'unknown')) {
-      if (input) {
-        const source = input
-        retry = <Button size="sm" variant="ghost" disabled={!!resendUnavailable(source.content)}
-          title={resendUnavailable(source.content)} onClick={() => onSendAgain(source.content, source.attachments,
-            original?.kind === 'send' ? original.input.sessionMode : undefined)}>
-          {turn.delivery === 'failed' ? 'Retry' : 'Send again as new message'}
-        </Button>
-      } else if (onRefresh) {
-        retry = <Button size="sm" variant="ghost" disabled={refreshing}
-          onClick={onRefresh}>Read original send inputs</Button>
-      }
-    }
-    return <>
-      {!readOnly && turn.delivery === 'queued' ? <Tooltip content={cancelReason ?? 'Cancel queued message'}>
-        <IconButton size="sm" variant="ghost" label="Cancel queued message" disabled={!!cancelReason}
-          onClick={() => onCancel(turn.requestId)}><X size={12} aria-hidden="true" /></IconButton>
-      </Tooltip> : null}
-      {retry}
-    </>
-  }
-  return <ConversationViewport revision={revision} storageKey={storageKey ?? `${agentChatContextKey(state.context)}:${id ?? 'native'}`}>{onBrowse => <>
+  return <MessageActionsContext.Provider value={{ readOnly, cancelReason, resendReason, controlResendReason,
+    onRefresh, refreshing, onCancel, onSendAgain }}><ConversationViewport revision={revision} storageKey={storageKey ?? `${agentChatContextKey(state.context)}:${id ?? 'native'}`}>{onBrowse => <>
     {children}
     {history.hasGap ? <HistoryWindowNotice pending={history.isFetching && !history.isRefetching}
       onReload={() => { onBrowse(); void history.reloadNearer() }} /> : null}
@@ -117,12 +93,10 @@ export function AgentChatTranscript({
               <AgentChatActivity entry={entry} onBrowse={onBrowse} />
             </li>),
           <li key={`message:${message.id}`}>
-            <AgentChatMessage message={message} name={name}
-              status={message.role === 'user' && receipts.has(message.id)
-                ? <ChatDeliveryState delivery={receipts.get(message.id)!.delivery} turn={receipts.get(message.id)!} initialDelivery={initialDelivery(receipts.get(message.id)!)} /> : undefined}
-              actions={message.role === 'user' && receipts.has(message.id) ? messageActions(receipts.get(message.id)!, message) : undefined}>
-              {message.attachments?.length ? <ChatMessageFiles message={message} workspaceId={state.context.workspaceId} /> : null}
-            </AgentChatMessage>
+            <TranscriptMessage message={message} name={name} workspaceId={state.context.workspaceId}
+              turn={message.role === 'user' ? receipts.get(message.id) : undefined}
+              original={message.role === 'user' && receipts.has(message.id) ? originalCommand(receipts.get(message.id)!) : undefined}
+              initialDelivery={message.role === 'user' && receipts.has(message.id) ? initialDelivery(receipts.get(message.id)!) : undefined} />
           </li>,
         ]),
         ...placement.rows.filter(row => row.beforeMessageId === undefined).map(({ entry }) =>
@@ -135,7 +109,7 @@ export function AgentChatTranscript({
         return <AgentChatMessage key={turn.requestId} name={name}
           message={{ id: turn.messageId, role: 'user', content: original?.kind === 'send'
             ? original.input.content : 'Message outside this history page', createdAt: turn.createdAt }}
-          status={<ChatDeliveryState delivery={turn.delivery} turn={turn} initialDelivery={initialDelivery(turn)} />} actions={messageActions(turn)} />
+          status={<ChatDeliveryState delivery={turn.delivery} turn={turn} initialDelivery={initialDelivery(turn)} />} actions={<MessageActions turn={turn} original={original} />} />
       })}
     </section> : null}
     {commands.map(record => record.command?.kind === 'send' && record.result?.receipt
@@ -161,5 +135,55 @@ export function AgentChatTranscript({
     {!readOnly && state.pendingInteraction ? <OperatorApprovalCard actor="Agent" interaction={state.pendingInteraction}
       onBrowse={onBrowse} disabled={!!responseReason || !approvalReplyAvailable(state)} onSelect={onRespond} /> : null}
     {onRefresh ? <ChatDecisionReceipts snapshot={state.activitySnapshot} onRefresh={onRefresh} pending={refreshing} /> : null}
-  </>}</ConversationViewport>
+  </>}</ConversationViewport></MessageActionsContext.Provider>
+}
+
+const MessageActionsContext = createContext<Pick<TranscriptProps,
+  'readOnly' | 'cancelReason' | 'resendReason' | 'controlResendReason' | 'onRefresh' | 'refreshing' | 'onCancel' | 'onSendAgain'> | undefined>(undefined)
+
+const TranscriptMessage = memo(function TranscriptMessage({ message, name, workspaceId, turn, original, initialDelivery }: {
+  message: Message; name: string; workspaceId: string; turn?: AgentChatTurn
+  original?: AgentChatCommandRecord['command']; initialDelivery?: AgentChatTurn['delivery']
+}) {
+  return <AgentChatMessage message={message} name={name}
+    status={turn ? <ChatDeliveryState delivery={turn.delivery} turn={turn} initialDelivery={initialDelivery} /> : undefined}
+    actions={turn ? <MessageActions turn={turn} message={message} original={original} /> : undefined}>
+    {message.attachments?.length ? <ChatMessageFiles message={message} workspaceId={workspaceId} /> : null}
+  </AgentChatMessage>
+})
+
+function MessageActions({ turn, message, original }: {
+  turn: AgentChatTurn; message?: Message; original?: AgentChatCommandRecord['command']
+}) {
+  const controls = useContext(MessageActionsContext)
+  if (!controls) throw new Error('Message actions require transcript controls')
+  const { readOnly, cancelReason, onRefresh, refreshing, onCancel, onSendAgain } = controls
+  const resendUnavailable = (content: string) => {
+    const command = parseSessionCommand(content)
+    return command.kind === 'compact' || command.kind === 'mode' ? controls.controlResendReason : controls.resendReason
+  }
+  let input: Pick<SendAgentChatMessageRequest, 'content' | 'attachments'> | undefined
+  if (original?.kind === 'send') input = original.input
+  if (message?.originalInput?.requestId === turn.requestId) input = message.originalInput
+  let retry
+  if (!readOnly && (turn.delivery === 'failed' || turn.delivery === 'unknown')) {
+    if (input) {
+      const source = input
+      retry = <Button size="sm" variant="ghost" disabled={!!resendUnavailable(source.content)}
+        title={resendUnavailable(source.content)} onClick={() => onSendAgain(source.content, source.attachments,
+          original?.kind === 'send' ? original.input.sessionMode : undefined)}>
+        {turn.delivery === 'failed' ? 'Retry' : 'Send again as new message'}
+      </Button>
+    } else if (onRefresh) {
+      retry = <Button size="sm" variant="ghost" disabled={refreshing}
+        onClick={onRefresh}>Read original send inputs</Button>
+    }
+  }
+  return <>
+    {!readOnly && turn.delivery === 'queued' ? <Tooltip content={cancelReason ?? 'Cancel queued message'}>
+      <IconButton size="sm" variant="ghost" label="Cancel queued message" disabled={!!cancelReason}
+        onClick={() => onCancel(turn.requestId)}><X size={12} aria-hidden="true" /></IconButton>
+    </Tooltip> : null}
+    {retry}
+  </>
 }
