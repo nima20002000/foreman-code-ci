@@ -1275,11 +1275,7 @@ export class HostCiRunner {
     if (settled) this.trackCacheWriter(runId)
     else this.trackCacheWriter(runId, meta.repository)
     // Local preparation owns reconciliation until it releases the run directory.
-    // A healthy running unit and a queued run have no transition to serialize. Actual changes still reread
-    // metadata under the cross-process lock; exit/cancellation on the next poll cannot be hidden by a cache.
-    const unchanged = meta.state === 'queued' || !preparing && meta.state === 'running' && !meta.cancellationRequested
-      && await this.unitState(meta, unitStates) !== 'stopped' && !existsSync(join(directory, 'exit'))
-    const reconciled = settled || unchanged || !preparing && await withHostCiRunLock(this.context, directory, async () => {
+    const reconciled = settled || !preparing && await withHostCiRunLock(this.context, directory, async () => {
       await this.reconcile(await this.readMeta(runId), preparing, unitStates)
       return true
     }, { nonBlocking: true })

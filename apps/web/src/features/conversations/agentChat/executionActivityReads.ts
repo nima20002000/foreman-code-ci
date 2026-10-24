@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useMutation, useMutationState, useQueryClient } from '@tanstack/react-query'
 import type { AgentChatContext } from '@foreman-code/contracts/agent-chat'
 import { agentChatApi } from '../../../shared/api/agentChat'
@@ -52,12 +52,11 @@ export function useExecutionActivityReads(context: AgentChatContext, key: readon
     },
     onSettled: (_result, _error, request) => { pendingReads.current.delete(request.operation) },
   })
-  const mutateAsync = mutation.mutateAsync
-  const read = useCallback((page: ActivityRead) => {
+  const read = (page: ActivityRead) => {
     const operation = JSON.stringify([key, operationKey(page)])
     const pending = pendingReads.current.get(operation)
     if (pending) return pending
-    const promise = mutateAsync({ page, context, key, generation: sessionGeneration(), operation, identity,
+    const promise = mutation.mutateAsync({ page, context, key, generation: sessionGeneration(), operation, identity,
       ...(page.itemId === undefined ? { historyRequest: ++historyRequest.current } : {}) })
       .then(() => undefined)
     pendingReads.current.set(operation, promise)
@@ -65,7 +64,7 @@ export function useExecutionActivityReads(context: AgentChatContext, key: readon
       // ignore: readState reports failures for callers that do not await; awaiting callers still receive the rejection.
     })
     return promise
-  }, [context, key, identity, mutateAsync])
+  }
   const readState = (executionId: string, itemId?: string) => {
     const operation = operationKey({ executionId, ...(itemId !== undefined ? { itemId } : {}) })
     const state = [...states].reverse().find(entry => entry.request && operationKey(entry.request.page) === operation)

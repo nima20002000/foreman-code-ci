@@ -1,5 +1,3 @@
-import { memo } from 'react'
-import type { AgentChatExecutionItem } from '@foreman-code/contracts/agent-chat'
 import { Button } from '../../../shared/ui/nocturne'
 import { AgentChatMessage } from './AgentChatMessage'
 import { AgentChatActivity } from './AgentChatActivity'
@@ -41,7 +39,8 @@ export function RunTranscript({ feed, name, onBrowse }: {
         {!items.length && executionIsLive(execution) ? <p className="agent-chat-note">Waiting for the first activity…</p> : null}
         <ol className="agent-chat-messages" aria-label="Execution activity">
           {items.map(item => <li key={item.id}>{item.entry.kind === 'message'
-            ? <ExecutionMessage item={item} name={name} onBrowse={onBrowse} expand={feed.expand} />
+            ? <AgentChatMessage message={item.entry.message} name={name}
+              onExpand={() => { onBrowse(); return feed.expand(item.executionId, item.id) }} />
             : <AgentChatActivity entry={item.entry.activity} onBrowse={onBrowse}
               expandState={feed.readState(item.executionId, item.id)}
               onExpand={() => feed.expand(item.executionId, item.id)} />}</li>)}
@@ -50,14 +49,6 @@ export function RunTranscript({ feed, name, onBrowse }: {
     })}
   </section>
 }
-
-const ExecutionMessage = memo(function ExecutionMessage({ item, name, onBrowse, expand }: {
-  item: AgentChatExecutionItem; name: string; onBrowse(): void
-  expand(executionId: string, itemId: string): Promise<void>
-}) {
-  return item.entry.kind === 'message' ? <AgentChatMessage message={item.entry.message} name={name}
-    onExpand={() => { onBrowse(); return expand(item.executionId, item.id) }} /> : null
-})
 
 type Items = NonNullable<ReturnType<typeof useExecutionActivity>['query']['data']>['items']
 /** Claude can send its final result again (e.g. after a format retry); show it once, like the Run chat does. */

@@ -88,7 +88,8 @@ export class ExclusiveGraphConnection implements SqlQuery {
   #closing = false
   readonly #closingSignal = new AbortController()
   constructor(client: pg.ClientBase, assertOwner: () => void,
-    private readonly readPlans?: Map<string, string>) {
+    private readonly readPlans?: Map<string, string>,
+    private readonly checkCommit?: (sql: SqlTransaction) => Promise<void>) {
     if (adoptedClients.has(client)) throw new RunGraphError('GRAPH_TRANSACTION_CONCURRENT')
     adoptedClients.add(client)
     this.#client = client
@@ -169,6 +170,7 @@ export class ExclusiveGraphConnection implements SqlQuery {
           if (pending) { state.failed = true; await pending.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ }) }
           assertGraphTransaction(sql)
           this.#assertOwner()
+          await this.checkCommit?.(sql)
           return value
         }, {
           ...control, origin, runtimeTiming: true,

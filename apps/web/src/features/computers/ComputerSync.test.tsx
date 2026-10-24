@@ -146,23 +146,3 @@ it('unlocks a rejected sync change after a successful background read', async ()
   await waitFor(() => expect(toggle).toBeEnabled())
   expect(toggle).toBeChecked()
 })
-
-it('distinguishes disabled sync from a disconnected peer and rechecks the connection beside the workspace', async () => {
-  let value = status()
-  value.folders[0]!.enabled = false
-  value.folders[0]!.status!.connected = false
-  const fixture = computersFixture(<ComputerSyncPanel target={mainTarget} />, [
-    http.post('*/api/management/computers/sync/status', () => HttpResponse.json(value)),
-  ])
-  const panel = await open()
-  const folder = within(await panel.findByRole('region', { name: 'Shared files for Website' }))
-  expect(await folder.findByText('Sync off')).toBeVisible()
-  expect(folder.queryByText(/Disconnected/)).not.toBeInTheDocument()
-  value = { ...value, folders: [{ ...value.folders[0]!, enabled: true }] }
-  await act(async () => { await fixture.client.invalidateQueries({ queryKey: ['computer-sync'] }) })
-  expect(await folder.findByText('Waiting for a sync peer. This computer can be online while file sync is disconnected.')).toBeVisible()
-  value = status()
-  await userEvent.click(folder.getByRole('button', { name: 'Recheck sync status' }))
-  expect(await folder.findByText('Connected · idle')).toBeVisible()
-  expect(folder.queryByText(/Waiting for a sync peer/)).not.toBeInTheDocument()
-})

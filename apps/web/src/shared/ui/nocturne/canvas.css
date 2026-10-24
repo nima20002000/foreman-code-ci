@@ -433,7 +433,7 @@
 .react-flow__node.react-flow__node-agent { padding: 0; border: 0; background: transparent; box-shadow: none; }
 .react-flow__node-agent .workflow-agent-node, .react-flow__node-agent .n-agent { width: 100%; height: 100%; }
 .react-flow__node-agent .n-agent-core { justify-content: center; padding: 20px 0; }
-.react-flow__node-agent .n-agent-status { max-width: calc(100% - 24px); }
+.react-flow__node-agent .n-agent-status { max-width: calc(100% - 40px); }
 .react-flow__node-agent .n-agent-name { max-width: calc(100% - 56px); }
 .react-flow__node-agent .n-agent-model { max-width: calc(100% - 72px); }
 /* Compact nodes keep status, name and harness; model and role facts live in the node's Info panel. */
