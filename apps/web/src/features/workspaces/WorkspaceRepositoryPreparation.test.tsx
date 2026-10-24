@@ -46,7 +46,7 @@ function onboardingFixture(metadataOnly = false) {
     http.get('/api/management/workspaces/workspace-1/source-roots', () => HttpResponse.json({
       items: status.state === 'ready' ? [prepared.root] : [], readiness: 'metadata-only',
     })),
-    http.post('/api/management/workspaces/workspace-1/repository/add', async ({ request }) =>
+    http.post('/api/management/workspaces/workspace-1/repository', async ({ request }) =>
       finish(await request.json() as WorkspaceRepositoryAddInput)),
   )
   return { prepared, requests, finish, setStatus: (value: WorkspaceRepositoryReadResult) => { status = value },
@@ -88,7 +88,7 @@ describe('workspace project preparation', () => {
     const fixture = onboardingFixture(true)
     let release!: () => void
     const pending = new Promise<void>(resolve => { release = resolve })
-    server.use(http.post('/api/management/workspaces/workspace-1/repository/add', async ({ request }) => {
+    server.use(http.post('/api/management/workspaces/workspace-1/repository', async ({ request }) => {
       const input = await request.json() as WorkspaceRepositoryAddInput
       await pending
       return fixture.finish(input)
@@ -107,7 +107,7 @@ describe('workspace project preparation', () => {
 
   it('reads an uncertain attempt and retries its original command and revision inputs', async () => {
     const fixture = onboardingFixture(true)
-    server.use(http.post('/api/management/workspaces/workspace-1/repository/add', async ({ request }) => {
+    server.use(http.post('/api/management/workspaces/workspace-1/repository', async ({ request }) => {
       const input = await request.json() as WorkspaceRepositoryAddInput
       if (fixture.requests.length) return fixture.finish(input)
       fixture.requests.push(input)
@@ -139,7 +139,7 @@ describe('workspace project preparation', () => {
         }
         return undefined
       }),
-      http.post('/api/management/workspaces/workspace-1/repository/add', async ({ request }) => {
+      http.post('/api/management/workspaces/workspace-1/repository', async ({ request }) => {
         const input = await request.json() as WorkspaceRepositoryAddInput
         if (fixture.requests.length) return fixture.finish(input)
         fixture.requests.push(input)
@@ -161,7 +161,7 @@ describe('workspace project preparation', () => {
 
   it('recovers a preparing import after fresh reload using its authorized canonical input', async () => {
     const fixture = onboardingFixture(true)
-    server.use(http.post('/api/management/workspaces/workspace-1/repository/add', async ({ request }) => {
+    server.use(http.post('/api/management/workspaces/workspace-1/repository', async ({ request }) => {
       const input = await request.json() as WorkspaceRepositoryAddInput
       if (fixture.requests.length) return fixture.finish(input)
       fixture.requests.push(input)
@@ -196,7 +196,7 @@ describe('workspace project preparation', () => {
 
   it('allows cancelling uncertain navigation and retrying from its guard after the request ended', async () => {
     const fixture = onboardingFixture(true)
-    server.use(http.post('/api/management/workspaces/workspace-1/repository/add', async ({ request }) => {
+    server.use(http.post('/api/management/workspaces/workspace-1/repository', async ({ request }) => {
       const input = await request.json() as WorkspaceRepositoryAddInput
       if (fixture.requests.length) return fixture.finish(input)
       fixture.requests.push(input)
@@ -226,7 +226,7 @@ describe('workspace project preparation', () => {
 
   it('reconciles a completed uncertain attempt through readback without a second add', async () => {
     const fixture = onboardingFixture(true)
-    server.use(http.post('/api/management/workspaces/workspace-1/repository/add', async ({ request }) => {
+    server.use(http.post('/api/management/workspaces/workspace-1/repository', async ({ request }) => {
       fixture.finish(await request.json() as WorkspaceRepositoryAddInput)
       return HttpResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Ready response unavailable.' } }, { status: 503 })
     }))
@@ -243,7 +243,7 @@ describe('workspace project preparation', () => {
 
   it('retains input after a capture failure and says when a new import is required', async () => {
     const fixture = onboardingFixture(true)
-    server.use(http.post('/api/management/workspaces/workspace-1/repository/add', async ({ request }) => {
+    server.use(http.post('/api/management/workspaces/workspace-1/repository', async ({ request }) => {
       const input = await request.json() as WorkspaceRepositoryAddInput
       fixture.requests.push(input)
       const status: WorkspaceRepositoryReadResult = { workspaceId: 'workspace-1', state: 'failed', revision: 1,
@@ -279,7 +279,7 @@ describe('workspace project preparation', () => {
 
   it('preserves an Add draft on revision conflict and uses a new command after reapply', async () => {
     const fixture = onboardingFixture()
-    server.use(http.post('/api/management/workspaces/workspace-1/repository/add', async ({ request }) => {
+    server.use(http.post('/api/management/workspaces/workspace-1/repository', async ({ request }) => {
       const input = await request.json() as WorkspaceRepositoryAddInput
       if (fixture.requests.length) return fixture.finish(input)
       fixture.requests.push(input)

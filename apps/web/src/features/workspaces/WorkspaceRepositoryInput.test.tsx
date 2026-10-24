@@ -16,7 +16,7 @@ function mount() {
   const fixture = worktreeFixture()
   server.use(http.get('/api/management/workspaces/workspace-1/root-policies', () => HttpResponse.json({
     workspaceId: 'workspace-1', policies: [], allowlists: [mainRoot], readiness: 'metadata-only',
-  })), http.post('/api/management/workspaces/workspace-1/repository/add', async ({ request }) => {
+  })), http.post('/api/management/workspaces/workspace-1/repository', async ({ request }) => {
     const input = await request.json() as { repository: unknown; commandId: string }
     writes.push(input)
     return HttpResponse.json({ value: { ...fixture.ready, operation: { ...fixture.ready.operation,
