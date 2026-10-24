@@ -15,8 +15,7 @@ import './providerAccounts.css'
 export type ProviderAccountNavigation = {
   accountId: string; operationId?: string; provider: AccountProvider; target?: DeviceProvisioningTarget
 }
-export function ProviderAccountsSettings({ provider, selection, onSelect, target, onTargetChange, additional = false }: {
-  additional?: boolean;
+export function ProviderAccountsSettings({ provider, selection, onSelect, target, onTargetChange }: {
   provider?: AccountProvider; selection?: ProviderAccountNavigation | undefined;
   onSelect?: ((selection: ProviderAccountNavigation | undefined) => void) | undefined;
   target?: DeviceProvisioningTarget | undefined;
@@ -48,7 +47,7 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
   const providers = provider ? [provider] : ['codex', 'claude'] as const
   return <section className="provider-accounts-settings" aria-label={provider
     ? `${provider === 'codex' ? 'Codex' : 'Claude'} accounts` : 'Provider accounts'}>
-    <header className="provider-accounts-heading"><h3>{additional ? 'Additional accounts' : 'Accounts'} <InfoHint label="Accounts">Add one to keep its sign-in separate.</InfoHint></h3></header>
+    <header className="provider-accounts-heading"><h3>Accounts <InfoHint label="Accounts">Add one to keep its sign-in separate.</InfoHint></h3></header>
     {onTargetChange ? <ProviderAccountComputerSelect target={scope.target} onChange={onTargetChange}
       label={`${provider === 'claude' ? 'Claude' : 'Codex'} account computer`} /> : null}
     {denied || query.isError && !query.data || access.discovery.isError || access.discovery.isSuccess && !readable ?
@@ -80,7 +79,7 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
               onSelect?.({ provider: item, accountId: value.id, ...(scope.target ? { target: scope.target } : {}),
                 ...(auth?.accountId === value.id && auth.operationId ? { operationId: auth.operationId } : {}) })
             }} />)}</div>
-        {!accounts.some(value => value.provider === item) ? <p className="provider-account-note">{additional ? 'No additional accounts added.' : 'No accounts added.'}</p> : null}
+        {!accounts.some(value => value.provider === item) ? <p className="provider-account-note">No accounts added.</p> : null}
         {capability && !capability.qualified
           ? <p className="provider-account-note" title={capability.reason ?? undefined}>Separate accounts aren't available on this computer yet.</p>
           : capability?.reason ? <p className="provider-account-note">{capability.reason}</p> : null}
