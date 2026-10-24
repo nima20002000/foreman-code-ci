@@ -2,7 +2,7 @@ import type { Mutation, QueryClient } from '@tanstack/react-query'
 import type { ChatDeliveryReceipt, InteractionResponseValue } from '@foreman-code/contracts'
 import type { AgentChatState, AgentChatTurn, SendAgentChatMessageRequest, AgentChatSendResponse } from '@foreman-code/contracts/agent-chat'
 import { createClientScopedStore } from '../../../shared/api/clientScopedStore'
-import type { ChatAttachmentAttempt } from '../chatAttachmentAttempt'
+import type { ChatAttachmentAttempt } from '../../chat-core'
 import { receiptForCommand } from './receiptReadback'
 
 export type AgentChatCommand =

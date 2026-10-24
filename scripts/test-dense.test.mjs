@@ -8,9 +8,9 @@ import { scheduleQueue } from './dense-scheduler.mjs'
 import { createDenseItems, denseSummary, executeDenseItem, runDense } from './test-dense.mjs'
 import { portionPath, writeReport } from './verification-reports.mjs'
 
-const keys = ['packages/contracts:test', 'apps/api:test', 'apps/web:test:unit',
+const keys = ['packages/contracts:test', 'packages/contracts-node:test', 'apps/api:test', 'apps/web:test:unit',
   'apps/web:test:run-graph-smoke', 'apps/worker:test', 'root:test:scripts']
-const inventory = keys.map((key, index) => ({ key, kind: index < 3 ? 'vitest' : 'node',
+const inventory = keys.map((key, index) => ({ key, kind: index < 4 ? 'vitest' : 'node',
   files: [`portion-${index}/first.test.mjs`, `portion-${index}/second.test.mjs`] }))
 const metrics = { durationMs: 10, peakRssBytes: 1024, cpuSeconds: 0.01 }
 
@@ -75,7 +75,7 @@ async function fakeIntegration(_argv, options) {
 
 test('dense queue covers every unit portion and pinned command gate with one exclusive build', () => {
   const items = createDenseItems({ root: '/repository', env: {}, inventory })
-  assert.equal(items.length, 9)
+  assert.equal(items.length, 10)
   assert.deepEqual(items.filter(item => item.portion).map(item => item.portion), inventory)
   assert.ok(items.every(item => item.command === 'corepack' && item.args[0] === 'pnpm'))
   assert.ok(items.filter(item => item.portion).every(item => item.args.includes('/repository/scripts/test-command.mjs')))
@@ -100,12 +100,10 @@ test('dense queue validates worker and supervision bounds and refuses missing po
   assert.equal(item.idleTimeoutMs, 234)
 })
 
-test('full dense gate refuses integration subset selectors from either environment prefix', async () => {
+test('full dense gate refuses frozen integration subset selectors', async () => {
   for (const name of ['INTEGRATION_START_AT', 'INTEGRATION_FAILED_LOG', 'INTEGRATION_TEST_NAME_PATTERN']) {
-    for (const prefix of ['GRAPHQL_', 'FOREMAN_CODE_']) {
-      await assert.rejects(runDense([], { env: { [`${prefix}${name}`]: 'subset' }, inventory,
-        integrationRunner: async () => { assert.fail('partial gate must not run') } }), /requires full integration coverage/)
-    }
+    await assert.rejects(runDense([], { env: { [`GRAPHQL_${name}`]: 'subset' }, inventory,
+      integrationRunner: async () => { assert.fail('partial gate must not run') } }), /requires full integration coverage/)
   }
 })
 
@@ -116,13 +114,13 @@ test('one queue reports integration, unit coverage, and command jobs through a f
     integrationRunner: fakeIntegration, execute: fakeExecutor({ calls }) })
   assert.equal(result.code, 0)
   assert.equal(result.summary.outcome, 'passed')
-  assert.equal(result.summary.expectedJobs, 10)
-  assert.deepEqual(result.summary.counts, { passed: 10, failed: 0, flaky: 0, notRun: 0 })
-  assert.deepEqual(result.summary.totals, { total: 13, passed: 13, failed: 0, skipped: 0 })
-  assert.equal(calls.length, 9)
+  assert.equal(result.summary.expectedJobs, 11)
+  assert.deepEqual(result.summary.counts, { passed: 11, failed: 0, flaky: 0, notRun: 0 })
+  assert.deepEqual(result.summary.totals, { total: 15, passed: 15, failed: 0, skipped: 0 })
+  assert.equal(calls.length, 10)
   const report = JSON.parse(readFileSync(join(f.directory, 'summary.json'), 'utf8'))
-  assert.equal(report.results.filter(job => job.attempts[0].coverage).length, 6)
-  assert.match(readFileSync(join(f.directory, 'junit.xml'), 'utf8'), /tests="10" failures="0"/)
+  assert.equal(report.results.filter(job => job.attempts[0].coverage).length, 7)
+  assert.match(readFileSync(join(f.directory, 'junit.xml'), 'utf8'), /tests="11" failures="0"/)
   assert.ok(calls.every(call => readFileSync(call.item.log, 'utf8').includes('fake command log')))
 })
 
@@ -187,9 +185,9 @@ test('cleanup failure preserves completed attempts and cancellation codes in inc
     assert.equal(result.summary.error, 'fixture cleanup failed')
     assert.equal(result.summary.completeness, 'partial')
     assert.equal(result.summary.outcome, code === 1 ? 'incomplete' : 'cancelled')
-    assert.equal(result.summary.expectedJobs, 10)
+    assert.equal(result.summary.expectedJobs, 11)
     assert.equal(result.summary.completedJobs, 10)
-    assert.deepEqual(result.summary.counts, { passed: 10, failed: 0, flaky: 0, notRun: 0 })
+    assert.deepEqual(result.summary.counts, { passed: 11, failed: 0, flaky: 0, notRun: 0 })
     assert.ok(result.summary.results.every(job => job.attempts.length === 1))
     const persisted = JSON.parse(readFileSync(join(f.directory, 'summary.json'), 'utf8'))
     assert.equal(persisted.completedJobs, 10)

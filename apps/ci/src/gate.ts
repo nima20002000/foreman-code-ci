@@ -1,6 +1,6 @@
 import { CI_MAX_RUN_TICKETS, exclusiveIntegrationFiles, integrationCpuCost, requiresUserSystemd, type CiDurations, type CiRunInput,
   type CiRunRecord } from '@foreman-code/contracts'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import type { CiContext } from './environment.js'
 import type { HostCiComputer, HostCiEndpoint } from './service.js'
 import type { CiIntegrationInventory } from './integrationParts.js'

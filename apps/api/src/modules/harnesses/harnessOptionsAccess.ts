@@ -1,6 +1,6 @@
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
-import type { ProviderAccountsService } from '../provider-accounts/service.js'
+import type { ProviderAccountsService } from '../provider-accounts/index.js'
 import { DomainError } from '../errors.js'
 
 /** Managed catalogs retain the account service's live, target-scoped read checks. */

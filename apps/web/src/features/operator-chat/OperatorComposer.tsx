@@ -1,12 +1,9 @@
-import { errorMessage } from '../../shared/errorMessage'
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { parseSessionCommand, type SessionMode } from '@foreman-code/contracts'
 import { Icon, IconButton } from '../../shared/ui/nocturne'
-import { useConversationDraftStore } from '../conversations'
+import { useComposerDraft, useSessionCommandSubmit } from '../conversations'
 import type { useFileDrop } from '../../shared/ui/useFileDrop'
-import { useSlashCommandMenu } from '../conversations/sessionControls/useSlashCommandMenu'
-import type { ComposerSessionControls } from '../conversations/sessionControls/useSessionControls'
-import { ChatPrimaryActions } from '../conversations/ChatPrimaryActions'
+import { ChatPrimaryActions, type ComposerSessionControls } from '../chat-core'
 import '../conversations/chatAttachments.css'
 
 export function OperatorComposer({ conversationId, context, attachmentControl, fileDropProps, hasAttachments = false,
@@ -16,12 +13,12 @@ export function OperatorComposer({ conversationId, context, attachmentControl, f
   fileDropProps?: ReturnType<typeof useFileDrop>['dropTargetProps'];
   onSubmit(content: string, mode?: SessionMode): void; onNewChat(): void; onCancel?: () => void;
 }) {
-  const value = useConversationDraftStore((state) => state.drafts[conversationId] ?? '')
-  const setDraft = useConversationDraftStore((state) => state.setDraft)
   const input = useRef<HTMLTextAreaElement>(null)
   const id = useId()
-  const [commandError, setCommandError] = useState<{ conversationId: string; content: string; message: string }>()
-  const command = parseSessionCommand(value)
+  const commands = useSessionCommandSubmit({ conversationId, sessionControls, onSubmit, onNewChat })
+  const { draft: value, command, menu, change } = useComposerDraft(conversationId, content => { void send(content) }, {
+    allowNew: true, onEdit: commands.resetError,
+  })
   const commandOnly = command.kind === 'compact' || command.kind === 'mode'
   const isNew = command.kind === 'new'
   const pending = commandOnly ? sessionControls?.mutation.isPending : isSending
@@ -37,25 +34,8 @@ export function OperatorComposer({ conversationId, context, attachmentControl, f
     const controlOnly = parsed.kind === 'compact' || parsed.kind === 'mode'
     const blocked = controlOnly ? sessionControls?.mutation.isPending : isSending || sendDisabled
     if (parsed.kind !== 'new' && (blocked || (!content.trim() && !hasAttachments))) return
-    setCommandError(undefined)
-    try {
-      if (parsed.kind === 'invalid') throw new Error(parsed.message)
-      if (parsed.kind === 'new') onNewChat()
-      else if (parsed.kind === 'compact' || parsed.kind === 'mode') {
-        if (!sessionControls) throw new Error('Native controls are unavailable for this conversation.')
-        await sessionControls.command(content, conversationId)
-      } else if (parsed.kind === 'plan-task') onSubmit(content, 'plan')
-      else onSubmit(content)
-    } catch (failure) {
-      setCommandError({ conversationId, content,
-        message: errorMessage(failure, 'The native command could not be confirmed.') })
-    }
+    await commands.submit(content)
   }
-  const feedback = sessionControls?.commandFeedback
-  const compaction = feedback?.draft.key === conversationId && feedback.draft.content === commandError?.content
-    ? feedback.compaction : undefined
-  const recovered = !!compaction && compaction.status !== 'failed'
-  const menu = useSlashCommandMenu(value, content => setDraft(conversationId, content), content => { void send(content) }, true)
   return <><form className="operator-composer" aria-label="Conversation composer" {...fileDropProps}
     onSubmit={event => { event.preventDefault(); void send() }}>
     {menu.menu}
@@ -66,7 +46,7 @@ export function OperatorComposer({ conversationId, context, attachmentControl, f
       {attachmentControl}
       {/* eslint-disable-next-line no-restricted-syntax -- combobox textarea uses the shared slash menu. */}
       <textarea ref={input} id={id} rows={1} value={value} maxLength={16000} placeholder="Message the operator…" {...menu.inputProps}
-        onChange={event => { setDraft(conversationId, event.target.value); menu.reset(); setCommandError(undefined) }}
+        onChange={event => change(event.target.value)}
         onKeyDown={event => {
           if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || menu.onKeyDown(event)) return
           if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
@@ -79,8 +59,8 @@ export function OperatorComposer({ conversationId, context, attachmentControl, f
         </ChatPrimaryActions>
       </div>
     </div>
-    {commandError?.conversationId === conversationId && !recovered
-      ? <p role="alert">{compaction?.message ?? commandError.message}</p> : null}
+    {commands.error
+      ? <p role="alert">{commands.error}</p> : null}
   </form>
   {/* Agent settings sit below the composer box, not inside it. */}
   <div className="operator-composer-options">

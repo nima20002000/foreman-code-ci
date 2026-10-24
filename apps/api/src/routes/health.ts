@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import {
   ServiceHealthSchema,
   type ServiceHealth,
@@ -77,13 +78,13 @@ export function registerHealthRoutes(app: FastifyInstance, services: HealthRoute
     })
   }
 
-  app.get('/health/live', async () => ServiceHealthSchema.parse({ status: 'ok', service: 'graphql-api' }))
+  app.get('/health/live', async () => ServiceHealthSchema.parse({ status: 'ok', service: INSTALLATION_NAMES.protocol.apiService }))
 
   app.get('/health/ready', async (_request, reply) => {
     const [database, checkpoints] = await Promise.all([checkDatabase(), checkCheckpoints()])
     const response: ServiceHealth = ServiceHealthSchema.parse({
       status: database === 'ok' && checkpoints === 'ok' ? 'ok' : 'unavailable',
-      service: 'graphql-api',
+      service: INSTALLATION_NAMES.protocol.apiService,
       checks: { database, checkpoints },
     })
     if (response.status === 'unavailable') reply.code(503)

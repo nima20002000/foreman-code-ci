@@ -1,3 +1,4 @@
+import { connectChatStream } from '../../shared/api/chatStreamEvents'
 import { eventStreamsAvailable, openEventStreamScope } from '../../shared/api/eventStream'
 import { WorkflowChatEventSchema, type WorkflowChatEvent } from '@foreman-code/contracts'
 import { workflowChatRoot, type WorkflowChatScope } from './client'
@@ -11,16 +12,13 @@ function subscribeWorkflowChatNow(scope: WorkflowChatScope, listeners: {
   if (!eventStreamsAvailable()) { listeners.connection('unavailable'); return () => {} }
   const stream = openEventStreamScope()
   if (!stream) return () => {}
-  const receive = (event: Event) => {
-    try {
-      if (!('data' in event) || typeof event.data !== 'string') throw new Error('Missing event data')
-      listeners.event(WorkflowChatEventSchema.parse(JSON.parse(event.data)))
-    } catch { listeners.reconnect() }
-  }
-  stream.connect(`${workflowChatRoot(scope)}/events`, {
-    open: () => { listeners.connection('connected'); listeners.reconnect() },
-    error: () => { listeners.connection('reconnecting'); listeners.reconnect() },
-    ...Object.fromEntries(['message', 'post', 'receipt', 'change'].map((name) => [name, receive])),
+  connectChatStream(stream, `${workflowChatRoot(scope)}/events`, {
+    schema: WorkflowChatEventSchema, events: ['message', 'post', 'receipt', 'change'],
+    receive: event => listeners.event(event), invalid: () => listeners.reconnect(),
+    handlers: {
+      open: () => { listeners.connection('connected'); listeners.reconnect() },
+      error: () => { listeners.connection('reconnecting'); listeners.reconnect() },
+    },
   })
   return stream.close
 }

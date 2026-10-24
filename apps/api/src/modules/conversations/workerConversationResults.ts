@@ -1,3 +1,4 @@
+import { capabilityDescriptorsOf } from '../../shared/harnessPolicy.js'
 import { isDeepStrictEqual } from 'node:util'
 import type { CompactionState, ExecutionResult } from '@foreman-code/contracts'
 import type { WorkerConversationReceipt } from '@foreman-code/contracts/remote-execution-rpc'
@@ -21,7 +22,7 @@ export async function readWorkerConversationResults(record: WorkerConversationRe
     let terminal = history.correlationId === turn.correlationId ? history.terminalResult : undefined
     if (history.terminalTurn?.correlationId === turn.correlationId) terminal = history.terminalTurn.result
     // Claude transcripts retain the input receipt, while the completed result lives in the journal.
-    if (!terminal && session.harness === 'claude' && turn.status === 'completed'
+    if (!terminal && capabilityDescriptorsOf(manager).inputIdentity === 'message' && turn.status === 'completed'
       && history.correlationId === turn.correlationId && turn.nativeSubmission
       && isDeepStrictEqual(history.nativeSubmission, turn.nativeSubmission)) {
       terminal = turn.result ?? undefined

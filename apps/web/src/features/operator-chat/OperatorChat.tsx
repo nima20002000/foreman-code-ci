@@ -1,7 +1,6 @@
 import { useId, useRef, useState } from 'react'
-import { useSessionControls } from '../conversations/sessionControls/useSessionControls'
+import { useSessionControls, ChatAttachmentBoundary } from '../chat-core'
 import { useFileDrop } from '../../shared/ui/useFileDrop'
-import { ChatAttachmentBoundary } from '../conversations/ChatAttachmentBoundary'
 import { Alert, Button } from '../../shared/ui/nocturne'
 import { useAccessFailureLatch } from '../../shared/api/useAccessFailureLatch'
 import { sessionGeneration, sessionIsSwitching } from '../../shared/api/sessionBoundary'
