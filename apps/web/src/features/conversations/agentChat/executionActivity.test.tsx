@@ -210,18 +210,24 @@ describe('Board Agent chat live execution activity', () => {
   })
 
   it('keeps history browsable during polling and ignores an abandoned history read', async () => {
+    let t0 = performance.now(); const lap = (label: string) => { const now = performance.now(); console.log(`DIAG ${label} ${Math.round(now - t0)}ms polls=${polls}`); t0 = now }; let polls = 0
     const state = runState()
+    lap('1')
     const mounted = mountChat(state)
+    lap('2')
     mounted.mock.setExecutionActivity(state.context,
       livePage(numberedMessages(601, 800), '800', { hasEarlierItems: true }))
     const check = await screen.findByRole('region', { name: 'Loop 1 · Working' })
+    lap('5')
     expect(within(check).getByText('Activity 800')).toBeVisible()
+    lap('6')
 
     const pending = deferred<AgentChatExecutionActivityPage>()
     const abandoned = deferred<AgentChatExecutionActivityPage>()
     const before: string[] = []
     server.use(http.get('/api/workspaces/:workspaceId/agent-chat/execution-activity', async ({ request }) => {
       const cursor = new URL(request.url).searchParams.get('before')
+      if (!cursor) polls += 1
       if (!cursor) return undefined
       before.push(cursor)
       if (cursor === '601') return HttpResponse.json(await pending.promise)
@@ -229,34 +235,59 @@ describe('Board Agent chat live execution activity', () => {
       return HttpResponse.json({ ...livePage(numberedMessages(201, 400), '850', { hasEarlierItems: true }),
         mode: 'earlier', cursor: undefined })
     }))
+    { const q = performance.now(); within(check).getByRole('button', { name: 'Load earlier activity' }); console.log(`DIAG getByRole-button ${Math.round(performance.now() - q)}ms`) }
+    { const q = performance.now(); within(check).getByText('Activity 800'); console.log(`DIAG getByText ${Math.round(performance.now() - q)}ms`) }
+    { const q = performance.now(); within(check).getAllByRole('listitem', { hidden: true }); console.log(`DIAG listitem-hidden ${Math.round(performance.now() - q)}ms`) }
+    { const q = performance.now(); screen.getByRole('region', { name: 'Loop 1 · Working' }); console.log(`DIAG region ${Math.round(performance.now() - q)}ms`) }
     fireEvent.click(within(check).getByRole('button', { name: 'Load earlier activity' }))
+    lap('20')
     await waitFor(() => expect(before).toEqual(['601']))
+    lap('21')
     await pollActivity(mounted, livePage(numberedMessages(801, 850), '850'))
+    lap('22')
     await finishRead(mounted.client, () => pending.resolve({
       ...livePage(numberedMessages(401, 600), '800', { hasEarlierItems: true }), mode: 'earlier', cursor: undefined,
     }))
     expect(await within(check).findByText('Activity 401')).toBeVisible()
+    lap('26')
     expect(within(check).queryByText('Activity 850')).not.toBeInTheDocument()
+    lap('27')
     await pollActivity(mounted, livePage(numberedMessages(851, 900), '900'))
+    lap('28')
     expect(within(check).getByText('Activity 401')).toBeVisible()
+    lap('29')
     fireEvent.click(within(check).getByRole('button', { name: 'Load earlier activity' }))
+    lap('30')
     expect(await within(check).findByText('Activity 201')).toBeVisible()
+    lap('31')
     expect(before).toEqual(['601', '401'])
+    lap('32')
     expect(within(check).getAllByRole('listitem', { hidden: true }).length).toBeLessThanOrEqual(200)
+    lap('33')
     fireEvent.click(within(check).getByRole('button', { name: 'Load earlier activity' }))
+    lap('34')
     await waitFor(() => expect(before).toEqual(['601', '401', '201']))
+    lap('35')
     fireEvent.click(within(check).getByRole('button', { name: 'Back to latest activity' }))
+    lap('36')
     expect(await within(check).findByText('Activity 900')).toBeVisible()
+    lap('37')
     await pollActivity(mounted, livePage(numberedMessages(901, 950), '950'))
+    lap('38')
     expect(await within(check).findByText('Activity 950')).toBeVisible()
+    lap('39')
     await finishRead(mounted.client, () => abandoned.resolve({
       ...livePage(numberedMessages(1, 200), '900'), mode: 'earlier', cursor: undefined,
     }))
     expect(within(check).getByText('Activity 950')).toBeVisible()
+    lap('43')
     expect(within(check).queryByText('Activity 201')).not.toBeInTheDocument()
+    lap('44')
     expect(within(check).queryByRole('button', { name: 'Back to latest activity' })).not.toBeInTheDocument()
+    lap('45')
     expect(activityData(mounted.client)?.items.length).toBeLessThanOrEqual(200)
-  })
+    lap('46')
+  }, 30_000)
 
   it('caps multibyte transcript bytes and reloads entries evicted by the byte budget', async () => {
     const state = runState()
