@@ -1091,7 +1091,14 @@ export async function waitForProductionBrowserDrain({ stateDirectory, commandId,
   try {
     for (;;) {
       signal?.throwIfAborted()
-      const result = await request({ stateDirectory, operation, commandId, signal })
+      let result
+      try { result = await request({ stateDirectory, operation, commandId, signal }) }
+      catch (error) {
+        // No control channel means no browser host is running (for example after a runtime mismatch), so no session can hold a lease.
+        if (operation !== 'beginDrain' || error?.code !== 'ENOENT') throw error
+        log('No browser host is running; nothing to drain.')
+        return { state: 'drained', activeSessions: 0 }
+      }
       if (result.state === 'drained') return result
       if (result.state !== 'waiting') throw new Error('Browser admission drain was not retained by this install.')
       if (lastCount !== result.activeSessions) {
