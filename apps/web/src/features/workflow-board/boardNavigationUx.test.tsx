@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { readRunInspectionKey } from '@foreman-code/contracts/current'
+import { readRunInspectionKey, RunExecutionDetailSchema } from '@foreman-code/contracts/current'
 import { server } from '../../mocks/server'
 import { fixture as authoringFixture } from '../graph/nextDraft/core.cases'
 import { useRunsSelectorUi } from '../runs-selector'
@@ -36,7 +36,11 @@ it('filters Runs without prompting or losing an unapplied Master hierarchy form'
 
 it.each(['current', 'historical'] as const)('inspects the exact failed activity from %s Board Agent Details', async selection => {
   const fixture = await inspectionBoardFixture(`activity-inspection-${selection}`)
-  const owner = fixture.runs.before, detail = fixture.ordinaryExecutions[0]!.detail
+  const owner = fixture.runs.after, attempt = await fixture.execution(owner, 0)
+  const detail = RunExecutionDetailSchema.parse({ ...attempt.detail,
+    execution: { ...attempt.detail.execution, acceptedResultAvailable: false }, acceptedResult: { status: 'not_accepted' },
+    reportedResult: { outcome: 'failed', error: { code: 'ATTEMPT_FAILED', message: 'Agent attempt failed', retryable: true } } })
+  fixture.mock.inspection.set(owner.run.id, [{ ...attempt, detail }])
   measureBoardWire(fixture.mock)
   server.use(
     http.get(`*/api/management/workspaces/${owner.scope.workspaceId}/workflows/${owner.scope.workflowId}/runs/summaries`, () =>
