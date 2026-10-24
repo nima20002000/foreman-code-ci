@@ -6,7 +6,7 @@ import type { NativePersistenceRedactor } from '../interactions/index.js'
 import { settleKnownActivity } from './settleKnownActivity.js'
 import { conversationActivityKey } from './activityIdentity.js'
 import { assertConversationCursor, withConversationPageRead } from './activityCursor.js'
-import type { OperatorActivityChange } from './operatorActivity.js'
+import type { OperatorActivityChange } from '../harnesses/index.js'
 
 export interface ActivityMutationFence {
   connectionId?: string

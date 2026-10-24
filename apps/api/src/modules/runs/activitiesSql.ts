@@ -1,3 +1,5 @@
+import { RUN_ACTIVITY_CI_JOIN_SQL } from '../ci/index.js'
+
 export const RUN_ACTIVITIES_BOUNDS_SQL = `with recent as materialized (
   select sequence from run_activity where run_id=$1 order by sequence desc limit 1001
 ), retained as (select sequence from recent order by sequence desc limit 1000)
@@ -102,19 +104,7 @@ select a.sequence::text,a.source,a.kind,a.occurred_at,a.harness_execution_id,r.r
 from run_activity a
 left join harness_executions e on e.id=a.harness_execution_id and e.run_id=a.run_id
 left join runs r on r.id=a.run_id
-left join ci_runs cq on a.kind='ci_state_changed'
-  and cq.id=case when a.kind='ci_state_changed'
-    and a.payload->>'ticketId' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-    then (a.payload->>'ticketId')::uuid end
-  and cq.id::text=a.payload->>'ticketId'
-  and cq.workspace_id=r.workspace_id and (cq.record#>>'{initiator,executionId}'=e.id
-    or exists(select 1 from ci_group_requesters q where q.workspace_id=cq.workspace_id
-      and q.group_id=cq.group_id and q.execution_id=e.id))
-  and cq.record->>'id'=cq.id::text and cq.record->>'workspaceId'=r.workspace_id
-  and cq.group_id::text=a.payload#>>'{ci,groupId}' and cq.id::text=a.payload#>>'{ci,id}'
-  and cq.record->>'suite'=a.payload#>>'{ci,suite}'
-  and coalesce(cq.record->'part','null'::jsonb) is not distinct from a.payload#>'{ci,part}'
-  and e.record->>'agentConfigurationVersionId'=r.record->'agentConfigurationVersionIds'->>e.agent_id
+${RUN_ACTIVITY_CI_JOIN_SQL}
 left join board s on s.run_id=r.id and s.workspace_id=r.workspace_id
   and s.workflow_id=r.workflow_id and s.workflow_version_id=r.workflow_version_id
 left join workflow_job_executions w on w.run_id=a.run_id and w.job_execution_id=a.payload->>'jobExecutionId'

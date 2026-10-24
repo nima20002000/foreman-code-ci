@@ -26,7 +26,7 @@ import { RemoteExecutionHost, type RemoteExecutionHostPorts } from './executionH
 import { pageNativeHistory } from './nativeHistoryPage.js'
 import { loadConfig } from '../../../config.js'
 import { createDatabase } from '../../../infrastructure/database.js'
-import { createCheckpointStore } from '../../../infrastructure/checkpoints.js'
+import { createCheckpointStore } from '../../../composition/checkpoints.js'
 import { OperatorRuntimeOwner } from '../../../infrastructure/operatorRuntimeOwner.js'
 import { OperatorChatService } from '../../conversations/operatorChat.js'
 import { AutomaticReviewService } from '../../interactions/automaticReview.js'

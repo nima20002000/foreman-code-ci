@@ -1,3 +1,4 @@
+import { omitProperties } from '../../shared/omitProperties.js'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import {
@@ -25,7 +26,7 @@ function stored(row: StoredRow): StoredDelivery {
     sequence: Number(row.sequence), revision: Number(row.revision) }
 }
 
-/** One receipt journal is shared by direct chat and the native owner. */
+/** One receipt journal is shared by Group, direct chat and the native owner. */
 export class PostgresChatDeliveryRepository {
   constructor(readonly pool: pg.Pool) {}
 
@@ -53,7 +54,7 @@ export class PostgresChatDeliveryRepository {
   }
 
   async prepareLocked(tx: TransactionSql, principalId: string, input: ChatSendRequest & { commandId: string },
-    qualification: DeliveryQualification): Promise<StoredDelivery> {
+    qualification: DeliveryQualification, channelId?: string): Promise<StoredDelivery> {
     await tx.query('select pg_advisory_xact_lock(hashtext($1))', [`chat-command:${principalId}:${input.commandId}`])
     await assertChatCommandKind(tx, principalId, input.commandId, 'delivery')
     if ((await tx.query('select 1 from chat_control_commands where principal_id=$1 and command_id=$2', [principalId, input.commandId])).rowCount) {
@@ -74,14 +75,14 @@ export class PostgresChatDeliveryRepository {
     }
     const now = new Date().toISOString()
     const receipt = ChatDeliveryReceiptSchema.parse({ id: receiptId(principalId, input.commandId), commandId: input.commandId,
-      target: input.target,
+      ...(input.sourcePostId ? { postId: input.sourcePostId } : {}), target: input.target,
       requestedIntent: input.intent, appliedIntent, state: 'queued', createdAt: now, updatedAt: now })
     const scope = input.target.kind === 'operator_conversation' ? undefined : input.target.agent
     const result = await tx.query<StoredRow>(`insert into chat_delivery_commands
-      (id,command_id,principal_id,workspace_id,workflow_id,target_hash,input_hash,request,receipt,owner_admission,owner_binding)
-      values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,'prepared',$10::jsonb) returning *`,
+      (id,command_id,principal_id,workspace_id,workflow_id,channel_id,post_id,target_hash,input_hash,request,receipt,owner_admission,owner_binding)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,'prepared',$12::jsonb) returning *`,
     [receipt.id, input.commandId, principalId, scope?.workspaceId ?? null, scope?.workflowId ?? null,
-      commandInputHash(input.target), inputHash,
+      channelId ?? null, input.sourcePostId ?? null, commandInputHash(input.target), inputHash,
       JSON.stringify(input), JSON.stringify(receipt), JSON.stringify(ownerBinding)])
     return stored(result.rows[0]!)
   }
@@ -106,26 +107,36 @@ export class PostgresChatDeliveryRepository {
     const row = (await tx.query<StoredRow>('select * from chat_delivery_commands where id=$1 for update', [next.id])).rows[0]
     if (!row) throw new DomainError('CHAT_RECEIPT_NOT_FOUND', 'The retained receipt does not exist.', 404)
     const previous = stored(row).receipt
-    const identity = (value: ChatDeliveryReceipt) => [value.id, value.commandId, value.target,
+    const identity = (value: ChatDeliveryReceipt) => [value.id, value.commandId, value.target, value.postId ?? null,
       value.requestedIntent, value.appliedIntent, value.createdAt]
     if (commandInputHash(identity(previous)) !== commandInputHash(identity(next))) {
       throw new DomainError('CHAT_RECEIPT_IDENTITY_CONFLICT', 'Receipt identity and original target are immutable.', 409)
     }
-    for (const field of ['nativeTurnId', 'consultationId', 'continuationId', 'continuationExecution'] as const) {
+    for (const field of ['nativeTurnId', 'consultationId', 'continuationId', 'continuationExecution', 'replyPostId'] as const) {
       if (previous[field] !== undefined && commandInputHash(previous[field]) !== commandInputHash(next[field] ?? null)) {
-        throw new DomainError('CHAT_RECEIPT_BINDING_CONFLICT', 'Recorded native and continuation identities cannot change.', 409)
+        throw new DomainError('CHAT_RECEIPT_BINDING_CONFLICT', 'Recorded native, continuation and reply identities cannot change.', 409)
       }
     }
     if (row.owner_admission === 'prepared' && !['queued', 'failed', 'canceled'].includes(next.state)) {
       throw new DomainError('CHAT_OWNER_ADMISSION_REQUIRED', 'The owner must durably adopt input before reporting native progress.', 409)
     }
     if (commandInputHash(previous) === commandInputHash(next)) return false
-    if (isTerminalReceipt(previous)) throw new DomainError('CHAT_RECEIPT_SETTLED', 'A settled receipt cannot be reinterpreted.', 409)
+    if (isTerminalReceipt(previous)) {
+      const withoutReply = (value: ChatDeliveryReceipt) => {
+        const retained = omitProperties(value, ['replyPostId', 'updatedAt'])
+        return retained
+      }
+      const linksReply = !previous.replyPostId && next.replyPostId
+        && commandInputHash(withoutReply(previous)) === commandInputHash(withoutReply(next))
+      if (!linksReply) throw new DomainError('CHAT_RECEIPT_SETTLED', 'A settled receipt cannot be reinterpreted.', 409)
+    }
     if (row.owner_admission === 'owner_admitted' && next.state === 'queued' && previous.state !== 'queued') {
       throw new DomainError('CHAT_RECEIPT_REDISPATCH_DENIED', 'Admitted input cannot be reset for native resubmission.', 409)
     }
     await tx.query('update chat_delivery_commands set receipt=$2::jsonb,revision=revision+1,updated_at=now() where id=$1',
       [next.id, JSON.stringify(next)])
+    await tx.query(`update workflow_chat_channels set revision=revision+1 where id=(
+      select channel_id from chat_delivery_commands where id=$1)`, [next.id])
     return true
   }
 
@@ -168,6 +179,10 @@ export class PostgresChatDeliveryRepository {
   async targetSnapshot(target: DeliveryTarget, before: number | undefined, limit: number, receipt?: string) {
     return withTransaction(this.pool, async tx => ({ rows: await this.forTarget(target, before, limit, receipt, tx),
       revision: await this.targetRevision(target, tx) }), { isolation: 'repeatable read', readOnly: true })
+  }
+
+  async forPost(postId: string, tx: Query = this.pool): Promise<StoredDelivery[]> {
+    return (await tx.query<StoredRow>('select * from chat_delivery_commands where post_id=$1 order by sequence', [postId])).rows.map(stored)
   }
 
   async unfinishedForTarget(target: DeliveryTarget, tx: Query = this.pool): Promise<StoredDelivery[]> {

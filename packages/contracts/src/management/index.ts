@@ -1,4 +1,5 @@
-import { GRAPHQL_OPERATOR_TOOLS } from '../graphqlMcpTools.js'
+import { INSTALLATION_NAMES } from '../installationNames.mjs'
+import { FOREMAN_OPERATOR_TOOLS } from '../foremanMcpTools.js'
 import { AgentProductRoleSchema } from '../agentIdentity.js'
 import { OperationalFailureSchema } from '../operationalFailures.js'
 import { NativeInteractionSupportSchema } from '../nativeInteractionSupport.js'
@@ -29,7 +30,7 @@ import {
   AgentDefaultsSchema,
   CodexHarnessConfigurationSchema,
   HarnessQualificationSchema,
-  HarnessConfigurationSchema,
+  RecordedHarnessConfigurationSchema,
   SupportedHarnessConfigurationSchema,
   ExecutionLocationSchema,
   RunActivitySchema,
@@ -264,7 +265,7 @@ const AgentAddOperationSchema = z.object({
   configuration: ManagementHarnessConfigurationSchema.optional(),
   prompt: AgentSchema.shape.prompt,
   assignedSkills: AgentSchema.shape.assignedSkills,
-  graphqlTools: AgentSchema.shape.graphqlTools,
+  [INSTALLATION_NAMES.fields.agentTools]: AgentSchema.shape[INSTALLATION_NAMES.fields.agentTools],
   nativeTools: AgentSchema.shape.nativeTools,
   description: z.string().max(10_000).optional(),
   role: z.string().trim().min(1).max(200).optional(),
@@ -289,7 +290,7 @@ const AgentConfigureOperationSchema = z.object({
   harnessProfileSelection: AgentSchema.shape.harnessProfileSelection,
   prompt: AgentSchema.shape.prompt,
   assignedSkills: AgentSchema.shape.assignedSkills,
-  graphqlTools: AgentSchema.shape.graphqlTools,
+  [INSTALLATION_NAMES.fields.agentTools]: AgentSchema.shape[INSTALLATION_NAMES.fields.agentTools],
   nativeTools: AgentSchema.shape.nativeTools,
   description: z.string().max(10_000).nullable().optional(),
   role: z.string().trim().min(1).max(200).nullable().optional(),
@@ -445,7 +446,7 @@ export const HarnessConfigurationCheckInputSchema = z.object({
   configuration: SupportedHarnessConfigurationSchema,
 }).strict();
 export const HarnessConfigurationCheckResultSchema = z.object({
-  configuration: HarnessConfigurationSchema,
+  configuration: RecordedHarnessConfigurationSchema,
   qualification: HarnessQualificationSchema,
   checkedAt: TimestampSchema,
 }).strict();
@@ -573,7 +574,7 @@ export const OperatorToolNameSchema = z.enum([
   'file_retention_get', 'file_retention_preview', 'file_retention_save', 'run_summaries_list', 'run_board_snapshot_get',
   'bug_report', 'bug_reports_list', 'bug_report_get', 'bug_report_update', 'bug_reports_close',
   "ci_run", "ci_get", "ci_computers_list", "ci_cancel", "ci_logs_read", "ci_list",
-  ...Object.keys(GRAPHQL_OPERATOR_TOOLS) as (keyof typeof GRAPHQL_OPERATOR_TOOLS)[],
+  ...Object.keys(FOREMAN_OPERATOR_TOOLS) as (keyof typeof FOREMAN_OPERATOR_TOOLS)[],
   "source_list", "source_get", "source_approve", "source_root_bind", "source_root_get", "source_root_list", "source_preparation_get", "source_preparation_reconcile",
   "job_runtime_profile_list","job_runtime_profile_save","job_runtime_qualification_request","job_runtime_qualification_run","job_runtime_qualification_get","build_computer_prepare","build_computer_prepare_get",
   "ci_enrollment_get", "ci_enrollment_update",
@@ -594,7 +595,7 @@ export const OperatorToolNameSchema = z.enum([
   "agent_chat_ensure_conversation", "conversation_file_upload", "conversation_file_finalize",
   "conversation_file_cancel", "conversation_files_list", "conversation_file_read",
   "agent_chat_read", "agent_chat_send", "agent_chat_interrupt", "agent_chat_cancel_queued", "agent_chat_cancel_all_queued",
-  "agent_chat_respond",
+  "workflow_chat_read", "workflow_chat_post", "workflow_chat_deliveries_read", "workflow_chat_delivery_cancel", "agent_chat_respond",
   "workspace_defaults_get",
   'general_settings_get', 'general_settings_update', 'circle_credit_allowance_get', 'circle_credit_allowance_update',
   'circle_accounts_list', 'circle_account_add', 'circle_account_remove',

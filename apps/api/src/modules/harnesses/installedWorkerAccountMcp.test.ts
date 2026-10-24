@@ -31,7 +31,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
 it('installs and reads back managed MCP in a newly created selected account without changing the default account', async () => {
   const f = await managedMcpNativeFixture()
-  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', join(f.directory, 'mcp'))
+  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', join(f.directory, 'mcp'))
   const credentials = new LocalProviderCredentials(join(f.directory, 'slots'))
   const connection = { mainId: randomUUID(), deviceId: randomUUID(), workerInstallationId: randomUUID(),
     bootId: randomUUID(), keyRevision: 1, authorizationRevision: 1, connectionGeneration: 1, connectionEpoch: 'epoch' }

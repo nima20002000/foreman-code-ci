@@ -6,7 +6,7 @@ import type { AppInteractionService } from '../src/modules/interactions/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import type { BrowserOperationHandlers } from '../src/modules/browser-runtime/operations.js'
 import { createBrowserCanonicalCodecs } from '../src/modules/collaboration/browserCodecs.js'
-import { createGraphqlMcpServer } from '../src/mcp/unified/server.js'
+import { createForemanMcpServer } from '../src/mcp/unified/server.js'
 import { workerToolServices } from './helpers/workerMcpServices.js'
 
 const worker = (id: string): ManagementPrincipal => ({ id, name: id, audience: 'worker', agentId: 'agent-1',
@@ -26,7 +26,7 @@ function connect(principal: ManagementPrincipal) {
   }
   const services = { commands, browser: { handlers, codecs: createBrowserCanonicalCodecs(), chat } } as unknown as OperatorServices
   const interactions = { canRead: async () => true, canRespond: async () => false } as unknown as AppInteractionService
-  return createGraphqlMcpServer({ role: 'coder', principal, tools, operator: services, interactions,
+  return createForemanMcpServer({ role: 'coder', principal, tools, operator: services, interactions,
     references: workerToolServices({} as pg.Pool, commands as never).references }).then(async server => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
