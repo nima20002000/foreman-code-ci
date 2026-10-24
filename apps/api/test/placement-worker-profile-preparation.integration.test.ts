@@ -27,7 +27,7 @@ it.each(['missing', 'failed', 'matching', 'busy', 'edited', 'edited-other', 'rej
       const failure = { code: 'MODEL_UNAVAILABLE', message: 'The Worker account cannot use this model.' }
       const storageFailure = new DomainError('HARNESS_RECOVERY_STORAGE_FULL',
         'Native harness storage is full on this computer. Free space in its configured managed storage and retry.', 503)
-      const rejectedReason = 'extension-rejected'
+      const rejectedReason = 'The Worker rejected the harness profile check (extension-rejected). Check its logs and retry.'
       const qualificationError = scenario === 'target-changed' ? new DeviceApplicationError('HARNESS_QUALIFICATION_TARGET_CHANGED')
         : scenario === 'inventory-stale' ? new DeviceApplicationError('HARNESS_INVENTORY_STALE')
         : scenario === 'unexpected-qualification' ? new Error('Worker qualification failed unexpectedly.') : null
@@ -104,7 +104,7 @@ it.each(['missing', 'failed', 'matching', 'busy', 'edited', 'edited-other', 'rej
       expect(computerProbes.mock.calls.filter(([host]) => host.kind === 'device')).toHaveLength(scenario === 'failed' ? 1 : 2)
       const worker = result.choices.find(choice => choice.placement.hostRef.kind === 'device')
       const reason = scenario === 'failed' ? failure.message : scenario === 'rejected' ? rejectedReason
-        : scenario === 'storage-full' ? 'HARNESS_RECOVERY_STORAGE_FULL' : qualificationError?.message ?? null
+        : scenario === 'storage-full' ? storageFailure.message : qualificationError?.message ?? null
       expect(worker).toMatchObject({ availability: reason ? 'unavailable' : 'ready', reason,
         placement: { hostRef: remote, projectRoot: f.placement.remote.projectRoot,
           source: f.placement.remote.source, rootBinding: f.placement.remote.rootBinding } })
