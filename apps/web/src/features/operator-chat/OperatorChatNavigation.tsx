@@ -14,18 +14,15 @@ export function OperatorChatNavigation() {
   useEffect(() => {
     if (!enabled) return
     let applyingLocation = false
-    let previousConversationId: string | undefined
     const selectLocation = () => {
       const fragment = new URLSearchParams(router.state.location.hash)
       const raw = fragment.get(parameter)
       const parsed = raw === null ? undefined : IdSchema.safeParse(raw)
       const id = parsed?.success ? parsed.data : undefined
-      const changed = id !== previousConversationId
-      previousConversationId = id
       const store = useOperatorChatStore.getState()
       applyingLocation = true
       if (store.selectedConversationId !== id) store.select(id)
-      if (changed && id && !store.open) store.setOpen(true)
+      if (id && !store.open) store.setOpen(true)
       applyingLocation = false
     }
     const writeLocation = (id: string | undefined, replace = false) => {
@@ -37,16 +34,10 @@ export function OperatorChatNavigation() {
     }
     const initial = new URLSearchParams(router.state.location.hash)
     if (initial.has(parameter)) selectLocation()
-    else {
-      previousConversationId = useOperatorChatStore.getState().selectedConversationId
-      writeLocation(previousConversationId, true)
-    }
+    else writeLocation(useOperatorChatStore.getState().selectedConversationId, true)
     const stopLocation = router.subscribe('onResolved', selectLocation)
     const stopSelection = useOperatorChatStore.subscribe((state, previous) => {
-      if (!applyingLocation && state.selectedConversationId !== previous.selectedConversationId) {
-        previousConversationId = state.selectedConversationId
-        writeLocation(state.selectedConversationId)
-      }
+      if (!applyingLocation && state.selectedConversationId !== previous.selectedConversationId) writeLocation(state.selectedConversationId)
     })
     return () => { stopLocation(); stopSelection() }
   }, [enabled, router])

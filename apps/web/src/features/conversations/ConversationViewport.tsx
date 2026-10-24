@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useCallback, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { useRememberedChatScroll } from '../chat-core'
 
 /** Shared transcript scrolling, following the Operator transcript pattern. No server data lives here. */
@@ -8,7 +8,7 @@ export function ConversationViewport({ revision, children, storageKey }: {
   const scrollRef = useRef<HTMLDivElement>(null), contentRef = useRef<HTMLDivElement>(null)
   const following = useRef(true)
   useRememberedChatScroll(storageKey, scrollRef, following)
-  const onBrowse = () => { following.current = false }
+  const onBrowse = useCallback(() => { following.current = false }, [])
   useLayoutEffect(() => {
     const scroll = scrollRef.current
     if (!scroll) return
