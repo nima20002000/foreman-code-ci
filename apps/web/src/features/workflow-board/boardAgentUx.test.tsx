@@ -1,12 +1,13 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { RepeatGraphCurrentStateSchema } from '@foreman-code/contracts/current'
 import { server } from '../../mocks/server'
+import { deferred } from '../../test/deferred'
 import canvasStyles from '../../shared/ui/nocturne/canvas.css?inline'
 import boardStyles from './workflowBoard.css?inline'
-import { installBoardTestLifecycle, mountMeasuredBoard, setRunState, type InspectionFixture } from './eng05D.testSupport'
+import { installBoardTestLifecycle, measureBoardWire, mountMeasuredBoard, setRunState, type InspectionFixture } from './eng05D.testSupport'
 import { inspectionBoardFixture } from './inspect/inspectionFixtures'
 
 installBoardTestLifecycle()
@@ -64,4 +65,60 @@ it('confirms a successful Run in plain words', async () => {
   await userEvent.click(start)
   expect(await screen.findByText('Run started.')).toBeVisible()
   expect(fixture.mock.calls.filter(call => call.method === 'POST' && call.path.endsWith('/runs'))).toHaveLength(1)
+}, 15_000)
+
+it('shows a slow Start as progress and removes confirmation once the Run is known', async () => {
+  fixture.mock.controls.start = true
+  const reply = deferred<void>(), received = deferred<void>()
+  measureBoardWire(fixture.mock, async request => {
+    if (request.method === 'POST' && new URL(request.url).pathname.endsWith('/runs')) {
+      received.resolve()
+      await reply.promise
+    }
+    return undefined
+  })
+  await mountMeasuredBoard(href())
+  const start = await screen.findByRole('button', { name: 'Start saved version' })
+  await waitFor(() => expect(start).toBeEnabled())
+  await userEvent.click(start)
+  await received.promise
+  try {
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 5000)) })
+    expect(screen.queryByText('An earlier start may have gone through.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reconcile Start' })).not.toBeInTheDocument()
+    expect(start).toBeDisabled()
+    expect(start).toHaveTextContent('Starting…')
+  } finally { await act(async () => { reply.resolve() }) }
+  expect(await screen.findByText('Run started.')).toBeVisible()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeEnabled())
+  expect(screen.queryByRole('button', { name: 'Reconcile Start', hidden: true })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Recover Start', hidden: true })).not.toBeInTheDocument()
+}, 15_000)
+
+it('labels the Board status Stopping while an accepted Stop is cleaning up', async () => {
+  setRunState(fixture, fixture.runs.after.scope, 'running', true)
+  const current = fixture.mock.currents.get(fixture.runs.after.run.id)!
+  fixture.mock.currents.set(fixture.runs.after.run.id, RepeatGraphCurrentStateSchema.parse({ ...current,
+    state: { ...current.state, run: { ...current.state.run, stopRequested: true } } }))
+  await mountMeasuredBoard(href())
+  expect(await screen.findByText('Cleaning up…')).toBeVisible()
+  const status = within(screen.getByRole('group', { name: 'Board controls' })).getByRole('status')
+  expect(status).toHaveTextContent(/^Stopping$/)
+  expect(status).not.toHaveTextContent('Running')
+}, 15_000)
+
+it('labels an earlier-version Run Stopping while retaining the current draft', async () => {
+  const { scope, run } = fixture.runs.before
+  setRunState(fixture, scope, 'running', true)
+  const current = fixture.mock.currents.get(run.id)!
+  fixture.mock.currents.set(run.id, RepeatGraphCurrentStateSchema.parse({ ...current,
+    state: { ...current.state, run: { ...current.state.run, stopRequested: true } } }))
+  await mountMeasuredBoard(href())
+  expect(await screen.findByText('Cleaning up…')).toBeVisible()
+  const controls = within(screen.getByRole('group', { name: 'Board controls' }))
+  expect(await controls.findByRole('button', { name: 'Stopping' })).toHaveAttribute('title',
+    'A Run of an earlier saved version is running. Show it.')
+  expect(controls.queryByRole('button', { name: 'Running' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /^Added later,/ })).toBeVisible()
+  expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
 }, 15_000)

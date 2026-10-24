@@ -23,10 +23,3 @@ it('does not claim an uncertain submission is idle', () => {
   state.sessionState = 'uncertain'
   expect(agentChatStateLabel(state)).toBe('Working')
 })
-
-it('keeps the selected Run preparation reason visible before a native turn starts', () => {
-  const state = { ...agentChatFixtures.active, conversation: null, sourceTranscript: undefined, activeTurn: null,
-    sessionState: 'idle' as const, turns: [], messages: [] }
-  const reason = 'Waiting for the browser profile on Worker A: Computer offline.'
-  expect(agentChatStateLabel(state, reason)).toBe(reason)
-})

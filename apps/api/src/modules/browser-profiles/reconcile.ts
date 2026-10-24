@@ -56,8 +56,7 @@ export async function reconcileBrowserProfileIntent(service: BrowserProfileServi
     return finish('completed', null)
   } catch (error) {
     // Keep the operation queued for retry, then surface the native failure to the dispatcher's failure reporting.
-    await finish('queued', error instanceof DomainError ? error.message
-      : 'Could not confirm the computer operation. Reconnect to check its original receipt.')
+    await finish('queued', 'Could not confirm the computer operation. Reconnect to check its original receipt.')
     throw error
   }
 }

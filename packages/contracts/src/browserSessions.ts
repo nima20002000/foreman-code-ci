@@ -43,7 +43,7 @@ export const BrowserPrepareResultSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('unavailable'),
     reason: z.enum(['disabled','profile_missing','computer_offline','runtime_missing',
       'sign_in_required','resource_pressure','profile_busy']),
-    retryable: z.boolean(), message: z.string().min(1).max(2000).optional() }).strict(),
+    retryable: z.boolean() }).strict(),
 ]).superRefine((result, context) => {
   if (result.kind === 'ready' && result.session.id !== result.control.sessionId) {
     context.addIssue({ code: 'custom', message: 'Ready results identify one session and its control.' });
