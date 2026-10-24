@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 #!/usr/bin/env node
 // Prints the app error log (web and API errors) grouped by fingerprint, newest first.
 // Usage: node scripts/app-errors.mjs [--since 2h|1d|2026-10-22T10:00Z] [--source web|api] [--file path] [--stacks]
@@ -10,7 +9,7 @@ import { parseArgs } from 'node:util'
 const { values } = parseArgs({ options: {
   since: { type: 'string' }, source: { type: 'string' }, file: { type: 'string' }, stacks: { type: 'boolean' },
 } })
-const file = values.file ?? join(process.env.LOG_DIR ?? join(homedir(), INSTALLATION_NAMES.paths.productionLogs), 'app-errors.jsonl')
+const file = values.file ?? join(process.env.LOG_DIR ?? join(homedir(), '.local/state/graphql-production/logs'), 'app-errors.jsonl')
 const units = { m: 60_000, h: 3_600_000, d: 86_400_000 }
 const duration = values.since?.match(/^(\d+)([mhd])$/)
 const since = !values.since ? 0 : duration ? Date.now() - Number(duration[1]) * units[duration[2]] : Date.parse(values.since)

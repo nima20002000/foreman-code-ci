@@ -70,7 +70,7 @@ it('reconciles a changed Agent profile through authenticated MCP and admits the 
       extensions: { history: new VersionHistoryService(pool), agents: new OperatorAgentMutationService(
         pool, base.commands, base.services.harnesses, profiles) } }
     app = buildApp({ logger: false, readiness: { database: { ping: async () => undefined },
-      checkpoints: { ping: async () => undefined } }, operator: { access: base.access, services: services as unknown as OperatorServices } })
+      checkpoints: { ping: async () => undefined } }, operator: { access: base.access, services: services as OperatorServices } })
     const address = await app.listen({ host: '127.0.0.1', port: 0 })
     async function connect(token: string) {
       const client = new Client({ name: 'agent-model-placement', version: '1' })

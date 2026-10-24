@@ -1,1 +1,1 @@
-export { assertActiveHarnessConfiguration, retiredHarnessError } from '../../shared/harnessPolicy.js'
+export { retiredHarnessError } from '../../shared/harnessPolicy.js'

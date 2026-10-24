@@ -1,4 +1,4 @@
-import type { RecordedHarnessConfiguration, WorkflowApprovalConfiguration } from '@foreman-code/contracts'
+import type { HarnessConfiguration, WorkflowApprovalConfiguration } from '@foreman-code/contracts'
 import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
 
@@ -6,7 +6,7 @@ import { DomainError } from '../errors.js'
 export function validateReviewerBootstrap(
   definition: WorkflowDefinitionCurrent,
   approval: WorkflowApprovalConfiguration,
-  configuration: RecordedHarnessConfiguration | undefined,
+  configuration: HarnessConfiguration | undefined,
   acceptedEntryNodeId?: string,
 ): void {
   if (approval.handler !== 'orchestrator') return

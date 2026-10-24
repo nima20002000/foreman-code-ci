@@ -6,7 +6,7 @@ import { AgentChatSendResponseSchema, ReadAgentChatResponseSchema,
   type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import { apiClient, ApiError, type RequestOptions } from '../../../shared/api/client'
 import { agentChatRoot } from '../../../shared/api/agentChat'
-import { sameSelectedTarget } from '../../chat-core'
+import { sameSelectedTarget } from './selectedRunChatModel'
 
 export const selectedRunChatPath = (selection: SelectedRunChatSelection) =>
   `${agentChatRoot(selection.workspaceId)}/workflows/${encodeURIComponent(selection.workflowId)}`

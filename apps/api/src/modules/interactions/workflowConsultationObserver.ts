@@ -1,4 +1,3 @@
-import { capabilityDescriptorsOf } from '../harnesses/index.js'
 import { setTimeout as delay } from 'node:timers/promises'
 import { canonicalJson, ExecutionResultSchema, type CoordinatorConsultationBinding,
   type NativeHarnessEvent, type NativeSessionReference } from '@foreman-code/contracts'
@@ -37,7 +36,7 @@ export interface ConsultationObservationInput {
 function nativeTarget(input: ConsultationObservationInput, providerId?: string): WorkflowChatNativeTarget {
   return { nativeSessionId: input.session.nativeSessionId, ownerRequestId: `consultation:${input.binding.consultationId}`,
     sessionMode: input.sessionMode, steer: supportsExpectedTurnSteer(input.session), interruptAndSend: true,
-    ...(providerId ? { providerId, ...(capabilityDescriptorsOf(input.session).inputIdentity === 'turn' ? { nativeTurnId: providerId }
+    ...(providerId ? { providerId, ...(input.session.harness === 'codex' ? { nativeTurnId: providerId }
       : { inputMessageId: providerId }) } : {}) }
 }
 

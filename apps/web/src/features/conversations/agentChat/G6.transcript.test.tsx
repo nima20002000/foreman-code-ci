@@ -7,7 +7,7 @@ import { server } from '../../../mocks/server'
 import { createAgentChatMock } from '../../../shared/mocks/agentChatHandlers'
 import { AgentPopover } from '../../../shared/ui/nocturne'
 import { AgentChatPanel } from '../../graph'
-import { useConversationDraftStore } from '../../chat-core'
+import { useConversationDraftStore } from '../conversationDraftStore'
 import { AgentChatTestSource, installChatSource } from './testSupport'
 import { agentChatStateKey } from './useAgentChat'
 

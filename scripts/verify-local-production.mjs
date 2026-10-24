@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { decodeMcpToolResult } from '../packages/contracts/dist/operatorMcp.js'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
@@ -21,10 +20,10 @@ if (readProductEnvironment(process.env, 'TEST_ROOT') || readProductEnvironment(p
 
 const execute = promisify(execFile)
 const home = homedir()
-const app = join(home, INSTALLATION_NAMES.paths.productionApp)
-const config = join(home, INSTALLATION_NAMES.paths.productionConfig)
-const unit = INSTALLATION_NAMES.services.api
-const databaseUnit = INSTALLATION_NAMES.services.database
+const app = join(home, '.local/lib/graphql-production')
+const config = join(home, '.config/graphql-production')
+const unit = 'graphql-operator-api.service'
+const databaseUnit = 'graphql-production-db.service'
 const origin = 'http://127.0.0.1:3041'
 
 async function systemctl(...args) {
@@ -121,14 +120,14 @@ async function recoverFailedDatabaseStartup(environment, ready) {
   try {
     await systemctl('stop', unit, databaseUnit)
     // Compose's required password check fails the real database activation before touching its volume.
-    await publish(faultEnvironment, renderEnvironment({ [INSTALLATION_NAMES.environment.PRODUCTION_DB_PASSWORD]: '' }))
+    await publish(faultEnvironment, renderEnvironment({ GRAPHQL_PRODUCTION_DB_PASSWORD: '' }))
     await publish(dropIn, `[Service]\nEnvironmentFile=${faultEnvironment}\n`)
     await systemctl('daemon-reload')
     await systemctl('start', '--no-block', unit)
     await waitUntil(() => systemctl('show', '--property=Result', '--value', databaseUnit),
       value => value === 'exit-code', 'failed first database activation', 30_000)
     await publish(faultEnvironment, renderEnvironment({
-      [INSTALLATION_NAMES.environment.PRODUCTION_DB_PASSWORD]: readProductEnvironment(environment, 'PRODUCTION_DB_PASSWORD'),
+      GRAPHQL_PRODUCTION_DB_PASSWORD: readProductEnvironment(environment, 'PRODUCTION_DB_PASSWORD'),
     }))
     await ready()
     assert.ok(Number(await systemctl('show', '--property=NRestarts', '--value', databaseUnit)) >= 1,
@@ -153,9 +152,9 @@ async function qualifyEnvironmentMigration(release) {
     ANTHROPIC_API_KEY: 'test-only-provider-credential',
     HARNESS_TIMEOUT_MS: '600000',
   }
-  const owned = { NODE_ENV: 'production', [INSTALLATION_NAMES.environment.LOCAL_PRODUCTION]: '1', HOST: '127.0.0.1',
+  const owned = { NODE_ENV: 'production', FOREMAN_CODE_LOCAL_PRODUCTION: '1', HOST: '127.0.0.1',
     DATABASE_URL: 'postgresql://owner:password@127.0.0.1:55440/graphql_production',
-    [INSTALLATION_NAMES.environment.PRODUCTION_DB_PASSWORD]: 'test-only-database-credential' }
+    GRAPHQL_PRODUCTION_DB_PASSWORD: 'test-only-database-credential' }
   const { loadConfig } = await import(pathToFileURL(join(release, 'apps/api/dist/config.js')))
   const readEffective = async () => {
     const code = 'const keys = JSON.parse(process.argv[1]); '
@@ -388,7 +387,7 @@ async function main() {
       .some(message => message.content.includes('LOCAL_PRODUCTION_OPERATOR')))
 
     const pid = await systemctl('show', '--property=MainPID', '--value', unit)
-    await execute('/usr/bin/docker', ['compose', '--project-name', INSTALLATION_NAMES.compose.production,
+    await execute('/usr/bin/docker', ['compose', '--project-name', 'graphql-local-production',
       '--file', join(app, 'compose.production.yaml'), 'restart', 'postgres'], { timeout: 90_000,
       env: { ...process.env, ...environment } })
     await waitUntil(() => systemctl('show', '--property=MainPID', '--value', unit),
