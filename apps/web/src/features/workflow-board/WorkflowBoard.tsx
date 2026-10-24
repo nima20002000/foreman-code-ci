@@ -132,8 +132,9 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const boardRunLive = !!boardRunId && (boardRunId === liveRunId || (boardRunId === startedRunId && startedLive))
   const boardRun = useMemo(() => boardRunId ? { workspaceId, workflowId, runId: boardRunId, live: boardRunLive } : undefined,
     [workspaceId, workflowId, boardRunId, boardRunLive])
-  const boardRunControls = boardRunId ? <SelectedRunControls key={boardRunId} visible={!side.memoryOpen}
-    scope={{ workspaceId, workflowId, runId: boardRunId }} runActionRef={setRunActionHost} /> : undefined
+  const boardRunControls = useMemo(() => boardRunId ? <SelectedRunControls key={boardRunId} visible={!side.memoryOpen}
+    scope={{ workspaceId, workflowId, runId: boardRunId }} runActionRef={setRunActionHost} /> : undefined,
+  [boardRunId, side.memoryOpen, workspaceId, workflowId])
   // History is rendered only by RunBoardSlot. Do not feed legacy Run pins to the
   // hidden editor, or fabricate missing version/semantics pins.
   const value = useMemo<WorkflowBoardSelection>(() => ({ workspaceId, workflowId, selectRun: chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent,
