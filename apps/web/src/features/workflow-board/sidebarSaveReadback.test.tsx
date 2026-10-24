@@ -28,7 +28,7 @@ async function mount(reply?: ReplyOverride) {
   expect(await sidebar().findByRole('button', { name: /^First Board/ })).toHaveTextContent('Draft')
   return { ...view, wire, mock, key, workspaceId, workflowId }
 }
-const board = () => within(screen.getByRole('banner', { name: 'Board toolbar' }))
+const board = () => within(screen.getByRole('region', { name: 'Workflow authoring' }))
 const sidebar = () => within(screen.getByRole('complementary', { name: 'Primary navigation' }))
 function change(key: string, name = 'First Board') {
   act(() => useGraphDraftStore.getState().changeNextDraft(key, (graph) => ({ ...graph, name,

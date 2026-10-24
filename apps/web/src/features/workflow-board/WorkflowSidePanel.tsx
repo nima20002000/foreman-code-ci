@@ -30,7 +30,6 @@ export interface WorkflowSidePanelProps {
   workflowId: string
   runId?: string
   workflowVersionId?: string
-  savedNodeName?: string
   opener: RefObject<HTMLElement | null>
   selection: BoardSidePanel
   agentSelection?: Extract<BoardSidePanel, { kind: 'agent' }>
@@ -67,7 +66,7 @@ function placeNear(width: number, height: number, opener: HTMLElement | null) {
 
 /** Floating, draggable, resizable window opened next to the selected node. Only the selected body mounts;
  * the portal host preserves existing conversation/store ownership. */
-export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workflowVersionId, savedNodeName,
+export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workflowVersionId,
   opener, selection, agentSelection, onSelect, onSelectTarget, onSelectRun, bodyRef, headerSlotRef, footerSlotRef, modalOpen, slots }: WorkflowSidePanelProps) {
   const panelRef = useRef<HTMLElement>(null)
   const workflow = useManagedWorkflowQuery(workspaceId, workflowId)
@@ -181,7 +180,7 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
         : null
   const agentName = agentSelection ? workflow.data?.workflow.nodes.find(node => node.id === agentSelection.nodeId) : undefined
   const title = selection.kind === 'browser' ? 'Browser'
-    : savedNodeName ?? (agentName ? agentName.name ?? agentName.label ?? 'Agent' : 'Agent')
+    : agentName ? agentName.name ?? agentName.label ?? 'Agent' : 'Agent'
   return <aside ref={panelRef} tabIndex={-1} className="workflow-floating-panel" aria-label="Workflow side panel"
     hidden={!active || modalOpen} inert={!active || modalOpen} style={{ zIndex }}
     onPointerDownCapture={() => raiseFloating(stackId)} onFocusCapture={() => raiseFloating(stackId)}>

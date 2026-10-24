@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import type { RunBoardNodeSnapshot } from '@foreman-code/contracts/run-snapshots'
-import { readRunInspectionKey, runInspectionKey, type RepeatGraphScopeCurrent, type RunExecutionSummary } from '@foreman-code/contracts/current'
+import type { RepeatGraphScopeCurrent, RunExecutionSummary } from '@foreman-code/contracts/current'
 import { agentProductRoleLabel, type WorkflowHierarchyReadResult } from '@foreman-code/contracts'
 import { useHarnessSessionEpoch } from '../../shared/api/harnessSettings'
 import { sessionIsSwitching } from '../../shared/api/sessionBoundary'
@@ -10,8 +10,7 @@ import { Button, Icon, IconButton } from '../../shared/ui/nocturne'
 import { type SelectedRunState, isRunAccessError, runReadErrorLabel } from '../runs-selector'
 import { PinnedProviderAccount } from '../provider-accounts'
 import { SelectedNodePlacement } from '../node-placement'
-import { readRunExecution, readRunExecutions, ExecutionBranch, ExecutionBindings, ExecutionEvidence, ExecutionRepetitionPicker, refreshFirstInspectionPage } from '../workflow-board'
-import { useBoardSelection } from '../board-core'
+import { readRunExecution, readRunExecutions, ExecutionBranch, JsonValue, refreshFirstInspectionPage } from '../workflow-board'
 import { JobRunResult } from '../jobs'
 import type { AvailableRunBoardSnapshot } from './model'
 import { readForRunVisit, runNodeInspectionKey, useRunNodeRead } from './inspectionQuery'
@@ -27,19 +26,14 @@ function matchesNode(node: RunBoardNodeSnapshot, execution: RunExecutionSummary)
     && node.agentConfigurationVersionId === execution.agentConfigurationVersionId
 }
 
-export function RunNodeInspector({ selection, snapshot, nodeId, executionId, onInspect, hierarchy, repeat = false, closable = true }: {
+export function RunNodeInspector({ selection, snapshot, nodeId, executionId, onInspect, hierarchy, closable = true }: {
   selection: SelectedRunState; snapshot: AvailableRunBoardSnapshot; nodeId: string;
   executionId?: string; onInspect(nodeId?: string, executionId?: string): void
   hierarchy?: WorkflowHierarchyReadResult
-  repeat?: boolean
   /** False inside a panel that has its own close. */
   closable?: boolean
 }) {
   useHarnessSessionEpoch()
-  const board = useBoardSelection()
-  const exchange = board?.inspection.runNodeId === nodeId ? readRunInspectionKey(board.inspection.runExchangeKey) : undefined
-  const occurrenceId = exchange?.occurrenceId
-  const selectedExecutionId = exchange ? exchange.executionId : executionId
   const client = useQueryClient()
   const node = snapshot.nodes.find(item => item.id === nodeId)
   const saved = hierarchy?.workflowVersionId === snapshot.workflowVersionId && hierarchy.run?.runId === snapshot.runId
@@ -64,7 +58,6 @@ export function RunNodeInspector({ selection, snapshot, nodeId, executionId, onI
   const blocked = useBlockingReadError(pages)
   if (!selection.isCurrent(selection.generation) || sessionIsSwitching()) return null
   const items = pages.data?.pages.flatMap(page => page.items) ?? []
-  const listed = occurrenceId ? items.filter(item => item.occurrence?.occurrenceId === occurrenceId) : items
   const invalid = node && items.some(item => !matchesNode(node, item))
   const unavailable = Boolean(blocked) || invalid || pages.isError && !pages.data
   const runFailure = pages.data?.pages[0]?.run.failure
@@ -87,15 +80,10 @@ export function RunNodeInspector({ selection, snapshot, nodeId, executionId, onI
         {runFailure ? <p role="status" className="run-node-error">Run failed: {runFailure.message}</p> : null}
         {!pages.isPending && !items.length ? <p className="run-node-note">No execution recorded for this node yet.</p> : null}
         {pages.data?.pageParams[0] ? <p className="run-node-note">Earlier executions are hidden. Refresh to return to the first page.</p> : null}
-        {board && (repeat || items.some(item => item.occurrence)) ? <ExecutionRepetitionPicker executions={items} occurrenceId={occurrenceId}
-          onSelect={occurrenceId => board.selectInspection({ runNodeId: node.id,
-            runExchangeKey: runInspectionKey(occurrenceId ? { occurrenceId } : {}) })} /> : null}
-        {listed.length ? <ol className="run-node-attempts">{listed.map(execution => <li key={execution.executionId}>
-          <button type="button" className="run-node-attempt" aria-pressed={selectedExecutionId === execution.executionId}
+        {items.length ? <ol className="run-node-attempts">{items.map(execution => <li key={execution.executionId}>
+          <button type="button" className="run-node-attempt" aria-pressed={executionId === execution.executionId}
             aria-label={`Attempt ${execution.attempt} · ${execution.executionId}`} title={execution.executionId}
-            onClick={() => board ? board.selectInspection({ runNodeId: node.id,
-              runExchangeKey: runInspectionKey({ executionId: execution.executionId, occurrenceId: execution.occurrence?.occurrenceId }) })
-              : onInspect(node.id, execution.executionId)}>
+            onClick={() => onInspect(node.id, execution.executionId)}>
             <span>Attempt {execution.attempt}</span>
             <span className="run-node-attempt-state" data-state={execution.failure ? 'failed' : execution.state}>
               {execution.failure ? 'Failed' : stateLabel(execution.state)}</span>
@@ -105,8 +93,8 @@ export function RunNodeInspector({ selection, snapshot, nodeId, executionId, onI
         </li>)}</ol> : null}
         {pages.hasNextPage ? <Button size="sm" variant="ghost" disabled={pages.isFetching && !pages.isRefetching}
           onClick={() => void pages.fetchNextPage()}>Load more executions</Button> : null}
-        {selectedExecutionId ? <NodeExecutionResult key={selectedExecutionId} selection={selection} scope={scope}
-          node={node} executionId={selectedExecutionId} occurrenceId={occurrenceId} /> : null}
+        {executionId ? <NodeExecutionResult key={executionId} selection={selection} scope={scope}
+          node={node} executionId={executionId} /> : null}
       </>}
     </>}
   </section>
@@ -118,19 +106,16 @@ function stateLabel(state: string) {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-function NodeExecutionResult({ selection, scope, node, executionId, occurrenceId }: {
+function NodeExecutionResult({ selection, scope, node, executionId }: {
   selection: SelectedRunState; scope: RepeatGraphScopeCurrent; node: RunBoardNodeSnapshot; executionId: string
-  occurrenceId?: string
 }) {
-  const board = useBoardSelection()
   const query = useRunNodeRead(selection, [node.id, executionId], signal => readRunExecution(scope, executionId, { signal }))
   const blocked = useBlockingReadError(query)
   if (!selection.isCurrent(selection.generation) || sessionIsSwitching()) return null
   if (blocked || query.isError && !query.data) return <p role="status">
     Execution result unavailable. {ApiError.is(query.error) ? query.error.message : runReadErrorLabel(query.error)}
   </p>
-  if (query.data && (!matchesNode(node, query.data.execution)
-    || occurrenceId && query.data.execution.occurrence?.occurrenceId !== occurrenceId)) return <p role="status">
+  if (query.data && !matchesNode(node, query.data.execution)) return <p role="status">
     Execution result unavailable. Execution does not match this saved node.
   </p>
   if (!query.data) return <p role="status">Reading execution result…</p>
@@ -148,12 +133,11 @@ function NodeExecutionResult({ selection, scope, node, executionId, occurrenceId
       : <AgentExecutionResults selection={selection} scope={scope} execution={execution} name={node.name}
         acceptedResult={detail.acceptedResult} />}
     <details><summary>Accepted input and results</summary>
-      <ExecutionEvidence scope={scope} detail={detail} />
+      <JsonValue label={`Input ${executionId}`} value={detail.acceptedInput.value} />
+      {detail.acceptedResult.status === 'accepted'
+        ? <JsonValue label={`Accepted result ${executionId}`} value={detail.acceptedResult.value} />
+        : <p>No accepted result recorded.</p>}
+      {detail.reportedResult ? <JsonValue label={`Reported result ${executionId}`} value={detail.reportedResult} /> : null}
     </details>
-    <ExecutionBindings scope={scope} detail={detail} />
-    {board ? <Button size="sm" variant="ghost" onClick={() => {
-      board.selectInspection({ runNodeId: node.id, runExchangeKey: runInspectionKey({ executionId, occurrenceId: occurrence?.occurrenceId }) })
-      board.openRuns()
-    }}>Inspect in Activities</Button> : null}
   </article>
 }

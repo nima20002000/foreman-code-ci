@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { authoringHints, editorAgents, type NextDraftEdit, useWorkflowBoard } from '../../board-core'
 import { useGraphEditIntent } from './useGraphEditIntent'
-import { useManagedWorkspaceQuery, useManagedWorkflowQuery } from '../../../shared/api/query'
+import { useInteractionsQuery, useManagedWorkspaceQuery, useManagedWorkflowQuery } from '../../../shared/api/query'
 import { boardScope, publishDraftDepth, useBoardUndo } from '../../workflow-board'
 import { useDraftEditorCore } from './useDraftEditorCore'
 import { useDraftEditorSave } from './useDraftEditorSave'
@@ -52,6 +52,8 @@ export function useDraftEditorController(draftKey: string, edit: NextDraftEdit) 
   })
   const workspace = useManagedWorkspaceQuery(graph.workspaceId)
   const managedWorkflow = useManagedWorkflowQuery(graph.workspaceId, graph.id)
+  const approvals = useInteractionsQuery({ workspaceId: graph.workspaceId, workflowId: graph.id, status: 'pending', limit: 100 })
+  const pendingApprovals = approvals.data?.items.filter((item) => item.approval.handler === 'user').length
   const agents = useMemo(() => editorAgents(edit), [edit])
   const hints = useMemo(() => authoringHints(graph, context, edit.agentEdits), [graph, context, edit.agentEdits])
   const status = deriveDraftEditorStatus({
@@ -70,7 +72,7 @@ export function useDraftEditorController(draftKey: string, edit: NextDraftEdit) 
   return {
     graph, context, board, editIntent, undoScope, core, preflight, pendingStart, changedAgents,
     reloading, stopAndSave, discardChanges, reload, inspectLatest, startMutation, starting, start, recoverStart,
-    workspace, managedWorkflow, agents, hints, status, requestSave, historyAction, openAgent, panels,
+    workspace, managedWorkflow, pendingApprovals, agents, hints, status, requestSave, historyAction, openAgent, panels,
     scheduleWrite, historyPending,
   }
 }

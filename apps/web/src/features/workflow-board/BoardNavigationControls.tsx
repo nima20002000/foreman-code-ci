@@ -4,16 +4,14 @@ import { RunsSelector, type useSelectedRun } from '../runs-selector'
 import { ScheduleClockButton } from '../schedules'
 import { WorkflowFilesButton } from '../workflow-files'
 import { nextDraftApi } from '../graph'
-import { boardDraftContextKey, useBoardAuthoring, useBoardSelection } from '../board-core'
+import { boardDraftContextKey, useBoardSelection } from '../board-core'
 import { useBrowserSidebar } from './useBrowserSidebar'
 import { KanbanButton } from './kanban/KanbanButton'
-import { ApprovalInboxButton } from '../approvals'
 
 export function BoardNavigationControls({ workspaceId, workflowId, selection, runsLabel }: {
   workspaceId: string; workflowId: string; selection: ReturnType<typeof useSelectedRun>; runsLabel?: string
 }) {
   const board = useBoardSelection()
-  const authoring = useBoardAuthoring()
   const browsers = useBrowserSidebar(workspaceId, workflowId)
   const saved = useQuery({ queryKey: boardDraftContextKey(workspaceId, workflowId),
     queryFn: ({ signal }) => nextDraftApi.context(workspaceId, workflowId, { signal }), staleTime: 3000 })
@@ -25,10 +23,8 @@ export function BoardNavigationControls({ workspaceId, workflowId, selection, ru
         title="A Run of an earlier saved version is running. Show it." onClick={() => void selection.selectRun(board.liveRunId!)}>
         <span className="board-live-run-dot" aria-hidden="true" />Running</Button> : null}
     <RunsSelector selection={selection} triggerLabel={runsLabel} />
-    <ScheduleClockButton workspaceId={workspaceId} workflowId={workflowId} isSaved={Boolean(saved.data?.draft.baseWorkflowVersionId)}
-      onSelectRun={runId => void selection.selectRun(runId)} onReviewWorkflow={authoring?.openWorkflowSettings} />
+    <ScheduleClockButton workspaceId={workspaceId} workflowId={workflowId} isSaved={Boolean(saved.data?.draft.baseWorkflowVersionId)} />
     <WorkflowFilesButton workspaceId={workspaceId} workflowId={workflowId} />
-    {selection.identity.runId !== null ? <ApprovalInboxButton workspaceId={workspaceId} workflowId={workflowId} /> : null}
     <IconButton label="Browsers" title="Agent browsers" size="sm" variant="ghost" aria-pressed={browsers.isOpen} onClick={browsers.toggle}>
       <Icon name="globe" size={16} /></IconButton>
     {/* The draft editor has its own Kanban toggle; a shown Run (which the Board follows while live) needs one too. */}
