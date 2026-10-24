@@ -41,8 +41,7 @@ export function NodePlacementFacts({ runId, nodeId, readback }: NodePlacementFac
       <dt>Accepted execution root</dt><dd>{placement.destination.canonicalProjectRoot}</dd>
       <dt>Accepted working directory</dt><dd>{placement.destination.canonicalCwd}</dd>
       <dt>Accepted location revision</dt><dd>{placement.destination.locationRevision}</dd>
-      <dt>Accepted source snapshot</dt><dd>{'revisionId' in placement.source
-        ? <code>{placement.source.revisionId}</code> : 'Plain folder (no source snapshot)'}</dd>
+      <dt>Accepted source snapshot</dt><dd><code>{placement.source.revisionId}</code></dd>
       <dt>Accepted binding</dt><dd><code>{placement.bindingHash}</code></dd>
       {placement.payload.kind === 'agent' ? <>
         <dt>Accepted configuration</dt><dd>{placement.payload.agentConfigurationVersionId}</dd>
@@ -54,15 +53,15 @@ export function NodePlacementFacts({ runId, nodeId, readback }: NodePlacementFac
         </>}
       </> : null}
     </dl>
-    {preparations.map(native => <section key={native.executionId} aria-label={'kind' in native ? 'Prepared Agent folder' : 'Prepared Agent worktree'}>
+    {preparations.map(native => <section key={native.executionId} aria-label="Prepared Agent worktree">
       <dl><dt>Execution</dt><dd>{native.executionId}</dd><dt>Attempt</dt><dd>{native.attemptId}</dd>
         <dt>Prepared working directory</dt><dd>{native.workingTree.canonicalCwd}</dd>
-        {!('kind' in native) && native.materialization.receipt.worktree && <>
+        {native.materialization.receipt.worktree && <>
           <dt>Allocated Agent branch</dt><dd>{native.materialization.receipt.worktree.branch}</dd>
           <dt>Approved base commit</dt><dd><code>{native.materialization.receipt.worktree.commit}</code></dd>
         </>}
       </dl>
-      <p>{'kind' in native ? 'Folder preparation is recorded.' : 'Worktree preparation is recorded.'} Process execution is shown separately below.</p>
+      <p>Worktree preparation is recorded. Process execution is shown separately below.</p>
     </section>)}
     {!attempts.size ? <p>{host.kind === 'main'
       ? 'Main-local execution observations are unavailable in this readback. Accepted placement does not confirm execution.'

@@ -162,7 +162,6 @@ export async function readNativePlacement(sql: Pick<SqlTransaction, 'query'>, ex
   const parent = intent && await readAcceptedPlacement(sql, intent.runId, intent.nodeId)
   if (!intent || !parent) conflict()
   const binding = readNativeExecutionBinding(parent!, intent!, row.record)
-  if ('kind' in binding) return binding
   // Read the actual adopted source fact; never invent adoption from a digest.
   const sourceRow = (await sql.query<{ record: unknown; state: string }>('select record,state from source_execution_materializations where materialization_id=$1', [binding.materialization.receipt.materializationId])).rows[0]
   if (!sourceRow) conflict()

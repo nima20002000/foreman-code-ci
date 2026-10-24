@@ -1,9 +1,8 @@
-import { useRef, useState, type RefObject } from 'react'
+import { useRef, useState } from 'react'
 import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
 import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import type { NodePlacementChoicesResult } from '@foreman-code/contracts/placement-readback'
 import { WorkspaceExecutionLocationSettings } from '../settings'
-import { useSetupWorkspaceSourceRoot } from '../../shared/api/workspaceBoundLocation'
 import { Button, Select } from '../../shared/ui/nocturne'
 import { NodeRow } from '../graph/AgentMainFields'
 
@@ -27,21 +26,6 @@ export type NodePlacementFieldProps = {
   /** Why choices can't be read right now. */
   note?: string | undefined
   inheritedWorktree?: string | undefined
-}
-
-function SetupComputerButton({ workspaceId, computer, disabled, triggerRef, onSelectionRequired, onPrepared }: {
-  workspaceId: string; computer: UnavailableComputer; disabled?: boolean | undefined
-  triggerRef: RefObject<HTMLButtonElement | null>; onSelectionRequired(): void; onPrepared(): void
-}) {
-  const setup = useSetupWorkspaceSourceRoot(workspaceId)
-  return <><Button size="sm" variant="ghost" ref={triggerRef} disabled={disabled || setup.isPending} onClick={() => {
-    setup.mutate({ workspaceId, commandId: crypto.randomUUID(), hostRef: computer.hostRef }, {
-      onSuccess: result => {
-        if ('kind' in result.value && result.value.kind === 'selection-required') onSelectionRequired()
-        else onPrepared()
-      },
-    })
-  }}>Set up on {computer.name}</Button>{setup.error ? <span role="alert">{setup.error.message}</span> : null}</>
 }
 
 /** Choice labels read "<computer> · <harness> · <folder>"; show the computer, and the folder only to tell two apart. */
@@ -74,8 +58,7 @@ export function NodePlacementField({ workspaceId, value, options, unavailableCom
   else if (!message && optionsState === 'unavailable') message = note ?? 'Computers can’t be checked right now.'
   const needsSetup = blockedComputer?.reason === `This workspace’s project isn’t set up on ${blockedComputer?.name} yet.`
   return <><NodeRow label="Computer" note={message ? <>{message}{workspaceId && blockedComputer && needsSetup ? <>{' '}
-    <SetupComputerButton workspaceId={workspaceId} computer={blockedComputer} disabled={disabled} triggerRef={setupTrigger}
-      onSelectionRequired={() => setSetupComputer(blockedComputer)} onPrepared={() => setBlocked(undefined)} />
+    <Button size="sm" variant="ghost" ref={setupTrigger} disabled={disabled} onClick={() => setSetupComputer(blockedComputer)}>Set up on {blockedComputer.name}</Button>
   </> : null}</> : undefined} tone={blockedReason || current?.unavailableReason ? 'warning' : undefined}>
     <Select label="Computer" aria-label="Computer" className="agent-node-inline" value={selection} disabled={disabled}
       options={[

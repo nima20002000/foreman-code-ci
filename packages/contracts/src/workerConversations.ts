@@ -16,7 +16,7 @@ import { PairedMcpEndpointSchema } from './mcpDetection.js'
 import { AgentChatDirectoryBindingSchema } from './agentChat.js'
 import { FileMediaTypeSchema, MAX_FILE_BYTES, MessageAttachmentRefsSchema } from './files.js'
 import { PromptSettingSnapshotSchema } from './prompts.js'
-import { AcceptedNodePlacementSchema, PlainWorkingDirectorySchema } from './nodePlacement.js'
+import { AcceptedNodePlacementSchema } from './nodePlacement.js'
 import { VerifiedSourceWorkingTreeSchema } from './sourceAdmission.js'
 import { AcceptedProviderAccountBindingSchema } from './providerAccounts.js'
 
@@ -38,7 +38,7 @@ export const WorkerConversationBindingSchema = z.object({
   directoryBinding: AgentChatDirectoryBindingSchema.optional(),
   systemPrompt: PromptSettingSnapshotSchema.optional(),
   sourceExecution: z.object({ executionId: id, placement: z.lazy(() => AcceptedNodePlacementSchema),
-    workingTree: z.union([VerifiedSourceWorkingTreeSchema, PlainWorkingDirectorySchema]) }).strict().optional(),
+    workingTree: VerifiedSourceWorkingTreeSchema }).strict().optional(),
   sourceConfigurationVersionId: id.optional(),
   harness: z.lazy(() => AgentHarnessSchema),
   profile: HarnessProfileSelectionSchema,

@@ -14,7 +14,7 @@ import type { RunOwnership } from '../runs/index.js'
 import { repeatRuntimeDirectory } from '../runs/repeatRepositoryHost.js'
 import { DomainError } from '../errors.js'
 import { readAcceptedPlacement, readDispatchIntent, readNativePlacement, insertNativePlacement } from './persistence.js'
-import { bindNativeExecution, nativePlacementDigest } from './executionBinding.js'
+import { bindNativeExecution } from './executionBinding.js'
 import type { AgentPlacementProducer } from './agentProducer.js'
 
 type NativeSourcePort = SourceAdmissionPort & {
@@ -46,43 +46,16 @@ export class AgentExecutionPreparation {
       if (!placement) return undefined
       const intent = await readDispatchIntent(sql, execution.id)
       if (!intent || placement.payload.kind !== 'agent' || placement.payload.agentConfigurationVersionId !== execution.agentConfigurationVersionId
-        || !('kind' in placement.source)) this.conflict()
+        || !('kind' in placement.source) || placement.source.kind !== 'pending') this.conflict()
       const principal = await readLiveManagementPrincipal(sql, run.authorizationPrincipalId)
       await this.producer.assertPinsCurrent(sql, placement, principal, run.workspaceId,
         await this.currentPurpose(sql, owner, run, execution))
-      if ('kind' in placement.source && placement.source.kind === 'plain') {
-        const policy = await this.producer.resolveFolderPolicy(sql, placement, principal, run.workspaceId)
-        const workingTree = { canonicalProjectRoot: policy.canonicalProjectRoot, canonicalCwd: policy.canonicalProjectRoot,
-          directoryIdentityHash: policy.directoryIdentityHash, filesystem: policy.filesystem,
-          accessMode: policy.accessMode === 'read-write' ? 'exclusive-write' as const : 'read-only' as const, privateGit: null }
-        const fields = { version: 1 as const, kind: 'plain' as const, acceptedBindingHash: placement.bindingHash,
-          runId: run.id, nodeId: placement.nodeId, executionId: execution.id, attemptId: intent!.attemptId,
-          operationId: intent!.operationId, policy, workingTree }
-        const previous = await readNativePlacement(sql, execution.id)
-        if (!previous) await insertNativePlacement(sql, owner, { ...fields, bindingHash: nativePlacementDigest(fields) })
-        return { plain: true as const, placement, principal, policy }
-      }
-      if (placement.source.kind !== 'pending') this.conflict()
       const source = placement.source as Extract<typeof placement.source, { kind: 'pending' }>
       const root = await this.sources.resolveRootBinding(sql, principal, { workspaceId: run.workspaceId, rootId: source.rootId,
         bindingRevision: source.bindingRevision, source: { approvedSourceId: source.approvedSourceId, snapshotId: source.snapshotId, manifestDigest: source.manifestDigest } })
       return { placement, intent: intent!, principal, root, previous: await readNativePlacement(sql, execution.id) }
     })
     if (!accepted) return undefined
-    if ('plain' in accepted) {
-      const { placement, principal } = accepted
-      return { workingDirectory: placement.destination.canonicalCwd,
-        runtimeDirectory: repeatRuntimeDirectory(placement.destination.managedRuntimeRoot, {
-          workspaceId: run.workspaceId, workflowId: run.workflowId, workflowVersionId: run.workflowVersionId,
-          runId: run.id, executionSemanticsVersion: 3,
-        }, execution),
-        revalidate: async () => {
-          await owner.oneShotConnection().transaction(async sql => {
-            await this.producer.assertPinsCurrent(sql, placement, principal, run.workspaceId)
-            if (placement.hostRef.kind === 'main') await this.producer.inspectFolder(sql, placement, principal, run.workspaceId)
-          })
-        } }
-    }
     const { placement, intent, principal, root } = accepted
     const assertCurrent = async () => {
       owner.assertOwned()
@@ -90,11 +63,10 @@ export class AgentExecutionPreparation {
         run.workspaceId, await this.currentPurpose(sql, owner, run, execution)))
     }
     const relativeCwd = posix.relative(placement.destination.canonicalProjectRoot, placement.destination.canonicalCwd)
-    let native: Exclude<NativeExecutionPlacement, { kind: 'plain' }>
+    let native: NativeExecutionPlacement
     if (accepted.previous) {
       // Remote result reads attest the original directories and closed process together.
       // Requiring a live source owner here would prevent reading a completed turn.
-      if ('kind' in accepted.previous) this.conflict()
       if (placement.hostRef.kind !== 'device' || !execution.nativeSessionId) {
         const tree = await this.sources.verifyWorkingDirectory({ principal, record: accepted.previous.materialization, relativeCwd })
         if (!sameWorkflowValue(tree, accepted.previous.workingTree)) this.conflict()

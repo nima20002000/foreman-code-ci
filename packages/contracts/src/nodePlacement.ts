@@ -4,7 +4,6 @@ import { z } from 'zod'
 import { DeviceProvisioningHostReferenceSchema, HistoricalDeviceExecutionAdmissionFields, DeviceExecutionAdmissionFields,
   validateHistoricalDeviceExecutionAdmission } from './deviceResources.js'
 import { DeviceConnectionIdentitySchema } from './deviceIdentity.js'
-import { RootFilesystemIdentitySchema, WorkspaceRootPolicySchema } from './workspaceRootPolicies.js'
 import { SourcePinSchema, SourceMaterializationRecordSchema, VerifiedSourceWorkingTreeSchema } from './sourceAdmission.js'
 import { GraphIdSchema, IdSchema } from './schemaPrimitives.js'
 import { WorkflowArtifactOutputsV1Schema } from './workflowArtifactDeclarations.js'
@@ -56,8 +55,7 @@ export const AcceptedNodePlacementSchema = z.object({
   registration: z.object({ workerInstallationId: z.uuid(), keyRevision: z.number().int().positive(),
     authorizationRevision: z.number().int().positive() }).strict().nullable(),
   mainInstallationId: IdSchema, destination: AcceptedDestinationSchema,
-  source: z.union([z.object({ kind: z.literal('plain'), filesystem: RootFilesystemIdentitySchema,
-    accessMode: z.enum(['read-only', 'read-write']) }).strict(), z.object({ revisionId: IdSchema, manifestDigest: PlacementDigestSchema,
+  source: z.union([z.object({ revisionId: IdSchema, manifestDigest: PlacementDigestSchema,
     materializationId: IdSchema, materializationDigest: PlacementDigestSchema }).strict(),
     z.object({ kind: z.literal('pending'), approvedSourceId: z.uuid(), snapshotId: z.uuid(),
       revisionId: IdSchema, manifestDigest: PlacementDigestSchema, rootId: z.uuid(), bindingRevision: z.number().int().positive(),
@@ -122,20 +120,10 @@ export interface PlacementDispatchPort {
 
 /** Lazy verified clone; separate from immutable Run root/source pins and native
  * ownership. No accepted-but-unstarted node claims materialization occurred. */
-export const SourceNativeExecutionPlacementSchema = z.object({ version: z.literal(1),
+export const NativeExecutionPlacementSchema = z.object({ version: z.literal(1),
   acceptedBindingHash: PlacementDigestSchema, runId: IdSchema, nodeId: GraphIdSchema,
   executionId: IdSchema, attemptId: IdSchema, operationId: IdSchema,
   materialization: SourceMaterializationRecordSchema, workingTree: VerifiedSourceWorkingTreeSchema,
   bindingHash: PlacementDigestSchema,
 }).strict()
-export const PlainWorkingDirectorySchema = z.object({
-  canonicalProjectRoot: z.string().startsWith('/'), canonicalCwd: z.string().startsWith('/'),
-  directoryIdentityHash: PlacementDigestSchema, filesystem: RootFilesystemIdentitySchema,
-  accessMode: z.enum(['read-only', 'exclusive-write']), privateGit: z.null(),
-}).strict()
-export const PlainNativeExecutionPlacementSchema = SourceNativeExecutionPlacementSchema.omit({ materialization: true, workingTree: true }).extend({
-  kind: z.literal('plain'), policy: WorkspaceRootPolicySchema, workingTree: PlainWorkingDirectorySchema,
-}).strict()
-export const NativeExecutionPlacementSchema = z.union([SourceNativeExecutionPlacementSchema, PlainNativeExecutionPlacementSchema])
-export type SourceNativeExecutionPlacement = z.infer<typeof SourceNativeExecutionPlacementSchema>
 export type NativeExecutionPlacement = z.infer<typeof NativeExecutionPlacementSchema>

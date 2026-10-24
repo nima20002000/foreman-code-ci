@@ -56,7 +56,6 @@ export async function readSourceActiveNativeSession(sql: SqlQuery, record: Sourc
     || intent.nodeId !== execution.data.workflowNodeId || intent.technicalAttempt !== execution.data.attempt
     || intent.attemptId !== record.receipt.attemptId || intent.operationId !== record.operationId) return null
   const native = readNativeExecutionBinding(placement, intent, rawNative)
-  if ('kind' in native) return null
   if (native.bindingHash !== record.finalDispatchBindingHash || sourceMaterializationDigest(native.materialization) !== sourceMaterializationDigest(record)) return null
   const entry = (await sql.query<{ phase: string; reservation: { execution: unknown; scope: { runId: string } }; transition: {
     phase: string; reservation: unknown; launchDigest: string | null }; source_id: string | null; source_digest: string | null }>(

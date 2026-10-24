@@ -61,9 +61,6 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
       )).rows[0]
       return AgentConfigurationVersionSchema.parse(row?.record)
     })
-    if (await services.sources.isPlainWorkspace?.(principal, input.workspaceId)) {
-      return this.listFolders(services, principal, input, configuration, source)
-    }
     let pending = await provisionPairedAgentRoots(this.pool, services, principal, input.workspaceId, configuration,
       matchesConfiguration, source)
     const preparation = await this.prepareWorkerProfiles(services, principal, input.workspaceId, configuration, source)
@@ -115,40 +112,13 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
     })
   }
 
-  private async listFolders(services: DiscoveryServices, principal: ManagementPrincipal,
-    input: NodePlacementChoicesInput, configuration: AgentConfigurationVersion, source: 'http' | 'mcp') {
-    const policies = await withTransaction(this.pool, sql => services.roots.read(sql, principal, input.workspaceId))
-    const preparation = await this.prepareWorkerProfiles(services, principal, input.workspaceId, configuration, source, policies)
-    const profiles: HostHarnessOverride[] = []
-    for (const policy of policies) profiles.push(...(await services.profiles.list(policy.hostRef, policy.applicationInstallationId))
-      .filter(profile => matchesConfiguration(profile, configuration)))
-    const readiness = await this.probeReadiness(services, profiles, preparation)
-    return withTransaction(this.pool, async sql => {
-      const choices: NodePlacementChoice[] = []
-      let pending = [...preparation.values()].some(value => value.pending)
-      for (const selected of policies) {
-        const policy = await services.roots.resolve(sql, principal, selected)
-        for (const profile of (await services.profiles.list(policy.hostRef, policy.applicationInstallationId, sql))
-          .filter(profile => matchesConfiguration(profile, configuration))) {
-          const found = await this.choice(sql, services, policy, undefined, profile, null, readiness)
-          choices.push(found.choice)
-          pending ||= found.pending
-        }
-      }
-      return { choices, pending, unavailableComputers: await this.unavailableComputers(sql, services, configuration,
-        policies.map(policy => ({ selection: { hostRef: policy.hostRef } })), choices, preparation) }
-    })
-  }
-
   private async prepareWorkerProfiles(services: DiscoveryServices, principal: ManagementPrincipal, workspaceId: string,
-    configuration: AgentConfigurationVersion, source: 'http' | 'mcp', policies?: WorkspaceRootPolicy[]) {
+    configuration: AgentConfigurationVersion, source: 'http' | 'mcp') {
     const results = new Map<string, ComputerAvailability>()
     const harnessInstances = services.harnessInstances
     if (!harnessInstances || configuration.harness.harness !== 'codex' || configuration.harnessProfileSelection
       || !isAuthorized(principal, 'harnesses:update')) return results
-    const roots = policies ? policies.map(policy => ({ selection: { hostRef: policy.hostRef },
-      binding: { workerInstallationId: policy.registration?.workerInstallationId ?? null } }))
-      : await withTransaction(this.pool, sql => this.sourceRoots(sql, workspaceId))
+    const roots = await withTransaction(this.pool, sql => this.sourceRoots(sql, workspaceId))
     for (const root of roots) {
       const host = root.selection.hostRef
       const key = commandInputHash(host)
@@ -178,7 +148,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
   /** Every paired computer stays offered: one with no choice above says in plain words why it can't run this Agent.
    * Main is always offered as the workflow default, so only connected computers are listed here. */
   private async unavailableComputers(sql: pg.PoolClient, services: DiscoveryServices,
-    configuration: AgentConfigurationVersion, roots: readonly { selection: { hostRef: CanonicalMachineReference } }[],
+    configuration: AgentConfigurationVersion, roots: readonly SourceRootRecord[],
     choices: readonly NodePlacementChoice[], preparation: ReadonlyMap<string, ComputerAvailability>): Promise<UnavailableComputer[]> {
     const main = (await sql.query<{ id: string }>(
       'select id::text as id from application_installation where singleton=true')).rows[0]
@@ -266,7 +236,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
   }
 
   private async choice(sql: pg.PoolClient, services: DiscoveryServices, policy: PlacementRootPolicy,
-    root: SourceRootRecord | undefined, profile: HostHarnessOverride, rootUnavailableReason: string | null,
+    root: SourceRootRecord, profile: HostHarnessOverride, rootUnavailableReason: string | null,
     readiness: ReadonlyMap<string, ComputerAvailability>,
   ): Promise<{ choice: NodePlacementChoice; pending: boolean }> {
     const placement = SavedNodePlacementSchema.parse({ schemaVersion: 1, hostRef: policy.hostRef,
@@ -274,7 +244,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
       locationRevision: policy.locationRevision, projectRoot: policy.canonicalProjectRoot,
       cwdPolicy: 'project-root', relativeCwd: '', instanceId: profile.instanceId,
       instanceRevision: profile.instanceRevision, harnessInstallationId: profile.target.harnessInstallationId,
-      ...(root ? { source: root.source, rootBinding: { rootId: root.binding.rootId, bindingRevision: root.binding.bindingRevision } } : {}) })
+      source: root.source, rootBinding: { rootId: root.binding.rootId, bindingRevision: root.binding.bindingRevision } })
     let reason = rootUnavailableReason
     let pending = false
     if (reason === null) {
