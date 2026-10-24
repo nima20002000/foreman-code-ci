@@ -172,6 +172,26 @@ export class HostHarnessOverrideService {
     if (!checked.proof.qualified) throw new DomainError('CLAUDE_DEFAULT_SETUP_UNQUALIFIED', checked.proof.failure?.message ?? 'The exact installed Claude profile did not qualify.', 409)
     return { instanceId: checked.value.instanceId, instanceRevision: checked.value.instanceRevision, target: checked.value.target }
   }
+  /** Placement prepares missing Worker profiles through the same exact-host save/check path as computer settings. */
+  async prepareWorkerConfiguration(principal: ManagementPrincipal, source: 'http' | 'mcp',
+    configuration: RecordedHarnessConfiguration, target: HostHarnessOverride['target']): Promise<void> {
+    if (configuration.harness !== 'codex' || target.hostRef.kind !== 'device') return
+    requireAuthorization(principal, 'harnesses:read'); requireAuthorization(principal, 'harnesses:update')
+    const canonical = withAdvancedDefaults(configuration)
+    const identity = commandInputHash({ target, configuration: canonical })
+    const instanceId = nativeProfileCheckId(target.hostRef.mainId, 'placement', identity)
+    const existing = await this.repository.list(target.hostRef, target.applicationInstallationId)
+    const exact = existing.find(profile => profile.enabled && isDeepStrictEqual(profile.target, target)
+      && isDeepStrictEqual(withAdvancedDefaults(profile.configuration), canonical))
+    const profile = exact ?? (await this.save(principal, source, { instanceId, target, configuration: canonical,
+      presetId: 'local-default:codex', expectedRevision: 0, enabled: true,
+      commandId: nativeProfileCheckId(target.hostRef.mainId, 'placement-save', identity) })).value
+    const checked = await this.check(principal, source, { instanceId: profile.instanceId, target: profile.target,
+      expectedRevision: profile.revision,
+      commandId: nativeProfileCheckId(target.hostRef.mainId, 'placement-check', `${identity}:${profile.revision}`) })
+    if (!checked.proof.qualified) throw new DomainError(checked.proof.failure?.code ?? 'HARNESS_INSTANCE_UNQUALIFIED',
+      checked.proof.failure?.message ?? 'The exact installed Worker profile did not qualify.', 409)
+  }
   async save(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: HostHarnessOverrideSave) {
     try { return await this.saveAuthorized(principal, source, raw) } catch (error) {
       if (error instanceof DomainError && error.status === 403) await this.commands.recordDenied(principal.id, source, 'harness_instance_save', `harness-instance:${raw.instanceId}`)
