@@ -3,6 +3,7 @@ import { createMemoryHistory, createRootRoute, createRoute, createRouter, Router
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
+import userEvent from '@testing-library/user-event'
 import { server } from '../../mocks/server'
 import { useConversationDraftStore } from '../conversations'
 import { OperatorChat } from './OperatorChat'
@@ -43,6 +44,42 @@ beforeEach(() => {
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()) })
 
 describe('Operator conversation destinations', () => {
+  it('stays closed through unrelated Board navigation until the launcher is clicked', async () => {
+    const router = mount()
+    expect(await screen.findByText('Transcript one')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Close Operator chat' }))
+    expect(await screen.findByRole('button', { name: 'Open Operator chat' })).toBeVisible()
+    expect(screen.queryByRole('dialog', { name: 'Operator chat' })).not.toBeInTheDocument()
+    for (const selectedSubagentId of ['another-worker', 'worker']) {
+      await act(async () => { await router.navigate({ to: '/', hash: `operatorConversationId=conversation-one&selectedSubagentId=${selectedSubagentId}` }) })
+      expect(screen.queryByRole('dialog', { name: 'Operator chat' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Open Operator chat' })).toBeVisible()
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Open Operator chat' }))
+    expect(await screen.findByRole('dialog', { name: 'Operator chat' })).toBeVisible()
+    expect(await screen.findByText('Transcript one')).toBeVisible()
+  })
+
+  it.each(['/', '/#operatorConversationId=conversation-one'])('keeps the X closed after reloading %s', async (location) => {
+    const user = userEvent.setup()
+    const router = mount(location)
+    expect(await screen.findByText('Transcript one')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Close Operator chat' }))
+    expect(await screen.findByRole('button', { name: 'Open Operator chat' })).toBeVisible()
+    expect(screen.queryByRole('dialog', { name: 'Operator chat' })).not.toBeInTheDocument()
+    const reloadedLocation = `${router.state.location.pathname}#${router.state.location.hash}`
+    cleanup()
+    const reloaded = mount(reloadedLocation)
+    await act(async () => { await reloaded.load() })
+    expect(screen.queryByRole('dialog', { name: 'Operator chat' })).not.toBeInTheDocument()
+    await act(async () => { await reloaded.navigate({ to: '/', hash: 'operatorConversationId=conversation-one&selectedSubagentId=another-worker' }) })
+    expect(screen.queryByRole('dialog', { name: 'Operator chat' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open Operator chat' }))
+    expect(await screen.findByText('Transcript one')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Close Operator chat' }))
+    expect(await screen.findByRole('button', { name: 'Open Operator chat' })).toBeVisible()
+  })
+
   it('opens a copied conversation URL instead of the browser-local selection', async () => {
     useOperatorChatStore.setState({ open: false })
     mount('/#operatorConversationId=conversation-two')

@@ -1,5 +1,4 @@
 import { sameComputer } from '../../shared/api/sameComputer'
-import { useComputerActivity } from '../../shared/api/computerActivity'
 import { errorMessage } from '../../shared/errorMessage'
 import { useContext, useEffect, useRef, type RefObject } from 'react'
 import { useIsMutating } from '@tanstack/react-query'
@@ -29,7 +28,7 @@ import './computerSettings.css'
 type Props = { workspaceId: string; presentation?: 'field' | 'card' | 'tile' | 'compact' | 'dialog'; onSaved?: () => void; triggerRef?: RefObject<HTMLButtonElement | null>
   /** With presentation "dialog", only the folder picker dialog renders and its parent opens and closes it. */
   prepareSource?: boolean; open?: boolean; onOpenChange?(open: boolean): void; initialHostRef?: WorkspaceRootSelection['hostRef'] }
-function fallbackHostLabel(host: WorkspaceRootSelection['hostRef']) { return host.kind === 'main' ? 'Main computer' : `Worker computer ${host.deviceId.slice(0, 8)}` }
+function hostLabel(host: WorkspaceRootSelection['hostRef']) { return host.kind === 'main' ? 'Main computer' : `Worker computer ${host.deviceId.slice(0, 8)}` }
 function revision(value: string | undefined) {
   const result = Number(value ?? 0)
   if (!Number.isSafeInteger(result) || result < 0) throw new Error('This root policy revision cannot be represented by the location API.')
@@ -228,9 +227,6 @@ function LocationSettings({ workspaceId, presentation = 'field', onSaved, trigge
   } = useLocationSettings({
     workspaceId, presentation, onSaved, triggerRef, initialHostRef, prepareSource,
   })
-  const activity = useComputerActivity()
-  const hostLabel = (host: WorkspaceRootSelection['hostRef']) => activity.data?.computers
-    .find(computer => sameComputer(computer.target.hostRef, host))?.name ?? fallbackHostLabel(host)
   const guard = <UnsavedEditorGuard editor={{ label: 'execution folder command', dirty: operation.attempt.unresolved, busy, uncertain: operation.attempt.unresolved,
     save: submit, discard: () => { if (!operation.attempt.unresolved) update(scope, () => empty()) }, error: save.error?.message }} />
   const recovery = operation.attempt.unresolved ? <Alert tone="warning" title="Not sure the last save went through. Your choice is kept."
@@ -250,8 +246,7 @@ function LocationSettings({ workspaceId, presentation = 'field', onSaved, trigge
   const savedPath = saved.data.executionLocation?.rootPath ?? ''
   const browsingCurrent = sameRootSelection(browse.data?.selection, selection)
   const validationCurrent = sameRootSelection(validate.data?.selection, selection)
-  const computerSelect = <Select className="workspace-computer-select" label="Computer and folder" value={picker.selected ?? ''} disabled={locked || archived}
-    title={chosen?.base.canonicalPath} hint={chosen?.base.canonicalPath}
+  const computerSelect = <Select label="Computer and folder" value={picker.selected ?? ''} disabled={locked || archived}
     options={[{ value: '', label: 'Choose a computer' }, ...records.map(record => ({ value: record.key, label: `${hostLabel(record.host.hostRef)} · ${record.base.canonicalPath}` })),
       ...unconfiguredComputers.map(computer => ({ value: computer.key, label: hostLabel(computer.hostRef) }))]}
     onChange={event => chooseComputer(event.target.value)} />
