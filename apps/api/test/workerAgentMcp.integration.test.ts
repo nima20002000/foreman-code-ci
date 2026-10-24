@@ -45,7 +45,7 @@ describe('conversation Agent scoped tools through authenticated paired relay and
       agent: { workspaceId: row.workspace_id, workflowId: row.workflow_id, workflowNodeId: row.workflow_node_id,
         agentId: row.agent_id, configurationVersionId: configuration.id, productRole: 'coder', displayName: 'Exact Agent' } }
     let enabled = true, foreignSubject = false, current = worker.connection
-    const forwarded = vi.fn(async () => ({ statusCode: 200, contentType: 'application/json' as const, body: '{"tools":["memory_board_get"]}' }))
+    const forwarded = vi.fn(async () => ({ statusCode: 200, contentType: 'application/json' as const, body: '{"tools":["workflow_chat_read"]}' }))
     const scoped: WorkerConversationAgentMcp = { authorize: async request => {
       if (!enabled || request.token !== 'agent-scoped-token') throw new DomainError('FORBIDDEN', 'The saved node tool is disabled or its credential is unavailable.', 403)
       return { subject: foreignSubject ? { ...subject, conversationId: 'another-conversation' } : subject,
@@ -79,7 +79,7 @@ describe('conversation Agent scoped tools through authenticated paired relay and
       await expect(relay.request({ method: 'tools/list' })).rejects.toMatchObject({ code: 'WORKER_CONVERSATION_MCP_DENIED' })
       expect(forwarded).toHaveBeenCalledOnce()
       expect(operatorAuth).not.toHaveBeenCalled()
-      expect(() => workerConversationSessionStart(binding, configuration, { agentId: 'application-operator', variables: { FOREMAN_CODE_MCP_TOKEN: 'wrong-owner-token' } },
+      expect(() => workerConversationSessionStart(binding, configuration, { agentId: 'application-operator', variables: { GRAPHQL_MCP_TOKEN: 'wrong-owner-token' } },
         { correlationId: 'wrong-owner', instructionsDelivered: false })).toThrowError(expect.objectContaining({ code: 'HARNESS_ROLE_AUTHORITY_INVALID' }))
       await expect(prepareWorkerConversationMcp({ source: { method: 'conversation.refresh-mcp', binding, configuration,
         admissionId: randomUUID(), applicationAccess: { kind: 'operator-chat-mcp', token: 'operator-token' } }, token: 'operator-token',

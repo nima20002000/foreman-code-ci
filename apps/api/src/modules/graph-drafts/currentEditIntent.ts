@@ -5,7 +5,7 @@ import {
   CurrentEditSaveInputSchema, CurrentWorkflowSavedSchema, WorkflowVersionCurrentSchema,
   sameExecutableWorkflow, sameWorkflowValue,
   type CurrentEditIntent, type CurrentEditStageInput, type CurrentEditDraft,
-  type CurrentEditSaveInput, type WorkflowVersionCurrent, type WorkflowDefinitionCurrent,
+  type CurrentEditSaveInput, type WorkflowVersionCurrent,
 } from '@foreman-code/contracts/current'
 import { authorizeWorkflowWorktreeContent } from '../workflows/index.js'
 import { requireCurrentWorkflowAccess } from '../workflows/index.js'
@@ -35,7 +35,7 @@ export interface CurrentEditWriter {
   assertStopReady(): void
   validate(client: pg.PoolClient, principal: ManagementPrincipal, input: CurrentEditSaveInput,
     options?: { intentId?: string; source?: EditIntentSource }):
-    Promise<{ version: WorkflowVersionCurrent; presentationOnly: boolean; graph: WorkflowDefinitionCurrent }>
+    Promise<{ version: WorkflowVersionCurrent; presentationOnly: boolean; graph: CurrentEditSaveInput['graph'] }>
   publish(principal: ManagementPrincipal, source: EditIntentSource, input: CurrentEditSaveInput, intentId: string): Promise<unknown>
 }
 /** Same durable Stage/Discard/Stop-and-save coordinator, now with a complete
@@ -99,14 +99,14 @@ export function createCurrentEditIntentService(pool: pg.Pool, commands: Postgres
     authorizePublication: async (client, principal, intent) => {
       const draft = intent.stagedDraft
       // Fresh complete validation and authority BEFORE each Stop and final Save.
-      await writer.validate(client, principal, CurrentEditSaveInputSchema.parse({ workspaceId: draft.workspaceId, workflowId: draft.workflowId,
+      await writer.validate(client, principal, { workspaceId: draft.workspaceId, workflowId: draft.workflowId,
         executionSemanticsVersion: 3, expectedRevision: draft.revision, expectedWorkflowVersionId: draft.baseWorkflowVersionId,
         expectedAgentConfigurationVersionIds: draft.agentConfigurationVersionIds,
         graph: draft.graph, commandId: draft.saveCommandId ?? 'validate-current-draft', stagedAgents: draft.stagedAgents,
-        resultantAgentConfigurationVersionIds: draft.resultantAgentConfigurationVersionIds }), { intentId: intent.id })
+        resultantAgentConfigurationVersionIds: draft.resultantAgentConfigurationVersionIds }, { intentId: intent.id })
     },
     assertStopReady: () => writer.assertStopReady(),
     saveInputHash: (input) => commandInputHash(input), resultScope: (result) => result,
-    publish: (principal, source, input, intentId) => writer.publish(principal, source, CurrentEditSaveInputSchema.parse(input), intentId),
+    publish: (principal, source, input, intentId) => writer.publish(principal, source, input, intentId),
   })
 }

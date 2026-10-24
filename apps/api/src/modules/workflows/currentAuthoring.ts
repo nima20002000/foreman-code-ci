@@ -24,8 +24,8 @@ import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { commandInputHash, type PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
-import type { RunManagementService } from '../runs/management.js'
-import type { CurrentRuntimeAvailability } from '../runs/currentProduction.js'
+import type { RunManagementService } from '../runs/index.js'
+import type { CurrentRuntimeAvailability } from '../runs/index.js'
 import { createCurrentEditIntentService } from '../graph-drafts/index.js'
 import { prepareCurrentStagedAgents, persistCurrentStagedAgents } from '../graph-drafts/index.js'
 import { assertMeaningfulSaveAdmitted } from '../graph-drafts/index.js'
@@ -76,7 +76,7 @@ export interface WorkflowAuthoringOptions {
 }
 function completeSaveInput(
   request: CurrentEditSaveInput,
-  metadata: Pick<WorkflowDefinitionCurrent, 'version' | 'createdAt' | 'updatedAt' | 'approval'>,
+  metadata: CurrentEditSaveInput['graph'],
 ) {
   const { version, createdAt, updatedAt, ...graph } = request.graph
   const stamps = {

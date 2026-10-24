@@ -10,7 +10,8 @@ import { AcceptedRepeatStartV1Schema, RunActivitiesPageSchema, makeCurrentWorkfl
   type AcceptedRepeatStartV1, type CurrentFixtureForm } from '@foreman-code/contracts/current'
 import { BugReportPageSchema } from '@foreman-code/contracts/management'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
+import { deferred } from './helpers/deferred.js'
 import { buildApp } from '../src/app.js'
 import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '@foreman-code/ci/service'
 import { databaseHotQueriesMigration } from '../src/infrastructure/databaseHotQueriesMigration.js'
@@ -27,7 +28,7 @@ import { PostgresReferenceReadRepository } from '../src/modules/files/references
 import { PostgresFileRepository } from '../src/modules/files/postgres.js'
 import { FileByteStorage } from '../src/modules/files/storage.js'
 import { BugReportService } from '../src/modules/bug-reports/service.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { measuredCiPages } from './helpers/measuredCiPages.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
@@ -135,7 +136,7 @@ async function fixture(options: { deferMigration?: number | number[]; form?: Cur
   }, endpoint)
   const locations = new WorkspaceLocationService(database.pool, graph.commands)
   const runs = new RunManagementService(database.pool, graph.commands, {} as never, {} as never, locations)
-  const credentials = new Wave25WorkerCredentialService(database.pool, graph.access)
+  const credentials = new CurrentWorkerCredentialService(database.pool, graph.access)
   const worker = await credentials.issueForExecution(executionId)
   const bugReports = new BugReportService(database.pool, graph.commands)
   const app = buildApp({ readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
@@ -700,20 +701,30 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
     const f = await fixture()
     const first = await f.database.pool.connect()
     const second = await f.database.pool.connect()
+    const firstReady = deferred(), secondReady = deferred()
+    const releaseFirst = deferred(), releaseSecond = deferred()
+    let firstTransaction: Promise<void> | undefined, secondTransaction: Promise<void> | undefined
     try {
       const ticketA = await f.submit()
       const ticketB = await f.submit()
       const initial = await f.activity()
       const before = (await f.database.pool.query<{ sequence: string }>(
         'select sequence::text from run_activity where run_id=$1 order by run_activity.sequence', [f.graph.run.id])).rows
-      await beginTransaction(first)
-      await beginTransaction(second)
       const canceledAt = new Date().toISOString()
       const cancel = `update ci_runs set state='canceled',record=record||jsonb_build_object(
         'state','canceled','finishedAt',$2::text) where id=$1`
-      await first.query(cancel, [ticketA.ticketId, canceledAt])
-      await second.query("select set_config('statement_timeout','500ms',true)")
-      await second.query(cancel, [ticketB.ticketId, canceledAt])
+      firstTransaction = withTransaction({ client: first }, async transaction => {
+        await transaction.query(cancel, [ticketA.ticketId, canceledAt])
+        firstReady.resolve()
+        await releaseFirst.promise
+      })
+      secondTransaction = withTransaction({ client: second }, async transaction => {
+        await transaction.query("select set_config('statement_timeout','500ms',true)")
+        await transaction.query(cancel, [ticketB.ticketId, canceledAt])
+        secondReady.resolve()
+        await releaseSecond.promise
+      })
+      await Promise.all([firstReady.promise, secondReady.promise])
       const during = await f.activity({ cursor: initial.nextCursor })
       expect(during.items).toEqual([])
       const uncommitted = (await f.database.pool.query<{ id: string; state: string }>(
@@ -722,12 +733,14 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
       expect(uncommitted).toEqual([ticketA.ticketId, ticketB.ticketId].sort()
         .map(id => ({ id, state: 'queued' })))
       // Commit in reverse write order: a cursor must not consume the first writer's provisional identity.
-      await commitTransaction(second)
+      releaseSecond.resolve()
+      await secondTransaction
       const afterFirstCommit = await f.activity({ cursor: during.nextCursor, limit: 1 })
       expect(afterFirstCommit.items).toMatchObject([{ status: 'canceled', refs: { ciTicketId: ticketB.ticketId } }])
       const beforeSecondCommit = await f.activity({ cursor: afterFirstCommit.nextCursor, limit: 1 })
       expect(beforeSecondCommit.items).toEqual([])
-      await commitTransaction(first)
+      releaseFirst.resolve()
+      await firstTransaction
       const records = (await f.database.pool.query<{ record: unknown }>(
         'select record from ci_runs where id=any($1::uuid[])', [[ticketA.ticketId, ticketB.ticketId]])).rows
       expect(records.map(row => CiRunRecordSchema.parse(row.record))).toEqual(expect.arrayContaining([
@@ -746,8 +759,8 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
       const denied = await f.call(f.denied.token, 'run_activities_get_v1', { ...f.request, cursor: initial.nextCursor })
       expect(denied.error || denied.result?.isError).toBeTruthy()
     } finally {
-      await rollbackTransaction(first)
-      await rollbackTransaction(second)
+      releaseFirst.resolve(); releaseSecond.resolve()
+      await Promise.allSettled([firstTransaction, secondTransaction].filter((value): value is Promise<void> => Boolean(value)))
       first.release()
       second.release()
       await f.close()

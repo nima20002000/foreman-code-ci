@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { ExecutionResult } from '@foreman-code/contracts'
 import { RemoteOperationReceiptSchema, type RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
-import type { AcceptedArtifactPublication } from '../../files/distributed/publication.js'
+import type { AcceptedArtifactPublication } from '../../files/index.js'
 import { repeatDigest } from '../repeatResolution.js'
 
 export function artifactWorkflowReceipt(accepted: AcceptedArtifactPublication, result: ExecutionResult): RemoteOperationReceipt {

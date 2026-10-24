@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { activeAgentDefaults, DEFAULT_AGENT_DEFAULTS, DEFAULT_HARNESS_DEFAULTS, operatorChatSettings, type HarnessConfiguration } from '@foreman-code/contracts'
+import { DEFAULT_AGENT_DEFAULTS, DEFAULT_HARNESS_DEFAULTS, operatorChatSettings, type HarnessConfiguration } from '@foreman-code/contracts'
 import { AgentDefaultsUpdateInputSchema } from '@foreman-code/contracts/management'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../mocks/server'
@@ -291,7 +291,7 @@ describe('Operator chat UX', () => {
       harness: { ...harness, model: 'claude-haiku-4-5-20251001' } } }))
     let frozenRequest: AgentDefaultsUpdateInput | undefined
     await act(async () => { await draft.result.current.save(async (input) => {
-      frozenRequest = structuredClone({ ...input, value: activeAgentDefaults(input.value) })
+      frozenRequest = structuredClone(input)
       throw new ApiError({ code: action === 'retry a frozen request' ? 'UNAVAILABLE' : 'CLAUDE_DEFAULT_SETUP_UNQUALIFIED',
         message: 'The accepted model and effort are absent from the exact native catalog.' }, action === 'retry a frozen request' ? 503 : 409)
     }) })
@@ -374,7 +374,7 @@ describe('Operator chat UX', () => {
       messages: [{ id: 'old-message', conversationId: 'conversation-one', role: 'assistant', content: 'Earlier answer' }] })
     const before = await getManagedAgentDefaults()
     await updateManagedAgentDefaults({ commandId: 'choose-claude-for-new-chat', expectedRevision: before.revision,
-      value: activeAgentDefaults({ ...before.value, operator: { ...before.value.operator, harness: savedClaudeConfiguration } }) })
+      value: { ...before.value, operator: { ...before.value.operator, harness: savedClaudeConfiguration } } })
     api.get.mockImplementation(async id => id === source.conversation.id ? source : operatorState({
       conversation: { ...source.conversation, id }, settings: operatorChatSettings(savedClaudeConfiguration),
       messages: [], turnState: 'idle', activeRequestId: null }))
@@ -395,7 +395,7 @@ describe('Operator chat UX', () => {
   it('does not promise a handoff when a new chat has no previous messages', async () => {
     const before = await getManagedAgentDefaults()
     await updateManagedAgentDefaults({ commandId: 'choose-claude-for-empty-chat', expectedRevision: before.revision,
-      value: activeAgentDefaults({ ...before.value, operator: { ...before.value.operator, harness: savedClaudeConfiguration } }) })
+      value: { ...before.value, operator: { ...before.value.operator, harness: savedClaudeConfiguration } } })
     api.get.mockResolvedValue(operatorState({ turnState: 'idle', activeRequestId: null, messages: [],
       settings: operatorChatSettings(DEFAULT_HARNESS_DEFAULTS.codex) }))
     chat()

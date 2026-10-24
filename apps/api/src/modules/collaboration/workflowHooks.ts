@@ -1,3 +1,4 @@
+import { enqueueGroupChatFact } from './groupChatFacts.js'
 import { createHash } from 'node:crypto'
 import {
   AgentConfigurationVersionSchema, AgentIdentitySchema, BoardApplicationReceiptSchema,
@@ -10,7 +11,7 @@ import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
 import { assertGraphTransaction } from '../run-graph/index.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import type { RepeatRuntimeRun } from '../runs/repeatPostgres.js'
+import type { RepeatRuntimeRun } from '../runs/index.js'
 import { repeatTickIndex } from '../runs/repeatResolution.js'
 import { workflowResultEffectConflict } from '../runs/workflowResultEffectFailure.js'
 import { appendHierarchyReportLocked } from '../workflow-hierarchy/index.js'
@@ -184,6 +185,9 @@ async function projectLifecycleLocked(sql: SqlTransaction, input: WorkflowLifecy
     where run_id=$1 and source='backend' and kind='collaboration_lifecycle' and payload->>'sourceEventKey'=$2`,
   [input.run.id, fact.sourceEventKey])).rows[0]
   if (!retained || !sameWorkflowValue(retained.payload, payload)) conflict('The committed lifecycle source already has different facts.')
+  await enqueueGroupChatFact(sql, { kind: 'lifecycle', agent: fact.agent, fact, summary,
+    sourceEventKey: fact.sourceEventKey,
+    createdAt: input.execution.finishedAt ?? input.execution.startedAt ?? input.execution.createdAt })
 }
 
 function reportState(phase: BoardLifecycleFact['phase']) {

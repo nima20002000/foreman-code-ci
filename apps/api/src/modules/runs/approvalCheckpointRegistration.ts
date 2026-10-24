@@ -1,5 +1,5 @@
 import { DomainError } from '../errors.js'
-import type { InteractionService } from '../interactions/service.js'
+import type { InteractionService } from '../interactions/index.js'
 import type { LangGraphWorkflowEngine } from './engine.js'
 
 const registrations = new WeakMap<InteractionService, LangGraphWorkflowEngine>()

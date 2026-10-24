@@ -14,17 +14,17 @@ import { basename, join } from 'node:path'
 import pg from 'pg'
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
 import {
-  AgentConfigurationVersionSchema, DurableInteractionSchema, HarnessConfigurationSchema, HarnessExecutionSchema,
+  AgentConfigurationVersionSchema, DurableInteractionSchema, RecordedHarnessConfigurationSchema, HarnessExecutionSchema,
   type AgentConfigurationVersion, type ExecutionResult, type HarnessConfiguration, type HarnessExecution, type HarnessNativeEvent, type NativeSessionReference,
 } from '@foreman-code/contracts'
 import {
   ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture,
 } from '@foreman-code/contracts/current'
 import { applyApplicationMigrations } from '../../src/infrastructure/migrations.js'
-import { createCheckpointStore } from '../../src/infrastructure/checkpoints.js'
+import { createCheckpointStore } from '../../src/composition/checkpoints.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
-import { Wave25WorkerCredentialService as WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
+import { CurrentWorkerCredentialService as WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
 import { CodexAppServerSessionManager } from '../../src/modules/harnesses/codexAppServer.js'
 import { HarnessExecutionError } from '../../src/modules/harnesses/errors.js'
 import { NativeProcessRegistry } from '../../src/modules/harnesses/recovery/processRegistry.js'
@@ -32,7 +32,7 @@ import { McpDetectionService, WorkerLaunchCredentialService, type ExecutionCrede
 import { codexMcpInspectorAdapter } from '../../src/modules/harnesses/codexMcpInspectorAdapter.js'
 import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
-import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
+import { CurrentInteractionRepository } from '../../src/modules/interactions/current/repository.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../../src/modules/interactions/runtimePorts.js'
 import { buildApp } from '../../src/app.js'
 import { PostgresAppInteractionService } from '../../src/modules/interactions/app.js'
@@ -84,7 +84,7 @@ export interface NativeAcceptanceRuntime {
   engine: LangGraphWorkflowEngine
   runs: PostgresRunRepository
   approvals: ApprovalExecutionCoordinator
-  interactions: Wave25InteractionRepository
+  interactions: CurrentInteractionRepository
   budgets: PostgresApprovalBudgetRepository
   registry: NativeProcessRegistry
 }
@@ -261,7 +261,7 @@ export async function runNativeAcceptanceScenario(scenario: Scenario, first: Har
       return AgentConfigurationVersionSchema.parse({
         id: `cfg-${suffix}-${index}`, workspaceId: fixture.scope.workspaceId, agentId: `agent-${suffix}-${index}`,
         productRole: 'coder', version: 1, prompt: { system: configuredPrompts[index] }, assignedSkills: [],
-        harness: HarnessConfigurationSchema.parse(override ?? fallback),
+        harness: RecordedHarnessConfigurationSchema.parse(override ?? fallback),
         contentHash: `sha256:${'0'.repeat(64)}`, createdAt: new Date().toISOString(),
       })
     })
@@ -394,7 +394,7 @@ export async function runNativeAcceptanceScenario(scenario: Scenario, first: Har
             completedAt, elapsedMs, committed })
         }
       }
-      const interactions = new Wave25InteractionRepository(livePool, new ReviewNativeProofServices(reviewCapture.verify))
+      const interactions = new CurrentInteractionRepository(livePool, new ReviewNativeProofServices(reviewCapture.verify))
       const factories = new NativeHarnessFactories({
         codexBinary,
         auxiliaryRecovery: role => registry.scope(`${role}:${randomUUID()}`),

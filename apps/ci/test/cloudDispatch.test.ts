@@ -1,7 +1,7 @@
 import { CiRunRecordSchema, type CiHostReply, type CiHostRequest, type CiHostRun } from '@foreman-code/contracts'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { SqlQuery } from '../src/environment.js'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import { dispatchCloudTicket, expireCloudDispatch } from '../src/cloudDispatch.js'
 import { CLOUD_START_TIMEOUT_MS } from '../src/cloudProviders.js'
 import { CI_START_MAX_ATTEMPTS } from '../src/dispatch.js'

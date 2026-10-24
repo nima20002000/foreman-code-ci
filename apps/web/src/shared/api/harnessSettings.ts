@@ -14,7 +14,7 @@ import {
   CodexPluginOperationsResultSchema, CodexPluginReconcileInputSchema,
 } from '@foreman-code/contracts/management'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
-import type { HarnessConfiguration } from '@foreman-code/contracts'
+import type { RecordedHarnessConfiguration } from '@foreman-code/contracts'
 import { apiClient } from './client'
 import { reservePluginOperation, restorePluginOperation, pluginOperationFailed, pluginOperationSucceeded, terminalPluginResult, type PluginOperation } from './codexPluginOperation'
 import { readManagedOperation, readPluginOperation, updatePluginOperation, useManagedOperation, usePluginOperation, writeManagedOperation } from './harnessOperationStore'
@@ -45,7 +45,7 @@ function subscribeSession(changed: () => void) {
 }
 export function useHarnessSessionEpoch() { return useSyncExternalStore(subscribeSession, sessionGeneration, sessionGeneration) }
 
-type Harness = HarnessConfiguration['harness']
+type Harness = RecordedHarnessConfiguration['harness']
 export const harnessSettingsKeys = {
   root: ['workbench', 'management', 'harness-settings'] as const,
   options: (harness: Harness, hostRef?: DeviceProvisioningTarget['hostRef']) =>
@@ -181,7 +181,7 @@ export function useNativeHarnessOptions(harness: Harness, enabled = true, hostRe
 }
 
 /** Exact drafts have distinct cache keys. A late result can never qualify a newer selection. */
-export function useAutomaticHarnessCheck(configuration: HarnessConfiguration | undefined) {
+export function useAutomaticHarnessCheck(configuration: RecordedHarnessConfiguration | undefined) {
   useHarnessSessionEpoch()
   const snapshot = configuration ? JSON.stringify(configuration) : ''
   const [settled, setSettled] = useState(snapshot)
@@ -193,7 +193,7 @@ export function useAutomaticHarnessCheck(configuration: HarnessConfiguration | u
     enabled: !sessionIsSwitching() && Boolean(settled) && snapshot === settled, staleTime: 300_000,
     refetchOnWindowFocus: false,
     queryFn: ({ signal }) => apiClient.request('/api/management/harnesses/validate', HarnessConfigurationCheckResultSchema,
-      { method: 'POST', body: { configuration: JSON.parse(settled) as HarnessConfiguration }, signal }),
+      { method: 'POST', body: { configuration: JSON.parse(settled) as RecordedHarnessConfiguration }, signal }),
   })
   return { result, current: Boolean(snapshot) && snapshot === settled }
 }
@@ -260,7 +260,7 @@ async function refreshMcpReadback(client: QueryClient, epoch: number, harness?: 
     client.invalidateQueries({ queryKey: ['operator-chat', 'setup'] }),
     client.invalidateQueries({ queryKey: [...harnessSettingsKeys.root, 'check', epoch], predicate: (query) => {
       const snapshot = query.queryKey.at(-1)
-      return Boolean(snapshot) && (!harness || (JSON.parse(String(snapshot)) as HarnessConfiguration).harness === harness)
+      return Boolean(snapshot) && (!harness || (JSON.parse(String(snapshot)) as RecordedHarnessConfiguration).harness === harness)
     } }),
   ]).catch(error => { console.warn('Could not refresh harness settings.', error) })
   // Keep mutations pending until affected native revision/plan readback settles.

@@ -3,19 +3,19 @@ import { type HarnessExecution, type HarnessExecutionRequest, type CoordinatorCo
 import { remainingCredentialLifetime } from '../access/credentialLifetime.js'
 import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE, WORKER_CREDENTIAL_RENEWAL_WINDOW_MS, type IssuedWorkerCredential } from '../access/workerCredentials.js'
 import { DomainError } from '../errors.js'
-import type { WorkflowChatLockedTarget, WorkflowChatTarget, WorkflowControlCommand } from '../collaboration/workflowControlTypes.js'
+import type { WorkflowChatLockedTarget, WorkflowChatTarget, WorkflowControlCommand } from '../collaboration/index.js'
 import { admittedWorkflowChatPrompt } from './workflowChatInput.js'
 import { readWorkflowControlCommandLocked } from '../collaboration/workflowControlRecords.js'
 import { observeWorkflowConsultation } from './workflowConsultationObserver.js'
 import { readCoordinatorConsultationLocked, failCoordinatorConsultationPreparationLocked, settleCoordinatorConsultationLocked } from '../collaboration/workflowConsultations.js'
-import type { ConsultationTransaction } from '../collaboration/consultationBrowser.js'
+import type { ConsultationTransaction } from '../collaboration/index.js'
 import { attemptCleanup, cleanupTimeoutMs, withCleanupDeadline } from './cleanup.js'
 import { deviceRequestTimeoutMs } from '../devices/deviceRequestRetry.js'
 import { componentLogger } from '../diagnostics/logger.js'
-import type { RunOwnership } from '../runs/ownership.js'
+import type { RunOwnership } from '../runs/index.js'
 import { workflowExecutionRequest } from '../runs/workflowExecutionRequest.js'
 import { isRestartCancellation } from './executionPredicates.js'
-import type { ExecutionSessionHost, OwnedNativeSession } from './execution.js'
+import type { ExecutionSessionHost, OwnedNativeSession } from './executionSessionHost.js'
 
 /** Retained coordinator consultations: start, credential upkeep, release and Stop cleanup. */
 export class ExecutionConsultations {
