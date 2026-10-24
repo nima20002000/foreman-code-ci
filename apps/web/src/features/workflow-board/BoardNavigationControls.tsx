@@ -21,7 +21,7 @@ export function BoardNavigationControls({ workspaceId, workflowId, selection, ru
       <span className="board-live-run-dot" aria-hidden="true" />Running</Button> : null}
     <RunsSelector selection={selection} triggerLabel={runsLabel} />
     <ScheduleClockButton workspaceId={workspaceId} workflowId={workflowId} isSaved={Boolean(saved.data?.draft.baseWorkflowVersionId)} />
-    <WorkflowFilesButton workspaceId={workspaceId} workflowId={workflowId} />
+    <WorkflowFilesButton workspaceId={workspaceId} workflowId={workflowId} readOnly={Boolean(board?.run) || selection.identity.runId !== null} />
     <IconButton label="Browsers" title="Agent browsers" size="sm" variant="ghost" aria-pressed={browsers.isOpen} onClick={browsers.toggle}>
       <Icon name="globe" size={16} /></IconButton>
     {/* The draft editor has its own Kanban toggle; a shown Run (which the Board follows while live) needs one too. */}
