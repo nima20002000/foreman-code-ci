@@ -47,13 +47,13 @@ async function fixture(asking = false) {
       expectedWorkflowRevision: managed.revision, expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
       expectedLocationRevision: 1, input: {} })
     await mounted.cache.invalidateQueries()
-    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeDisabled())
+    await waitFor(() => expect(within(screen.getByLabelText('Board toolbar')).getByTitle('Rename workflow')).toBeDisabled())
     return result.run
   }
   const finish = async (runId: string) => {
     mock.settle(runId)
     await mounted.cache.invalidateQueries()
-    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeEnabled())
+    await waitFor(() => expect(within(screen.getByLabelText('Board toolbar')).getByTitle('Rename workflow')).toBeEnabled())
   }
   return { ...mounted, mock, key, draft, externalRun, finish }
 }

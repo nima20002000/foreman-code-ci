@@ -5,6 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '../../mocks/server'
 import { schedulePath } from '../schedules'
 import { readRunInspectionKey } from '@foreman-code/contracts/current'
+import { scheduleOccurrenceId } from '@foreman-code/contracts/schedules'
 import { useGraphDraftStore } from '../graph'
 import { nextDraftKey } from '../board-core'
 import { inspectionBoardFixture } from './inspect/inspectionFixtures'
@@ -74,6 +75,8 @@ it('retains exact execution Details in Overview', async () => {
   await mountMeasuredBoard(`${boardHref(owner.scope)}&boardPanel=agent&boardNodeId=${fixture.first.id}&boardAgentTab=details&boardExecutionId=${detail.execution.executionId}`)
   const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
   await within(rail).findByLabelText(`Accepted result ${detail.execution.executionId}`)
+  await userEvent.click(within(rail).getByText('Accepted input and results', { selector: 'summary' }))
+  expect(within(rail).getByLabelText(`Accepted result ${detail.execution.executionId}`)).toBeVisible()
   await userEvent.click(screen.getByRole('button', { name: 'Overview' }))
   expect(await within(rail).findByLabelText(`Accepted result ${detail.execution.executionId}`)).toBeVisible()
 }, 15_000)
@@ -108,7 +111,7 @@ it('honors unsaved Schedule edits before selecting a Run on this Board', async (
   server.use(
     http.get(path, () => HttpResponse.json({ schedule: { ...scope, mode: 'weekly', weekdays: [1], time: '09:00',
       timezone: 'UTC', enabled: true, policy: 'latest_saved', revision: 3, nextOccurrenceAt: dueAt } })),
-    http.get(`${path}/occurrences`, () => HttpResponse.json({ items: [{ ...scope, id: 'scheduled-attempt', dueAt,
+    http.get(`${path}/occurrences`, () => HttpResponse.json({ items: [{ ...scope, id: scheduleOccurrenceId(scope.workflowId, dueAt), dueAt,
       scheduleRevision: 3, status: 'accepted', reason: null, runId: fixture.runs.before.run.id,
       workflowVersionId: fixture.before.id }], pageInfo: { nextCursor: null } })),
   )

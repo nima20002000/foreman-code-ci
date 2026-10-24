@@ -116,7 +116,7 @@ describe('schedule Last attempt feedback', () => {
       if (query.get('limit') === '1') return HttpResponse.json({ items: [{ ...occurrence, status: 'skipped', reason: 'overlap' }], pageInfo: { nextCursor: 'older' } })
       const older = query.get('cursor') === 'older'
       return HttpResponse.json({ items: [{ ...occurrence, dueAt: older ? '2099-08-10T09:00:00.000Z' : dueAt,
-        id: older ? 'earlier-attempt' : occurrence.id, status: older ? 'missed' : 'rejected',
+        id: older ? scheduleOccurrenceId(scope.workflowId, '2099-08-10T09:00:00.000Z') : occurrence.id, status: older ? 'missed' : 'rejected',
         reason: older ? 'outside_grace' : 'workflow_not_executable' }], pageInfo: { nextCursor: older ? null : 'older' } })
     }))
     const section = await open(view.user)

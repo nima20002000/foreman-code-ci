@@ -61,7 +61,7 @@ function waitForBoardContext(client: QueryClient) {
 }
 async function authoring() {
   const editor = await screen.findByRole('region', { name: 'Workflow authoring' }, { timeout: 3000 })
-  await within(editor).findByRole('heading', { name: 'Research to review' })
+  await within(screen.getByRole('banner', { name: 'Board toolbar' })).findByRole('heading', { name: 'Research to review' })
   return editor
 }
 async function choose(runId: string | null) {
@@ -213,7 +213,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     expect(router.state.location.search.selectedRunId).toBe('run-a')
     await choose(null)
     await waitFor(() => expect(editor).toBeVisible())
-    expect(within(editor).getByRole('heading', { name: 'Research to review' })).toBeVisible()
+    expect(within(screen.getByRole('banner', { name: 'Board toolbar' })).getByRole('heading', { name: 'Research to review' })).toBeVisible()
     expect(router.state.location.search.selectedRunId).toBeUndefined()
     expect(writes).toEqual([])
   })
@@ -343,7 +343,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     const editor = await authoring()
     const canvas = within(editor).getByLabelText('Editable workflow graph')
     act(() => useGraphDraftStore.getState().changeNextDraft(key, (graph) => ({ ...graph, name: 'Unsaved board name' })))
-    await within(editor).findByRole('heading', { name: 'Unsaved board name' })
+    await within(screen.getByRole('banner', { name: 'Board toolbar' })).findByRole('heading', { name: 'Unsaved board name' })
     const graph = useGraphDraftStore.getState().nextDrafts[key]!.graph
     const writesBefore = [...writes]
 
@@ -368,7 +368,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     expect(screen.getByRole('region', { name: 'Workflow authoring' })).toBe(editor)
     expect(within(editor).getByLabelText('Editable workflow graph')).toBe(canvas)
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).toBe(graph)
-    expect(within(editor).getByRole('heading', { name: 'Unsaved board name' })).toBeVisible()
+    expect(within(screen.getByRole('banner', { name: 'Board toolbar' })).getByRole('heading', { name: 'Unsaved board name' })).toBeVisible()
     expect(router.state.location.search.selectedRunId).toBeUndefined()
     expect(router.state.location.search.runId).toBeUndefined()
     expect(router.state.location.search.workflowVersionId).toBeUndefined()
@@ -416,7 +416,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
       const { client } = await mount()
       const editor = await authoring()
       act(() => useGraphDraftStore.getState().changeNextDraft(key, graph => ({ ...graph, name: 'Retained local name' })))
-      await within(editor).findByRole('heading', { name: 'Retained local name' })
+      await within(screen.getByRole('banner', { name: 'Board toolbar' })).findByRole('heading', { name: 'Retained local name' })
       const graph = useGraphDraftStore.getState().nextDrafts[key]!.graph
       await waitFor(() => expect(client.isFetching({ queryKey: boardDraftContextKey(scope.workspaceId, scope.workflowId) })).toBe(0))
       const initialWorkspaceReads = mark()
@@ -445,7 +445,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
       await waitFor(() => expect(context.mock.calls.length).toBeGreaterThan(restoredReads))
       expectNoExtraWorkspaceReads(initialWorkspaceReads)
       expect(writes).toEqual([])
-      expect(within(editor).getByRole('heading', { name: 'Retained local name' })).toBeVisible()
+      expect(within(screen.getByRole('banner', { name: 'Board toolbar' })).getByRole('heading', { name: 'Retained local name' })).toBeVisible()
       expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).toBe(graph)
     } finally {
       server.events.removeListener('request:start', recordWorkspaceRead)
