@@ -288,6 +288,7 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
           url: `${root(owner)}/${original.value.file.fileId}/revisions/${original.value.revision.revisionId}/content` })
         assert.equal(unavailable.statusCode, 410, unavailable.body)
       })
+      assert.ok(saving)
       const saved = await saving
       assert.equal(saved.value.updatedFileCount, 0)
       assert.deepEqual(await reread(original), original)
