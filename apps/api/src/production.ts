@@ -2243,6 +2243,9 @@ async function initializeComputerServices(services: ProductionServices, machine:
   const workspaceRoots = runtimeServices.workspaceRoots = new WorkspaceBoundLocationService(
     database.pool, commands, jobRuntime.policies,
   )
+  const managedFolders = new ManagedWorkspaceRootService(commands, workspaceRoots, jobRuntime.policies)
+  jobRuntime.sources.setupFolder = (principal, source, workspaceId, target) =>
+    managedFolders.ensure(principal, source, workspaceId, target)
   started.rootPolicies = jobRuntime.policies
   runtimeServices.sources = jobRuntime.sources
   runtimeServices.workspaceRepositories = new WorkspaceRepositoryService(database.pool, commands,

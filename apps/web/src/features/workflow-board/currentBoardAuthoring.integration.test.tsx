@@ -462,14 +462,13 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     server.use(http.get('*/api/workspaces/:workspaceId/workflows/:workflowId/execution-chat/target',
       () => HttpResponse.json({ kind: 'unavailable', reason: 'NODE_UNAVAILABLE' })))
     const { key } = await create(mock, user)
-    // Each choice closes the menu; reopen it to add another Agent.
+    // The menu stays open so several Agents can be added in a row.
     await user.click(control('Add agent'))
     const worker = within(screen.getByRole('menu', { name: 'Add agent' })).getByRole('menuitem', { name: 'Worker' })
     await waitFor(() => expect(worker).not.toHaveAttribute('aria-disabled'))
     await user.click(worker)
-    expect(screen.queryByRole('menu', { name: 'Add agent' })).not.toBeInTheDocument()
-    await user.click(control('Add agent'))
     await user.click(within(screen.getByRole('menu', { name: 'Add agent' })).getByRole('menuitem', { name: 'Worker' }))
+    await user.keyboard('{Escape}')
     expect(screen.queryByRole('menu', { name: 'Add agent' })).not.toBeInTheDocument()
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes.map(node => node.name)).toEqual(['Worker', 'Worker 2'])
     const draftActions = within(screen.getByRole('group', { name: 'Draft actions' }))

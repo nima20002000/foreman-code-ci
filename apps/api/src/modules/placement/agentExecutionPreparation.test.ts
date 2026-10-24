@@ -16,7 +16,7 @@ vi.mock('./persistence.js', () => ({
 }))
 beforeEach(() => vi.resetAllMocks())
 
-function fixture(host: 'main' | 'device', bound = true) {
+function fixture(host: 'main' | 'device', bound = true, plain = false) {
   const execution = {
     id: 'execution', runId: 'run', workflowNodeId: 'node', agentId: 'agent',
     agentConfigurationVersionId: 'configuration', attempt: 1, state: 'running',
@@ -27,7 +27,7 @@ function fixture(host: 'main' | 'device', bound = true) {
     workflowVersionId: 'version', authorizationPrincipalId: 'principal' } as AcceptedWorkflowRunCurrent
   const placement = {
     hostRef: { kind: host }, payload: { kind: 'agent', agentConfigurationVersionId: 'configuration' },
-    source: { kind: 'pending', rootId: 'root', bindingRevision: 1 },
+    source: plain ? { kind: 'plain' } : { kind: 'pending', rootId: 'root', bindingRevision: 1 },
     destination: { canonicalProjectRoot: '/project', canonicalCwd: '/project', managedRuntimeRoot: '/runtime' },
   } as AcceptedNodePlacement
   const native = { materialization: { operationId: 'original-operation' },
@@ -50,6 +50,8 @@ function fixture(host: 'main' | 'device', bound = true) {
   const verifyWorkingDirectory = vi.fn(async () => native.workingTree)
   const sources = { verifyWorkingDirectory, resolveRootBinding: vi.fn(async () => ({})) } as unknown as SourceAdmissionPort
   const producer = {
+    resolveFolderPolicy: vi.fn(async () => ({ canonicalProjectRoot: '/project' })),
+    inspectFolder: vi.fn(async () => undefined),
     assertPinsCurrent: vi.fn(async (...args: Parameters<AgentPlacementProducer['assertPinsCurrent']>) => {
       if (state.profileChanged && args[4]?.purpose !== 'resident') {
         throw new Error('Saved profile changed before native entry')
@@ -84,28 +86,28 @@ it('keeps local source verification on continued native observation', async () =
   await expect(prepared!.revalidate()).rejects.toThrow('source directory replaced')
 })
 
-it('continues an original verified remote session after the saved preset changes', async () => {
-  const f = fixture('device')
+it.each([false, true])('continues an original verified remote session after the saved preset changes (plain: %s)', async plain => {
+  const f = fixture('device', true, plain)
   f.state.profileChanged = true
   const prepared = await f.prepare.prepare(f.owner, f.run, f.execution)
   await expect(prepared!.revalidate()).resolves.toBeUndefined()
 })
 
-it('does not treat a caller session ID as a verified original session', async () => {
-  const f = fixture('device')
+it.each([false, true])('does not treat a caller session ID as a verified original session (plain: %s)', async plain => {
+  const f = fixture('device', true, plain)
   f.state.sessionVerified = false
   f.state.profileChanged = true
   await expect(f.prepare.prepare(f.owner, f.run, f.execution)).rejects.toThrow('Saved profile changed')
 })
 
-it('requires the current Run owner before continuing a verified original session', async () => {
-  const f = fixture('device')
+it.each([false, true])('requires the current Run owner before continuing a verified original session (plain: %s)', async plain => {
+  const f = fixture('device', true, plain)
   vi.mocked(f.owner.readOneShotFence).mockRejectedValue(new Error('Run owner lost'))
   await expect(f.prepare.prepare(f.owner, f.run, f.execution)).rejects.toThrow('Run owner lost')
 })
 
-it('rechecks the original session established after initial preparation', async () => {
-  const f = fixture('device', false)
+it.each([false, true])('rechecks the original session established after initial preparation (plain: %s)', async plain => {
+  const f = fixture('device', false, plain)
   const prepared = await f.prepare.prepare(f.owner, f.run, f.execution)
   f.state.sessionVerified = true
   f.state.profileChanged = true

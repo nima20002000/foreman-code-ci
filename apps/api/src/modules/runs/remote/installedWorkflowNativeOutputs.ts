@@ -33,7 +33,8 @@ export interface InstalledWorkflowNativeOutputContext {
   intent: DispatchIntent
   placement: AcceptedNodePlacement
   binding: Readonly<DeviceSessionBinding>
-  materialization: SourceMaterializationRecord
+  materialization?: SourceMaterializationRecord
+  folder?: import('@foreman-code/contracts/workspace-root-policies').WorkspaceRootPolicy
   applicationAccess(): RemoteApplicationAccess
   publicationCompleted(publication: AgentFilePublishInput, result: AgentFilePublishResult): void
   /** Real original registry/ACK evidence; deliberately does not inspect passive
@@ -70,8 +71,8 @@ export function createInstalledWorkflowNativeOutputProviders(input: {
   const { context } = input
   // Storage and transfers retain the launch identity while relay authorization follows the live resident.
   const artifactBinding = { intent: structuredClone(context.intent), placement: structuredClone(context.placement),
-    root: { rootId: context.materialization.receipt.binding.rootId,
-      rootBindingRevision: context.materialization.receipt.binding.bindingRevision } }
+    root: { rootId: (context.materialization?.receipt.binding.rootId ?? context.folder!.rootPolicyId),
+      rootBindingRevision: (context.materialization?.receipt.binding.bindingRevision ?? Number(context.folder!.rootPolicyRevision)) } }
   const rootDirectory = join(input.stateDirectory, 'native-output-bytes')
   const budgetDirectory = join(input.stateDirectory, 'native-output-budget')
   const limits = { maxDiskBytes: BYTE_TRANSFER_POLICY.maxStagingBytes,

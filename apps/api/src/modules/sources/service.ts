@@ -4,6 +4,11 @@ import type { SourceWorktreeRequest } from '@foreman-code/contracts/source-mater
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
+import { lstat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
+import { assertDeviceHostInstallation } from '../devices/index.js'
+import type { WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root-policies'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
   SourceApproveInputSchema, SourceGetInputSchema, SourceListInputSchema, SourceRootBindInputSchema, SourceRootSetupInputSchema, SourceRootGetInputSchema, SourceRootListInputSchema,
@@ -482,8 +487,68 @@ export class PostgresSourceService implements SourceAdmissionPort {
       return { items: rows.rows.map(row => SourceRootRecordSchema.parse(row.record)), readiness: 'metadata-only' as const }
     })
   }
+  async isPlainWorkspace(principal: ManagementPrincipal, workspaceId: string): Promise<boolean> {
+    requireAuthorization(principal, 'workspace_locations:read', { workspaceId })
+    const location = await this.transaction(async sql => {
+      await authorizeSource(sql, principal, 'source_roots:read', workspaceId)
+      const row = (await sql.query<{ record: unknown; location_revision: string }>(
+        'select record,location_revision from workspaces where id=$1', [workspaceId])).rows[0]
+      if (WorkspaceSchema.parse(row?.record).repository) return undefined
+      const binding = await sql.query('select 1 from source_root_catalog where workspace_id=$1 limit 1', [workspaceId])
+      if (binding.rowCount) return undefined
+      return this.locations.snapshotAssigned(sql, workspaceId, Number(row!.location_revision))
+    })
+    if (!location) return false
+    await this.locations.revalidateSnapshot(workspaceId, location, 'read-only')
+    let directory = location.rootPath
+    for (;;) {
+      const metadata = await lstat(join(directory, '.git')).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return undefined
+        throw error
+      })
+      if (metadata) return false
+      const parent = dirname(directory)
+      if (parent === directory) return true
+      directory = parent
+    }
+  }
+  setupFolder?: (principal: ManagementPrincipal, source: Transport, workspaceId: string,
+    target: DeviceProvisioningTarget) => Promise<WorkspaceRootPolicy>
   async setupRoot(principal: ManagementPrincipal, source: Transport, raw: unknown) {
     const input = SourceRootSetupInputSchema.parse(raw)
+    if ('hostRef' in input) {
+      if (!await this.isPlainWorkspace(principal, input.workspaceId)) {
+        return { value: { kind: 'selection-required' as const }, replayed: false }
+      }
+      const target = await this.transaction(async sql => {
+        await authorizeSource(sql, principal, 'source_roots:bind', input.workspaceId)
+        await this.workspace(sql, input.workspaceId)
+        const installation = input.hostRef.kind === 'main' ? this.mainId
+          : (await sql.query<{ worker_installation_id: string }>(
+            'select worker_installation_id from device_registrations where id=$1 and main_id=$2',
+            [input.hostRef.deviceId, input.hostRef.mainId])).rows[0]?.worker_installation_id
+        if (!installation || input.hostRef.mainId !== this.mainId) throw new DomainError('ROOT_POLICY_UNAVAILABLE', 'Paired computer is unavailable.', 409)
+        const registration = await assertDeviceHostInstallation(sql, input.hostRef, installation)
+        return { hostRef: input.hostRef, applicationInstallationId: installation,
+          keyRevision: registration?.keyRevision ?? null, authorizationRevision: registration?.authorizationRevision ?? null }
+      })
+      if (!this.setupFolder) throw new DomainError('ROOT_POLICY_UNAVAILABLE', 'Workspace folder setup is unavailable.', 409)
+      const policy = await this.setupFolder(principal, source, input.workspaceId, target)
+      return { value: { kind: 'plain' as const, policy }, replayed: true }
+    }
+    if (await this.isPlainWorkspace(principal, input.workspaceId)) {
+      const policy = await this.transaction(async sql => {
+        await authorizeSource(sql, principal, 'source_roots:bind', input.workspaceId)
+        await this.workspace(sql, input.workspaceId)
+        if (!this.roots.plainPolicy) throw new DomainError('ROOT_POLICY_UNAVAILABLE', 'Workspace folder binding is unavailable.', 409)
+        const policy = await this.roots.plainPolicy(sql, principal, input)
+        if (input.accessMode === 'exclusive-write' && policy.accessMode !== 'read-write') {
+          throw new DomainError('ROOT_ACCESS_DENIED', 'The workspace folder is read-only.', 403)
+        }
+        return policy
+      })
+      return { value: { kind: 'plain' as const, policy }, replayed: true }
+    }
     const roots = (await this.rootList(principal, source, { workspaceId: input.workspaceId })).items
     const template = await this.transaction(async sql => {
       const live = await authorizeSource(sql, principal, 'source_roots:bind', input.workspaceId)

@@ -259,11 +259,14 @@ export class PostgresArtifactPublicationAuthority implements ArtifactPublication
     const receipt = VerifiedTransferReceiptSchema.parse(raw), intent = receipt.intent
     const current = await acceptedAttempt(this.mainId, this.ports, accepted.attempt, query)
     const source = current.placement.source
-    if (current.stopped || !('kind' in source) || source.kind !== 'pending' || intent.mainId !== this.mainId || intent.deviceId !== accepted.transferContext.deviceId
+    const root = 'kind' in source && source.kind === 'plain'
+      ? { rootId: current.placement.destination.rootPolicyId, bindingRevision: Number(current.placement.destination.rootPolicyRevision) }
+      : 'kind' in source && source.kind === 'pending' ? source : undefined
+    if (current.stopped || !root || intent.mainId !== this.mainId || intent.deviceId !== accepted.transferContext.deviceId
       || intent.workerInstallationId !== accepted.transferContext.workerInstallationId || intent.keyRevision !== accepted.transferContext.keyRevision
       || intent.authorizationRevision !== accepted.transferContext.authorizationRevision || intent.executionId !== accepted.attempt.executionId
       || intent.operationId !== current.intent.operationId || intent.attemptId !== accepted.attempt.attemptId || intent.placementHash !== accepted.attempt.placementHash
-      || intent.rootId !== source.rootId || intent.rootBindingRevision !== source.bindingRevision || intent.direction !== 'to-main' || intent.byteClass !== 'artifact'
+      || intent.rootId !== root.rootId || intent.rootBindingRevision !== root.bindingRevision || intent.direction !== 'to-main' || intent.byteClass !== 'artifact'
       || receipt.transferId !== intent.transferId || receipt.sha256 !== intent.sha256 || receipt.byteSize !== intent.byteSize) return denied()
     const native = await readNativePlacement(query, accepted.attempt.executionId)
     if (!native || native.acceptedBindingHash !== accepted.attempt.placementHash) return denied()

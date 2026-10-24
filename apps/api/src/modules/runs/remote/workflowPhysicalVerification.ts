@@ -527,11 +527,13 @@ async function readRemoteBindingRows(sql: SqlTransaction, capture: Bound, retain
   const rawNative = await readNativePlacement(sql, intent.executionId)
   if (!current || !placement || !rawNative || !same(current, intent) || !same(placement, capture.placement)) return unavailable('dispatch_binding')
   const native = readNativeExecutionBinding(placement, intent, rawNative)
-  if (sourceMaterializationDigest(native.materialization) !== sourceMaterializationDigest(readout.source.record)
-    || !same(native.workingTree, readout.source.workingTree) || readout.runtimeLeaf.bindingHash !== native.bindingHash
+  const plain = 'kind' in native
+  if (plain ? !('kind' in readout.source) || !same(native.policy, readout.source.policy)
+    : 'kind' in readout.source || sourceMaterializationDigest(native.materialization) !== sourceMaterializationDigest(readout.source.record)) return unavailable('source_binding')
+  if (!same(native.workingTree, readout.source.workingTree) || readout.runtimeLeaf.bindingHash !== native.bindingHash
     || readout.runtimeLeaf.executionId !== intent.executionId || readout.runtimeLeaf.attemptId !== intent.attemptId
-    || readout.runtimeLeaf.operationId !== intent.operationId || readout.runtimeLeaf.materializationId !== native.materialization.receipt.materializationId
-    || readout.runtimeLeaf.materializationDigest !== native.workingTree.materializationDigest
+    || readout.runtimeLeaf.operationId !== intent.operationId || readout.runtimeLeaf.materializationId !== (plain ? null : native.materialization.receipt.materializationId)
+    || readout.runtimeLeaf.materializationDigest !== (plain ? null : native.workingTree.materializationDigest)
     || readout.runtimeLeaf.canonicalRuntimeDirectory !== lifetime.execution.runtimeDirectory) return unavailable('runtime_binding')
   const origin = (await sql.query<{ connection: unknown }>('select connection from remote_dispatch_origins where operation_id=$1 for share', [intent.operationId])).rows[0]
   if (!origin || !same(DeviceConnectionIdentitySchema.parse(origin.connection), receipt.connection)) return unavailable('dispatch_connection')

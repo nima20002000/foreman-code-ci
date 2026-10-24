@@ -129,5 +129,6 @@ it('shows main-local observation availability without awaiting a nonexistent wor
   expect(screen.queryByText(/Awaiting worker acknowledgment/)).not.toBeInTheDocument()
   expect(screen.queryByText(/Execution observed on/)).not.toBeInTheDocument()
   expect(screen.getByText('Main at acceptance')).toBeInTheDocument()
+  if (!('revisionId' in mainPlacement.source)) throw new Error('Expected a source fixture')
   expect(screen.getByText(mainPlacement.source.revisionId, { selector: 'code' })).toBeInTheDocument()
 })

@@ -14,12 +14,15 @@ export interface AuthorizedSourceRoot {
  * Host I/O runs outside SQL; fence only rechecks persisted live authority.
  */
 export interface RegisteredSourceRootPort {
+  plainPolicy?(sql: SqlQuery, principal: ManagementPrincipal,
+    input: { workspaceId: string; selection: SourceRootSelection }): Promise<import('@foreman-code/contracts/workspace-root-policies').WorkspaceRootPolicy>
   authorize(sql: SqlQuery, principal: ManagementPrincipal,
     input: { workspaceId: string; selection: SourceRootSelection; accessMode: RootBinding['accessMode'] }): Promise<AuthorizedSourceRoot>
   attest(root: AuthorizedSourceRoot): Promise<{ canonicalPath: string; filesystem: RootBinding['filesystem']; attestationId: string; attestationDigest: string }>
   fence(sql: SqlQuery, root: AuthorizedSourceRoot): Promise<void>
 }
 export interface SourceAdmissionPort {
+  isPlainWorkspace?(principal: ManagementPrincipal, workspaceId: string): Promise<boolean>
   bindRoot(principal: ManagementPrincipal, source: 'http' | 'mcp', input: {
     workspaceId: string; commandId: string; expectedBindingRevision: number
     source: ApprovedSourcePin; selection: SourceRootSelection; accessMode: RootBinding['accessMode']

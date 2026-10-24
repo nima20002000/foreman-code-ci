@@ -29,6 +29,20 @@ async function inspectApprovedDirectory(approved: ApprovedRootAllowlist, path: s
 async function inspectRunDirectory(approved: ApprovedRootAllowlist, binding: WorkerConversationBinding,
   accessMode: 'read-only' | 'read-write') {
   const source = binding.sourceExecution!
+  if ('kind' in source.placement.source && source.placement.source.kind === 'plain') {
+    if (source.placement.destination.managedRuntimeRoot !== approved.managedRuntimeRoot
+      || source.workingTree.canonicalCwd !== binding.workingDirectory
+      || source.workingTree.canonicalCwd !== source.placement.destination.canonicalCwd
+      || !isDeepStrictEqual(source.workingTree.filesystem, source.placement.source.filesystem)
+      || accessMode === 'read-write' && source.workingTree.accessMode !== 'exclusive-write') {
+      throw new DomainError('WORKER_CONVERSATION_ROOT_UNAVAILABLE', 'The chat folder differs from its accepted Run folder.', 409)
+    }
+    const observed = await inspectApprovedDirectory(approved, binding.workingDirectory, accessMode)
+    if (!isDeepStrictEqual(observed, source.workingTree.filesystem)) {
+      throw new DomainError('WORKER_CONVERSATION_ROOT_CHANGED', 'The saved Run folder changed.', 409)
+    }
+    return observed
+  }
   const namespace = posix.join(approved.managedRuntimeRoot, 'source-materializations',
     source.placement.destination.rootPolicyId)
   const child = posix.relative(namespace, source.workingTree.canonicalCwd)

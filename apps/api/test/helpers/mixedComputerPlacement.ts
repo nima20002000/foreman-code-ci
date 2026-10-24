@@ -17,7 +17,7 @@ import { PrivateSourceSnapshotStore } from '../../src/modules/sources/store.js'
 import { RegisteredWorkspaceSourceRoots } from '../../src/modules/sources/registeredSourceRoots.js'
 import { createSourceManifest, sourceSha256 } from '../../src/modules/sources/manifest.js'
 import { identity, openPrivateRoot } from '../../src/modules/sources/privateFilesystem.js'
-import { attestWorkspaceRoot } from '../../src/modules/sources/rootAttestation.js'
+import { attestWorkspaceRoot, prepareManagedWorkspaceRoot } from '../../src/modules/sources/rootAttestation.js'
 import { withTransaction } from '../../src/infrastructure/transaction.js'
 import { assertDeviceHostInstallation } from '../../src/modules/devices/hostAuthorization.js'
 import { HarnessInstallationRegistry, type HarnessInstallationRecord } from '../../src/modules/harnesses/installationRegistry.js'
@@ -34,6 +34,8 @@ type Fixture = Awaited<ReturnType<typeof currentOperatorIntegration>>
  * Device filesystem and native qualification records are fixture data. No native
  * execution, remote physical qualification or process result is produced here. */
 export async function mixedComputerPlacement(f: Fixture, directory: string, options: {
+  plainWorkspace?: boolean
+  physicalWorker?: boolean
   git?: SourceManifest['git']
   sourceAccessMode?: SourceRootRecord['binding']['accessMode']
   unboundMainSource?: boolean
@@ -53,7 +55,13 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
     runnerId: f.locations.runnerId, rootPath: project,
   })
   const locationRevision = located.value.locationRevision
-  const hosts = { authorize: async (sql, _principal, host, installationId) => {
+  const allowlists = new Map<string, ReturnType<typeof ApprovedRootAllowlistSchema.parse>>()
+  const hosts = { browse: async () => ({ relativePath: '', directories: [], truncated: false }), configurations: async () => [...allowlists.values()], configuration: async (_sql, host) => {
+    const configuration = allowlists.get(JSON.stringify(host))
+    if (!configuration) throw new Error('Missing fixture host configuration')
+    return configuration
+  }, prepareManaged: root => prepareManagedWorkspaceRoot(root.allowlist, root.selection),
+  authorize: async (sql, _principal, host, installationId) => {
     const registered = await assertDeviceHostInstallation(sql, host, installationId)
     return registered ? { workerInstallationId: registered.workerInstallationId,
       keyRevision: registered.keyRevision, authorizationRevision: registered.authorizationRevision } : null
@@ -61,7 +69,7 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
   sourceNamespace: async (policy, rootPolicyId) => {
     const canonicalPath = join(policy.managedRuntimeRoot, 'source-materializations', rootPolicyId)
     return { canonicalPath, filesystem, attestationId: randomUUID(), attestationDigest: 'a'.repeat(64) }
-  } } satisfies Pick<WorkspaceRootHostPort, 'authorize' | 'attest' | 'sourceNamespace'>
+  } } satisfies Pick<WorkspaceRootHostPort, 'browse' | 'configurations' | 'configuration' | 'prepareManaged' | 'authorize' | 'attest' | 'sourceNamespace'>
   const policies = new PostgresWorkspaceRootPolicies(mainId, hosts as WorkspaceRootHostPort)
   const bytes = Buffer.from('export const approved = true\n')
   const manifest = createSourceManifest({ version: 1, snapshotId: randomUUID(), approvedSourceId: randomUUID(),
@@ -71,6 +79,7 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
       sha256: sourceSha256(bytes), executable: false }] })
   const source = { approvedSourceId: manifest.approvedSourceId, snapshotId: manifest.snapshotId,
     manifestDigest: manifest.manifestDigest }
+  if (!options.plainWorkspace) {
   await f.db.pool.query(`insert into source_approvals(approved_source_id,snapshot_id,workspace_id,
     owner_principal_id,requested_by,command_id,input_hash,state,origin,request)
     values($1,$2,$3,$4,$4,$5,$6,'approved','{}','{}')`, [source.approvedSourceId, source.snapshotId,
@@ -81,6 +90,7 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
       ownerPrincipalId: f.writer.principal.id, approvedByPrincipalId: f.writer.principal.id,
       locationRevision, mainId, originIdentityHash: `sha256:${'a'.repeat(64)}`,
       manifest, approvedAt: f.f.createdAt, availability: 'retained' })])
+  }
   const handle = await openPrivateRoot(project)
   const filesystem = await identity(handle).finally(() => handle.close())
   const runtimeHandle = await openPrivateRoot(runtime)
@@ -100,15 +110,25 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
     }
     const hostRef = kind === 'main' ? { kind, mainId } : { kind, mainId, deviceId }
     const applicationInstallationId = kind === 'main' ? mainId : registration.workerInstallationId
-    const canonicalProjectRoot = kind === 'main' ? project : '/worker/project'
-    const managedRuntimeRoot = kind === 'main' ? runtime : '/worker/runtime'
+    const canonicalProjectRoot = kind === 'main' ? project : options.physicalWorker ? join(directory, 'worker-projects') : '/worker/project'
+    const managedRuntimeRoot = kind === 'main' ? runtime : options.physicalWorker ? join(directory, 'worker-runtime') : '/worker/runtime'
+    if (kind === 'device' && options.physicalWorker) {
+      await mkdir(canonicalProjectRoot, { mode: 0o700 })
+      await mkdir(managedRuntimeRoot, { mode: 0o700 })
+    }
+    const projectHandle = kind === 'device' && options.physicalWorker ? await openPrivateRoot(canonicalProjectRoot) : undefined
+    const projectFilesystem = projectHandle ? await identity(projectHandle).finally(() => projectHandle.close()) : filesystem
+    const workerRuntimeHandle = kind === 'device' && options.physicalWorker ? await openPrivateRoot(managedRuntimeRoot) : undefined
+    const hostRuntimeFilesystem = workerRuntimeHandle ? await identity(workerRuntimeHandle).finally(() => workerRuntimeHandle.close())
+      : kind === 'main' ? runtimeFilesystem : filesystem
     const unconfiguredRoot = kind === 'device' && (options.unconfiguredDeviceRoot
       || options.unconfiguredFirstDeviceRoot && placements.length === 1)
     const allowlist = ApprovedRootAllowlistSchema.parse({ schemaVersion: 1, hostRef, applicationInstallationId,
       configurationRevision: '1', bases: [{ baseId: randomUUID(), canonicalPath: canonicalProjectRoot,
-        filesystem, accessModes: ['read-only', 'read-write'],
+        filesystem: projectFilesystem, accessModes: ['read-only', 'read-write'],
         ...(unconfiguredRoot ? { managedBy: 'worker-pairing' } : {}) }],
-      managedRuntimeRoot, runtimeFilesystem: kind === 'main' ? runtimeFilesystem : filesystem })
+      managedRuntimeRoot, runtimeFilesystem: hostRuntimeFilesystem })
+    allowlists.set(JSON.stringify(hostRef), allowlist)
     const policy = WorkspaceRootPolicySchema.parse({ schemaVersion: 1, rootPolicyId: randomUUID(), rootPolicyRevision: '1',
       workspaceId: f.f.scope.workspaceId, hostRef, applicationInstallationId,
       registration: kind === 'main' ? null : registration, locationRevision: String(locationRevision),
@@ -119,7 +139,7 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
     await withTransaction(f.db.pool, async sql => {
       await policies.publishApprovedHostConfiguration(sql, allowlist, { mainId, hostRef, applicationInstallationId,
         configurationRevision: '1', configurationDigest: sourceSha256(Buffer.from(JSON.stringify(allowlist))) })
-      if (unconfiguredRoot) return
+      if (unconfiguredRoot || kind === 'main' && options.plainWorkspace) return
       const scope = workspaceRootHostScope(hostRef)
       await sql.query(`insert into workspace_root_policies(root_policy_id,root_policy_revision,workspace_id,
         host_scope,location_revision,record) values($1,1,$2,$3,$4,$5::jsonb)`,
@@ -139,7 +159,7 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
     registration: policy.registration, attestationId: randomUUID(), attestationDigest: 'a'.repeat(64), boundAt: f.f.createdAt })
     const unboundSource = kind === 'main' && options.unboundMainSource
       || kind === 'device' && options.unboundFirstDeviceSource && placements.length === 1
-    if (!unconfiguredRoot && !unboundSource) {
+    if (!options.plainWorkspace && !unconfiguredRoot && !unboundSource) {
       await f.db.pool.query(`insert into source_root_catalog(root_id,workspace_id,scope_hash,current_binding_revision)
         values($1,$2,$3,1)`, [root.binding.rootId, policy.workspaceId, sourceSha256(Buffer.from(JSON.stringify({
           workspaceId: policy.workspaceId, hostRef, rootPolicyId: policy.rootPolicyId,

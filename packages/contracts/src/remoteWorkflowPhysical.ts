@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { NativeSessionReferenceSchema, NativeHarnessEventSchema, PendingNativeInteractionSchema,
   ExecutionResultSchema, RecordedAgentHarnessSchema, ApprovalResponseSemanticSchema } from './index.js'
 import { NativeMessageSubmissionSchema } from './claude.js'
-import { PlacementDigestSchema, DispatchIntentSchema } from './nodePlacement.js'
+import { PlainWorkingDirectorySchema, PlainNativeExecutionPlacementSchema, PlacementDigestSchema, DispatchIntentSchema } from './nodePlacement.js'
 import { RemoteOperationReceiptSchema, WorkflowArtifactValidationFailureSchema,
   type WorkflowArtifactValidationFailure } from './remoteExecution.js'
 import { SourceMaterializationRecordSchema, VerifiedSourceWorkingTreeSchema, SourceCwdAttestationSchema } from './sourceAdmission.js'
@@ -40,7 +40,7 @@ export const RemoteNativeLaunchObservationSchema = z.object({ owner: z.string().
 }).strict()
 const RemoteRuntimeLeafAttestationSchema = z.object({ executionId: z.string().min(1), attemptId: z.string().min(1),
   operationId: z.string().min(1), bindingHash: PlacementDigestSchema, canonicalRuntimeDirectory: z.string().startsWith('/'),
-  directoryIdentityHash: PlacementDigestSchema, materializationId: z.string().min(1), materializationDigest: PlacementDigestSchema }).strict()
+  directoryIdentityHash: PlacementDigestSchema, materializationId: z.string().min(1).nullable(), materializationDigest: PlacementDigestSchema.nullable() }).strict()
 /** The same bounded real NativeHistory contract used by the native proxy. */
 export const RemoteNativeHistorySchema = z.object({ nativeSubmission: z.lazy(() => NativeMessageSubmissionSchema).optional(),
   correlationId: z.string().optional(), nativeTurnId: z.string().optional(), nativeMessageId: z.string().optional(), nextCursor: z.string().optional(),
@@ -115,7 +115,8 @@ export const RemoteWorkflowPhysicalReadoutSchema = z.object({ version: z.literal
   launchIntent: DispatchIntentSchema.optional(),
   session: z.lazy(() => NativeSessionReferenceSchema), launch: RemoteNativeLaunchObservationSchema,
   observation: RemoteNativeLaunchObservationSchema, runtimeLeaf: RemoteRuntimeLeafAttestationSchema,
-  source: z.object({ record: SourceMaterializationRecordSchema, workingTree: VerifiedSourceWorkingTreeSchema.extend({ cwdAttestation: SourceCwdAttestationSchema }) }).strict(),
+  source: z.union([z.object({ record: SourceMaterializationRecordSchema, workingTree: VerifiedSourceWorkingTreeSchema.extend({ cwdAttestation: SourceCwdAttestationSchema }) }).strict(),
+    z.object({ kind: z.literal('plain'), policy: PlainNativeExecutionPlacementSchema.shape.policy, workingTree: PlainWorkingDirectorySchema }).strict()]),
   history: RemoteNativeHistorySchema.optional(),
   closure: z.object({ ownerClosed: z.literal(true), launch: RemoteNativeLaunchObservationSchema }).strict().optional(),
   output: RemoteWorkflowPhysicalOutputSchema.optional(),

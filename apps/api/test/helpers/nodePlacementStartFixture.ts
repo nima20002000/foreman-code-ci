@@ -31,7 +31,7 @@ export function toolError(result: Awaited<ReturnType<Client['callTool']>>) {
   return JSON.parse(text.text)
 }
 
-export async function fixture(options: { gitSource?: boolean; deviceCount?: 1 | 2; unboundFirstDeviceSource?: boolean; unconfiguredFirstDeviceRoot?: boolean } = {}) {
+export async function fixture(options: { physicalWorker?: boolean; plainWorkspace?: boolean; gitSource?: boolean; deviceCount?: 1 | 2; unboundFirstDeviceSource?: boolean; unconfiguredFirstDeviceRoot?: boolean } = {}) {
   let placementProducer: Awaited<ReturnType<typeof mixedComputerPlacement>>['producer'] | undefined
   const base = await currentOperatorIntegration({ fixture: makeCurrentWorkflowFixture(randomUUID(), 'sequential'),
     admitPlacementExecutionLocked: async (sql, owner, run, execution, ref, inputDigest) => {
@@ -44,9 +44,12 @@ export async function fixture(options: { gitSource?: boolean; deviceCount?: 1 | 
   try {
     directory = await privateFixtureDirectory('mixed-placement-')
     const placement = await mixedComputerPlacement(base, directory, {
+      ...(options.plainWorkspace ? { plainWorkspace: true } : {}),
+      ...(options.physicalWorker ? { physicalWorker: true } : {}),
       sourceAccessMode: options.gitSource ? 'exclusive-write' : 'read-only',
       deviceCount: options.deviceCount ?? 1,
-      unboundFirstDeviceSource: options.unboundFirstDeviceSource ?? false,
+      unboundMainSource: options.plainWorkspace ?? false,
+      unboundFirstDeviceSource: options.plainWorkspace || options.unboundFirstDeviceSource || false,
       unconfiguredFirstDeviceRoot: options.unconfiguredFirstDeviceRoot ?? false,
       git: { commit: 'b'.repeat(40), tree: 'c'.repeat(40), objectFormat: 'sha1', repository: 'octo/site' },
     })
@@ -65,7 +68,7 @@ export async function fixture(options: { gitSource?: boolean; deviceCount?: 1 | 
         ? ['clone', '--no-checkout', repositoryRoot, args.at(-1)!] : args, options) }
     const workspace = (await base.db.pool.query<{ revision: number }>(
       'select revision from workspaces where id=$1', [base.f.scope.workspaceId])).rows[0]!
-    await base.services.workspaces.update(base.writer.principal, 'mcp', {
+    if (!options.plainWorkspace) await base.services.workspaces.update(base.writer.principal, 'mcp', {
       workspaceId: base.f.scope.workspaceId, commandId: randomUUID(), expectedRevision: Number(workspace.revision),
       repository: { provider: 'github', owner: 'octo', name: 'site', defaultBranch: 'main' },
     })
