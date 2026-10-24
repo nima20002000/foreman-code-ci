@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { isDeepStrictEqual } from 'node:util'
 import { describe, expect, it, vi } from 'vitest'
 import { RunOutcomeSchema } from '@foreman-code/contracts'
 import { assertMeaningfulSaveAdmitted, readAffectedGraphRuns } from '../src/modules/graph-drafts/saveAdmission.js'
@@ -28,7 +27,7 @@ function fixture(proof: SaveNativeProof = 'closed') {
   const sql: SqlQuery = { async query<R extends pg.QueryResultRow>(text: string, values: unknown[] = []) {
     try {
       // The first read locks the affected Run set by scope; the second reads their facts with the settled outcomes.
-      if (isDeepStrictEqual(values, scopeValues)) {
+      if (phase === 'initial') {
         expect(values).toEqual(scopeValues)
         phase = 'locked'
         return result<R>([{ id: row.id }])

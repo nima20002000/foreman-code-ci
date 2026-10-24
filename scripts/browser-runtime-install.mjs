@@ -12,7 +12,7 @@ import { promisify } from 'node:util';
 import { BROWSER_RUNTIME_MAGIC, BROWSER_RUNTIME_CHUNK_BYTES, hashBrowserRuntimeFile,
   validateBrowserRuntimeManifest, checkBrowserRuntimeReadiness, createBrowserRuntimeDirectory,
   removeBrowserRuntimeDirectory } from '../apps/worker/src/browserRuntimeInstall.mjs';
-import { validateWorkerTarget } from './worker-artifact-files.mjs';
+import { cfworkerLicense, validateWorkerTarget } from './worker-artifact-files.mjs';
 import { assertWorkerSnapshotSource, workerContractAliases } from './worker-snapshot-policy.mjs';
 
 const execute = promisify(execFile);
@@ -220,7 +220,7 @@ for info in sorted((root/'python').glob('lib/python*/site-packages/*.dist-info')
   await run(python, ['-I', '-B', '-c', script, unit], { timeout: 60000, maxBuffer: 65536 });
 }
 
-export async function copyNativeLicenses(inputs, repository, unit) {
+export async function copyNativeLicenses(inputs, repository, unit, readSource = path => readFile(join(repository, path))) {
   const seen = new Set();
   for (const input of inputs.filter(path => path.includes('node_modules/'))) {
     let directory = dirname(resolve(repository, input)), manifest;
@@ -239,7 +239,11 @@ export async function copyNativeLicenses(inputs, repository, unit) {
     const name = `${manifest.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}-${manifest.version}`;
     const destination = join(unit, 'licenses/native-packages', name); await mkdir(destination, { recursive: true, mode: 0o700 });
     const licenses = (await readdir(directory)).filter(name => /^(?:licen[cs]e|copying|notice)(?:\.|$)/i.test(name));
-    invariant(licenses.length > 0, `native dependency notice missing: ${manifest.name}`);
+    if (`${manifest.name}@${manifest.version}` === cfworkerLicense.package && manifest.license === 'MIT') {
+      const terms = await readSource(cfworkerLicense.path);
+      invariant(sha256(terms) === cfworkerLicense.sha256, `native dependency notice checksum mismatch: ${manifest.name}`);
+      await writeFile(join(destination, 'LICENSE'), terms);
+    } else invariant(licenses.length > 0, `native dependency notice missing: ${manifest.name}`);
     for (const path of licenses) if ((await lstat(join(directory, path))).isFile()) await copyFile(join(directory, path), join(destination, path));
     await writeFile(join(destination, 'package.json'), `${JSON.stringify({ name: manifest.name, version: manifest.version, license: manifest.license }, null, 2)}\n`);
   }
@@ -264,7 +268,7 @@ async function bundleNativeHost({ repository, unit, snapshot }) {
   for (const output of Object.values(result.metafile.outputs)) {
     for (const dependency of output.imports) invariant(!dependency.external || isBuiltin(dependency.path), `unbundled native module ${dependency.path}`);
   }
-  await copyNativeLicenses(Object.keys(result.metafile.inputs), repository, unit);
+  await copyNativeLicenses(Object.keys(result.metafile.inputs), repository, unit, snapshot.read);
 }
 
 async function listUnitFiles(directory) {
