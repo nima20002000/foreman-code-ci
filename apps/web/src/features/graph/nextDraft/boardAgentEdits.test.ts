@@ -3,7 +3,7 @@ import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { GraphDraftOperationCurrentSchema } from '@foreman-code/contracts/current'
 import { fixture } from './core.cases'
 import {
-  stageAgentEdits, draftOperations, newNextDraft, editNextDraft, undoNextDraft, redoNextDraft, nextDraftDirty,
+  draftOperations, newNextDraft, editNextDraft, undoNextDraft, redoNextDraft, nextDraftDirty,
   acknowledgeAgentEdits, changeDraftAgent, configureAgentOperations, hasAgentEdits, referencedAgentEdits,
 } from '../../board-core'
 
@@ -54,26 +54,6 @@ describe('board Agent edits use the existing typed serial writer', () => {
     for (const operation of operations) expect(GraphDraftOperationCurrentSchema.safeParse(operation).success).toBe(true)
     expect(c.draft.sourceAgentPins).toBeUndefined()
   })
-  it('keeps recorded tools intact while authored Agent and node commands use active tools', () => {
-    const c = context()
-    c.agents[0]!.agent.graphqlTools = ['context_get', 'workflow_chat_read']
-    c.draft.graph = { ...c.draft.graph, nodes: c.draft.graph.nodes.map((node, index) => index || node.kind === 'job' ? node
-      : { ...node, graphqlTools: { add: ['interaction_list', 'workflow_chat_post'], remove: ['workflow_chat_read'] } }) }
-    const original = structuredClone(c)
-    expect(draftOperations(c, c.draft.graph)).toEqual([])
-    const agent = { ...c.agents[0]!.agent, prompt: { system: 'Edited instructions' } }
-    const edit = { ...newNextDraft(c, 'retired-tools'), agentEdits: { [agent.id]: agent }, graph: { ...c.draft.graph,
-      nodes: c.draft.graph.nodes.map((node, index) => index ? node : { ...node, initialPrompt: 'Edited prompt' }) } }
-    const operations = draftOperations(c, edit.graph, edit.agentEdits)
-    expect(operations).toContainEqual(expect.objectContaining({ type: 'node.replace_v3', node: expect.objectContaining({
-      graphqlTools: { add: ['interaction_list'], remove: [] },
-    }) }))
-    expect(operations).toContainEqual(expect.objectContaining({ type: 'agent.configure', graphqlTools: ['context_get'] }))
-    expect(stageAgentEdits(edit)[0]!.agent.graphqlTools).toEqual(['context_get'])
-    expect(c).toEqual(original)
-    expect(edit.agentEdits[agent.id]!.graphqlTools).toEqual(['context_get', 'workflow_chat_read'])
-  })
-
   it('keeps exact source pins for attaching an existing Agent', () => {
     const c = context(); const source = { ...c.agents[0]!, agent: { ...c.agents[0]!.agent, id: 'catalog-agent' } }
     c.agents.push(source)

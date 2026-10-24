@@ -1,4 +1,3 @@
-import { activeWorkflowNode } from './activeToolSettings'
 import { WorkflowRelationshipSchema, executableNodeContent, preserveNodeGeometry, preserveWorkflowGeometry, sameAuthoredWorkflow, sameWorkflowValue } from '@foreman-code/contracts/current'
 import type { z } from 'zod'
 import { addAgentOperations, configureAgentOperations, type DraftAgentEdits } from './agentEdits'
@@ -272,7 +271,7 @@ export function draftOperations(context: NextDraftContext, graph: WorkflowDefini
     const old = oldNodes.get(node.id)
     if(old && ((old.kind==='job')!==(node.kind==='job') || (old.kind==='job' && node.kind==='job' ? old.jobDefinitionId!==node.jobDefinitionId : old.kind!=='job' && node.kind!=='job' && old.agentId!==node.agentId)))throw new Error('Node identity cannot be rebound to another executable identity.')
     if(node.kind==='job') {
-      if(!old || !sameValue(executableNodeContent(old),executableNodeContent(node)))operations.push({type:'node.replace_v3',node: activeWorkflowNode(node)})
+      if(!old || !sameValue(executableNodeContent(old),executableNodeContent(node)))operations.push({type:'node.replace_v3',node})
       continue
     }
     if (!old) {
@@ -286,12 +285,12 @@ export function draftOperations(context: NextDraftContext, graph: WorkflowDefini
           // The attach position is x/y only; node.replace_v3 below carries the full position, manual placement included.
           name: node.name ?? node.label, ...(node.position ? { position: { x: node.position.x, y: node.position.y } } : {}) })
       }
-      operations.push({ type: 'node.replace_v3', node: activeWorkflowNode(node) })
+      operations.push({ type: 'node.replace_v3', node })
     } else if (!sameValue(executableNodeContent(old), executableNodeContent(node))) {
       const { choice: oldChoice, ...oldMetadata } = executableNodeContent(old)
       const { choice, ...metadata } = executableNodeContent(node)
       if (sameValue(oldMetadata, metadata)) operations.push({ type: 'node.set_choice', nodeId: node.id, choice: choice ?? null })
-      else operations.push({ type: 'node.replace_v3', node: activeWorkflowNode(preserveNodeGeometry(node, old)) })
+      else operations.push({ type: 'node.replace_v3', node: preserveNodeGeometry(node, old) })
       // Keep the destructured prior choice explicit: it is not copied into a new result.
       void oldChoice
     }

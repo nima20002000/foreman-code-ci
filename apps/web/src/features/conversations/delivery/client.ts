@@ -8,7 +8,7 @@ import {
   type ChatDeliveryInputPage, type ChatDeliveryReadback,
 } from '@foreman-code/contracts/agent-chat'
 import { apiClient, ApiError, type RequestOptions } from '../../../shared/api/client'
-import { sameDeliveryTarget } from './sameDeliveryTarget'
+import { sameDeliveryTarget } from '../../workflow-chat/draft'
 
 export type RetainedInputPage = ChatDeliveryInputPage
 export type RetainedInput = RetainedInputPage['items'][number]

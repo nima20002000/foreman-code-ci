@@ -104,39 +104,21 @@ export const GraphqlAgentToolSchema = z.enum(
 );
 export type GraphqlAgentTool = z.infer<typeof GraphqlAgentToolSchema>;
 
-/** Immutable records retain original tool names; execution resolves only the active catalog. */
-export const RecordedGraphqlToolDefaultsSchema = z.array(z.string().min(1)).max(100)
-  .refine((tools) => new Set(tools).size === tools.length, "Foreman Code MCP tools must be unique");
-
 /** Absent saved defaults retain the legacy role tools; future families require explicit choices. */
 export const GraphqlToolDefaultsSchema = z.array(GraphqlAgentToolSchema).max(100)
   .refine((tools) => new Set(tools).size === tools.length, "Foreman Code MCP tools must be unique");
 
-export const RecordedGraphqlToolOverrideSchema = z.object({
-  add: z.array(z.string().min(1)).max(100),
-  remove: z.array(z.string().min(1)).max(100),
+/** A workflow node's tool changes. bug_report remains available even when named in remove. */
+export const GraphqlToolOverrideSchema = z.object({
+  add: z.array(GraphqlAgentToolSchema).max(100),
+  remove: z.array(GraphqlAgentToolSchema).max(100),
 }).strict().superRefine((value, context) => {
   const removed = new Set(value.remove);
   for (const [index, tool] of value.add.entries()) {
     if (removed.has(tool)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["add", index], message: "a Foreman Code MCP tool cannot be both added and removed" });
   }
 });
-export type RecordedGraphqlToolOverride = z.infer<typeof RecordedGraphqlToolOverrideSchema>;
-
-/** New node choices accept only active tools. bug_report remains available when named in remove. */
-export const GraphqlToolOverrideSchema = RecordedGraphqlToolOverrideSchema.safeExtend({
-  add: z.array(GraphqlAgentToolSchema).max(100),
-  remove: z.array(GraphqlAgentToolSchema).max(100),
-});
 export type GraphqlToolOverride = z.infer<typeof GraphqlToolOverrideSchema>;
-
-/** Build new authoring values from recorded metadata without changing the saved record. */
-export function activeGraphqlTools(tools: readonly string[]): GraphqlAgentTool[] {
-  return tools.filter((tool): tool is GraphqlAgentTool => Object.hasOwn(GRAPHQL_AGENT_TOOLS, tool));
-}
-export function activeGraphqlToolOverride(override?: RecordedGraphqlToolOverride): GraphqlToolOverride | undefined {
-  return override && { add: activeGraphqlTools(override.add), remove: activeGraphqlTools(override.remove) };
-}
 
 export function graphqlToolRoles(name: string): readonly GraphqlMcpRole[] {
   return (GRAPHQL_AGENT_TOOLS as Record<string, { roles: readonly GraphqlMcpRole[] }>)[name]?.roles
@@ -158,14 +140,14 @@ export function newAgentGraphqlTools(role: WorkflowAgentProductRole): GraphqlAge
   return [...graphqlRoleTools(role), ...memoryBoardTools(newAgentMemoryBoardAccess())];
 }
 
-/** Active tools named here that the role can never use; recorded retired names are inert. */
+/** Tools named here that the role can never use. */
 export function graphqlToolsOutsideRole(role: WorkflowAgentProductRole, tools: readonly string[]): string[] {
-  return activeGraphqlTools(tools).filter((tool) => !graphqlToolRoles(tool).includes(role));
+  return tools.filter((tool) => !graphqlToolRoles(tool).includes(role));
 }
 
 /** Applies saved tool choices within the role. Bug reporting is available to every workflow Agent. */
 export function effectiveGraphqlTools(
-  role: WorkflowAgentProductRole, defaults?: readonly string[], override?: RecordedGraphqlToolOverride, interval = false,
+  role: WorkflowAgentProductRole, defaults?: readonly string[], override?: GraphqlToolOverride, interval = false,
   implementedCollaborationTools: readonly string[] = [],
 ): GraphqlAgentTool[] {
   const roleTools = graphqlRoleTools(role, implementedCollaborationTools);

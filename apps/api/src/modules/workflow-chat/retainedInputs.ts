@@ -4,7 +4,7 @@ import type { z } from 'zod'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { DomainError } from '../errors.js'
 import type { StoredDelivery } from './model.js'
-import { CHAT_PAGE_BYTES, decodeCursor, encodeCursor, pageLimit } from './validation.js'
+import { CHANNEL_PAGE_BYTES, decodeCursor, encodeCursor, pageLimit } from './validation.js'
 import type { PostgresChatDeliveryRepository } from './deliveryRepository.js'
 
 export type DeliveryInputRead = NonNullable<z.infer<typeof ReadAgentChatRequestSchema>['deliveryInputs']>
@@ -40,10 +40,11 @@ export async function readRetainedDeliveryInputs(repository: Pick<PostgresChatDe
     return { items: [...values].reverse(), nextCursor: hasMore && last ? encodeCursor(scope, last.sequence) : null,
       hasMore, revision }
   }
-  const fits = (values: RetainedDeliveryInput[]) => Buffer.byteLength(JSON.stringify(page(values))) <= CHAT_PAGE_BYTES
+  const fits = (values: RetainedDeliveryInput[]) => Buffer.byteLength(JSON.stringify(page(values))) <= CHANNEL_PAGE_BYTES
   for (const row of rows.slice(0, limit)) {
     const item = (characters = 16 * 1024): RetainedDeliveryInput => ({ commandId: row.request.commandId, receiptId: row.receipt.id,
-      target: row.request.target, origin: 'direct',
+      target: row.request.target, origin: row.request.sourcePostId ? 'group' : 'direct',
+      ...(row.request.sourcePostId ? { sourcePostId: row.request.sourcePostId } : {}),
       ...bodyChunk(row, input.bodyCursor, characters), attachments: row.request.attachments ?? [],
       intent: row.request.intent, createdAt: row.receipt.createdAt })
     if (fits([...items, item()])) { items.push(item()); continue }
