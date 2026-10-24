@@ -106,8 +106,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
       </header>
       <BoardUndoNotice scope={undoScope} />
       <BoardAlerts scope={draftKey} hints={hints} validation={edit.validation} error={editIntent.mutation.error ?? undefined} updateFailures={updateFailures}
-        fixes={{ CODEX_ASKS_FOR_APPROVAL: { label: 'Set these agents to never ask', disabled: editLocked, run: () => {
-          if (editLocked) return
+        fixes={{ CODEX_ASKS_FOR_APPROVAL: { label: 'Set these agents to never ask', run: () => {
           try { useGraphDraftStore.getState().updateNextDraft(draftKey, neverAskCodexAgents) } catch (error) { report(error) }
         } } }}
         pending={editIntent.mutation.isPending} openField={openSaveField} openIssue={(issue) => {

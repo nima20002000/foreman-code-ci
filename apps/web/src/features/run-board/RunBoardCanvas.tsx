@@ -167,7 +167,7 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   // Live node words belong to the mounted Board; a standalone saved Run Board reads only its saved Run.
   const live = useRunLiveNodes(scope, names, cis, visible && !!board, snapshot.edges)
   // A light per Agent while its CI request or result travels; no lasting line to the server.
-  const transfers = useCiTransfers(ciJobs, useReducedMotion())
+  const transfers = useCiTransfers(ciJobs, useReducedMotion(), JSON.stringify(scope))
   const ciEdges = useMemo<(SavedBoardEdge | CiTransferFlowEdge)[]>(() => ci.node && transfers.size ? [...edges,
     ...[...transfers].filter(([nodeId]) => visibleNodes.some(node => node.id === nodeId)).map(([nodeId, pulses]) => ({
       id: `ci-transfer:${nodeId}`, type: 'ciTransfer' as const, source: nodeId, target: CI_SERVER_NODE_ID,
