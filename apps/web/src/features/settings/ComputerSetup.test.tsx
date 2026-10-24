@@ -4,7 +4,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, expect, it } from 'vitest'
-import { SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
+import { SourceRootRecordSchema, type SourceRootSetupInput } from '@foreman-code/contracts/source-admission'
 import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
 import type { ApprovedRootAllowlist, WorkspaceRootSelection } from '@foreman-code/contracts/workspace-root-policies'
 import { server } from '../../mocks/server'
@@ -70,7 +70,8 @@ beforeEach(() => {
       return HttpResponse.json({ value: rootSetReadback(input, workerRoot), replayed: false })
     }),
     http.post('/api/management/workspaces/workspace-1/source-roots/setup', async ({ request }) => {
-      const input = await request.json() as { selection: Record<string, unknown> }
+      const input = await request.json() as SourceRootSetupInput
+      if ('hostRef' in input) return HttpResponse.json({ value: { kind: 'selection-required' }, replayed: false })
       setups.push(input)
       const binding = rootSetReadback(writes.at(-1)!, workerRoot)
       if (binding.evidence !== 'bound') throw new Error('Expected a saved folder')
@@ -199,8 +200,11 @@ it('shows a failed computer configuration read and retries before offering that 
 })
 
 it('keeps setup open when project capture fails', async () => {
-  server.use(http.post('/api/management/workspaces/workspace-1/source-roots/setup', () =>
-    HttpResponse.json({ error: { code: 'SOURCE_CAPTURE_FAILED', message: 'Project capture failed.' } }, { status: 503 })))
+  server.use(http.post('/api/management/workspaces/workspace-1/source-roots/setup', async ({ request }) => {
+    const input = await request.json() as SourceRootSetupInput
+    if ('hostRef' in input) return HttpResponse.json({ value: { kind: 'selection-required' }, replayed: false })
+    return HttpResponse.json({ error: { code: 'SOURCE_CAPTURE_FAILED', message: 'Project capture failed.' } }, { status: 503 })
+  }))
   mount()
   const user = userEvent.setup()
   await user.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), await screen.findByRole('option', { name: 'Studio · unavailable' }))
