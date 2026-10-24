@@ -995,6 +995,8 @@ test('verification builds execute each time and return machine-readable command 
     for (const path of [
       'scripts/verification-reports.mjs',
       'scripts/integration-capabilities.mjs',
+      'packages/verification-runner/src/verification-reports.mjs',
+      'packages/verification-runner/src/integration-capabilities.mjs',
       'apps/worker/src/diagnostics.mjs',
       'packages/contracts/src/verificationEnvironment.mjs',
       'packages/contracts/src/integrationScheduling.mjs',

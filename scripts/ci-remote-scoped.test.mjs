@@ -4,10 +4,14 @@ import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { appMcpTokenEnvironment, inheritedAgentEnvironment } from '../apps/api/src/modules/harnesses/secrets.ts'
+const require = createRequire(new URL('../apps/api/package.json', import.meta.url))
+const { tsImport } = await import(require.resolve('tsx/esm/api'))
+const { appMcpTokenEnvironment, inheritedAgentEnvironment } =
+  await tsImport('../apps/api/src/modules/harnesses/secrets.ts', import.meta.url)
 
 const script = new URL('./ci-remote.mjs', import.meta.url).pathname
 
@@ -170,7 +174,7 @@ for (const tokenName of ['GRAPHQL_MCP_TOKEN']) {
       const bridge = installBridge(fixture.root, server.url, token)
       const env = { ...fixture.env, CI: '', FOREMAN_CODE_CI_LOCAL: '', GRAPHQL_APP_MCP_DIRECTORY: bridge,
         FOREMAN_CODE_MAIN_URL: 'http://127.0.0.1:9', GRAPHQL_OPERATOR_TOKEN: 'unrelated-operator' }
-      for (const key of ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_APP_MCP_DIRECTORY', 'FOREMAN_CODE_WORKSPACE_ID']) delete env[key]
+      for (const key of ['GRAPHQL_MCP_TOKEN', 'FOREMAN_CODE_APP_MCP_DIRECTORY', 'FOREMAN_CODE_WORKSPACE_ID']) delete env[key]
       env[tokenName] = token
       if (explicitWorkspace) env.FOREMAN_CODE_WORKSPACE_ID = 'chosen-workspace'
       const result = await runCli(fixture.cwd, env)
@@ -201,11 +205,11 @@ for (const directoryName of ['GRAPHQL_APP_MCP_DIRECTORY']) {
     for (const key of ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_APP_MCP_DIRECTORY']) delete source[key]
     source[directoryName] = bridge
     const stripped = inheritedAgentEnvironment(source)
-    assert.equal(stripped.GRAPHQL_APP_MCP_DIRECTORY, undefined)
+    assert.equal(stripped.FOREMAN_CODE_APP_MCP_DIRECTORY, undefined)
     assert.equal(stripped.GRAPHQL_APP_MCP_DIRECTORY, undefined)
     const env = appMcpTokenEnvironment({ ...stripped, GRAPHQL_MCP_TOKEN: token }, source)
     assert.equal(env.GRAPHQL_APP_MCP_DIRECTORY, bridge)
-    assert.equal(env.GRAPHQL_APP_MCP_DIRECTORY, undefined)
+    assert.equal(env.FOREMAN_CODE_APP_MCP_DIRECTORY, undefined)
     for (const key of ['GRAPHQL_OPERATOR_TOKEN', 'DATABASE_URL', 'FOREMAN_CODE_APP_PRIVATE_KEY']) assert.equal(env[key], undefined)
     const result = await runCli(fixture.cwd, env)
     assert.equal(result.code, 1, result.stderr)
