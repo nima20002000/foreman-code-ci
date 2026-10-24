@@ -55,11 +55,9 @@ export function useDraftEditorCore({ draftKey, edit, editIntent, board }: {
   const retryLayout = layout.mutate
   // Layout is presentation only: it saves silently, also during a Run; only a real failure is reported, unobtrusively.
   useEffect(() => {
-    if (!layoutFailure || !toast) return
-    const id = toast.notify({ title: 'Node layout was not saved.', description: layoutFailure, tone: 'warning',
+    if (layoutFailure) toast?.notify({ title: 'Node layout was not saved.', description: layoutFailure, tone: 'warning',
       action: { label: 'Retry', onClick: () => retryLayout() } })
-    return () => toast.dismiss(id)
-  }, [layoutFailure, toast, retryLayout, draftKey])
+  }, [layoutFailure, toast, retryLayout])
   const alive = useRef(true)
   const latestBoard = useRef(board)
   latestBoard.current = board

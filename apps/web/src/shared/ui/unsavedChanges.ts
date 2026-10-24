@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useId, useLayoutEffect, useRef } from 'react'
+import { createContext, useContext, useId, useLayoutEffect, useRef } from 'react'
 
 export interface UnsavedEditor {
   scope?: 'surface'
@@ -8,7 +8,6 @@ export interface UnsavedEditor {
   uncertain?: boolean
   /** True only when this editor can be recovered after navigation or reload. */
   canResume?(): boolean
-  discardOnly?: boolean
   saveDisabled?: boolean
   error?: string
   save(): unknown | Promise<unknown>
@@ -36,9 +35,9 @@ export function useUnsavedChanges(editor: UnsavedEditor, blocks?: EditorRegistra
   useLayoutEffect(() => { ref.current.current = editor; ref.current.blocks = blocks })
   useLayoutEffect(() => { context?.changed() }, [context, editor.dirty, editor.busy, editor.uncertain, editor.error, editor.saveDisabled])
   useLayoutEffect(() => context?.register(id, ref.current), [context, id])
-  return useCallback(async (action: () => void) => {
+  return async (action: () => void) => {
     if (!context || await context.request([id])) action()
-  }, [context, id])
+  }
 }
 
 export function UnsavedEditorGuard({ editor }: { editor: UnsavedEditor }) {

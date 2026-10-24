@@ -7,20 +7,6 @@ import { IconButton, Button } from './Button'
 /** Successful notifications clear automatically; actionable/error messages stay until dismissed. */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<(ToastInput & { id: string })[]>([])
-  const [host] = useState(() => typeof document === 'undefined' ? null : document.createElement('div'))
-  const dialogs = useRef<HTMLDialogElement[]>([])
-  const registerDialog = useCallback((dialog: HTMLDialogElement) => {
-    dialogs.current.push(dialog)
-    if (host) dialog.append(host)
-    return () => {
-      dialogs.current = dialogs.current.filter(current => current !== dialog)
-      if (host) (dialogs.current.at(-1) ?? document.body).append(host)
-    }
-  }, [host])
-  useEffect(() => {
-    if (host && !host.parentElement) document.body.append(host)
-    return () => host?.remove()
-  }, [host])
   const prefix = useId()
   const sequence = useRef(0)
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
@@ -36,13 +22,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     return id
   }, [dismiss, prefix])
   useEffect(() => () => { for (const timer of timers.current.values()) clearTimeout(timer) }, [])
-  const value = useMemo(() => ({ notify, dismiss, registerDialog }), [notify, dismiss, registerDialog])
-  return <ToastContext.Provider value={value}>{children}{host && createPortal(
+  const value = useMemo(() => ({ notify, dismiss }), [notify, dismiss])
+  return <ToastContext.Provider value={value}>{children}{typeof document !== 'undefined' && createPortal(
     <ol className="n-theme n-toasts" aria-label="Notifications" aria-live="polite" aria-relevant="additions">
       {toasts.map((toast) => <li key={toast.id} className="n-toast" data-tone={toast.tone ?? 'neutral'}>
         <span className="n-toast-icon"><Icon name={toast.tone === 'success' ? 'check' : toast.tone === 'danger' ? 'warning' : 'info'} /></span>
         <div><strong>{toast.title}</strong>{toast.description && <p>{toast.description}</p>}{toast.action && <Button size="sm" variant="ghost" onClick={toast.action.onClick}>{toast.action.label}</Button>}</div>
         <IconButton size="sm" variant="ghost" label={`Dismiss ${toast.title}`} onClick={() => dismiss(toast.id)}><Icon name="close" size={16} /></IconButton>
       </li>)}
-    </ol>, host)}</ToastContext.Provider>
+    </ol>, document.body)}</ToastContext.Provider>
 }
