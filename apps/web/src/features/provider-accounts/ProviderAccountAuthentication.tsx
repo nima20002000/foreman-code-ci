@@ -117,7 +117,7 @@ export function ProviderAccountAuthentication({ account, revision, open, canMana
     description="Sign-in keeps going on its computer if you close this."
     onOpenChange={next => { if (!next && !busy && !uncertain) onClose() }}>
     <div className="provider-account-form">
-      {records.length > 1 || (records.length && !selectedId) ? <Select label="Attempt" value={selectedId ?? ''} disabled={busy || uncertain}
+      {records.length > 1 || (records.length && !selectedId) || (selectedId && !records.some(item => item.id === selectedId)) ? <Select label="Attempt" value={selectedId ?? ''} disabled={busy || uncertain}
         options={[...(!selectedId ? [{ value: '', label: 'New attempt' }] : []),
           ...records.map(item => ({ value: item.id, label: `${stateLabels[item.state]} · ${new Date(item.createdAt).toLocaleString()}` })),
           ...(selectedId && !records.some(item => item.id === selectedId)
@@ -159,17 +159,13 @@ export function ProviderAccountAuthentication({ account, revision, open, canMana
       {failure ? <Alert live tone="danger"
         title={(denied ?? write.error ?? query.error ?? discovery.error ?? access.eligibility.error)?.message
           ?? 'Sign-in status is unavailable.'} /> : null}
+      {selectedId && query.isError && !operation ? <Button disabled={busy || uncertain} onClick={() => {
+        setChoosingAction(false)
+        onOperation(discovered?.id)
+      }}>Leave unavailable attempt</Button> : null}
       <div className="provider-account-dialog-actions">
         <Button variant="ghost" disabled={discovery.isFetching || query.isFetching || busy}
           onClick={() => { void discovery.refetch(); if (selectedId) void query.refetch() }}>Refresh</Button>
-        {selectedId && query.error?.code === 'PROVIDER_AUTHENTICATION_NOT_FOUND' ? <Button
-          disabled={busy || uncertain || discovery.isFetching} onClick={() => {
-            void discovery.refetch().then(result => {
-              if (!result.isSuccess) return
-              setChoosingAction(!result.data.currentOperation)
-              onOperation(result.data.currentOperation?.id)
-            })
-          }}>Back to account sign-in</Button> : null}
         {selectedId && operation && !operation.nativeClosed ? <Button disabled={!manage || busy || prepareAttempt.unresolved}
           onClick={() => void cancel()}>{cancelAttempt.unresolved ? 'Retry cancel' : 'Cancel sign-in'}</Button> : null}
         {selectedId && operation?.nativeClosed ? <Button disabled={!canPrepare || busy || uncertain}

@@ -53,7 +53,6 @@ export function RemoveWorkflowButton({ workspaceId, workflowId, name, revision, 
     </IconButton>}
     {renderTrigger ? <ConfirmDialog open={open} title={`Remove ${name}?`}
       description="It leaves this workspace. Run history stays. A workflow with active runs can’t be removed."
-      dismissalReason={attempt.current.unresolved ? 'Removal is unconfirmed. Retry checks the original removal before you can close this dialog.' : undefined}
       pending={mutation.isPending} confirmLabel={attempt.current.unresolved ? 'Retry removal' : 'Remove workflow'}
       error={mutation.isError ? mutation.error.message : attempt.current.unresolved && !mutation.isPending
         ? 'It may already be removed. Retry to check.' : undefined}

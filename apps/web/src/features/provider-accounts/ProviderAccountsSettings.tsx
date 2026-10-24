@@ -25,8 +25,6 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
   const scope = useProviderAccountScope({ ...(provider ? { provider } : {}), includeRemoved: true,
     ...(requestedTarget ? { target: requestedTarget } : {}) })
   const access = useProviderAccountAccess(scope.target)
-  const activity = useComputerActivity()
-  const names = new Map(activity.data?.computers.map(computer => [computerKey(computer.target), computer.name]) ?? [])
   const readable = Boolean(access.target?.canRead)
   const query = useProviderAccounts(readable, scope)
   const denied = useProtectedAccessError(query)
@@ -47,22 +45,11 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
   const authDetailDenied = useProtectedAccessError(authDetail)
   const authAccount = listedAuthAccount ?? (!authDetail.isError && !authDetailDenied ? authDetail.data : undefined)
   const providers = provider ? [provider] : ['codex', 'claude'] as const
-  const targetChoices = access.discovery.data?.targets.map(item => ({ value: JSON.stringify(item.target),
-    label: `${names.get(computerKey(item.target)) ?? item.label}${item.connected ? '' : ' · offline'}`,
-    disabled: !item.canRead })) ?? []
-  const selectedTarget = scope.target ? JSON.stringify(scope.target) : ''
-  if (scope.target && !access.discovery.data?.targets.some(item => sameDeviceProvisioningTarget(item.target, scope.target!))) {
-    targetChoices.push({ value: selectedTarget, label: 'Saved computer · unavailable', disabled: true })
-  }
   return <section className="provider-accounts-settings" aria-label={provider
     ? `${provider === 'codex' ? 'Codex' : 'Claude'} accounts` : 'Provider accounts'}>
     <header className="provider-accounts-heading"><h3>Accounts <InfoHint label="Accounts">Add one to keep its sign-in separate.</InfoHint></h3></header>
-    {onTargetChange ? <Select label={`${provider === 'claude' ? 'Claude' : 'Codex'} account computer`}
-      value={selectedTarget} options={targetChoices} disabled={access.discovery.isPending}
-      onChange={event => {
-        const selected = access.discovery.data?.targets.find(item => JSON.stringify(item.target) === event.target.value)
-        if (selected) onTargetChange(selected.target)
-      }} /> : null}
+    {onTargetChange ? <ProviderAccountComputerSelect target={scope.target} onChange={onTargetChange}
+      label={`${provider === 'claude' ? 'Claude' : 'Codex'} account computer`} /> : null}
     {denied || query.isError && !query.data || access.discovery.isError || access.discovery.isSuccess && !readable ?
       <ErrorState title="Accounts are unavailable"
       description={denied?.message ?? query.error?.message ?? access.discovery.error?.message
@@ -119,4 +106,26 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
         onSelect?.(undefined)
       }} /> : null}
   </section>
+}
+
+
+export function ProviderAccountComputerSelect({ target, onChange, label = 'Account computer' }: {
+  target: DeviceProvisioningTarget | undefined; onChange(target: DeviceProvisioningTarget): void; label?: string;
+}) {
+  const scope = useProviderAccountScope({ ...(target ? { target } : {}) })
+  const access = useProviderAccountAccess(scope.target)
+  const activity = useComputerActivity()
+  const names = new Map(activity.data?.computers.map(computer => [computerKey(computer.target), computer.name]) ?? [])
+  const targetChoices = access.discovery.data?.targets.map(item => ({ value: JSON.stringify(item.target),
+    label: `${names.get(computerKey(item.target)) ?? item.label}${item.connected ? '' : ' · offline'}`,
+    disabled: !item.canRead })) ?? []
+  const selectedTarget = scope.target ? JSON.stringify(scope.target) : ''
+  if (scope.target && !access.discovery.data?.targets.some(item => sameDeviceProvisioningTarget(item.target, scope.target!))) {
+    targetChoices.push({ value: selectedTarget, label: 'Saved computer · unavailable', disabled: true })
+  }
+  return <Select label={label} value={selectedTarget} options={targetChoices} disabled={access.discovery.isPending}
+    onChange={event => {
+      const selected = access.discovery.data?.targets.find(item => JSON.stringify(item.target) === event.target.value)
+      if (selected) onChange(selected.target)
+    }} />
 }
