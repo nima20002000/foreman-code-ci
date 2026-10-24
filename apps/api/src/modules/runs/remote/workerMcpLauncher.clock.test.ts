@@ -44,7 +44,7 @@ it('keeps stdio calls available while Main renews a lease on a Worker two minute
         refresh: async () => { entered.resolve(); return renewed.promise },
       } })
     const transport = new StdioClientTransport({ command: process.execPath, args: [launcher],
-      env: { GRAPHQL_MCP_TOKEN: token }, stderr: 'pipe' })
+      env: { FOREMAN_CODE_MCP_TOKEN: token }, stderr: 'pipe' })
     try {
       await entered.promise
       await transport.start()
@@ -88,7 +88,7 @@ it.each(['expired', 'other boot', 'invalid deadline'] as const)(
       if (defect === 'invalid deadline') route.monotonicExpiry.nanoseconds = 'invalid'
       await writeFile(path, JSON.stringify(route))
       const transport = new StdioClientTransport({ command: process.execPath, args: [launcher],
-        env: { GRAPHQL_MCP_TOKEN: token }, stderr: 'pipe' })
+        env: { FOREMAN_CODE_MCP_TOKEN: token }, stderr: 'pipe' })
       try {
         await transport.start()
         expect(await callLauncher(transport, 1)).toMatchObject({ id: 1,

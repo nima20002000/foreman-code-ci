@@ -247,7 +247,7 @@ export async function remoteReviewProduction(options: {
     const config = loadConfig({ DATABASE_URL: db.databaseUrl, PORT: String(await freePort()),
       HARNESS_WORKSPACE_ROOT: runtime, FILE_STORAGE_ROOT: join(directory, 'files'),
       CODEX_BINARY: provider.binary,
-      DATABASE_QUERY_TIMEOUT_MS: '10000', GRAPHQL_LAPTOP_EXECUTION_ENABLED: '1' })
+      DATABASE_QUERY_TIMEOUT_MS: '10000', FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: '1' })
     config.workspaceStorageRoot = join(directory, 'projects')
     const access = new PostgresAccessService(db.pool)
     const writer = await access.issue({ name: 'Remote review owner', audience: 'operator',

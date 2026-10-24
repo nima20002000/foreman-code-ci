@@ -20,10 +20,9 @@ export function flattenRunPages(pages: readonly RunDropdownPage[] = []): RunDrop
 export function nextRunsCursor(
   last: RunDropdownPage, pages: readonly RunDropdownPage[], _lastParam: string | undefined,
   params: readonly (string | undefined)[],
-  windowed = false,
 ): string | undefined {
   const cursor = last.pageInfo.nextCursor
-  if ((!windowed && pages.length >= RUNS_MAX_PAGES) || cursor === null || params.includes(cursor)) return undefined
+  if (pages.length >= RUNS_MAX_PAGES || cursor === null || params.includes(cursor)) return undefined
   return cursor
 }
 

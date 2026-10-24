@@ -196,7 +196,7 @@ test('NATIVE-2 first launch and terminal replay use one exact session and one tu
       expiresAt: new Date(Date.now() + 300_000).toISOString(),
       environment: { agentId: f.get().agentId, variables: {} } },
     detection: ScopedMcpDetectionSchema.parse({ detection: { harness: 'codex', serverName: 'graphql',
-      state: 'connected', endpointMatches: true, credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN', checkedAt: f.at },
+      state: 'connected', endpointMatches: true, credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN', checkedAt: f.at },
       runnerId: 'runner-native2', workingDirectory: input.workingDirectory,
       providerVersion: f.session.providerVersion, nativeFilters: {} }) }
   }

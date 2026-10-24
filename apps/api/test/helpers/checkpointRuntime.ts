@@ -5,7 +5,7 @@ import { bindRunAuthority, currentOperatorAuthority, type AcceptedRunAuthority }
 import { requireAuthorization } from '../../src/modules/access/policy.js'
 import type pg from 'pg'
 import { AcceptedRepeatStartV1Schema } from '@foreman-code/contracts/current'
-import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../../src/modules/access/workerCredentials.js'
+import { APP_MCP_TOKEN } from '../../src/modules/harnesses/appMcpLauncher.js'
 import { CurrentWorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
 import { McpDetectionService, WorkerLaunchCredentialService, type ExecutionCredentialProvider, type NativeMcpInspector } from '../../src/modules/harnesses/mcpDetection.js'
 import type { NativeHarnessSessionManager } from '../../src/modules/harnesses/port.js'
@@ -153,7 +153,7 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
         async inspect(input) { return { harness: input.harness, providerVersion: '0.154.0',
           runnerId: input.runnerId, workingDirectory: input.workingDirectory, inspectedAt: new Date().toISOString(),
           entry: { name: input.serverName, transport: 'streamable-http', endpoint: providerAppEndpoint,
-            enabled: true, credentialEnvironmentVariable: APP_MCP_TOKEN_ENVIRONMENT_VARIABLE, status: 'connected' } } },
+            enabled: true, credentialEnvironmentVariable: APP_MCP_TOKEN, status: 'connected' } } },
       })), db.pool, { prepareContext: options.prepareManagerContext, validateContinuation: validate })
       const native = new ApprovalExecutionCoordinator({ runs, interactions: repository, budgets, managers, activeTimeoutMs: 600000,
         credentials: launchCredentials, validateContinuation: validate,

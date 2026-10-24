@@ -6,7 +6,6 @@ import { Button, EmptyState, ErrorState } from '../../shared/ui/nocturne'
 import { ApiError } from '../../shared/api/client'
 import { SelectedNodePlacement } from '../node-placement'
 import { RunNodeInspector } from './RunNodeInspector'
-import { SavedAgentSettings } from './SavedAgentSettings'
 import { useRunNodeInspectionNavigation } from './inspectionNavigation'
 import { RunBoardCanvas } from './RunBoardCanvas'
 import { useRunVersionQuery, SavedWorkflowWorktree } from '../workflow-board'
@@ -66,12 +65,13 @@ function RunBoardContents({ selection, snapshot, inspection, activitySnapshot }:
   const denied = useProtectedAccessError(hierarchy)
   const saved = !denied && hierarchy.data?.workflowVersionId === snapshot.workflowVersionId ? hierarchy.data : undefined
   const panel = board?.sidePanel
-  const inspect = !board?.memoryOpen && !!inspection.nodeId && (!board || panel?.kind === 'agent' && panel.tab === 'details')
+  const inspect = visible && !!inspection.nodeId && (!board || panel?.kind === 'agent' && panel.tab === 'details')
   const details = inspect ? <RunNodeInspector key={`inspector:${selection.generation.id}:${inspection.nodeId}`}
     selection={selection} snapshot={snapshot} nodeId={inspection.nodeId!} hierarchy={saved}
-    executionId={inspection.executionId} onInspect={inspection.inspect} repeat={!!definition?.repeat} closable={!board} /> : null
+    executionId={inspection.executionId} onInspect={inspection.inspect} closable={!board} /> : null
   const settings = panel?.kind === 'agent' && panel.tab === 'settings' && !board?.memoryOpen
-    ? <SavedAgentSettings snapshot={snapshot} definition={definition} nodeId={panel.nodeId} /> : null
+    ? <section aria-label="Saved Agent settings"><h3>{snapshot.nodes.find(node => node.id === panel.nodeId)?.name ?? panel.nodeId}</h3>
+      <p>This Run keeps its saved Agent configuration. Return to the draft to edit settings for future Runs.</p></section> : null
   // Inside the Board the caption sits in its floating toolbar, so the two never cover each other.
   const caption = <>
     <RunDefaultWorktree selection={selection} workflowVersionId={snapshot.workflowVersionId} />
@@ -84,7 +84,10 @@ function RunBoardContents({ selection, snapshot, inspection, activitySnapshot }:
     {!snapshot.nodes.length ? <p role="status">No nodes</p> : definition || version.isError
       ? <RunBoardCanvas key={selection.generation.id} snapshot={snapshot} visible={visible} definition={definition}
         hierarchy={saved} activitySnapshot={activitySnapshot} onInspectNode={inspection.inspect} /> : null}
-    {board ? board.sidePanelHost ? createPortal(<>{details}{settings}</>, board.sidePanelHost) : null : details}
+    {board ? board.sidePanelHost ? createPortal(<>{details}{settings}
+      {!visible && !board.memoryOpen && panel?.kind === 'agent' && panel.tab === 'details'
+        ? <p>Open Graph to inspect this saved execution. Your selection is retained.</p> : null}
+    </>, board.sidePanelHost) : null : details}
   </>
 }
 

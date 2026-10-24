@@ -70,7 +70,7 @@ class ScriptedManager implements NativeHarnessSessionManager {
   }
   async inspectMcp(): Promise<McpDetection> {
     return { harness: this.harness, serverName: 'graphql', state: 'connected', endpointMatches: true,
-      credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN', checkedAt: now }
+      credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN', checkedAt: now }
   }
   async createSession(input: NativeSessionStart) {
     this.creates.push(input)

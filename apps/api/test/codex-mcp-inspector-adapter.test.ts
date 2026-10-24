@@ -14,7 +14,7 @@ describe('Codex HAP-02 MCP inspection adapter', () => {
           configured: {
             enabled: true, transport: 'streamable_http', url: 'http://127.0.0.1:3000/mcp',
             required: false,
-            bearerTokenEnvironmentVariable: 'GRAPHQL_MCP_TOKEN',
+            bearerTokenEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN',
             enabledTools: ['context_get'], disabledTools: ['interaction_respond'],
             defaultToolsApprovalMode: null, tools: {},
           },

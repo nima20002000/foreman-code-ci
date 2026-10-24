@@ -7,8 +7,8 @@ import { remoteMcpPreflight } from './remoteMcpPreflight.js'
 function fixture() {
   const detection: McpDetection = {
     harness: 'codex', serverName: 'graphql', state: 'authentication_required',
-    endpointMatches: true, credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN',
-    credentialArrangement: { kind: 'environment_variable', environmentVariable: 'GRAPHQL_MCP_TOKEN' },
+    endpointMatches: true, credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN',
+    credentialArrangement: { kind: 'environment_variable', environmentVariable: 'FOREMAN_CODE_MCP_TOKEN' },
     checkedAt: new Date().toISOString(),
   }
   const manager = {
@@ -55,8 +55,8 @@ it('rejects a different execution directory before remote inspection', async () 
 })
 
 it.each([
-  ['graphql', 'GRAPHQL_MCP_TOKEN'],
-  ['foreman-code', 'GRAPHQL_MCP_TOKEN'],
+  ['graphql', 'FOREMAN_CODE_MCP_TOKEN'],
+  ['foreman-code', 'FOREMAN_CODE_MCP_TOKEN'],
 ] as const)('accepts supported remote %s identity and %s credential without changing placement', async (serverName, tokenName) => {
   const f = fixture()
   f.detection.serverName = serverName
