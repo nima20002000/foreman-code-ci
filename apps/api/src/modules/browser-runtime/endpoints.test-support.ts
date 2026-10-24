@@ -275,7 +275,6 @@ export async function endpointFixture(options: {
   }
   const transport: BrowserSessionTransport<ManagementPrincipal> = { invoke: async () => { throw new Error('Unexpected remote command') } }
   const sessions = createBrowserSessionRouter({ localComputerId: 'main', local, locations, pairing, transport, authority,
-    runtimeStatus: async computerId => ({ computerId, ready: true, phase: 'ready', reason: null }),
     computers: async () => ['main'], subjectComputer: async () => 'main', media: () => localBrowserMediaSource(local) })
   const host: BrowserProfileHost = {
     installation: async () => binding.installationId, status: async () => 'ready', create: async () => undefined, remove: async () => undefined,
