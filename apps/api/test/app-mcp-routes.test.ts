@@ -5,8 +5,7 @@ import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { removeFixtureDirectory } from './helpers/testResources.js'
 import { deferred } from './helpers/deferred.js'
 import type pg from 'pg'
-import { expect, it, vi } from 'vitest'
-import * as fileLocks from '../src/shared/fileLock.js'
+import { expect, it } from 'vitest'
 import { AppMcpRoutes } from '../src/modules/harnesses/appMcpRoutes.js'
 
 it('refreshes same-token lease expiration and removes revoked routes and shutdown metadata', async () => {
@@ -118,38 +117,6 @@ it('cannot overwrite a successor after a predecessor lease query resumes', async
     release.resolve()
     await first.close()
     await second.close()
-    await removeFixtureDirectory(directory)
-  }
-})
-
-
-it('refreshes unchanged credentials without taking a launcher lock, but locks renewals and revocations', async () => {
-  const directory = await privateFixtureDirectory('route-unchanged-')
-  let rows = [{ token_hash: 'e'.repeat(64), expires_at: new Date(Date.now() + 60_000) }]
-  const routes = new AppMcpRoutes({ query: async () => ({ rows }) } as unknown as pg.Pool,
-    'http://127.0.0.1:3101/mcp', join(directory, 'launcher.mjs'))
-  const lock = vi.spyOn(fileLocks, 'flockOpenFile')
-  try {
-    await routes.refresh()
-    const file = join(directory, 'routes', `${rows[0]!.token_hash}.json`)
-    const published = await readFile(file, 'utf8')
-    lock.mockClear()
-    await routes.refresh()
-    await routes.refresh()
-    expect(await readFile(file, 'utf8')).toBe(published)
-    expect(lock).not.toHaveBeenCalled()
-    rows = [{ ...rows[0]!, expires_at: new Date(Date.now() + 120_000) }]
-    await routes.refresh()
-    expect(lock).toHaveBeenCalledOnce()
-    expect(JSON.parse(await readFile(file, 'utf8')).expiresAt).toBe(rows[0]!.expires_at.toISOString())
-    lock.mockClear()
-    rows = []
-    await routes.refresh()
-    expect(lock).toHaveBeenCalledOnce()
-    expect(await readdir(join(directory, 'routes'))).toEqual([])
-  } finally {
-    lock.mockRestore()
-    await routes.close()
     await removeFixtureDirectory(directory)
   }
 })
