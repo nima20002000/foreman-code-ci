@@ -7,7 +7,7 @@ import { queryKeys } from '../../../shared/api/query'
 import { useGraphDraftStore } from '../store'
 import {
   boardDraftContextKey, acknowledgeAgentEdits, hasAgentEdits, stageAgentEdits, referencedAgentEdits,
-  draftOperations, hasLocalChanges, mergeAcknowledgement, nextDraftDirty, type NextDraftEdit,
+  activeWorkflowGraph, draftOperations, hasLocalChanges, mergeAcknowledgement, nextDraftDirty, type NextDraftEdit,
 } from '../../board-core'
 import { hierarchyKey } from '../../workflow-hierarchy'
 import { readBoardStart } from '../../workflow-board/startOutbox'
@@ -234,7 +234,7 @@ export function useGraphEditIntent(draftKey: string, edit: NextDraftEdit) {
         commandId: crypto.randomUUID(), expectedRevision: current.context.draft.publishedRevision,
         expectedWorkflowVersionId: current.context.draft.baseWorkflowVersionId, executionSemanticsVersion: 3,
         expectedAgentConfigurationVersionIds: pins.expectedAgentConfigurationVersionIds,
-        graph: current.graph,
+        graph: activeWorkflowGraph(current.graph),
         ...(stagedAgents.length ? { stagedAgents } : {}) })
       const reserved = reserveEditOutbox(draftKey, { request, target: current.graph,
         ...(current.agentEdits ? { agentTarget: current.agentEdits } : {}) })

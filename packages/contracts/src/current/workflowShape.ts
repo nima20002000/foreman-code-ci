@@ -6,7 +6,7 @@ import { IdSchema, GraphIdSchema, TimestampSchema } from '../schemaPrimitives.js
 import { JobWorkflowNodeSchema } from '../jobWorkflow.js'
 import { SavedNodePlacementSchema } from '../nodePlacement.js'
 import { WorkflowArtifactInputsV1Schema, WorkflowArtifactOutputsV1Schema } from '../workflowArtifactDeclarations.js'
-import { GraphqlToolOverrideSchema } from '../graphqlMcpTools.js'
+import { GraphqlToolOverrideSchema, RecordedGraphqlToolOverrideSchema } from '../graphqlMcpTools.js'
 import { ChoiceOutcomeSchema, ChoiceTargetSchema, WorkflowChoiceSchema } from './choice.js'
 import { NodeSkillOverrideSchema, OutputSchemaSchema } from './outputContract.js'
 export { ChoiceOutcomeSchema, ChoiceTargetSchema, WorkflowChoiceSchema } from './choice.js'
@@ -110,7 +110,7 @@ const CurrentAgentWorkflowNodeFields = {
   width: z.number().finite().positive().optional(), height: z.number().finite().positive().optional(),
   join: z.object({ mode: z.literal('all') }).strict().optional(), choice: WorkflowChoiceSchema.optional(),
   /** Changes the Agent's default Foreman Code MCP tools for this node only. */
-  graphqlTools: GraphqlToolOverrideSchema.optional(),
+  graphqlTools: RecordedGraphqlToolOverrideSchema.optional(),
   browser: NodeBrowserSettingsSchema.optional(),
   artifactOutputs: WorkflowArtifactOutputsV1Schema.optional(),
   interval: AgentIntervalSchema.optional(),
@@ -123,6 +123,9 @@ export const CurrentAgentWorkflowNodeSchema = z.object(CurrentAgentWorkflowNodeF
   if (!node.name && !node.label) context.addIssue({ code: 'custom', path: ['name'], message: 'a workflow node requires name or label' })
 })
 export const CurrentWorkflowNodeSchema = z.union([CurrentAgentWorkflowNodeSchema, JobWorkflowNodeSchema])
+export const AuthoringCurrentWorkflowNodeSchema = z.union([
+  CurrentAgentWorkflowNodeSchema.safeExtend({ graphqlTools: GraphqlToolOverrideSchema.optional() }), JobWorkflowNodeSchema,
+])
 export const CurrentWorkflowRelationshipSchema = z.object({
   id: GraphIdSchema, source: GraphIdSchema, target: GraphIdSchema,
   sourceHandle: Handle, targetHandle: Handle, label: z.string().optional(), kind: z.enum(['execution', 'approval']),
@@ -229,3 +232,7 @@ export const WorkflowDefinitionCurrentSchema = CurrentWorkflowDefinitionBaseSche
   }
 })
 export type WorkflowDefinitionCurrent = z.infer<typeof WorkflowDefinitionCurrentSchema>
+/** New definitions cannot add retired tool names retained in saved workflow history. */
+export const AuthoringWorkflowDefinitionCurrentSchema = WorkflowDefinitionCurrentSchema.safeExtend({
+  nodes: z.array(AuthoringCurrentWorkflowNodeSchema).max(1000),
+})

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
-import { memoryBoardTools, newAgentGraphqlTools, type GraphqlAgentTool } from '@foreman-code/contracts'
+import { activeGraphqlTools, activeGraphqlToolOverride, memoryBoardTools, newAgentGraphqlTools, type GraphqlAgentTool } from '@foreman-code/contracts'
 import { WorkflowBoardProvider, type CollaborationFieldSlots } from '../board-core'
 import { GraphqlToolsFields } from './GraphqlToolsFields'
 import { NodeWorkflowFields } from './nextDraft/AuthoringFields'
@@ -18,7 +18,7 @@ function FieldsFixture() {
   const fields: CollaborationFieldSlots = {
     memoryAccess: props => <section aria-label="Injected Memory access">
       <p>{props.role} · {props.executionReadOnly ? 'Effective read-only execution' : 'Writable execution'}</p>
-      <button onClick={() => props.onChange([...(props.defaults ?? []), ...memoryBoardTools('read')], props.override)}>Use memory Read</button>
+      <button onClick={() => props.onChange(activeGraphqlTools([...(props.defaults ?? []), ...memoryBoardTools('read')]), activeGraphqlToolOverride(props.override))}>Use memory Read</button>
     </section>,
     nodeBrowser: props => <section aria-label="Injected Browser settings">
       <p>{props.workspaceId}/{props.workflowId}/{props.nodeId} · {props.value?.enabled ? 'On' : 'Off'}</p>

@@ -24,5 +24,5 @@ function LocalShell() {
   const enabled = !sessionIsSwitching() && !denied && defaults.data?.value.operator.uiEnabled === true
   const settingsWarning = enabled && (defaults.isError || defaults.failureCount > 0)
     ? 'Settings could not be refreshed. Showing the last confirmed Operator setting for this app.' : undefined
-  return <OperatorChatVisibilityProvider enabled={enabled} canShow={!sessionIsSwitching() && !denied && defaults.data?.value.operator.uiEnabled === false}><CollaborationFeatures><Outlet /></CollaborationFeatures><ApprovalInbox /><OperatorChat settingsWarning={settingsWarning} /></OperatorChatVisibilityProvider>
+  return <OperatorChatVisibilityProvider enabled={enabled}><CollaborationFeatures><Outlet /></CollaborationFeatures><ApprovalInbox /><OperatorChat settingsWarning={settingsWarning} /></OperatorChatVisibilityProvider>
 }

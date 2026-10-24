@@ -1,5 +1,5 @@
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import type { WorkflowDefinitionCurrent, WorkflowNodeCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import type {
   Agent,
   AgentExecutionState,
@@ -61,7 +61,7 @@ function fallbackPosition(index: number): XYPosition {
   }
 }
 
-function workflowNodePosition(node: WorkflowNodeCurrent, index: number): XYPosition {
+function workflowNodePosition(node: WorkflowDefinitionCurrent['nodes'][number], index: number): XYPosition {
   return node.position ? { x: node.position.x, y: node.position.y } : fallbackPosition(index)
 }
 
@@ -81,7 +81,7 @@ function rectanglesOverlap(
  * that were moved or resized by the user.
  */
 export function findOpenNodePosition(
-  nodes: readonly WorkflowNodeCurrent[],
+  nodes: readonly WorkflowDefinitionCurrent['nodes'][number][],
   anchor: XYPosition,
   width = PLACEMENT_SIZE,
   height = PLACEMENT_SIZE,
@@ -199,7 +199,7 @@ function waitLabel(
   return undefined
 }
 
-function nodeLabel(workflowNode: WorkflowNodeCurrent, agent: Agent | undefined): string {
+function nodeLabel(workflowNode: WorkflowDefinitionCurrent['nodes'][number], agent: Agent | undefined): string {
   return workflowNode.name ?? workflowNode.label ?? agent?.name ?? (workflowNode.kind==='job'?'Job':workflowNode.agentId)
 }
 

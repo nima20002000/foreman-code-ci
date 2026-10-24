@@ -7,7 +7,7 @@
   "exports": {
     "./agent-identity": { "types": "./dist/agentIdentity.d.ts", "import": "./dist/agentIdentity.js" },
     "./memory-boards": { "types": "./dist/memoryBoards.d.ts", "import": "./dist/memoryBoards.js" },
-    "./workflow-chat": { "types": "./dist/workflowChat.d.ts", "import": "./dist/workflowChat.js" },
+    "./engine-chat": { "types": "./dist/engineChat.d.ts", "import": "./dist/engineChat.js" },
     "./chat-delivery": { "types": "./dist/chatDelivery.d.ts", "import": "./dist/chatDelivery.js" },
     "./browser-profiles": { "types": "./dist/browserProfiles.d.ts", "import": "./dist/browserProfiles.js" },
     "./browser-sessions": { "types": "./dist/browserSessions.d.ts", "import": "./dist/browserSessions.js" },

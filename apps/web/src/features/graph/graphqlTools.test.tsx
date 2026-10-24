@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import userEvent from '@testing-library/user-event'
 import { GRAPHQL_AGENT_TOOLS, DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
-import type { GraphqlAgentTool, GraphqlToolOverride } from '@foreman-code/contracts'
+import type { RecordedGraphqlToolOverride } from '@foreman-code/contracts'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -11,7 +11,7 @@ import { AgentSettingsForm } from './AgentSettingsForm'
 
 afterEach(cleanup)
 
-function open(role: 'orchestrator' | 'coder', extra: { graphqlTools?: GraphqlAgentTool[] } = {}, nodeGraphqlTools?: GraphqlToolOverride) {
+function open(role: 'orchestrator' | 'coder', extra: { graphqlTools?: string[] } = {}, nodeGraphqlTools?: RecordedGraphqlToolOverride) {
   // Existing Agents with omitted choices keep the legacy role defaults.
   const agent = { ...defaultAgentForHarness('codex', 'agent', 'Agent', DEFAULT_HARNESS_DEFAULTS.codex, role), graphqlTools: undefined, ...extra }
   const onSave = vi.fn()
@@ -56,6 +56,22 @@ describe('Foreman Code MCP tools in Agent settings', () => {
       'files.native_output_append', 'files.native_output_seal', 'files.native_output_publish', 'ci_run', 'ci_get',
       'ci_computers_list', 'ci_cancel', 'ci_logs_read'])
     expect(onSave.mock.calls[0]![0].nodeGraphqlTools).toEqual({ add: ['context_get'], remove: [] })
+  })
+
+  it.each([false, true])('edits recorded retired tool metadata and saves active choices only (change tool: %s)', changeTool => {
+    const defaults = ['context_get', 'workflow_chat_read']
+    const override = { add: ['interaction_list', 'workflow_chat_post'], remove: ['workflow_chat_read'] }
+    const { onSave, tools } = open('coder', { graphqlTools: defaults }, override)
+    expect(tools).not.toHaveTextContent('workflow_chat_read')
+    expect(tools).not.toHaveTextContent('workflow_chat_post')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Edited Agent' } })
+    if (changeTool) fireEvent.click(within(tools).getByLabelText('Read run context: Agent default'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent settings' }))
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0]![0].agent.graphqlTools).toEqual(changeTool ? [] : ['context_get'])
+    expect(onSave.mock.calls[0]![0].nodeGraphqlTools).toEqual({ add: ['interaction_list'], remove: [] })
+    expect(defaults).toEqual(['context_get', 'workflow_chat_read'])
+    expect(override).toEqual({ add: ['interaction_list', 'workflow_chat_post'], remove: ['workflow_chat_read'] })
   })
 
   it('drops a node change that the new default already matches', () => {

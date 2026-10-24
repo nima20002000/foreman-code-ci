@@ -9,7 +9,6 @@ export interface CardDraft {
   original?: MemoryCard
   fields: CardFields
   workSelections: MemoryCardWorkSelection[]
-  sourcePostId?: string
   resolutionRequired?: boolean
   dirty: boolean
 }
@@ -18,7 +17,6 @@ export interface NoteDraft {
   original?: MemoryNote
   text: string
   rank: string
-  sourcePostId?: string
   dirty: boolean
 }
 export type MemoryDraft = CardDraft | NoteDraft
@@ -33,14 +31,14 @@ export function useMemoryDraft(boardId: string): MemoryDraft | undefined {
 export function setMemoryDraft(boardId: string, draft?: MemoryDraft): void {
   useMemoryDrafts.getState().set(boardId, draft)
 }
-export function newCardDraft(sourcePostId?: string): CardDraft {
+export function newCardDraft(): CardDraft {
   return { kind: 'card', fields: { title: '', body: '', status: 'todo', completionKind: null, reason: null, assignee: null, linkedNodes: [] },
-    workSelections: [], sourcePostId, dirty: false }
+    workSelections: [], dirty: false }
 }
 export function editCardDraft(card: MemoryCard): CardDraft {
   const { title, body, status, completionKind, reason, assignee, linkedNodes } = card
   return { kind: 'card', original: card, fields: { title, body, status, completionKind, reason, assignee, linkedNodes }, workSelections: [], dirty: false }
 }
-export function editNoteDraft(note?: MemoryNote, sourcePostId?: string): NoteDraft {
-  return { kind: 'note', original: note, text: note?.text ?? '', rank: note ? String(note.rank) : '', sourcePostId, dirty: false }
+export function editNoteDraft(note?: MemoryNote): NoteDraft {
+  return { kind: 'note', original: note, text: note?.text ?? '', rank: note ? String(note.rank) : '', dirty: false }
 }

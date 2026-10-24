@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import {
-  AgentEffortSchema, ClaudeEffortSchema, changeCodexSandbox, effectiveGraphqlTools, memoryBoardTools, GraphqlAgentToolSchema,
-  type GraphqlAgentTool, type GraphqlToolOverride, type HarnessConfiguration, type WorkflowAgentProductRole,
+  AgentEffortSchema, ClaudeEffortSchema, changeCodexSandbox, effectiveGraphqlTools, memoryBoardTools, GraphqlAgentToolSchema, activeGraphqlTools, activeGraphqlToolOverride,
+  type GraphqlAgentTool, type GraphqlToolOverride, type RecordedGraphqlToolOverride, type HarnessConfiguration, type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 import { Combobox, Select, Switch } from '../../shared/ui/nocturne'
 import { useProviderHarnessModels } from '../provider-accounts'
@@ -76,10 +76,11 @@ export function AgentHarnessRows({ value, onChange, issues = [], accountHost }: 
 const memoryLabels = { none: 'Off', read: 'Read', write: 'Read and write', custom: 'Custom' } as const
 
 /** Memory board access for this node, stored as the node's change to the Agent's default tools. */
-export function AgentMemoryRow({ role, defaults, override, readOnly, onChange }: {
-  role: WorkflowAgentProductRole; defaults: readonly GraphqlAgentTool[] | undefined; override: GraphqlToolOverride | undefined
+export function AgentMemoryRow({ role, defaults: recordedDefaults, override: recordedOverride, readOnly, onChange }: {
+  role: WorkflowAgentProductRole; defaults: readonly string[] | undefined; override: RecordedGraphqlToolOverride | undefined
   readOnly: boolean; onChange(defaults: GraphqlAgentTool[] | undefined, override: GraphqlToolOverride | undefined): void
 }) {
+  const defaults = recordedDefaults && activeGraphqlTools(recordedDefaults), override = activeGraphqlToolOverride(recordedOverride)
   const memoryTools: GraphqlAgentTool[] = memoryBoardTools('write')
   const agentDefault = effectiveGraphqlTools(role, defaults, undefined, false, memoryTools)
   const changed = Boolean(override?.add.some(tool => memoryTools.includes(tool)) || override?.remove.some(tool => memoryTools.includes(tool)))

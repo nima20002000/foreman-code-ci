@@ -3,7 +3,7 @@ import { expect, it } from 'vitest'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import {
-  CurrentWorkflowSaveResultSchema, canonicalGraphJson, preserveWorkflowGeometry, type WorkflowDefinitionCurrent,
+  CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema, canonicalGraphJson, preserveWorkflowGeometry, type WorkflowDefinitionCurrent,
 } from '@foreman-code/contracts/current'
 import { commandInputHash } from '../src/modules/commands/postgres.js'
 import { setup } from './helpers/workflowWorktreeMcp.js'
@@ -13,8 +13,9 @@ it('replays an existing profile-reconciled save without retroactively marking re
   const f = await setup()
   try {
     const { saveInput } = await f.create()
-    saveInput.graph.nodes = saveInput.graph.nodes.map(node => ({ ...agentWorkflowNode(node),
-      placement: f.placement.local, position: { x: 10, y: 20 } }))
+    saveInput.graph = CurrentWorkflowSaveInputSchema.shape.graph.parse({ ...saveInput.graph,
+      nodes: saveInput.graph.nodes.map(node => ({ ...agentWorkflowNode(node),
+        placement: f.placement.local, position: { x: 10, y: 20 } })) })
     const first = CurrentWorkflowSaveResultSchema.parse(await f.base.services.workflows.current.save(
       f.base.writer.principal, 'http', saveInput))
     const selectedInstanceId = randomUUID()
@@ -31,13 +32,13 @@ it('replays an existing profile-reconciled save without retroactively marking re
     await f.base.db.pool.query(`insert into agent_configuration_versions(id,workspace_id,agent_id,version,record)
       values($1,$2,$3,$4,$5::jsonb)`, [configuration.id, f.workspaceId,
       configuration.agentId, configuration.version, canonicalGraphJson(configuration)])
-    const input = { ...saveInput, commandId: randomUUID(), expectedRevision: first.value.revision,
+    const input = CurrentWorkflowSaveInputSchema.parse({ ...saveInput, commandId: randomUUID(), expectedRevision: first.value.revision,
       expectedWorkflowVersionId: first.value.currentVersionId,
       expectedAgentConfigurationVersionIds: { ...first.value.version.agentConfigurationVersionIds,
         [configuration.agentId]: configuration.id },
       graph: { ...first.value.version.definition, nodes: first.value.version.definition.nodes.map(node => ({
         ...node, position: { x: 100, y: 200 },
-      })) } }
+      })) } })
     const graph: WorkflowDefinitionCurrent = { ...input.graph, nodes: input.graph.nodes.map(node => {
       const agentNode = agentWorkflowNode(node)
       return agentNode.agentId === configuration.agentId

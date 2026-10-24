@@ -1,4 +1,4 @@
-import { synchronizeGroupDelivery } from './workflowGroupReceipts.js'
+import { synchronizeChatDelivery } from './workflowDeliveryReceipts.js'
 import {
   canonicalJson, ChatControlReceiptSchema, ChatDeliveryReceiptSchema, ChatSendRequestSchema,
   CoordinatorConsultationBindingSchema, DeliveryTargetSchema, ExecutionRefSchema,
@@ -34,11 +34,13 @@ export interface ControlCommandRow {
   receipt: unknown; work: LogicalWorkRef | null; continuation_id: string | null; consultation_id: string | null
   delivered_execution: unknown; sequence: string; revision: string
 }
+/** Retained native records stay exact; retired channel links are omitted only from current readback. */
+export const CONTROL_RECEIPT = "receipt - array['postId','replyPostId']"
 export const CONTROL_COMMAND_COLUMNS = `id,command_id,principal_id,run_id,target,kind,operation,state,input_digest,
-  request,native_prompt,native_target,receipt,work,continuation_id,consultation_id,delivered_execution,sequence::text,revision::text`
+  request - 'sourcePostId' as request,native_prompt,native_target,${CONTROL_RECEIPT} as receipt,work,continuation_id,consultation_id,delivered_execution,sequence::text,revision::text`
 /** Queue/cleanup scans retain receipts, never every queued attachment/text body. */
 export type ControlCommandSummary = Omit<ControlCommandRow, 'command_id' | 'principal_id' | 'input_digest' | 'request' | 'native_prompt' | 'work'>
-export const CONTROL_COMMAND_SUMMARY_COLUMNS = `id,run_id,target,kind,operation,state,native_target,receipt,
+export const CONTROL_COMMAND_SUMMARY_COLUMNS = `id,run_id,target,kind,operation,state,native_target,${CONTROL_RECEIPT} as receipt,
   continuation_id,consultation_id,delivered_execution,sequence::text,revision::text`
 
 /** Pending input follows technical attempts, not an explicit control continuation. */
@@ -101,7 +103,7 @@ export async function updateControlCommand(sql: SqlTransaction, row: ControlComm
 
 async function projectControlReceipt(sql: SqlTransaction, runId: string, id: string, revision: number,
   receipt: ChatDeliveryReceipt | ChatControlReceipt, now: string) {
-  if ('requestedIntent' in receipt) await synchronizeGroupDelivery(sql, receipt)
+  if ('requestedIntent' in receipt) await synchronizeChatDelivery(sql, receipt)
   await sql.query(`insert into run_activity(run_id,source,kind,occurred_at,payload)
     values($1,'backend','workflow_chat_receipt',$2::timestamptz,$3::jsonb)`,
   [runId,now,canonicalJson({ sourceEventKey: `workflow-chat:${id}:${revision}`, revision, receipt })])

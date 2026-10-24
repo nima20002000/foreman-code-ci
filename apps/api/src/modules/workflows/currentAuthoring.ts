@@ -76,7 +76,7 @@ export interface WorkflowAuthoringOptions {
 }
 function completeSaveInput(
   request: CurrentEditSaveInput,
-  metadata: CurrentEditSaveInput['graph'],
+  metadata: Pick<WorkflowDefinitionCurrent, 'version' | 'createdAt' | 'updatedAt' | 'approval'>,
 ) {
   const { version, createdAt, updatedAt, ...graph } = request.graph
   const stamps = {
