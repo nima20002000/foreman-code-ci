@@ -11,8 +11,8 @@ import { currentExecutionReadUnit } from './currentExecutionReadUnit.js'
 
 /** Synthetic persisted read-side records, NOT native acknowledgements minted by
  * a test runtime. The original-source, immutable-input and canonical-receipt
- * verifiers consume these records unchanged. A read-only publication lookup is
- * supplied by the importing unit test; it delegates to the real receipt verifier.
+ * verifiers consume these records unchanged, using the real receipt verifier
+ * without a graph publication lookup double.
  * This does not qualify production SQL writers, native capture or checkpoints. */
 export function currentApprovalSettlementUnit() {
   const model = currentExecutionReadUnit()

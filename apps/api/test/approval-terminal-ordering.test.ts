@@ -1,30 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HarnessExecutionRequestSchema } from '@foreman-code/contracts'
-import type { CanonicalRunGraphScope } from '@foreman-code/contracts/current'
 import { DomainError } from '../src/modules/errors.js'
-import * as publication from '../src/modules/run-graph/publication.js'
-import type { SqlTransaction } from '../src/infrastructure/transaction.js'
-import { assertRepeatCanonicalReceiptLocked, type RepeatCanonicalReceipt } from '../src/modules/run-graph/repeatReceipts.js'
+import { graphSourceDigest } from '../src/modules/run-graph/publication.js'
 import { repeatExecutionDriver } from '../src/modules/runs/repeatRuntime.js'
 import { currentApprovalSettlementUnit } from './helpers/currentApprovalSettlementUnit.js'
 import { nativeReviewerFixture } from './native-reviewer-fixtures.js'
 
-const { graphSourceDigest } = publication
-
-// Only the read-only publication lookup is a port. It cannot return a successful
-// proof by itself: every lookup executes the real canonical SQL receipt verifier.
-// Original pending/continuation sources and the ACK descriptor are all checked
-// by the actual nativeApprovalProof implementation, not mocked away.
-// Install the lookup after the publication/proof-reader module cycle has
-// evaluated, rather than importing the actual module inside a hoisted partial
-// factory. This keeps every consumer on the same spied lookup.
-beforeEach(() => {
-  vi.spyOn(publication, 'currentRunGraphPublication').mockImplementation(((sql: SqlTransaction, scope: CanonicalRunGraphScope) => ({
-    sql, scope,
-    assertSourceEnlisted: (evidence: RepeatCanonicalReceipt['evidence'], sourceDigest: string, semanticDigest: string) =>
-      assertRepeatCanonicalReceiptLocked(sql, { scope, evidence, sourceDigest, semanticDigest, effect: null }),
-  })) as typeof publication.currentRunGraphPublication)
-})
+// Only SQL is scripted. Original sources, ACK descriptors and persisted
+// canonical receipts are checked without a graph publication double.
 const connections: Array<{ close(): Promise<void> }> = []
 function gateFixture() { const f = currentApprovalSettlementUnit(); connections.push(f.model.connection); return f }
 afterEach(async () => { await Promise.all(connections.splice(0).map((connection) => connection.close())); vi.restoreAllMocks() })
@@ -76,9 +59,16 @@ describe('NIM-2644 current native terminal / approval settlement ordering', () =
     const before = { ...f.model.state, receipts: structuredClone(f.model.state.receipts) }
     await expect(f.check()).resolves.toBeUndefined()
     await expect(f.check()).resolves.toBeUndefined()
-    expect(publication.currentRunGraphPublication).toHaveBeenCalled()
     expect(f.model.state).toEqual(before)
   })
+  it.each(['unit-pending-source', 'unit-continuation-source', 'unit-interaction'])(
+    'rejects settlement without the persisted %s receipt', async sourceId => {
+      const f = gateFixture()
+      f.model.state.receipts = f.model.state.receipts.filter(receipt => receipt.evidence.sourceId !== sourceId)
+      const before = structuredClone(f.model.state.receipts)
+      await expect(f.check()).rejects.toMatchObject({ code: 'REPEAT_PUBLICATION_RECEIPT_CONFLICT' })
+      expect(f.model.state.receipts).toEqual(before)
+    })
   it('checks every selected sibling rather than just the first receipt', async () => {
     const f = gateFixture()
     f.state.records.push({ ...f.interaction, id: 'unsettled-sibling', deliveryState: 'uncertain', status: 'delivery_pending', deliveredAt: undefined })

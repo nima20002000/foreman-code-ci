@@ -5,8 +5,8 @@ import { canonicalGraphJson, GraphEvidenceSchema, GraphExecutionIdentitySchema, 
 import { z } from 'zod'
 import { beforeGraphCommit, poisonGraphTransaction } from '../run-graph/connection.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import { currentRunGraphPublication, graphSourceDigest } from '../run-graph/publication.js'
-import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
+import { currentRunGraphPublication, graphSourceDigest, hasRunGraphPublication } from '../run-graph/publication.js'
+import { assertRepeatCanonicalReceiptLocked, requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import type { WorkflowNativeProofRecord } from '../runs/index.js'
 import { readRepeatExecutionLocked } from '../runs/repeatExecutionRead.js'
 import { readAcceptedRepeatRunLocked } from '../runs/repeatStartRead.js'
@@ -28,6 +28,16 @@ const AckSchema = z.object({
 }).strict()
 export type WorkflowApprovalAck = z.infer<typeof AckSchema>
 function pending(): never { throw new DomainError('APPROVAL_SETTLEMENT_PENDING', APPROVAL_SETTLEMENT_PENDING_MESSAGE, 409) }
+
+/** Writers may still have a staged source; settlement observations read its exact committed receipt. */
+async function assertApprovalSourceLocked(sql: SqlTransaction, scope: WorkflowApprovalAck['scope'],
+  evidence: GraphEvidence, sourceDigest: string, semanticDigest: string): Promise<void> {
+  if (hasRunGraphPublication(sql, scope)) {
+    await currentRunGraphPublication(sql, scope).assertSourceEnlisted(evidence, sourceDigest, semanticDigest)
+  } else {
+    await assertRepeatCanonicalReceiptLocked(sql, { scope, evidence, sourceDigest, semanticDigest, effect: null })
+  }
+}
 
 /** The pending request is anchored in a coordinator-minted ORIGINAL history,
  * not in a body supplied to an interaction endpoint. Caller identity fields,
@@ -60,7 +70,7 @@ export async function assertPendingApprovalOriginalLocked(sql: SqlTransaction, i
     || !sameRepeatValue(request.responseOptions, i.responseOptions)
     || !sameRepeatValue(nativeApprovalContext(request, history.events), i.reviewContext)) return pending()
   const evidence: GraphEvidence = { sourceKind: 'native_event', sourceId: proofId, sourceRevision: '1' }
-  await currentRunGraphPublication(sql, scope).assertSourceEnlisted(evidence, row.source_digest,
+  await assertApprovalSourceLocked(sql, scope, evidence, row.source_digest,
     graphSourceDigest({ evidence, facts: [], effect: null }))
   return proof
 }
@@ -109,10 +119,9 @@ export async function readApprovalOriginalLocked(sql: SqlTransaction, i: Durable
   // captured lease, never the history's terminal enum or an empty pending list.
   if (!sameRepeatValue(source, { sourceKind: 'native_event', sourceId: proofId, sourceRevision: '1' })) return pending()
 
-  const publication = currentRunGraphPublication(sql, scope)
   const evidence: GraphEvidence = { sourceKind: 'native_event', sourceId: proofId, sourceRevision: '1' }
   const semanticDigest = graphSourceDigest({ evidence, facts: [], effect: null })
-  await publication.assertSourceEnlisted(evidence, row.source_digest, semanticDigest)
+  await assertApprovalSourceLocked(sql, scope, evidence, row.source_digest, semanticDigest)
   return { proof, scope, originalDigest: row.source_digest, nativeSourceDigest: row.source_digest }
 }
 
@@ -154,8 +163,7 @@ export async function assertWorkflowApprovalAckLocked(sql: SqlTransaction, suppl
     const fact = { type: 'worker.resumed', interactionId: i.id, requester: ack.requester, acknowledgementId: ack.acknowledgementId }
     if (ack.publication.sourceDigest !== graphSourceDigest({ next: i, source: ack.nativeSource, fact })
       || !sameRepeatValue(ack.publication.evidence, { sourceKind: 'native_event', sourceId: i.id, sourceRevision: String(i.revision) })) return pending()
-    const publication = currentRunGraphPublication(sql, ack.scope)
-    await publication.assertSourceEnlisted(ack.publication.evidence, ack.publication.sourceDigest, ack.publication.semanticDigest)
+    await assertApprovalSourceLocked(sql, ack.scope, ack.publication.evidence, ack.publication.sourceDigest, ack.publication.semanticDigest)
     const resume = (await sql.query<{ effect_digest: string }>(`select effect_digest from run_graph_effects
       where run_id=$1 and effect_kind='graph.resume' and entity_id=$2`, [i.runId, i.id])).rows[0]
     const digest = graphSourceDigest({ interactionId: i.id, runId: i.runId, executionId: i.executionId,
