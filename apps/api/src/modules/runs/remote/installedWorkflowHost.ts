@@ -79,7 +79,7 @@ import { hasPositiveRemoteEntryClosure, remoteNonEntryClosureDigest } from '@for
 import { deviceRequestTimeoutMs, retryDeviceRequest } from '../../devices/deviceRequestRetry.js'
 import { hostEnvironment } from '../../../shared/process.js'
 import { deviceReconnectTimeoutMs, isDeviceLinkDrop, sameDeviceInstallation, waitForDeviceReconnect } from '../../devices/deviceReconnect.js'
-import { retiredHarnessError } from '../../harnesses/index.js'
+import { retiredHarnessError } from '../../harnesses/retiredHarness.js'
 
 function unavailableError(reason:string) {return new DomainError('WORKER_WORKFLOW_UNAVAILABLE','The original installed workflow authority is unavailable.',409,{reason})}
 function unavailable(reason:string):never {throw unavailableError(reason)}

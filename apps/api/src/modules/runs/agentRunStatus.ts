@@ -5,7 +5,7 @@ import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { workerScope, workerScopesForAction } from '../access/appPolicy.js'
 import { DomainError } from '../errors.js'
 import { workflowJobLifecycle } from '../run-graph/workflowJobProjection.js'
-import { readRunInitiatedCi } from '../ci/index.js'
+import { readRunInitiatedCi } from '../ci/reads.js'
 
 const clip = (text: string) => text.slice(0, RUN_STATUS_LIMITS.messageLength)
 

@@ -30,7 +30,7 @@ import { JobVerificationProfileSchema, JobVerificationRuntimeFingerprintSchema, 
 import { createVerificationProfile, requireReviewedVerificationConfiguration } from './verificationProfiles.js'
 import type { z } from 'zod'
 import { verificationDependencyBasis } from './dependencyBasis.js'
-import { retiredHarnessError } from '../harnesses/index.js'
+import { retiredHarnessError } from '../harnesses/retiredHarness.js'
 import { runtimeQualificationFacts, validateRuntimeQualification, qualificationTimeoutMs, qualificationDeadline }
   from './runtimeQualificationFacts.js'
 

@@ -1,4 +1,3 @@
-import { beginTransaction, commitTransaction, rollbackAfterFailure } from '../src/infrastructure/transaction.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -98,7 +97,7 @@ export async function assertRevocationRejected({ transport, revocation, boundary
     const before = await chatRows(f.db.pool)
     const published = vi.spyOn(test.chat.events, 'publish')
     blocker = await f.db.pool.connect()
-    await beginTransaction(blocker)
+    await blocker.query('begin')
     const blockerPid = (await blocker.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
     if (boundary === 'existing-row') {
       await blocker.query('select id from operator_conversations where id=$1 for update', [expectedConversationId])
@@ -121,7 +120,7 @@ export async function assertRevocationRejected({ transport, revocation, boundary
         expect(response.structuredContent).toBeUndefined()
         expect(JSON.stringify(response)).toMatch(/AUTH_REVOKED|no longer active/)
       })
-    void pending.catch(() => { /* ignore: the original pending promise is awaited after the lock is released below. */ })
+    void pending.catch(() => undefined)
     // Observe an actual blocked SQL statement, not a sleep or a pre-authentication barrier.
     await eventually(async () => {
       const waiting = await f.db.pool.query<{ query: string }>(`select query from pg_stat_activity
@@ -131,15 +130,15 @@ export async function assertRevocationRejected({ transport, revocation, boundary
         : row.query.includes('pg_advisory_xact_lock'))
     })
     revoker = await f.db.pool.connect()
-    await beginTransaction(revoker)
+    await revoker.query('begin')
     // A fix that holds authority before the admission wait must fail rather than hang.
     await revoker.query("set local lock_timeout='3s'")
     const revokedId = revocation === 'parent' ? parent.principal.id : sender.principal.id
     expect((await revoker.query('update management_principals set revoked_at=now() where id=$1', [revokedId])).rowCount).toBe(1)
-    await commitTransaction(revoker)
+    await revoker.query('commit')
     revoker.release(); revoker = undefined
     expect((await f.db.pool.query<{ revoked_at: Date | null }>('select revoked_at from management_principals where id=$1', [revokedId])).rows[0]!.revoked_at).not.toBeNull()
-    await commitTransaction(blocker)
+    await blocker.query('commit')
     blocker.release(); blocker = undefined
     await pending
     expect(await chatRows(f.db.pool)).toEqual(before)
@@ -147,9 +146,9 @@ export async function assertRevocationRejected({ transport, revocation, boundary
     expect(published).not.toHaveBeenCalled()
     expect(f.dispatchErrors).toEqual([])
   } finally {
-    if (revoker) { revoker.release(await rollbackAfterFailure(revoker)) }
-    if (blocker) { blocker.release(await rollbackAfterFailure(blocker)) }
-    await pending?.catch(() => { /* ignore: the original failure has already propagated; cleanup must still close the fixture. */ })
+    if (revoker) { await revoker.query('rollback').catch(() => undefined); revoker.release() }
+    if (blocker) { await blocker.query('rollback').catch(() => undefined); blocker.release() }
+    await pending?.catch(() => undefined)
     await test.close()
   }
 }

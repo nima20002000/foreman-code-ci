@@ -10,7 +10,7 @@ import type { InteractionNativeRuntime } from './runtimePorts.js'
 import { Wave25InteractionRepository } from './current/repository.js'
 import type { InteractionResponseOptions } from './cancellation.js'
 import type { WorkDirectionActions } from './workDirection.js'
-import { bindApprovalCheckpointEngine, type ApprovalCheckpointConsumers } from '../runs/index.js'
+import { bindApprovalCheckpointEngine, type ApprovalCheckpointConsumers } from '../runs/approvalCheckpointRegistration.js'
 import { deliverApproval, respondToApproval, resumeApproval,
   type ApprovalRuntimeDependencies, type AtomicApprovalResumeConsumer } from './current/service.js'
 

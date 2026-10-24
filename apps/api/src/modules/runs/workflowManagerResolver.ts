@@ -1,24 +1,24 @@
 import type pg from 'pg'
 import { HarnessExecutionRequestSchema, RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
-import { DomainError } from '../modules/errors.js'
-import { qualifyCodex } from '../modules/harnesses/codexProtocol.js'
-import type { AcceptedClaudeProfileAdmission, AcceptedHarnessProfileAdmission } from '../modules/harnesses/index.js'
-import type { NativeLaunchRecords } from '../modules/harnesses/index.js'
-import { runCommand } from '../modules/harnesses/process.js'
-import { productionClaudeManager, type ClaudeProfileOwner } from '../modules/harnesses/claudeSdk/production.js'
-import type { ProductionHarnessInfrastructure } from '../modules/harnesses/index.js'
-import type { ProductionHarnessRegistry } from '../modules/harnesses/index.js'
-import type { NativeProcessRegistry } from '../modules/harnesses/recovery/processRegistry.js'
-import type { NativeHarnessFactories } from '../modules/harnesses/index.js'
-import { productionSelectedProfileManager } from '../modules/harnesses/selectedProfileProduction.js'
-import { workflowProfileSelection } from '../modules/harnesses/index.js'
-import { ExecutionScopedNativeSessionManagerResolver } from '../modules/interactions/runtimePorts.js'
-import type { createProductionRemoteWorkflow } from '../modules/placement/index.js'
-import type { ProviderAccountsService } from '../modules/provider-accounts/service.js'
-import { createLocalWorkflowNativeOutputs } from '../modules/runs/remote/localWorkflowNativeOutputs.js'
-import type { LocalWorkflowArtifacts } from '../modules/runs/remote/localWorkflowArtifacts.js'
-import type { PostgresRunRepository } from '../modules/runs/postgres.js'
+import { DomainError } from '../errors.js'
+import { qualifyCodex } from '../harnesses/codexProtocol.js'
+import type { AcceptedClaudeProfileAdmission, AcceptedHarnessProfileAdmission } from '../harnesses/instanceSettings/acceptedProfile.js'
+import type { NativeLaunchRecords } from '../harnesses/nativeLaunchRecords.js'
+import { runCommand } from '../harnesses/process.js'
+import { productionClaudeManager, type ClaudeProfileOwner } from '../harnesses/claudeSdk/production.js'
+import type { ProductionHarnessInfrastructure } from '../harnesses/productionInfrastructure.js'
+import type { ProductionHarnessRegistry } from '../harnesses/productionRegistry.js'
+import type { NativeProcessRegistry } from '../harnesses/recovery/processRegistry.js'
+import type { NativeHarnessFactories } from '../harnesses/runtimeFactory.js'
+import { productionSelectedProfileManager } from '../harnesses/selectedProfileProduction.js'
+import { workflowProfileSelection } from '../harnesses/workflowProfileSelection.js'
+import { ExecutionScopedNativeSessionManagerResolver } from '../interactions/runtimePorts.js'
+import type { createProductionRemoteWorkflow } from '../placement/productionRemoteWorkflow.js'
+import type { ProviderAccountsService } from '../provider-accounts/service.js'
+import { createLocalWorkflowNativeOutputs } from './remote/localWorkflowNativeOutputs.js'
+import type { LocalWorkflowArtifacts } from './remote/localWorkflowArtifacts.js'
+import type { PostgresRunRepository } from './postgres.js'
 
 export interface WorkflowManagerResolverDependencies {
   pool: pg.Pool
@@ -26,7 +26,7 @@ export interface WorkflowManagerResolverDependencies {
   harnessMode: 'native' | 'replay'
   claudeClient: NonNullable<ProductionHarnessInfrastructure['claudeClient']> | undefined
   fileStorageRoot: string
-  processRegistry: Pick<NativeProcessRegistry, 'scope' | 'reserveLaunch' | 'abandonReservedLaunch' | 'closeOwner'>
+  processRegistry: Pick<NativeProcessRegistry, 'scope'>
   /** Provider-account bindings accepted per execution, filled as executions prepare. */
   workflowAccountBindings: Map<string, AcceptedProviderAccountBinding>
   remoteWorkflow: ReturnType<typeof createProductionRemoteWorkflow>

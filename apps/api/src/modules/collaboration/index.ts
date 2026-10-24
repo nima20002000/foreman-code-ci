@@ -12,4 +12,3 @@ export type { WorkflowChatNativeTarget, WorkflowChatOwnerPort, WorkflowChatTarge
 export { createWorkflowCollaborationHooks } from './workflowHooks.js'
 export type { WorkflowCollaborationHooks, WorkflowLifecycleInput } from './workflowHooks.js'
 export { assertWorkflowRemoteControl, workflowRemoteControl } from './workflowRemoteControl.js'
-export { type prepareOperatorChatInput } from './chatInputPreparation.js'

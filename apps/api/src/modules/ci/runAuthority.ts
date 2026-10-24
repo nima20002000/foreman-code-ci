@@ -2,6 +2,11 @@ import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import type { JobInitiatingAgent } from '@foreman-code/contracts/jobs'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
+import { currentOperatorAuthority } from '../access/index.js'
+import { intersectGrants } from '../access/index.js'
+import { requireAuthorization } from '../access/index.js'
+import { workerScopesForAction } from '../access/index.js'
+import { assertWave25WorkerBinding } from '../interactions/index.js'
 import { DomainError, retryDatabaseRead } from '../errors.js'
 import type { CiAuthority } from './authority.js'
 
@@ -9,8 +14,6 @@ export class RunCiAuthority implements CiAuthority {
   constructor(private readonly pool: pg.Pool) {}
 
   async resolve(caller: ManagementPrincipal, requestedWorkspace: string | undefined, actions: ManagementAction[]) {
-    const { currentOperatorAuthority, intersectGrants, requireAuthorization, workerScopesForAction } = await import('../access/index.js')
-    const { assertWave25WorkerBinding } = await import('../interactions/index.js')
     // Only reads: the binding is verified from one committed snapshot and no row lock outlives this COMMIT, so
     // CI calls never queue behind the Run owner. A CI ticket is admitted later in its own transaction.
     return retryDatabaseRead(() => withTransaction(this.pool, async (sql) => {

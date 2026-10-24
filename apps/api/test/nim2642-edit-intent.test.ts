@@ -4,13 +4,14 @@ import { CurrentJournalRunPinSchema, type CurrentJournalRunState } from '@forema
 import { currentSaveAdmissionFixture } from './helpers/currentSaveAdmission.js'
 import { readAffectedGraphRuns } from '../src/modules/graph-drafts/saveAdmission.js'
 import { sameAffectedSet } from '../src/modules/graph-drafts/durableEditIntent.js'
+import { CANCELED_INTERACTION_RETIRED_SQL } from '../src/modules/interactions/current/publication.js'
 
 const { pin, row } = currentSaveAdmissionFixture('edit-intent')
 const settled: CurrentJournalRunState = { pin, terminal: true, settled: true, outcome: 'succeeded',
   nativePending: false, cleanupPending: false, interactionPending: false, reviewPending: false }
 const scope = { workspaceId: pin.workspaceId, workflowId: pin.workflowId, stagedAgentIds: ['shared'] }
 
-describe('exact affected-set and current settlement mapping', () => {
+describe('NIM-2642 exact affected-set and current settlement mapping', () => {
   it('keeps outcome changes independent of immutable accepted identities', () => {
     expect(sameAffectedSet({ affected: [pin] }, [settled])).toBe(true)
     expect(sameAffectedSet({ affected: [pin] }, [{ ...settled, outcome: 'failed' }])).toBe(true)
@@ -29,13 +30,22 @@ describe('exact affected-set and current settlement mapping', () => {
     expect(sameAffectedSet({ affected: [pin] }, [retired as unknown as CurrentJournalRunState])).toBe(false)
     expect(sameAffectedSet({ affected: [pin] }, [{ ...settled, pin: { ...pin, agentConfigurationVersionIds: { agent: 'new' } } }])).toBe(false)
   })
-  it('returns the exact settled affected Run without modifying its snapshot', async () => {
-    const before = structuredClone(row)
-    // The canonical native page has only a Run id and cursor; this fixture has no executions.
-    const query = vi.fn(async (_text: string, values: unknown[] = []) => values.length === 2
-      ? { rows: [], rowCount: 0 } : { rows: [structuredClone(row)], rowCount: 1 })
-    expect(await readAffectedGraphRuns({ query } as unknown as Pick<pg.PoolClient, 'query'>, scope)).toEqual([settled])
-    expect(row).toEqual(before)
+  it('requires the canceled retirement source receipt and counts unlaunched reviews by owning interaction', async () => {
+    // The Run has no executions, so its canonical native-settlement page is empty.
+    const query = vi.fn(async (text: string) => text.startsWith('select e.id,e.run_id,') ? { rows: [], rowCount: 0 } : { rows: [row], rowCount: 1 })
+    const result = await readAffectedGraphRuns({ query } as unknown as Pick<pg.PoolClient, 'query'>, scope)
+    expect(result).toEqual([settled])
+    // The first query only locks the affected parents; this one computes every obligation flag.
+    const [sql] = query.mock.calls.find(([text]) => text.includes(' as terminal'))! as unknown as [string, unknown[]]
+    expect(sql).toContain(CANCELED_INTERACTION_RETIRED_SQL)
+    expect(sql).toContain('review_owner.id=j.interaction_id')
+    expect(sql).toContain('review_owner.run_id=r.id')
+    expect(sql).toContain("e.record->'result'->>'outcome'")
+    expect(sql).toContain('workflow_finalized_at is not null')
+    expect(sql).toContain('b.revoked_at is null')
+    expect(sql).toContain("v.record->'agentConfigurationVersionIds'=r.record->'agentConfigurationVersionIds'")
+    expect(sql).not.toMatch(/\b(insert|update|delete)\b/i)
+    expect(sql).not.toMatch(/order by r\.id\s+limit/i)
   })
   it.each(['cleanup', 'native', 'interactions', 'reviews'] as const)('waits beyond terminal on %s, including absent evidence', async (field) => {
     for (const value of [true, null, undefined]) {

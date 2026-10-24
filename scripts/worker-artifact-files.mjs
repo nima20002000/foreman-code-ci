@@ -68,7 +68,7 @@ export async function regularFiles(directory, { excludeNodeModules = false } = {
 
 // The published tarball omits its monorepo license; retain the license from its npm gitHead.
 // https://github.com/cfworker/cfworker/blob/5409fdc2bd144f68e8b28c61c71fcb16600000a6/LICENSE.md
-const cfworkerLicense = {
+export const cfworkerLicense = {
   package: '@cfworker/json-schema@4.1.1', path: 'apps/worker/artifacts/licenses/cfworker.txt',
   sha256: '376944252ab78ca6b41aee44ddea8894927ee67891e77e61eb9d59af63e35094',
 };
