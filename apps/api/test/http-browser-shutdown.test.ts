@@ -1,10 +1,10 @@
 import { request } from 'node:http'
-import { createConnection } from 'node:net'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import Fastify from 'fastify'
 import { expect, it, vi } from 'vitest'
-import type { DeliveryTarget, ManagementPrincipal } from '@foreman-code/contracts'
+import type { DeliveryTarget } from '@foreman-code/contracts'
+import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { trackInFlightRequests } from '../src/infrastructure/inFlightRequests.js'
 import { registerAgentDeliveryRoutes, registerOperatorDeliveryRoutes } from '../src/modules/workflow-chat/httpDelivery.js'
 import type { ChatDeliveryRouter } from '../src/modules/workflow-chat/delivery.js'
@@ -15,6 +15,7 @@ import { createBrowserRuntimeJournal } from '../src/modules/browser-runtime/jour
 import type { BrowserRuntimeSessionRecord } from '../src/modules/browser-runtime/types.js'
 import { deferred } from './helpers/deferred.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
+import { removeFixtureDirectory } from './helpers/testResources.js'
 
 const principal: ManagementPrincipal = { id: 'reader', name: 'Reader', audience: 'operator',
   expiresAt: '2099-01-01T00:00:00Z', revokedAt: null, grants: [] }
@@ -31,9 +32,12 @@ for (const kind of ['operator_conversation', 'agent_conversation'] as const) {
     registerAgentDeliveryRoutes(app, delivery as unknown as ChatDeliveryRouter)
     const target: DeliveryTarget = kind === 'operator_conversation' ? { kind, conversationId: 'chat' }
       : { kind, conversationId: 'chat', agent: { workspaceId: 'workspace', workflowId: 'workflow', workflowNodeId: 'node',
-        agentId: 'agent', configurationVersionId: 'configuration', productRole: 'coder', displayName: 'Agent' } }
+        agentId: 'agent' } }
     const path = kind === 'operator_conversation' ? '/api/operator/conversations/chat/deliveries/read'
       : '/api/workspaces/workspace/agent-chat/deliveries/read'
+    const stateDirectory = await privateFixtureDirectory('delivery-shutdown-')
+    const host = await browserHost(stateDirectory)
+    app.addHook('onClose', async () => { await host.close() })
     const address = await app.listen({ host: '127.0.0.1', port: 0 })
     const call = request(`${address}${path}?retry=1`, { method: 'POST', agent: false,
       headers: { 'content-type': 'application/json' } })
@@ -54,6 +58,7 @@ for (const kind of ['operator_conversation', 'agent_conversation'] as const) {
       release.resolve()
       call.destroy()
       await (closing ?? app.close())
+      await removeFixtureDirectory(stateDirectory)
     }
   })
 }
@@ -86,6 +91,7 @@ it('closes an idle browser host without replaying historical cleanup and retains
   let closing: Promise<void> | undefined
   try {
     host = await browserHost(stateDirectory)
+    await host.storage.create('profile', 1)
     app.addHook('onClose', async () => { await host!.close() })
     await app.listen({ host: '127.0.0.1', port: 0 })
     const installer = await import(new URL('../../../scripts/local-production-runtime.mjs', import.meta.url).href)
@@ -99,15 +105,14 @@ it('closes an idle browser host without replaying historical cleanup and retains
       .toEqual(records.sort((a, b) => a.session.id.localeCompare(b.session.id)))
     expect(JSON.parse(await readFile(join(root, 'runtime-drain.json'), 'utf8')))
       .toEqual({ commandId: 'update', state: 'draining' })
-    const connection = createConnection(join(root, 'runtime-control.sock'))
-    const error = await new Promise<NodeJS.ErrnoException>(resolve => { connection.once('error', resolve) })
-    connection.destroy()
-    expect(error.code).toBe('ENOENT')
+    await expect(installer.requestProductionBrowserDrain({ stateDirectory, operation: 'status', commandId: 'update' }))
+      .rejects.toMatchObject({ code: 'ENOENT' })
   } finally {
     releaseCleanup.resolve()
     await (closing ?? app.close())
     await host?.close()
     cleanup.mockRestore()
+    await removeFixtureDirectory(stateDirectory)
   }
 })
 
@@ -130,5 +135,6 @@ it('retries cleanup for a durably closed browser session whose resource cleanup 
     await host?.close()
     cleanup.mockRestore()
     closeProfile.mockRestore()
+    await removeFixtureDirectory(stateDirectory)
   }
 })
