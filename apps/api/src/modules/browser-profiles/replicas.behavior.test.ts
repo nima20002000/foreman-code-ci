@@ -38,3 +38,14 @@ it('never stores a remove intent without an installation when a replica is added
   for (const intent of [...(Array.isArray(outcome) ? outcome : []), ...stored]) expect(intent.installationId).toEqual(expect.any(String))
   expect(Array.isArray(outcome) ? outcome.map(value => value.computerId).sort() : outcome).toEqual(['source', 'worker'])
 })
+
+it('adds an unpublished shared profile as an empty local copy without contacting its source', async () => {
+  const f = profileWorkFixture()
+  const profile = (await f.service.create(f.owner, { name: 'Demo profile', computerId: 'source' })).value
+  f.unpaired.add('source')
+  const receipt = await f.service.addExisting(f.owner, { profileId: profile.id, computerId: 'worker' })
+  expect(receipt.value).toMatchObject({ state: 'queued', replica: { desiredSnapshot: null } })
+  const worker = (await f.service.get(f.owner, profile.id)).operations.find(value => value.computerId === 'worker')
+  expect(worker).toMatchObject({ operation: 'create', state: 'queued' })
+  expect(f.host.export).not.toHaveBeenCalled()
+})
