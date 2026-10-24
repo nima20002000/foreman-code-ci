@@ -76,7 +76,7 @@ it('releasing an expired lane cannot clear a successor lease', async () => {
 
 it('durable acknowledgement refuses native turn identity replacement', async () => {
   const f = await fixture()
-  const original = await f.coordination.transitionReviewJob(f.job.id, 'token', 'acknowledged', { providerTurnOrMessageId: f.job.providerTurnOrMessageId, writerFence: f.writer, releaseLease: false })
+  const original = await f.coordination.transitionReviewJob(f.job.id, 'token', 'acknowledged', { providerTurnOrMessageId: f.job.providerTurnOrMessageId!, writerFence: f.writer, releaseLease: false })
   await expect(f.coordination.transitionReviewJob(f.job.id, 'token', 'acknowledged', { providerTurnOrMessageId: 'replacement', writerFence: f.writer, releaseLease: false }))
     .rejects.toMatchObject({ code: 'REVIEW_JOB_IDENTITY_CONFLICT' })
   expect(await f.read()).toEqual(original)

@@ -1,3 +1,4 @@
+import { expect } from 'vitest'
 import type { ReviewJob } from '@foreman-code/contracts'
 import { acknowledgementId, reviewEvidence } from '../../src/modules/interactions/current/nativeEvidence.js'
 import { readContext } from '../../src/modules/interactions/current/context.js'
@@ -19,6 +20,8 @@ export async function reviewCoordinationFixture(failed = false) {
   try {
     // Retain a real native acknowledgement, then drain its original observer.
     f.resumeObservation()
+    await expect.poll(async () => (await coordination.findReviewJob(f.interaction.id, f.reviewer.agentId))?.state,
+      { timeout: 10_000 }).toBe('acknowledged')
     await f.native.reviewers.shutdown()
     const lane = (await coordination.getLane('codex', f.reviewer.nativeSessionId!))!
     const writer = await coordination.claimLane(lane.id, lane.revision, 'worker', 'writer',
