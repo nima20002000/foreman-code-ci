@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { collaborationContractFixtures as fixture, WorkflowExecutionChatResolutionSchema } from '@foreman-code/contracts'
-import { agentChatFixtures } from '@foreman-code/contracts/agent-chat'
+import { AgentChatStateSchema, agentChatFixtures } from '@foreman-code/contracts/agent-chat'
 import { agentChatFixtureFor, createAgentChatMock } from '../../../shared/mocks/agentChatHandlers'
 import { useConversationDraftStore } from '../conversationDraftStore'
 import { agentChatDraftKey } from '../agentChat/model'
@@ -42,10 +42,10 @@ it('opens a separate supported chat when a finished Run has no resumable session
   const target = resolved.target, context = { ...target.agent, runId: target.execution.runId }
   const selection = { workspaceId: context.workspaceId, workflowId: context.workflowId,
     workflowNodeId: context.workflowNodeId, runId: context.runId, executionId: target.execution.executionId }
-  const unavailable = { ...agentChatFixtureFor(agentChatFixtures.empty, context),
+  const unavailable = AgentChatStateSchema.parse({ ...agentChatFixtureFor(agentChatFixtures.empty, context),
     sourceTranscript: { executionId: target.execution.executionId, state: 'completed', revision: '1',
-      messages: [], hasEarlierMessages: false, hasEarlierActivity: false, latestActivitySequence: '0' },
-    availability: { canSend: false, reason: 'native_session_missing', message: 'This execution has no resumable stored native session.' } }
+      messages: [], hasEarlierMessages: false },
+    availability: { canSend: false, reason: 'native_session_missing', message: 'This execution has no resumable stored native session.' } })
   const outside = createAgentChatMock(agentChatFixtureFor(agentChatFixtures.empty, target.agent))
   server.use(...outside.handlers)
   server.use(http.get('*/agent-chat/workflows/:workflowId/runs/:runId/nodes/:workflowNodeId', () =>
