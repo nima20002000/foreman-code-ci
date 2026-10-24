@@ -4,7 +4,7 @@ import type { EngineChatReadback } from '@foreman-code/contracts'
 import { createStreamReadback } from '../../../shared/api/streamReadback'
 import { sessionSignal } from '../../../shared/api/sessionBoundary'
 import { isApiAccessError } from '../../../shared/api/accessError'
-import { boundedNativeWindow } from '../../chat-core'
+import { boundedNativeWindow } from './nativeMessageWindow'
 import { sameDeliveryTarget } from '../../workflow-chat'
 import { executionChatNoticeSchema, messageBelongsToExecution, type ExecutionChatSource, type ExecutionChatTarget,
   type ExecutionChatNotice } from './executionChatSource'

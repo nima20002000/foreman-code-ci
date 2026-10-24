@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { timeRuntimeOperation } from '../../diagnostics/index.js'
 import { isDeepStrictEqual } from 'node:util'
 import type { ChildProcess, ChildProcessWithoutNullStreams } from 'node:child_process'
@@ -916,14 +915,16 @@ export async function detachedStdioEnvironment(scope: NativeProcessRecovery, sig
   socket.destroy()
   const variables = recordObject(reply.variables)
   if (Object.entries(variables).some(([name, value]) =>
-    name !== INSTALLATION_NAMES.environment.MCP_TOKEN || typeof value !== 'string' || !value)) {
+    !['FOREMAN_CODE_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'].includes(name) || typeof value !== 'string' || !value)) {
     throw new Error('Invalid retained native credential environment.')
   }
-  const token = variables[INSTALLATION_NAMES.environment.MCP_TOKEN]
-  if (typeof token !== 'string' || !token) {
-    throw new Error('Retained native credential is missing.')
+  const token = variables.GRAPHQL_MCP_TOKEN ?? variables.FOREMAN_CODE_MCP_TOKEN
+  if (typeof token !== 'string' || !token
+    || variables.GRAPHQL_MCP_TOKEN && variables.FOREMAN_CODE_MCP_TOKEN
+      && variables.GRAPHQL_MCP_TOKEN !== variables.FOREMAN_CODE_MCP_TOKEN) {
+    throw new Error('Retained native credential aliases do not match.')
   }
-  return { [INSTALLATION_NAMES.environment.MCP_TOKEN]: token }
+  return { GRAPHQL_MCP_TOKEN: token }
 }
 
 export async function attachDetachedStdio(scope: NativeProcessRecovery, signal?: AbortSignal) {

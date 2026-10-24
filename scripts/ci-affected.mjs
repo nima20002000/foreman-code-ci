@@ -8,7 +8,7 @@ import { usableIntegrationCoverage } from '../packages/contracts/src/ciCoverage.
 import { workerEntryPoints, rsyncWriterEntrypoint, schemaWorkerEntrypoint, verificationScripts, workerSnapshotFiles }
   from './worker-snapshot-policy.mjs'
 
-const projects = ['apps/api', 'apps/ci', 'apps/web', 'apps/worker', 'packages/contracts', 'packages/contracts-node']
+const projects = ['apps/api', 'apps/ci', 'apps/web', 'apps/worker', 'packages/contracts']
 const testFile = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/
 const integrationFile = /^apps\/api\/test\/[^/]+\.integration\.test\.ts$/
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { DEFAULT_HARNESS_DEFAULTS, RecordedHarnessConfigurationSchema, type Agent } from '@foreman-code/contracts'
+import { DEFAULT_HARNESS_DEFAULTS, HarnessConfigurationSchema, type Agent } from '@foreman-code/contracts'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -37,7 +37,7 @@ describe('exact native sandbox settings in the actual form', () => {
     expect(screen.getByText(/Leaving workspace-write removes additional writable directories/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Save agent settings' }))
     const saved = onSave.mock.calls[0]![0].agent as Agent
-    expect(RecordedHarnessConfigurationSchema.safeParse(saved.harnessConfiguration).success).toBe(true)
+    expect(HarnessConfigurationSchema.safeParse(saved.harnessConfiguration).success).toBe(true)
     expect(saved.harnessConfiguration).toMatchObject({ sandbox, advanced: { additionalWritableDirectories: [] } })
     expect(saved.harnessConfiguration?.harness === 'codex' ? saved.harnessConfiguration.advanced?.workspaceWrite : 'wrong harness').toBeUndefined()
     expect(agent).toEqual(original)

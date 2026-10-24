@@ -24,7 +24,7 @@ import {
   type WorkflowVersionCurrent,
   type RepeatDecisionV1,
 } from '@foreman-code/contracts/current'
-import type { RunOwnership } from '../runs/index.js'
+import type { RunOwnership } from '../runs/ownership.js'
 import { beforeGraphCommit } from '../run-graph/connection.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { currentRunGraphPublication } from '../run-graph/publication.js'

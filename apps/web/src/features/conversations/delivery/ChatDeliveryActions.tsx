@@ -1,5 +1,5 @@
 import type { ChatDeliveryIntent } from '@foreman-code/contracts'
-import { deliveryAction, type DeliveryPresentation } from '../../chat-core'
+import { deliveryAction, type DeliveryPresentation } from './deliveryAction'
 import { ArrowUp, Square, X } from 'lucide-react'
 import { IconButton, Select, Tooltip } from '../../../shared/ui/nocturne'
 
@@ -27,8 +27,8 @@ export function ChatDeliveryActions({ presentation, intent, onIntentChange, onSu
   ]
   // Icon controls that sit inside the composer box; why sending is blocked shows in the composer itself.
   return <div className="chat-delivery-actions" role="group" aria-label="Message delivery">
-    {/* How to deliver only matters while a turn is running; otherwise a message is simply sent. */}
-    {presentation.state === 'active' ? <Select label="Delivery action" value={intent} options={options} disabled={pending}
+    {/* Keep a chosen mode visible after settlement so it can be reset without losing the draft. */}
+    {presentation.state === 'active' || intent !== 'auto' ? <Select label="Delivery action" value={intent} options={options} disabled={pending}
       onChange={event => {
         const selected = options.find(option => option.value === event.target.value)
         if (selected) onIntentChange(selected.value)

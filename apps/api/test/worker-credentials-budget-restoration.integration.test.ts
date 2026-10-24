@@ -2,7 +2,7 @@ import { beforeEach, expect, it } from 'vitest'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
 import { WorkerCredentialService } from '../src/modules/access/workerCredentials.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { PostgresInteractionCoordinationRepository } from '../src/modules/interactions/coordination.js'
 import { WorkerLaunchCredentialService } from '../src/modules/harnesses/mcpDetection.js'
 import { workerCredentialBudgetFixture } from './helpers/workerCredentialBudgetFixture.js'
@@ -30,7 +30,7 @@ it('restores the original native credential after service restart without alloca
   await coordination.ensureLane({ id: 'original-credential-lane', harness: session.harness,
     nativeSessionId: session.nativeSessionId, ownerAgentId: execution.agentId,
     connectionGeneration: 1, revision: 0, observedAt: execution.createdAt, observedStatus: 'idle' })
-  const issued = await new CurrentWorkerCredentialService(pool, access, 60_000).issueForExecution(execution.id)
+  const issued = await new Wave25WorkerCredentialService(pool, access, 60_000).issueForExecution(execution.id)
   // A deadline from the previous process has no meaning in the restarted process's monotonic clock.
   issued.renewalDeadline = -1
   const before = (await pool.query('select id,token_hash,expires_at from management_principals where id=$1',

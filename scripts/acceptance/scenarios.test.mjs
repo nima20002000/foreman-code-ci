@@ -130,7 +130,7 @@ test('seed uses real-route request shapes and reserved journal commands, never R
     assert.equal(calls.some((call) => call.path.includes('/runs')), false)
     const native = await readFile(join(folder, '.codex/config.toml'), 'utf8')
     assert.equal(native, '[mcp_servers."foreman-code"]\nurl = "http://127.0.0.1:3307/mcp"\n'
-      + 'bearer_token_env_var = "GRAPHQL_MCP_TOKEN"\nenabled = true\n')
+      + 'bearer_token_env_var = "FOREMAN_CODE_MCP_TOKEN"\nenabled = true\n')
     assert.equal(staged.flatMap(item => item.stagedAgents).filter(({ agent }) => agent.harness === 'claude')
       .every(({ agent }) => agent.harnessConfiguration.configDirectory === claudeConfigDirectory), true)
     assert.equal(calls.filter((call) => call.body?.action === 'stage_edits').length, 8)

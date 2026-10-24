@@ -62,6 +62,11 @@ export function useOperatorChatReadback(enabled: boolean, open: boolean, selecte
       return newer(queryClient.getQueryData<OperatorConversationState>(detailKey(id)),
         { ...state, activities: mergeOperatorActivity(state.activities ?? [], updates) }, 'read')
     } })
+  useEffect(() => {
+    if (selected.data && (selected.data.messages.length || selected.data.hasEarlierMessages)) {
+      useOperatorChatStore.getState().forgetDraft(selected.data.conversation.id)
+    }
+  }, [selected.data])
   const selectedDenied = useAccessFailureLatch(selected)
   const accessDenied = listDenied || selectedDenied || externalDenial
   const acceptState = useCallback((id: string, state: OperatorConversationState) => {

@@ -7,10 +7,13 @@ import { identityEpoch } from '../../../shared/api/protectedChatStorage'
 import { isApiAccessError } from '../../../shared/api/accessError'
 import type { ConversationAttachments } from '../../attachments'
 import { ConversationViewport } from '../ConversationViewport'
+import { agentChatDraftKey } from '../agentChat/model'
 import { AgentChatComposer } from '../agentChat/AgentChatComposer'
 import { sameStructuredResult } from '../agentChat/structuredResult'
-import { useConversationDraftStore, prepareChatAttachments, type ChatAttachmentAttempt, deliveryAction } from '../../chat-core'
+import { useConversationDraftStore } from '../conversationDraftStore'
+import { prepareChatAttachments, type ChatAttachmentAttempt } from '../chatAttachmentAttempt'
 import { ChatDeliveryActions } from './ChatDeliveryActions'
+import { deliveryAction } from './deliveryAction'
 import { ChatDeliveryReceipts } from './ChatDeliveryReceipts'
 import { RetainedInput, RetainedInputsStatus, type DirectRecovery } from './RetainedDeliveryInputs'
 import { useRetainedInputs } from './useRetainedInputs'
@@ -28,7 +31,7 @@ export type ExecutionChatPanelProps = {
   sessionMode?: SessionMode; appliedSessionMode?: SessionMode
   onOpenContinuation?(receipt: ChatDeliveryReceipt): void; onOpenGroup?(postId: string): void
   /** The Agent chat that continues a finished execution's session; shown in place of this panel when it takes no input. */
-  followUp?: ReactNode
+  followUp?(inputs: ReactNode): ReactNode
   onRecover?(recovery: DirectRecovery): void
 }
 
@@ -39,7 +42,9 @@ export function ExecutionChatPanel(props: ExecutionChatPanelProps) {
 function ExecutionChatContent(props: ExecutionChatPanelProps) {
   const cache = useQueryClient(), serialized = JSON.stringify(props.target)
   const target = useMemo(() => JSON.parse(serialized) as ExecutionChatTarget, [serialized])
-  const draftKey = `execution-chat:${serialized}`, inputRef = useRef<HTMLTextAreaElement>(null)
+  const draftKey = target.kind === 'workflow_execution'
+    ? agentChatDraftKey({ ...target.agent, runId: target.execution.runId }, target.execution.executionId) : `execution-chat:${serialized}`
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const detailAbort = useRef(new AbortController())
   useEffect(() => () => detailAbort.current.abort(), [])
   const draft = useConversationDraftStore(store => store.drafts[draftKey] ?? '')
@@ -108,12 +113,13 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
   // A finished execution takes no new turn here; its Agent chat continues the same session with its history.
   const closed = state?.state === 'idle' && target.kind === 'workflow_execution' && !presentation.capabilities.queue
   // Messages still in doubt keep their status and recovery controls in view before handing over to that chat.
-  const unsettled = !!delivery.pending || !!delivery.pendingControl || retained.items.length > 0
+  const unsettled = !!delivery.pending || !!delivery.pendingControl
     || receipts.some(receipt => receipt.state === 'queued' || receipt.state === 'unknown')
   if (denied || delivery.denied) return <Alert tone="warning" title="Chat access unavailable"><Button onClick={() => {
     detailAbort.current = new AbortController(); setDenied(false); delivery.refresh()
   }}>Refresh access</Button></Alert>
-  if (closed && !unsettled && props.followUp) return <>{delivery.feedback ? <p role="alert">{delivery.feedback}</p> : null}{props.followUp}</>
+  if (closed && !unsettled && props.followUp) return <>{delivery.feedback ? <p role="alert">{delivery.feedback}</p> : null}{props.followUp(<><RetainedInputsStatus state={retained} />{retained.items.map(input =>
+    <RetainedInput key={input.receiptId} input={input} {...retainedProps} />)}</>)}</>
   return <section className="agent-conversation" aria-label="Selected execution chat">
     {/* The Board's chat tab already names the Run attempt above this panel. */}
     <header className="agent-chat-identity"><h2>{props.name}</h2></header>

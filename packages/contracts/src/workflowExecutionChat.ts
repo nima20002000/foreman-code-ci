@@ -40,7 +40,7 @@ export const WorkflowExecutionChatResolutionSchema = z.discriminatedUnion('kind'
     nextCursor: z.string().nullable(), hasMore: z.boolean(), revision: z.number().int().nonnegative() }).strict(),
   /** Without workflowVersionId this is a draft chat: the node is not in a saved workflow version yet. */
   z.object({ kind: z.literal('outside_run'), agent: AgentNodeRefSchema,
-    workflowVersionId: IdSchema.optional(), reason: z.literal('NO_LIVE_RUN') }).strict(),
+    workflowVersionId: IdSchema.optional(), reason: z.enum(['NO_LIVE_RUN', 'SEPARATE_CHAT']) }).strict(),
   z.object({ kind: z.literal('unavailable'), reason: z.enum(['NODE_UNAVAILABLE', 'NO_EXECUTION', 'WORKFLOW_UNAVAILABLE']) }).strict(),
 ]);
 export type WorkflowExecutionChatSelection = z.infer<typeof WorkflowExecutionChatSelectionSchema>;
