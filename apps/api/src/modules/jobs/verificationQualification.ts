@@ -1,5 +1,5 @@
-import { errorMessage } from '@foreman-code/contracts-node/server-kit'
-import { captureVerificationInventory } from '../../shared/verificationRunner.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { captureVerificationInventory } from '../../../../../scripts/verification-runner.mjs'
 import { constants } from 'node:fs'
 import { mkdir, open, readFile, readlink, rm, statfs, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -18,7 +18,7 @@ import { JobVerificationQualificationCandidateSchema, JobVerificationRepositoryC
   from '@foreman-code/contracts/job-verification-runtime'
 import { readInstalledVerificationConfiguration } from './installedVerificationRuntime.js'
 import { readProtectedRuntimeFile,
-  type InstalledRuntimeConfigurationLocation } from '@foreman-code/contracts-node/installed-runtime-node'
+  type InstalledRuntimeConfigurationLocation } from '@foreman-code/contracts/installed-runtime-node'
 import { podmanIsolationCreateArgv, ensureEmptyPodmanHooks, type PodmanIsolationInput } from './executorPodman.js'
 import { assertJobRuntimeEntryContext, jobQualificationFingerprint, runQualificationCommand,
   validateVerificationIsolationObservation, type JobQualificationAuthority, type QualificationNativeOwner }
@@ -310,228 +310,6 @@ function qualifiedResult(input: {
   return JobVerificationRuntimeQualificationResultSchema.parse({ outcome: 'qualified', measurement, runtime })
 }
 
-type QualificationInput = Parameters<typeof qualifyVerificationRuntime>[0]
-type QualificationConfiguration = Awaited<ReturnType<typeof readInstalledVerificationConfiguration>>
-type QualificationExecutionState = {
-  containerId: string
-  pendingReport: Omit<Parameters<typeof publishFailedQualification>[0], 'closeContainer' | 'failure'> | undefined
-}
-
-function qualificationCommands(input: QualificationInput, candidate: QualificationCandidate, owner: QualificationNativeOwner) {
-  const fingerprint = candidate.fingerprint
-  const run = async (binary: string, argv: string[], timeoutMs = 30000) => {
-    input.signal.throwIfAborted()
-    await input.authority.assertCurrent(candidate)
-    await assertJobRuntimeEntryContext(candidate)
-    return runQualificationCommand(owner, binary, argv, candidate.controllerEnvironment, input.signal, timeoutMs)
-  }
-  const podman = (argv: string[], timeoutMs?: number) => run(fingerprint.runtimeExecutable,
-    argv[0] === '--remote=false' ? argv : ['--remote=false', ...argv], timeoutMs)
-  const checked = async (argv: string[], timeoutMs?: number) => {
-    const result = await podman(argv, timeoutMs)
-    if (result.exitCode !== 0) {
-      throw new Error(`Physical verification ${argv[0]} failed with exit ${result.exitCode}: ${result.stderr.slice(0, 300)}`)
-    }
-    return result.stdout
-  }
-  const readQuota: JobQuotaReader = async (saved, directory, signal) => {
-    signal.throwIfAborted()
-    const result = await run(saved.queryExecutable, [directory, saved.blockDevice])
-    if (result.exitCode !== 0) throw new Error('Physical quota readback failed.')
-    return JobProjectQuotaReadbackSchema.parse(JSON.parse(result.stdout))
-  }
-  return { podman, checked, readQuota }
-}
-
-function qualificationReports(input: {
-  candidate: QualificationCandidate
-  configuration: QualificationConfiguration
-  source: QualificationSource
-  owner: QualificationNativeOwner
-  state: QualificationExecutionState
-  publications: QualificationPublications
-  publishReport: QualificationReportPublisher
-}) {
-  const { candidate, configuration, source, owner, state, publications, publishReport } = input
-  const fingerprint = candidate.fingerprint
-  const pool = fingerprint.quotaPool!
-  const materialize = (context: JobQualificationReport['context'], verified: {
-    filesystem: { device: string; inode: string; mountId: string }; verifiedAt: string
-  }) => {
-    const attempt = { executionId: context.identity.executionId, attemptId: context.identity.attemptId,
-      keyRevision: fingerprint.registration?.keyRevision ?? null,
-      authorizationRevision: fingerprint.registration?.authorizationRevision ?? null }
-    const placementHash = sourceBindingHash(candidate.profile.root, attempt, context.identity.executionId)
-    return SourceMaterializationRecordSchema.parse({ receipt: { version: 1,
-      materializationId: candidate.qualificationId, binding: candidate.profile.root.binding,
-      quota: pool.slots[0], placementHash, ...attempt,
-      verifiedManifestDigest: context.identity.manifestDigest,
-      verifiedEntries: configuration.qualificationSource.manifest.totalEntries,
-      verifiedBytes: configuration.qualificationSource.manifest.totalBytes,
-      verifiedAt: verified.verifiedAt, localTreeIdentity: verified.filesystem },
-      rootPolicyId: candidate.profile.root.selection.rootPolicyId,
-      rootPolicyRevision: candidate.profile.root.selection.rootPolicyRevision,
-      operationId: context.identity.executionId, reservationId: candidate.qualificationId,
-      sourceBindingHash: placementHash, finalDispatchBindingHash: null, state: 'prepared' })
-  }
-  const publish = async (context: JobQualificationReport['context'], startedAt: string,
-    terminal: JobQualificationReport['terminal'], reserve: Awaited<ReturnType<typeof reserveVerificationReportSpace>>,
-    materialization: JobQualificationReport['materialization']) => {
-    const closure = await owner.readClosure!()
-    if (closure.containerId !== state.containerId) {
-      throw new Error('Report publication requires the original container closure certificate.')
-    }
-    const execution = qualificationExecution(candidate, { context, startedAt, terminal, materialization })
-    await finalizeVerificationPublication(execution, { ...terminal, processStopped: true,
-      closureEvidenceDigest: jobDigest(closure), resultDigest: jobDigest(terminal),
-      logsTruncated: false, logGapPossible: false, outputCollectionError: false, artifactDigests: [] },
-    { context, reserve, finalizedAt: null }, async () => {})
-    const artifacts = []
-    for (const file of reportFiles) {
-      const bytes = await readBoundedReport(source.sourceRoot, file,
-        context.limits[reportLimits[file]])
-      const artifact = await publishReport(candidate, { context, closure, terminal, startedAt, materialization,
-        path: `.logs/verification/${file}` as JobQualificationReport['path'],
-        sha256: sha256Hex(bytes), byteSize: bytes.length }, bytes)
-      if (artifact.state !== 'available' || artifact.byteSize !== bytes.length
-        || artifact.sha256 !== sha256Hex(bytes)) {
-        throw new Error('Canonical qualification report readback failed.')
-      }
-      artifacts.push(artifact)
-    }
-    publications.push({ executionId: context.identity.executionId, artifacts })
-    const summaryBytes = await readBoundedReport(source.sourceRoot, 'summary.json', context.limits.summaryBytes)
-    return JobVerificationReportSchema.parse(JSON.parse(summaryBytes.toString('utf8')))
-  }
-  return { materialize, publish }
-}
-
-type QualificationSuiteExecution = {
-  candidate: QualificationCandidate
-  configuration: QualificationConfiguration
-  source: QualificationSource
-  inputRoot: string
-  scratch: string
-  namespace: string
-  owner: QualificationNativeOwner
-  signal: AbortSignal
-  authority: JobQualificationAuthority
-  now: () => number
-  state: QualificationExecutionState
-  createContainer: () => Promise<string>
-  materialize: ReturnType<typeof qualificationReports>['materialize']
-  publish: ReturnType<typeof qualificationReports>['publish']
-  publications: QualificationPublications
-  plan: Awaited<ReturnType<typeof planQualification>>
-  podman: ReturnType<typeof qualificationCommands>['podman']
-  readQuota: JobQuotaReader
-}
-
-async function runOrdinaryQualificationSuites(input: QualificationSuiteExecution) {
-  const { candidate, configuration, source, inputRoot, scratch, namespace, owner, signal, now,
-    state, createContainer, materialize, publish, publications, plan, podman, readQuota } = input
-  const fingerprint = candidate.fingerprint
-  const pool = fingerprint.quotaPool!
-  const { seed, profileIdentity, target, concurrency } = plan
-  const suites = []
-  const reports = []
-  const restore = () => restoreVerificationQualificationSource({ ...configuration.qualificationSource,
-    sourceRoot: source.sourceRoot, signal })
-  let failureContext: ReturnType<typeof JobVerificationRepositoryContextSchema.parse> | undefined
-  for (const suite of candidate.profile.spec.suites) {
-    await resetVerificationQualificationWorkload(source.sourceRoot, scratch, configuration.qualificationSource.manifest.entries.map(file => file.path))
-    if (suites.length) state.containerId = await createContainer()
-    const verified = await restore()
-    target.destination.directoryIdentityHash = jobDigest(verified.filesystem)
-    const startedAt = new Date(now()).toISOString()
-    const before = await statfs(namespace)
-    const bytesBefore = (before.blocks - before.bfree) * before.bsize
-    const inodesBefore = before.files - before.ffree
-    const maxBytes = Math.floor(Math.min(fingerprint.resources.reportBytes,
-      candidate.profile.spec.policy.maxOutputBytes) / reportFiles.length)
-    const context = suiteRepositoryContext({ candidate, suite, target, profileIdentity, seed, source, maxBytes })
-    if (!failureContext || suite === 'unit') failureContext = context
-    const materialization = materialize(context, verified)
-    const reserve = await reserveVerificationReportSpace(qualificationExecution(candidate,
-      { context, startedAt, materialization, terminal: { outcome: 'build_failed', exitCode: null, signal: null, finishedAt: startedAt } }))
-    await writeVerificationQualificationContext(inputRoot, JSON.stringify({ ...context,
-      measurement: { mutableDirectory: '/job-scratch', cgroupDirectory: '/sys/fs/cgroup' } }))
-    const execution = await podman(['exec', state.containerId, 'node', '/opt/graphql-ci/verification/verify-repository.mjs',
-      '--context', `/workspace/${JOB_INPUT_DIRECTORY}/qualification-context.json`],
-    context.executionTimeoutMs + context.cancellationTimeoutMs + candidate.profile.spec.policy.publicationTimeoutMs)
-    const terminal = { outcome: execution.exitCode === 0 ? 'succeeded' as const : 'build_failed' as const,
-      exitCode: execution.exitCode, signal: null, finishedAt: new Date(now()).toISOString() }
-    const publishOrdinaryReport = async () => {
-      const report = await publish(context, startedAt, terminal, reserve, materialization)
-      state.pendingReport = undefined
-      return report
-    }
-    state.pendingReport = { suite, exitCode: execution.exitCode, stderr: execution.stderr, publish: publishOrdinaryReport }
-    if (execution.exitCode !== 0) {
-      await publishFailedQualification({ suite, exitCode: execution.exitCode, stderr: execution.stderr,
-        closeContainer: () => owner.closeContainer!(),
-        publish: publishOrdinaryReport })
-    }
-    if (!await owner.closeContainer!()) throw new Error('Ordinary verification descendants are still active.')
-    const samples = JSON.parse((await readBoundedJobFile(source.sourceRoot,
-      '.logs/verification/parts/resource-samples.json', context.limits.vitestBytes)).toString('utf8'))
-    if (!samples.samples?.length || samples.samples.some((sample: { error?: string }) => sample.error)) {
-      throw new Error('Complete cold-cache resource samples required.')
-    }
-    const quota = await verifyJobQuotaOwnership({ pool, binding: fingerprint.root.binding,
-      slot: pool.slots[0]!, directory: namespace, signal: input.signal, read: readQuota })
-    const coldCachePeakBytes = Math.max(quota.usedBytes, samples.sampledPeaks.mutableBytes - bytesBefore, 1)
-    const coldCachePeakInodes = Math.max(quota.usedInodes, samples.sampledPeaks.mutableInodes - inodesBefore, 1)
-    const report = await publishOrdinaryReport()
-    if (report.outcome !== 'passed' || report.completeness !== 'complete') {
-      throw new Error(`Canonical ${suite} report did not establish a complete pass.`)
-    }
-    reports.push({ report, expected: context.identity, artifacts: publications.at(-1)!.artifacts })
-    suites.push({ suite, resources: fingerprint.resources, coldCachePeakBytes, coldCachePeakInodes,
-      maxConcurrentHeavyJobs: concurrency, maxUnitWorkers: context.identity.parameters.unitWorkers,
-      maxIntegrationShards: context.identity.parameters.integrationShards,
-      evidenceDigest: jobDigest({ report, samples, quota, artifacts: reports.at(-1)!.artifacts }) })
-  }
-  if (!failureContext) throw new Error('An ordinary suite is required for qualification.')
-  return { suites, reports, failureContext }
-}
-
-async function runQualificationInterruptions(input: QualificationSuiteExecution,
-  failureContext: JobQualificationReport['context']) {
-  const { candidate, configuration, source, inputRoot, scratch, owner, now, state,
-    createContainer, materialize, publish } = input
-  const fingerprint = candidate.fingerprint
-  const target = input.plan.target
-  const restore = () => restoreVerificationQualificationSource({ ...configuration.qualificationSource,
-    sourceRoot: source.sourceRoot, signal: input.signal })
-  const failures = []
-  for (const outcome of ['timed_out', 'cancelled'] as const) {
-    await resetVerificationQualificationWorkload(source.sourceRoot, scratch, configuration.qualificationSource.manifest.entries.map(file => file.path))
-    const verified = await restore()
-    target.destination.directoryIdentityHash = jobDigest(verified.filesystem)
-    const startedAt = new Date(now()).toISOString()
-    const context = JobVerificationRepositoryContextSchema.parse({ ...failureContext,
-      identity: { ...failureContext.identity, executionId: `${candidate.operationId}:${outcome}`,
-        definitionVersionId: `${fingerprint.profileId}:${fingerprint.profileRevision}:${candidate.qualificationId}:${outcome}`,
-        attemptId: `${candidate.qualificationId}:${outcome}` } })
-    const materialization = materialize(context, verified)
-    const reserve = await reserveVerificationReportSpace(qualificationExecution(candidate,
-      { context, startedAt, materialization, terminal: { outcome: 'build_failed', exitCode: null, signal: null, finishedAt: startedAt } }))
-    await writeVerificationQualificationContext(inputRoot, JSON.stringify({ ...context,
-      measurement: { mutableDirectory: '/job-scratch', cgroupDirectory: '/sys/fs/cgroup' } }))
-    state.containerId = await createContainer()
-    await input.authority.assertCurrent(candidate)
-    const terminal = await interruptActiveQualification({ owner, candidate, containerId: state.containerId,
-      contextPath: `/workspace/${JOB_INPUT_DIRECTORY}/qualification-context.json`, startedAt, outcome, signal: input.signal })
-    const report = await publish(context, startedAt, terminal, reserve, materialization)
-    if (report.outcome !== outcome || report.attemptId !== context.identity.attemptId) {
-      throw new Error('Canonical interruption report changed its original attempt or outcome.')
-    }
-    failures.push(report)
-  }
-  return failures
-}
-
 /** Every pass comes from full ordinary commands in the admitted image and original quota namespace. */
 export async function qualifyVerificationRuntime(input: {
   candidate: JobQualificationCandidateRecord
@@ -567,12 +345,32 @@ export async function qualifyVerificationRuntime(input: {
     if (closed) await owner.recordResult?.(result)
     return result
   }
-  const { podman, checked, readQuota } = qualificationCommands(input, candidate, owner)
-  const claims: QualificationClaim[] = []
+  const run = async (binary: string, argv: string[], timeoutMs = 30000) => {
+    input.signal.throwIfAborted()
+    await input.authority.assertCurrent(candidate)
+    await assertJobRuntimeEntryContext(candidate)
+    return runQualificationCommand(owner, binary, argv, candidate.controllerEnvironment, input.signal, timeoutMs)
+  }
+  const podman = (argv: string[], timeoutMs?: number) => run(fingerprint.runtimeExecutable,
+    argv[0] === '--remote=false' ? argv : ['--remote=false', ...argv], timeoutMs)
+  const checked = async (argv: string[], timeoutMs?: number) => {
+    const result = await podman(argv, timeoutMs)
+    if (result.exitCode !== 0) {
+      throw new Error(`Physical verification ${argv[0]} failed with exit ${result.exitCode}: ${result.stderr.slice(0, 300)}`)
+    }
+    return result.stdout
+  }
+  const readQuota: JobQuotaReader = async (saved, directory, signal) => {
+    signal.throwIfAborted()
+    const result = await run(saved.queryExecutable, [directory, saved.blockDevice])
+    if (result.exitCode !== 0) throw new Error('Physical quota readback failed.')
+    return JobProjectQuotaReadbackSchema.parse(JSON.parse(result.stdout))
+  }
+  const claims: Array<{ path: string; file: FileHandle; namespace: string }> = []
   let closed = false
   let denial: Error | undefined
   let result: ReturnType<typeof JobVerificationRuntimeQualificationResultSchema.parse> | undefined
-  let state: QualificationExecutionState | undefined
+  let pendingReport: Omit<Parameters<typeof publishFailedQualification>[0], 'closeContainer' | 'failure'> | undefined
   try {
     const quotas = await readVerificationQuotaPool(pool, fingerprint.root.binding, input.signal, readQuota)
     await claimQuotaSlots({ candidate, owner, claims, signal: input.signal, readQuota })
@@ -591,28 +389,153 @@ export async function qualifyVerificationRuntime(input: {
         verification: { resources: fingerprint.resources, scratchDirectory: scratch },
       } })
     }
-    const containerId = await createContainer()
+    let containerId = await createContainer()
     const observation = await observeContainerIsolation({ checked, containerId, candidate })
     const { quotaResult, quotaInodes, independence } = await probeQuotaPressure({ checked, containerId, pool, claims,
       approvalExpiresAt: approval.expiresAt, now })
-    const plan = await planQualification({
+    const { seed, checkedAt, expiresAt, profileIdentity, target, concurrency } = await planQualification({
       candidate, configuration, ownerUid: input.configuration!.ownerUid, source, namespace,
       approvalExpiresAt: approval.expiresAt, now })
-    const { checkedAt, expiresAt, profileIdentity } = plan
-    const publications: QualificationPublications = []
+    const suites = []
+    const reports = []
+    const publications: NonNullable<import('@foreman-code/contracts/job-verification-runtime')
+      .JobVerificationRuntimeMeasurement['publications']> = []
     if (!owner.closeContainer || !owner.readClosure) throw new Error('Physical container closure authority required.')
-    state = { containerId, pendingReport: undefined }
-    const { materialize, publish } = qualificationReports({ candidate, configuration, source, owner,
-      state, publications, publishReport: input.publishReport })
-    const execution = { candidate, configuration, source, inputRoot, scratch, namespace, owner,
-      signal: input.signal, authority: input.authority, now, state, createContainer, materialize, publish,
-      publications, plan, podman, readQuota }
-    const { suites, reports, failureContext } = await runOrdinaryQualificationSuites(execution)
-    const failures = await runQualificationInterruptions(execution, failureContext)
+    const materialize = (context: JobQualificationReport['context'], verified: {
+      filesystem: { device: string; inode: string; mountId: string }; verifiedAt: string
+    }) => {
+      const attempt = { executionId: context.identity.executionId, attemptId: context.identity.attemptId,
+        keyRevision: fingerprint.registration?.keyRevision ?? null,
+        authorizationRevision: fingerprint.registration?.authorizationRevision ?? null }
+      const placementHash = sourceBindingHash(candidate.profile.root, attempt, context.identity.executionId)
+      return SourceMaterializationRecordSchema.parse({ receipt: { version: 1,
+        materializationId: candidate.qualificationId, binding: candidate.profile.root.binding,
+        quota: pool.slots[0], placementHash, ...attempt,
+        verifiedManifestDigest: context.identity.manifestDigest,
+        verifiedEntries: configuration.qualificationSource.manifest.totalEntries,
+        verifiedBytes: configuration.qualificationSource.manifest.totalBytes,
+        verifiedAt: verified.verifiedAt, localTreeIdentity: verified.filesystem },
+        rootPolicyId: candidate.profile.root.selection.rootPolicyId,
+        rootPolicyRevision: candidate.profile.root.selection.rootPolicyRevision,
+        operationId: context.identity.executionId, reservationId: candidate.qualificationId,
+        sourceBindingHash: placementHash, finalDispatchBindingHash: null, state: 'prepared' })
+    }
+    const restore = () => restoreVerificationQualificationSource({ ...configuration.qualificationSource,
+      sourceRoot: source.sourceRoot, signal: input.signal })
+    const publish = async (context: JobQualificationReport['context'], startedAt: string,
+      terminal: JobQualificationReport['terminal'], reserve: Awaited<ReturnType<typeof reserveVerificationReportSpace>>,
+      materialization: JobQualificationReport['materialization']) => {
+      const closure = await owner.readClosure!()
+      if (closure.containerId !== containerId) {
+        throw new Error('Report publication requires the original container closure certificate.')
+      }
+      const execution = qualificationExecution(candidate, { context, startedAt, terminal, materialization })
+      await finalizeVerificationPublication(execution, { ...terminal, processStopped: true,
+        closureEvidenceDigest: jobDigest(closure), resultDigest: jobDigest(terminal),
+        logsTruncated: false, logGapPossible: false, outputCollectionError: false, artifactDigests: [] },
+      { context, reserve, finalizedAt: null }, async () => {})
+      const artifacts = []
+      for (const file of reportFiles) {
+        const bytes = await readBoundedReport(source.sourceRoot, file,
+          context.limits[reportLimits[file]])
+        const artifact = await input.publishReport!(candidate, { context, closure, terminal, startedAt, materialization,
+          path: `.logs/verification/${file}` as JobQualificationReport['path'],
+          sha256: sha256Hex(bytes), byteSize: bytes.length }, bytes)
+        if (artifact.state !== 'available' || artifact.byteSize !== bytes.length
+          || artifact.sha256 !== sha256Hex(bytes)) {
+          throw new Error('Canonical qualification report readback failed.')
+        }
+        artifacts.push(artifact)
+      }
+      publications.push({ executionId: context.identity.executionId, artifacts })
+      const summaryBytes = await readBoundedReport(source.sourceRoot, 'summary.json', context.limits.summaryBytes)
+      return JobVerificationReportSchema.parse(JSON.parse(summaryBytes.toString('utf8')))
+    }
+    let failureContext: ReturnType<typeof JobVerificationRepositoryContextSchema.parse> | undefined
+    for (const suite of candidate.profile.spec.suites) {
+      await resetVerificationQualificationWorkload(source.sourceRoot, scratch, configuration.qualificationSource.manifest.entries.map(file => file.path))
+      if (suites.length) containerId = await createContainer()
+      const verified = await restore()
+      target.destination.directoryIdentityHash = jobDigest(verified.filesystem)
+      const startedAt = new Date(now()).toISOString()
+      const before = await statfs(namespace)
+      const bytesBefore = (before.blocks - before.bfree) * before.bsize
+      const inodesBefore = before.files - before.ffree
+      const maxBytes = Math.floor(Math.min(fingerprint.resources.reportBytes,
+        candidate.profile.spec.policy.maxOutputBytes) / reportFiles.length)
+      const context = suiteRepositoryContext({ candidate, suite, target, profileIdentity, seed, source, maxBytes })
+      if (!failureContext || suite === 'unit') failureContext = context
+      const materialization = materialize(context, verified)
+      const reserve = await reserveVerificationReportSpace(qualificationExecution(candidate,
+        { context, startedAt, materialization, terminal: { outcome: 'build_failed', exitCode: null, signal: null, finishedAt: startedAt } }))
+      await writeVerificationQualificationContext(inputRoot, JSON.stringify({ ...context,
+        measurement: { mutableDirectory: '/job-scratch', cgroupDirectory: '/sys/fs/cgroup' } }))
+      const execution = await podman(['exec', containerId, 'node', '/opt/graphql-ci/verification/verify-repository.mjs',
+        '--context', `/workspace/${JOB_INPUT_DIRECTORY}/qualification-context.json`],
+      context.executionTimeoutMs + context.cancellationTimeoutMs + candidate.profile.spec.policy.publicationTimeoutMs)
+      const terminal = { outcome: execution.exitCode === 0 ? 'succeeded' as const : 'build_failed' as const,
+        exitCode: execution.exitCode, signal: null, finishedAt: new Date(now()).toISOString() }
+      const publishOrdinaryReport = async () => {
+        const report = await publish(context, startedAt, terminal, reserve, materialization)
+        pendingReport = undefined
+        return report
+      }
+      pendingReport = { suite, exitCode: execution.exitCode, stderr: execution.stderr, publish: publishOrdinaryReport }
+      if (execution.exitCode !== 0) {
+        await publishFailedQualification({ suite, exitCode: execution.exitCode, stderr: execution.stderr,
+          closeContainer: () => owner.closeContainer!(),
+          publish: publishOrdinaryReport })
+      }
+      if (!await owner.closeContainer!()) throw new Error('Ordinary verification descendants are still active.')
+      const samples = JSON.parse((await readBoundedJobFile(source.sourceRoot,
+        '.logs/verification/parts/resource-samples.json', context.limits.vitestBytes)).toString('utf8'))
+      if (!samples.samples?.length || samples.samples.some((sample: { error?: string }) => sample.error)) {
+        throw new Error('Complete cold-cache resource samples required.')
+      }
+      const quota = await verifyJobQuotaOwnership({ pool, binding: fingerprint.root.binding,
+        slot: pool.slots[0]!, directory: namespace, signal: input.signal, read: readQuota })
+      const coldCachePeakBytes = Math.max(quota.usedBytes, samples.sampledPeaks.mutableBytes - bytesBefore, 1)
+      const coldCachePeakInodes = Math.max(quota.usedInodes, samples.sampledPeaks.mutableInodes - inodesBefore, 1)
+      const report = await publishOrdinaryReport()
+      if (report.outcome !== 'passed' || report.completeness !== 'complete') {
+        throw new Error(`Canonical ${suite} report did not establish a complete pass.`)
+      }
+      reports.push({ report, expected: context.identity, artifacts: publications.at(-1)!.artifacts })
+      suites.push({ suite, resources: fingerprint.resources, coldCachePeakBytes, coldCachePeakInodes,
+        maxConcurrentHeavyJobs: concurrency, maxUnitWorkers: context.identity.parameters.unitWorkers,
+        maxIntegrationShards: context.identity.parameters.integrationShards,
+        evidenceDigest: jobDigest({ report, samples, quota, artifacts: reports.at(-1)!.artifacts }) })
+    }
+    if (!failureContext) throw new Error('An ordinary suite is required for qualification.')
+    const failures = []
+    for (const outcome of ['timed_out', 'cancelled'] as const) {
+      await resetVerificationQualificationWorkload(source.sourceRoot, scratch, configuration.qualificationSource.manifest.entries.map(file => file.path))
+      const verified = await restore()
+      target.destination.directoryIdentityHash = jobDigest(verified.filesystem)
+      const startedAt = new Date(now()).toISOString()
+      const context = JobVerificationRepositoryContextSchema.parse({ ...failureContext,
+        identity: { ...failureContext.identity, executionId: `${candidate.operationId}:${outcome}`,
+          definitionVersionId: `${fingerprint.profileId}:${fingerprint.profileRevision}:${candidate.qualificationId}:${outcome}`,
+          attemptId: `${candidate.qualificationId}:${outcome}` } })
+      const materialization = materialize(context, verified)
+      const reserve = await reserveVerificationReportSpace(qualificationExecution(candidate,
+        { context, startedAt, materialization, terminal: { outcome: 'build_failed', exitCode: null, signal: null, finishedAt: startedAt } }))
+      await writeVerificationQualificationContext(inputRoot, JSON.stringify({ ...context,
+        measurement: { mutableDirectory: '/job-scratch', cgroupDirectory: '/sys/fs/cgroup' } }))
+      containerId = await createContainer()
+      await input.authority.assertCurrent(candidate)
+      const terminal = await interruptActiveQualification({ owner, candidate, containerId,
+        contextPath: `/workspace/${JOB_INPUT_DIRECTORY}/qualification-context.json`, startedAt, outcome, signal: input.signal })
+      const report = await publish(context, startedAt, terminal, reserve, materialization)
+      if (report.outcome !== outcome || report.attemptId !== context.identity.attemptId) {
+        throw new Error('Canonical interruption report changed its original attempt or outcome.')
+      }
+      failures.push(report)
+    }
     closed = await owner.close()
     if (!closed) throw new Error('Physical verification descendant closure is unconfirmed.')
     await input.authority.assertCurrent(candidate)
-    const evidence = { observation, quotas, quotaResult, quotaInodes, independence, suites, reports, failures, publications, containerId: state.containerId, closed }
+    const evidence = { observation, quotas, quotaResult, quotaInodes, independence, suites, reports, failures, publications, containerId, closed }
     result = qualifiedResult({ candidate, info, profileIdentity, checkedAt, expiresAt, suites, publications, evidence })
   } catch (error) {
     denial = error instanceof Error ? error : new Error('Physical verification qualification failed.')
@@ -625,9 +548,9 @@ export async function qualifyVerificationRuntime(input: {
           { cause: error })
       }
     }
-    if (closed && denial && state?.pendingReport) {
+    if (closed && denial && pendingReport) {
       try {
-        await publishFailedQualification({ ...state.pendingReport, failure: denial, closeContainer: async () => closed })
+        await publishFailedQualification({ ...pendingReport, failure: denial, closeContainer: async () => closed })
       } catch (error) {
         denial = error instanceof Error ? error : new Error('Qualification report publication failed.')
       }

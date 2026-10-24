@@ -26,11 +26,7 @@ import { DeviceExecutionAdmissionFields } from '@foreman-code/contracts/device-r
 import { verificationRuntimeFixture } from '../../../test/helpers/verificationRuntimeFixture.js'
 import { createVerificationProfile } from './verificationProfiles.js'
 import { jobPolicyRequirementsRecord } from '@foreman-code/contracts/job-verification'
-import { qualifyVerificationRuntime, startVerificationContainer } from './verificationQualification.js'
-import * as verificationConfiguration from './installedVerificationRuntime.js'
-import * as quotaOwnership from './quotaOwnership.js'
-import * as qualification from './qualification.js'
-import type { QualificationNativeOwner } from './qualification.js'
+import { startVerificationContainer } from './verificationQualification.js'
 import { fingerprintQualificationPath } from './qualification.js'
 import { JOB_INPUT_DIRECTORY } from '@foreman-code/contracts/job-inputs'
 
@@ -145,64 +141,6 @@ describe('actual qualification reservation seams with mocked native entry only',
       expect(owner.enterContainer).toHaveBeenCalledWith('original-cold-container', containerId)
       expect(checked).toHaveBeenLastCalledWith(['start', containerId], 600000)
     } finally { vi.useRealTimers() }
-  })
-  it.each(['current', 'entry', 'command'] as const)('closes and records verification denial after the %s command step fails', async stage => {
-    const f = await verificationReservationFixture()
-    const effects: string[] = []
-    vi.spyOn(verificationConfiguration, 'readInstalledVerificationConfiguration').mockImplementation(async () => {
-      effects.push('configuration')
-      return { descriptor: { quotaPool: f.candidate.fingerprint.quotaPool } } as Awaited<ReturnType<typeof verificationConfiguration.readInstalledVerificationConfiguration>>
-    })
-    f.authority.readApproval.mockImplementation(async () => {
-      effects.push('approval')
-      return { status: 'approved', fingerprint: f.admission.fingerprintDigest, expiresAt: f.admission.expiresAt }
-    })
-    f.authority.assertCurrent.mockImplementation(async () => {
-      effects.push('current')
-      if (stage === 'current' && effects.filter(effect => effect === 'current').length === 2) throw new Error('current rejected')
-    })
-    vi.spyOn(qualification, 'assertJobRuntimeEntryContext').mockImplementation(async () => {
-      effects.push('entry')
-      if (stage === 'entry') throw new Error('entry rejected')
-    })
-    vi.spyOn(qualification, 'runQualificationCommand').mockImplementation(async () => {
-      effects.push('command')
-      throw new Error('command rejected')
-    })
-    vi.spyOn(quotaOwnership, 'readVerificationQuotaPool').mockImplementation(async (pool, _binding, signal, read) => {
-      effects.push('quota')
-      await read!(pool, f.candidate.sourceParent, signal)
-      throw new Error('Quota command should reject.')
-    })
-    const recordResult = vi.fn(async () => { effects.push('record') })
-    const close = vi.fn(async () => { effects.push('close'); return true })
-    f.authority.reserve.mockImplementation(async () => {
-      effects.push('reserve')
-      return { close, recordResult } as unknown as QualificationNativeOwner
-    })
-    const result = await qualifyVerificationRuntime({ ...f.input, configuration: null, publishReport: vi.fn() })
-    expect(result).toEqual({ outcome: 'denied', closure: 'confirmed', reasons: [`${stage} rejected`] })
-    const commandSteps = ['current', 'entry', 'command']
-    expect(effects).toEqual(['configuration', 'approval', 'current', 'reserve', 'quota',
-      ...commandSteps.slice(0, commandSteps.indexOf(stage) + 1), 'close', 'record'])
-    expect(close).toHaveBeenCalledOnce()
-    expect(recordResult).toHaveBeenCalledWith(result)
-  })
-  it.each([false, true])('reconciles retained verification ownership before recording denial (closed %s)', async closed => {
-    const f = await verificationReservationFixture()
-    vi.spyOn(verificationConfiguration, 'readInstalledVerificationConfiguration').mockResolvedValue({
-      descriptor: { quotaPool: f.candidate.fingerprint.quotaPool },
-    } as Awaited<ReturnType<typeof verificationConfiguration.readInstalledVerificationConfiguration>>)
-    const effects: string[] = []
-    const recordResult = vi.fn(async () => { effects.push('record') })
-    const owner = { recoveryRequired: true,
-      originalResult: { outcome: 'denied', closure: 'unconfirmed', reasons: ['original denial'] },
-      close: vi.fn(async () => { effects.push('close'); return closed }), recordResult }
-    f.authority.reserve.mockResolvedValue(owner)
-    const result = await qualifyVerificationRuntime({ ...f.input, configuration: null, publishReport: vi.fn() })
-    expect(result).toEqual({ outcome: 'denied', closure: closed ? 'confirmed' : 'unconfirmed', reasons: ['original denial'] })
-    expect(effects).toEqual(closed ? ['close', 'record'] : ['close'])
-    if (closed) expect(recordResult).toHaveBeenCalledWith(result)
   })
   it('does not close an active diagnostic launcher again after container cleanup closed it', async () => {
     const f = await fixture()

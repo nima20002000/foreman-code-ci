@@ -5,7 +5,8 @@ import { ChatSendRequestSchema } from './chatDelivery.js'
 import { CHAT_MAX_MESSAGE_JSON_BYTES } from './chatInput.js'
 import { agentChatFixtures } from './agentChatFixtures.js'
 
-const { workspaceId, ...agent } = agentChatFixtures.empty.context
+const { workflowId, workflowNodeId, agentId } = agentChatFixtures.empty.context
+const agent = { workflowId, workflowNodeId, agentId }
 const file = { fileId: 'file', revisionId: 'revision' }
 const sendRequests = {
   agent: (fields: object) => SendAgentChatMessageRequestSchema.safeParse(

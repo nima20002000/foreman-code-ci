@@ -15,7 +15,7 @@ import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { readRunActivitySnapshot } from './activitySnapshot.js'
 import { readRunIntervalChecks } from './intervalChecks.js'
 import { readRunExecutionQueue } from './executionQueue.js'
-import { runRequestedCi } from '../ci/reads.js'
+import { runRequestedCi } from '../ci/index.js'
 
 type WorkflowScope = { workspaceId: string; workflowId: string }
 

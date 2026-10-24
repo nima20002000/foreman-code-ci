@@ -3,7 +3,7 @@ import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/pro
 import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
 import type { NativeManagerResolutionContext } from '../interactions/runtimePorts.js'
-import type { createProductionRemoteWorkflow } from '../placement/productionRemoteWorkflow.js'
+import type { createProductionRemoteWorkflow } from '../placement/index.js'
 import type { ProviderAccountsService } from '../provider-accounts/service.js'
 
 /** The saved workflow version and node an execution runs, if the Run owns that execution. */

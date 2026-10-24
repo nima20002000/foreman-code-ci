@@ -33,7 +33,7 @@ import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 type Credential = Awaited<ReturnType<PostgresAccessService['issue']>>
 type Owner = Credential & { conversationId: string }
@@ -59,10 +59,10 @@ describe.skipIf(!postgresEnabled)('FIL-04 temporary cleanup integration', () => 
     for (const migration of [fileStorageMigration, fileReferenceMigration, fileRetentionMigration]) {
       if ((await database.pool.query('select 1 from application_migrations where version=$1', [migration.version])).rowCount) continue
       const client = await database.pool.connect()
-      try { await withTransaction({ client }, async transaction => {
-        await transaction.query(migration.sql)
-        await transaction.query('insert into application_migrations(version) values($1)', [migration.version])
-      }) } finally { client.release() }
+      try {
+        await beginTransaction(client); await client.query(migration.sql)
+        await client.query('insert into application_migrations(version) values($1)', [migration.version]); await commitTransaction(client)
+      } catch (error) { await rollbackTransaction(client); throw error } finally { client.release() }
     }
     access = new PostgresAccessService(database.pool)
     retention = new FileRetentionService(database.pool, new PostgresCommandCoordinator(database.pool))
@@ -256,11 +256,12 @@ describe.skipIf(!postgresEnabled)('FIL-04 temporary cleanup integration', () => 
       await assert.rejects(files.withAllocation(who.principal.id, selected.requestId, async () => undefined), { code: 'FILE_UPLOAD_BUSY' })
       const checking = await database.pool.connect()
       try {
-        await withTransaction({ client: checking }, async transaction => {
-          const acquired = await transaction.query<{ locked: boolean }>('select pg_try_advisory_xact_lock(hashtextextended($1,273640)) as locked', [who.principal.id])
-          assert.equal(acquired.rows[0]!.locked, false, 'FIL-40 save must not race the physical deletion')
-        })
-      } finally { checking.release() }
+        await beginTransaction(checking)
+        const acquired = await checking.query<{ locked: boolean }>('select pg_try_advisory_xact_lock(hashtextextended($1,273640)) as locked', [who.principal.id])
+        assert.equal(acquired.rows[0]!.locked, false, 'FIL-40 save must not race the physical deletion')
+      } finally {
+        try { await rollbackTransaction(checking) } finally { checking.release() }
+      }
     } finally { release.resolve(); await first }
     await missing(stored)
     await assert.rejects(service.finalize(who.principal, target(who), selected.requestId!), { code: 'FILE_EXPIRED' })
