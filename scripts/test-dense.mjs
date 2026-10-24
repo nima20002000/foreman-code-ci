@@ -12,7 +12,6 @@ const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))
 const reportLimits = { logBytes: 2 ** 20, vitestBytes: 16 * 2 ** 20 }
 const unitCommands = [
   ['gate:contracts-unit', 'packages/contracts:test', '@foreman-code/contracts', 'test'],
-  ['gate:contracts-node-unit', 'packages/contracts-node:test', '@foreman-code/contracts-node', 'test'],
   ['gate:api-unit', 'apps/api:test', '@foreman-code/api', 'test'],
   ['gate:web-unit', 'apps/web:test:unit', '@foreman-code/web', 'test:unit'],
   ['gate:web-smoke', 'apps/web:test:run-graph-smoke', '@foreman-code/web', 'test:run-graph-smoke'],

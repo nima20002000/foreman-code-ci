@@ -223,11 +223,8 @@ export class ActivityProductionReplay {
         identity: 'recorded-launcher', protocol: fixtureProtocol, providerVersion: RECORDED_CODEX_VERSION,
         schemaManifestSha256: 'synthetic-recorded-schema', stableSchemaGitBlob: 'synthetic-stable', referenceSchemaManifestSha256: 'synthetic-reference' }
     }
-    const environment: Extract<CodexSessionDependencies, { mode: 'replay' }>['environment'] = (input, stripped = []) => {
-      const values: NodeJS.ProcessEnv = {}
-      for (const [key, value] of Object.entries(input?.variables ?? {})) if (!stripped.includes(key)) values[key] = value
-      return values
-    }
+    // Scoped names strip inherited credentials, not the admitted input; this replay inherits no environment.
+    const environment: Extract<CodexSessionDependencies, { mode: 'replay' }>['environment'] = input => ({ ...input?.variables })
     const operations = { qualify, assertUnchanged: async () => {}, environment, runCommand: command,
       qualifyModel: async (configuration: Parameters<NonNullable<CodexSessionDependencies['qualifyModel']>>[0]) => {
         if (!this.qualifiedModels.includes(configuration.model)) throw new Error('Unrecorded replay model qualification.')

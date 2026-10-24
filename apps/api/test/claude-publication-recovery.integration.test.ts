@@ -29,7 +29,7 @@ describe('Claude persisted publication recovery', () => {
       const selected = saved.configurations.find(value => value.agentId === node.agentId)!
       const context = { workspaceId: saved.scope.workspaceId, workflowId: saved.scope.workflowId,
         workflowNodeId: node.id, agentId: node.agentId }
-      agentScope = context
+      agentScope = { workspaceId: context.workspaceId, workflowId: context.workflowId, agentId: context.agentId }
       await database.pool.query(`insert into operator_conversations(id,kind,agent_key,workspace_id,workflow_id,
         workflow_node_id,agent_id,agent_configuration_version_id,harness,record)
         values($1,'agent',$2,$3,$4,$5,$6,$7,'claude','{}')`,
