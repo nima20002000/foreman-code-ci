@@ -1,4 +1,4 @@
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 
 /** What OS administration needs from the computer it runs on. Maintenance ports satisfy it. */
 export interface HostSystemPorts {

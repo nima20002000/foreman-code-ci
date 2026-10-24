@@ -1,6 +1,6 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { retiredHarnessLabel, claudeAccessOptions } from '../settings'
-import { changeCodexSandbox, withAdvancedDefaults, type HarnessConfiguration } from '@foreman-code/contracts'
+import { changeCodexSandbox, withAdvancedDefaults, type HarnessConfiguration, type RecordedHarnessConfiguration } from '@foreman-code/contracts'
 import { Select } from '../../shared/ui/nocturne'
 import { CLAUDE_FULL_ACCESS_REQUIRED } from '@foreman-code/contracts/claude'
 
@@ -34,7 +34,7 @@ function EditableOperatorAccessPicker({ value, disabled, saving = false, saveErr
   </div>
 }
 
-export function OperatorAccessPicker(props: Parameters<typeof EditableOperatorAccessPicker>[0]) {
+export function OperatorAccessPicker(props: Omit<Parameters<typeof EditableOperatorAccessPicker>[0], 'value'> & { value: RecordedHarnessConfiguration }) {
   if (props.value.harness === 'opencode') return <p role="status">{retiredHarnessLabel}</p>
-  return <EditableOperatorAccessPicker {...props} />
+  return <EditableOperatorAccessPicker {...props} value={props.value} />
 }

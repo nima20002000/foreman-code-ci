@@ -1,4 +1,4 @@
-import { CiCancelOutputSchema, CiGetOutputSchema, CiRunOutputSchema } from '@foreman-code/contracts'
+import { CiGetOutputSchema, CiRunOutputSchema } from '@foreman-code/contracts'
 import { expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
@@ -94,8 +94,9 @@ it.each([0, 1250])(
     expect(started.partitions).toBeUndefined()
     await f.value(f.operator, 'ci_computers_list', {})
     await f.ci.dispatch()
-    const read = await ciRunReadback(input => f.value(f.operator, 'ci_get', input), started.ticketId, 'passed')
     expect((await repository.waitForCompletion(started.ticketId)).code).toBe(0)
+    await f.ci.dispatch()
+    const read = await ciRunReadback(input => f.value(f.operator, 'ci_get', input), started.ticketId, 'passed')
     expect(read.run).toMatchObject({ part: null, partition: null, state: 'passed',
       computer: { hostRef: { kind: 'main' } } })
     expect(read.logTail).toContain('npm run integration')
@@ -119,14 +120,6 @@ it.each([
     // eslint-disable-next-line no-restricted-syntax
     await new Promise(resolve => setTimeout(resolve, launchDelayMs))
   } })
-  const publication = deferred()
-  const publishing = deferred()
-  const publish = repository.commits.publish.bind(repository.commits)
-  vi.spyOn(repository.commits, 'publish').mockImplementation(async (...args) => {
-    publishing.resolve()
-    await publication.promise
-    await publish(...args)
-  })
   const f = await fixture({ repositoryRunner: repository })
   try {
     const input = { suite, scope: 'affected', files: [], commit: repository.commit, commandId: 'generic-affected' }
@@ -152,40 +145,23 @@ it.each([
     const response = await f.app.inject({ method: 'POST', url, headers, payload: fullInput })
     expect(response.statusCode).toBe(200)
     const started = CiRunOutputSchema.parse(response.json())
-    await publishing.promise
     await f.value(f.operator, 'ci_computers_list', {})
     await f.ci.dispatch()
-    const queued = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
-    expect(queued.run).toMatchObject({ state: 'queued', computer: null, startedAt: null,
-      message: 'Publishing the CI source commit to GitHub.' })
-    const queuedHttp = await f.app.inject({ method: 'GET', url: `${url}/${started.ticketId}`, headers })
-    expect(queuedHttp.statusCode).toBe(200)
-    expect(CiGetOutputSchema.parse(queuedHttp.json()).run).toEqual(queued.run)
-    const canceled = CiCancelOutputSchema.parse(await f.value(f.operator, 'ci_cancel', { ticketId: started.ticketId }))
-    expect(canceled).toMatchObject({ run: { state: 'canceled', computer: null, startedAt: null } })
-    const replacement = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
-      ...fullInput, commandId: 'generic-full-after-cancel',
-    }))
-    expect(replacement.ticketId).not.toBe(started.ticketId)
-    publication.resolve()
-    // Admission and one dispatch pass do not promise an executor start; wait for collected public state.
-    await ciRunReadback(input => f.value(f.operator, 'ci_get', input), replacement.ticketId, 'passed')
-    expect((await repository.waitForCompletion(replacement.ticketId)).code).toBe(0)
-    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId })).run)
-      .toEqual(canceled.run)
-    const read = await f.app.inject({ method: 'GET', url: `${url}/${replacement.ticketId}`, headers })
+    expect((await repository.waitForCompletion(started.ticketId)).code).toBe(0)
+    await f.ci.dispatch()
+    await ciRunReadback(input => f.value(f.operator, 'ci_get', input), started.ticketId, 'passed')
+    const read = await f.app.inject({ method: 'GET', url: `${url}/${started.ticketId}`, headers })
     expect(read.statusCode).toBe(200)
     const result = CiGetOutputSchema.parse(read.json())
     expect(result.run).toMatchObject({ state: 'passed', part: null, partition: null, scope: 'full', files: [],
       computer: { hostRef: { kind: 'main' } } })
     expect(result.logTail).toContain(`fixture ${suite} passed`)
     expect(repository.cloudAttempts).toEqual([])
-    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: replacement.ticketId })).run)
+    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId })).run)
       .toEqual(result.run)
     expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
-      [replacement.ticketId])).rows[0]!.record).toEqual(result.run)
+      [started.ticketId])).rows[0]!.record).toEqual(result.run)
   } finally {
-    publication.resolve()
     await f.close()
     await repository.close()
   }

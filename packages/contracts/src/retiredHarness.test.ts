@@ -3,6 +3,9 @@ import {
   AgentConfigurationVersionSchema,
   AgentHarnessSchema,
   AgentSchema,
+  DEFAULT_HARNESS_DEFAULTS,
+  ClaudeHarnessConfigurationSchema,
+  RecordedHarnessConfigurationSchema,
   HarnessConfigurationSchema,
   SupportedHarnessConfigurationSchema,
   RecordedOperatorChatSettingsSchema,
@@ -22,7 +25,7 @@ const retired = {
 
 describe('retired harness history', () => {
   it('preserves saved Agent settings and immutable configuration facts', () => {
-    expect(HarnessConfigurationSchema.parse(retired)).toEqual(retired);
+    expect(RecordedHarnessConfigurationSchema.parse(retired)).toEqual(retired);
     const agent = { id: 'agent-history', name: 'Saved Agent', harness: 'opencode', harnessConfiguration: retired };
     expect(AgentSchema.parse(agent)).toEqual(agent);
     const version = {
@@ -33,8 +36,18 @@ describe('retired harness history', () => {
     expect(AgentConfigurationVersionSchema.parse(version)).toEqual(version);
   });
 
+  it('accepts active read-only configurations without granting full access', () => {
+    expect(HarnessConfigurationSchema.parse(DEFAULT_HARNESS_DEFAULTS.codex)).toEqual(DEFAULT_HARNESS_DEFAULTS.codex);
+    const claude = ClaudeHarnessConfigurationSchema.parse({ harness: 'claude', model: 'fixture', authMode: 'subscription',
+      configDirectory: '/fixture/profile', permissionMode: 'default', sandbox: 'read-only',
+      tools: [], permissionRules: [], instructions: '', mcpServers: {} });
+    expect(HarnessConfigurationSchema.parse(claude)).toEqual(claude);
+    expect(SupportedHarnessConfigurationSchema.safeParse(claude).success).toBe(false);
+  });
+
   it('rejects OpenCode as a new harness choice through shared HTTP and MCP inputs', () => {
     expect(AgentHarnessSchema.options).toEqual(['codex', 'claude']);
+    expect(HarnessConfigurationSchema.safeParse(retired).success).toBe(false);
     expect(SupportedHarnessConfigurationSchema.safeParse(retired).success).toBe(false);
     expect(AgentCreateInputSchema.safeParse({
       workspaceId: 'workspace-history', commandId: 'create-retired-agent', agentId: 'agent-new',

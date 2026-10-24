@@ -6,7 +6,7 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { COMPUTER_MAINTENANCE_NAMESPACE } from '@foreman-code/contracts/computer-maintenance'
 import { COMPUTER_ACCOUNTS_NAMESPACE } from '@foreman-code/contracts/computer-accounts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { registerGraphqlMcp } from '../../mcp/unified/transport.js'
+import { registerForemanMcp } from '../../mcp/unified/transport.js'
 import type { OperatorServices } from '../../mcp/operator/types.js'
 import type { PostgresAccessService } from '../access/postgres.js'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
@@ -53,7 +53,7 @@ function fixture() {
     })
   const accountService = new ComputerAccountsService(pool, mainId, () => endpoint, commands, async () => accounts)
   const app = Fastify()
-  registerGraphqlMcp(app, {
+  registerForemanMcp(app, {
     access: { authenticate: async (token: string) => token === 'reader'
       ? principal : { ...principal, id: 'denied', grants: [] } } as unknown as PostgresAccessService,
     operator: { commands, computerMaintenance: fleet, computerAccounts: accountService } as unknown as OperatorServices,

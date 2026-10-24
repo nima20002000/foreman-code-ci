@@ -1,7 +1,7 @@
 import { useRef, type Dispatch, type SetStateAction } from 'react'
 import type { OperatorConversationState, SessionMode } from '@foreman-code/contracts'
 import { useConversationDraftStore } from '../conversations'
-import { prepareChatAttachments } from '../conversations/chatAttachmentAttempt'
+import { prepareChatAttachments } from '../chat-core'
 import { identityEpoch } from '../../shared/api/protectedChatStorage'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { useOperatorChatStore } from './operatorChatStore'
