@@ -1,3 +1,4 @@
+import { capabilityDescriptorsOf } from '../../shared/harnessPolicy.js'
 import { isDeepStrictEqual } from 'node:util'
 import type { CompactionState, ExecutionResult, NativeSessionReference, SessionPreferences, SessionMode } from '@foreman-code/contracts'
 import type { NativeMessageSubmission } from '@foreman-code/contracts/claude'
@@ -10,7 +11,7 @@ import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
 import { validAgentSessionReplacement, validWorkerConfigurationTransition } from './workerConfigurationTransition.js'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { WorkerClaudeCallbackRecordSchema, workerConversationGeneration } from '@foreman-code/contracts/remote-execution-rpc'
-import type { ClaudeCallbackJournal } from '../harnesses/claudeSdk/callbackJournal.js'
+import type { ClaudeCallbackJournal } from '../harnesses/index.js'
 import { definedProperties } from '../definedProperties.js'
 
 interface ConversationStore {
@@ -145,7 +146,7 @@ export class WorkerConversationJournal {
         const storedBinding = request?.method === 'conversation.open' && request.previousConfiguration
           ? (await inspect())?.binding ?? binding : binding
         await this.change(storedBinding, record => {
-          if (binding.harness !== 'claude' || callback.identity.nativeSessionId !== record.session?.nativeSessionId) {
+          if (capabilityDescriptorsOf(binding).inputIdentity !== 'message' || callback.identity.nativeSessionId !== record.session?.nativeSessionId) {
             conflict('The callback belongs to another native session.')
           }
           const callbacks = record.claudeCallbacks ??= {}

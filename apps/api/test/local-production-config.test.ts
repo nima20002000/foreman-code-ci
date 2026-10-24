@@ -19,7 +19,7 @@ it('validates supported production operator overrides and retains their effectiv
   }
 })
 
-it.each(['GRAPHQL_', 'FOREMAN_CODE_'])('keeps local production restrictions with %s settings', prefix => {
+it.each(['GRAPHQL_'])('keeps local production restrictions with %s settings', prefix => {
   const local = { NODE_ENV: 'production', HOST: '127.0.0.1', DATABASE_URL: environment.DATABASE_URL,
     [`${prefix}LOCAL_PRODUCTION`]: '1' }
   expect(loadConfig(local).host).toBe('127.0.0.1')
@@ -33,11 +33,11 @@ it.each(['GRAPHQL_', 'FOREMAN_CODE_'])('keeps local production restrictions with
   expect(() => loadConfig({ ...local, HOST: '0.0.0.0' })).toThrow('loopback')
 })
 
-it('accepts matching production aliases and rejects conflicting opt-ins', () => {
-  const local = { ...environment, FOREMAN_CODE_LOCAL_PRODUCTION: '1' }
+it('keeps the saved production opt-in authoritative without a product-name alias', () => {
+  const local = { ...environment, FOREMAN_CODE_LOCAL_PRODUCTION: '0' }
   expect(loadConfig(local).host).toBe('127.0.0.1')
   expect(new NativeRollout(local).enabled('codex')).toBe(true)
-  const conflicting = { ...local, FOREMAN_CODE_LOCAL_PRODUCTION: '0' }
-  expect(() => loadConfig(conflicting)).toThrow('conflicts')
-  expect(() => new NativeRollout(conflicting).enabled('codex')).toThrow('conflicts')
+  const disabled = { ...local, GRAPHQL_LOCAL_PRODUCTION: '0', FOREMAN_CODE_LOCAL_PRODUCTION: '1' }
+  expect(new NativeRollout(disabled).enabled('codex')).toBe(false)
+  expect(() => loadConfig({ ...local, GRAPHQL_LOCAL_PRODUCTION: '1 ' })).toThrow()
 })

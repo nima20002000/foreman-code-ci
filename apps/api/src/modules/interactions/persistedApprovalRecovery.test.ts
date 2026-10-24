@@ -2,7 +2,7 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import type pg from 'pg'
 import { expect, it } from 'vitest'
 import { deliveryFixture } from '../../../test/helpers/approvalFixture.js'
-import { Wave25InteractionDeliveryRepository } from './current/delivery.js'
+import { CurrentInteractionDeliveryRepository } from './current/delivery.js'
 import { responseValueDigest } from './delivery.js'
 
 function persistedApprovalFixture() {
@@ -56,7 +56,7 @@ function persistedApprovalFixture() {
 it('recovers persisted approval delivery when resolution precedes the write callback after restart', async () => {
   const f = persistedApprovalFixture()
   try {
-    const repository = new Wave25InteractionDeliveryRepository(f.pool)
+    const repository = new CurrentInteractionDeliveryRepository(f.pool)
     await expect(repository.persistedResponseEvidence(f.interaction))
       .resolves.toEqual({ ...f.proof, source: 'provider_history' })
   } finally {
@@ -72,7 +72,7 @@ it.each(['reservation', 'connection', 'write-entry'] as const)(
       if (missing === 'connection') f.database.prepare('update harness_native_events set connection_id=? where source_sequence=?')
         .run('other-connection', 2)
       if (missing === 'write-entry') f.database.exec('update interaction_delivery_attempts set approval_write_started_at=null')
-      const repository = new Wave25InteractionDeliveryRepository(f.pool)
+      const repository = new CurrentInteractionDeliveryRepository(f.pool)
       await expect(repository.persistedResponseEvidence(f.interaction)).resolves.toBeUndefined()
     } finally {
       f.database.close()

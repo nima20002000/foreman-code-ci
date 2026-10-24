@@ -2,7 +2,7 @@ import { constants } from 'node:fs'
 import { access, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 
 export type MirrorGit = (args: string[], env?: Record<string, string>) => Promise<string>
 
