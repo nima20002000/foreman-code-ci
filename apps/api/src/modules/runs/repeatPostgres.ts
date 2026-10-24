@@ -1,7 +1,7 @@
 import { IntervalCheckAcceptedInputSchema } from '@foreman-code/contracts/current'
 import {
   SourceSchema, EntrySchema, readStoredRepeatOccurrence, readStoredRepeatExecution,
-  readRepeatExecutionLocked, retainRepeatEffectReceipt, type StoredOccurrence, type StoredRepeatExecution,
+  readRepeatExecutionLocked, readRepeatExecutionsLocked, retainRepeatEffectReceipt, type StoredOccurrence, type StoredRepeatExecution,
 } from './repeatExecutionRead.js'
 import { readSystemPromptSetting } from '../settings/foundation.js'
 import { withNativeGraphProjectionBatch } from '../run-graph/nativeIngestion.js'
@@ -32,10 +32,10 @@ import {
 } from '../run-graph/connection.js'
 import type { SqlQuery, SqlTransaction } from '../../infrastructure/transaction.js'
 import type { RunOwnership } from './ownership.js'
-import type { AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
+import { readAcceptedRepeatRunLocked, type AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
 import { readWorkflowClosure, readUnboundWorkflowClosure } from '../interactions/workflowClosure.js'
 import { assertApprovalTerminalSettlement } from '../interactions/current/resume.js'
-import { settleRepeatNativeExecutionLocked } from '../interactions/repeatNativeSettlement.js'
+import { settleRepeatNativeExecutionsWithProofLocked } from '../interactions/repeatNativeSettlementBatch.js'
 import { finalizeRetainedRemoteReviewerLocked } from '../interactions/retainedRemoteReviewer.js'
 import { visitRepeatNativeAttemptsLocked, type RepeatNativeAttemptSelection } from './repeatNativeAttempts.js'
 import { compileExecutionTopology } from './topology.js'
@@ -140,7 +140,8 @@ export interface RepeatRepositoryHost {
   /** Lock order: Run (already held), graph head, exact execution children, receipts.
    * Parse the actual v3 Run union, retain all admission/approval/configuration pins,
    * and open the existing publication. Never initialize a missing history head. */
-  openLocked(sql: SqlTransaction, scope: RepeatScope, runRecord: unknown, version: WorkflowVersionCurrent): Promise<RepeatLockedHooks>
+  openLocked(sql: SqlTransaction, scope: RepeatScope, runRecord: unknown, version: WorkflowVersionCurrent,
+    observation?: boolean): Promise<RepeatLockedHooks>
 }
 interface Context {
   sql: SqlTransaction; scope: RepeatScope; version: WorkflowVersionCurrent; hooks: RepeatLockedHooks
@@ -212,7 +213,7 @@ export class RepeatRunRepository {
     if (this.owner.oneShotConnection().unusable) return false
     return this.launchPermits.delete(executionId)
   }
-  private async transaction<T>(work: (context: Context) => Promise<T>, options: { readOnly?: boolean } = {}): Promise<T> {
+  private async transaction<T>(work: (context: Context) => Promise<T>, options: { readOnly?: boolean; observation?: boolean } = {}): Promise<T> {
     return this.owner.oneShotConnection().transaction(async (sql) => {
       this.owner.assertOwned()
       const found = await repeatQueries.readRunSnapshot(sql, this.owner.runId, options.readOnly)
@@ -222,7 +223,7 @@ export class RepeatRunRepository {
       if (!sameRepeatValue(version, this.expectedVersion)) return repeatConflict('RUN_PIN_CONFLICT')
       const scope: RepeatScope = { workspaceId: version.workspaceId, workflowId: version.workflowId,
         workflowVersionId: version.id, runId: this.owner.runId, executionSemanticsVersion: 3 }
-      const hooks = await this.host.openLocked(sql, scope, row.run, version)
+      const hooks = await this.host.openLocked(sql, scope, row.run, version, options.observation ?? options.readOnly)
       const run = hooks.run
       if (run.executionSemanticsVersion !== 3 || run.id !== scope.runId || run.workspaceId !== scope.workspaceId
         || run.workflowId !== scope.workflowId || run.workflowVersionId !== scope.workflowVersionId || run.executionState !== row.state
@@ -298,7 +299,7 @@ export class RepeatRunRepository {
       await this.execution(context, executionId)
       await this.recordedEffect(context, 'input.bind', executionId)
       return readWorkflowControlDispositionLocked(context.sql, context.scope.runId, executionId)
-    })
+    }, { observation: true })
   }
   claimWorkflowInput(executionId: string) {
     return this.transaction(async context => {
@@ -315,16 +316,16 @@ export class RepeatRunRepository {
         executionId, attempt: stored.execution.attempt,
         ...(stored.workActivationId ? { activationId: stored.workActivationId } : {}),
       } })
-    })
+    }, { observation: true })
   }
   admitHierarchyGroup(sourceExecutionId: string): Promise<HierarchyGroupAdmission> {
     return this.transaction(context => admitHierarchyGroupLocked({ ...context,
-      assertActive: () => this.active(context) }, sourceExecutionId))
+      assertActive: () => this.active(context) }, sourceExecutionId), { observation: true })
   }
   /** The connection on which a finished Worker reports back to the Orchestrator that asked for its work. */
   readWorkCallerReport(sourceExecutionId: string): Promise<string | undefined> {
     return this.transaction(context => readWorkCallerReportLocked({ ...context,
-      assertActive: () => this.active(context) }, sourceExecutionId))
+      assertActive: () => this.active(context) }, sourceExecutionId), { observation: true })
   }
   /** One business request on the already-owned Run; replay returns its first receipt. */
   admitWorkRequest(sourceExecutionId: string, selectedRelationshipId?: string): Promise<WorkRequestAdmission> {
@@ -345,7 +346,7 @@ export class RepeatRunRepository {
       if (!receipt.replayed) await context.hooks.memoryWorkChangedLocked?.(context.sql, sourceExecutionId,
         `return:${receipt.value.returnId}`)
       return receipt
-    })
+    }, { observation: true })
   }
   recordWorkUnresolved(sourceExecutionId: string): Promise<{ unresolvedId: string; replayed: boolean }> {
     return this.transaction(async context => {
@@ -359,12 +360,12 @@ export class RepeatRunRepository {
   resolveWaitingWorkJoins(sourceActivationId: string): Promise<string[]> {
     return this.transaction((context) => resolveWaitingWorkJoinsLocked({ ...context,
       assertActive: () => this.active(context),
-    }, sourceActivationId))
+    }, sourceActivationId), { observation: true })
   }
   ensureWorkEntry(): Promise<string> {
     return this.transaction((context) => ensureWorkEntryLocked({ ...context,
       assertActive: () => this.active(context),
-    }))
+    }), { observation: true })
   }
   readWorkExecutionContext(executionId: string): Promise<HarnessExecutionContext> {
     return this.transaction(async (context) => {
@@ -385,7 +386,7 @@ export class RepeatRunRepository {
         requestId: input.parentRequest.requestId,
         requesterNodeId: input.parentRequest.requesterNodeId,
       } : null }
-    })
+    }, { observation: true })
   }
   /** Queue one exact activation through the existing native receipt and launch path. */
   admitWorkActivation(activationId: string, candidate: (nodeId: string) => HarnessExecution): Promise<{ execution: HarnessExecution; reused: boolean }> {
@@ -830,7 +831,7 @@ export class RepeatRunRepository {
       await this.recordedEffect(context, 'input.bind', executionId)
       await assertHierarchyDirectionReleasedLocked(context.sql, context.scope.runId, executionId)
       await context.hooks.assertAdmissionLocked(context.sql, stored.execution, stored.ref)
-    })
+    }, { observation: true })
   }
 
   private nativeChange(context: Context, stored: StoredRepeatExecution, next: HarnessExecution,
@@ -898,7 +899,7 @@ export class RepeatRunRepository {
       }
       // No session means possibly dispatched; the runtime never submits again.
       return stored.execution
-    })
+    }, { observation: true })
   }
 
   async exactSession(executionId: string): Promise<ReturnType<typeof NativeSessionReferenceSchema.parse>> {
@@ -913,7 +914,7 @@ export class RepeatRunRepository {
       const session = NativeSessionReferenceSchema.parse(rows.rows[0]?.reference)
       await this.assertSession(context, stored.execution, session)
       return session
-    })
+    }, { observation: true })
   }
 
   /** Recheck before EVERY allocation/preflight/create/attach/turn boundary of
@@ -935,7 +936,7 @@ export class RepeatRunRepository {
         await this.assertSession(context, stored.execution, session)
       } else if (stored.execution.nativeSessionId) return repeatConflict('NATIVE_SESSION_START_UNCERTAIN')
       await native.assertBoundaryLocked(context.sql, stored.execution, stored.ref, evidence)
-    })
+    }, { observation: true })
   }
 
   async readWorkResultRepairAttempt(executionId: string): Promise<number> {
@@ -1151,15 +1152,14 @@ export class RepeatRunRepository {
    * calls finishRun and does not activate a successor or rewrite an execution.
    * It remains usable during Stop cleanup under the same owner. */
   async settleNativeExecution(executionId: string): Promise<void> {
-    await this.transaction(async (context) => { await this.settlement(context, [executionId]) })
+    await this.transaction(async (context) => { await this.settlement(context, [executionId]) }, { observation: true })
   }
   private async settlement(context: Context, executionIds: readonly string[]): Promise<void> {
     const ids = [...new Set(executionIds)].sort()
-    for (const executionId of ids) {
-      const stored = await this.execution(context, executionId)
-      await this.recordedEffect(context, 'input.bind', executionId)
-      await settleRepeatNativeExecutionLocked(context.sql, context.scope.runId, stored.execution)
-    }
+    const snapshot = await readAcceptedRepeatRunLocked(context.sql, context.scope.runId)
+    if (!sameRepeatValue(snapshot.run, context.hooks.run) || !sameRepeatValue(snapshot.version, context.version)) return repeatConflict('RUN_PIN_CONFLICT')
+    const stored = await readRepeatExecutionsLocked(context.sql, snapshot, ids)
+    await settleRepeatNativeExecutionsWithProofLocked(context.sql, context.scope.runId, stored.map(item => item.execution))
     // Preserve host-specific native, authorization and publication fences in
     // addition to the mandatory concrete per-execution settlement proof above.
     await context.hooks.assertSettlementLocked(context.sql, ids)

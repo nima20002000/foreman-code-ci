@@ -2,6 +2,7 @@ import { graphSourceDigest } from './graphDigest.js'
 import type { PublicProjectionReader } from './publicProjectionReader.js'
 import { timeRuntimeOperation } from '../../infrastructure/runtimeTiming.js'
 import { readPublicRunStateLocked } from './publicRunState.js'
+import { PUBLIC_ATTENTION_SQL, readPublicAttentionCounts, type PublicAttentionRow } from './currentAttention.js'
 import { capturePublicProjectionLocked, assertPublicProjectionUnchangedLocked, assertPublicProjectionCommittedLocked } from './publicProjectionReceipt.js'
 import { randomUUID } from 'node:crypto'
 import {
@@ -69,10 +70,23 @@ export async function readRepeatRunSourceLocked(sql: SqlTransaction, input: Repe
   assertGraphTransaction(sql)
   const scope = RepeatGraphScopeCurrentSchema.parse(input)
   const row = (await sql.query<{ record: unknown; workspace_id: string; workflow_id: string; workflow_version_id: string;
-    execution_state: string; stopped: boolean; written_here: boolean; created_here: boolean }>(
-    `select record,workspace_id,workflow_id,workflow_version_id,execution_state,stop_requested_at is not null as stopped,
-       xmin=pg_current_xact_id_if_assigned()::xid as written_here,
-       created_at=transaction_timestamp() as created_here from runs where id=$1`, [scope.runId])).rows[0]
+    execution_state: string; outcome: string; stopped: boolean; cleanup_pending: boolean;
+    written_here: boolean; created_here: boolean; attention: PublicAttentionRow[];
+    head_sequence: string | null; source_revision: string | null; source_digest: string | null;
+    semantic_digest: string | null; first_sequence: string | null }>(
+    `with attention as materialized (${PUBLIC_ATTENTION_SQL})
+     select r.record,r.workspace_id,r.workflow_id,r.workflow_version_id,r.execution_state,
+       r.record->>'outcome' as outcome,r.stop_requested_at is not null as stopped,
+       exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending) as cleanup_pending,
+       r.xmin=pg_current_xact_id_if_assigned()::xid as written_here,
+       r.created_at=transaction_timestamp() as created_here,
+       coalesce((select json_agg(a) from attention a),'[]'::json) as attention,
+       h.head_sequence::text,latest.source_revision,latest.source_digest,latest.semantic_digest,latest.first_sequence
+     from runs r left join run_graph_heads h on h.run_id=r.id left join lateral (
+       select s.source_revision::text,s.source_digest,s.semantic_digest,s.first_sequence::text
+       from run_graph_sources s where s.run_id=h.run_id and s.source_kind='run' and s.source_id=h.run_id
+       order by s.source_revision desc limit 1
+     ) latest on true where r.id=$1`, [scope.runId, null, null, null])).rows[0]
   if (!row) throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
   const run = AcceptedWorkflowRunCurrentSchema.parse(row.record)
   if (row.workspace_id !== scope.workspaceId || row.workflow_id !== scope.workflowId || row.workflow_version_id !== scope.workflowVersionId
@@ -80,19 +94,13 @@ export async function readRepeatRunSourceLocked(sql: SqlTransaction, input: Repe
     || run.workflowVersionId !== scope.workflowVersionId || run.executionState !== row.execution_state) {
     throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
   }
-  const state = await readPublicRunStateLocked(sql, scope)
+  const attention = await readPublicAttentionCounts(sql, scope.runId, undefined, {}, row.attention)
+  const state = await readPublicRunStateLocked(sql, scope, attention, [row])
   const fact = RepeatGraphFactCurrentSchema.parse({ type: 'repeat.run.state', state })
   const semanticDigest = graphSourceDigest([fact])
   const sourceDigest = graphSourceDigest({ scope, record: run, state })
-  const head = (await sql.query<{ head_sequence: string; source_revision: string | null;
-    source_digest: string | null; semantic_digest: string | null; first_sequence: string | null }>(`
-    select h.head_sequence::text,latest.source_revision,latest.source_digest,latest.semantic_digest,latest.first_sequence
-    from run_graph_heads h left join lateral (
-      select s.source_revision::text,s.source_digest,s.semantic_digest,s.first_sequence::text
-      from run_graph_sources s where s.run_id=h.run_id and s.source_kind='run' and s.source_id=h.run_id
-      order by s.source_revision desc limit 1
-    ) latest on true where h.run_id=$1`, [scope.runId])).rows[0]
-  if (!head) throw new RunGraphError('GRAPH_NOT_INITIALIZED')
+  const head = row
+  if (head.head_sequence === null) throw new RunGraphError('GRAPH_NOT_INITIALIZED')
   GraphSequenceSchema.parse(head.head_sequence)
   const latest = head.source_revision === null ? undefined : { source_revision: head.source_revision,
     source_digest: head.source_digest!, semantic_digest: head.semantic_digest!, first_sequence: head.first_sequence! }
