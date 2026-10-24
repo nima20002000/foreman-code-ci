@@ -147,6 +147,31 @@ describe('Group chat public surface', () => {
     expect(state.commands[0]!.deliveries).toHaveLength(1)
   })
 
+  it('requires a new recipient selection when switching back to a cached Run, preserving the draft', async () => {
+    const state = channel()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client)
+    const tree = (runId: string) => <QueryClientProvider client={client}><WorkflowChatPanel {...scope} visible
+      currentRunId={runId} participants={[ava]} selection={{}} onSelectionChange={() => undefined}
+      resolveTargets={async () => [{ target: { kind: 'workflow_execution', agent: agentRef(ava),
+        execution: { ...execution, runId } }, label: `Run ${runId}`, presentation }]} /></QueryClientProvider>
+    const view = render(tree('run-b'))
+    typeAtEnd(screen.getByRole('combobox', { name: 'Message this workflow' }), 'Hello @')
+    fireEvent.click(await screen.findByRole('option', { name: 'Ava · Master' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Post' })).toBeEnabled())
+    view.rerender(tree('run-a'))
+    await waitFor(() => expect(screen.getByLabelText('Target for Ava')).toHaveValue(''))
+    fireEvent.change(screen.getByLabelText('Target for Ava'), { target: { value: '0' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Post' })).toBeEnabled())
+    view.rerender(tree('run-b'))
+    await waitFor(() => expect(screen.getByLabelText('Target for Ava')).toHaveValue(''))
+    expect(screen.getByRole('button', { name: 'Post' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Message this workflow' })).toHaveValue('Hello @Ava ')
+    fireEvent.change(screen.getByLabelText('Target for Ava'), { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Post' }))
+    await waitFor(() => expect(state.commands).toHaveLength(1))
+    expect(state.commands[0]!.deliveries[0]!.target).toMatchObject({ execution: { runId: 'run-b' } })
+  })
+
   it('keeps unresolved @ text as a plain post with no recipient', async () => {
     const state = channel(); mount()
     typeAtEnd(screen.getByRole('combobox', { name: 'Message this workflow' }), '  notes for @unresolved  ')
