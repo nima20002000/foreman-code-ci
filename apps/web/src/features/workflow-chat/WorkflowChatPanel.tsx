@@ -4,7 +4,7 @@ import type { AgentIdentity, ChatDeliveryReceipt, WorkflowChatPost, WorkflowChat
 import { Button, EmptyState, Icon, LoadingState, SegmentedControl } from '../../shared/ui/nocturne'
 import { identityEpoch } from '../../shared/api/protectedChatStorage'
 import { isApiAccessError } from '../../shared/api/accessError'
-import { useRememberedChatScroll } from '../conversations/chatScrollStore'
+import { useRememberedChatScroll } from '../chat-core'
 import { useChatOnline } from '../conversations/delivery/useChatDelivery'
 import { useWorkflowChat, useWorkflowPost } from './useWorkflowChat'
 import { workflowChatClient, type WorkflowChatScope } from './client'

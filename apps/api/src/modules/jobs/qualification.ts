@@ -1,4 +1,5 @@
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import { deflateSync } from 'node:zlib'
 import { fallbackOnError } from '../diagnostics/index.js'
 import { JOB_PRIVATE_GIT_LAYOUT, JOB_GIT_ENVIRONMENT, JOB_GIT_CONTAINER_DIRECTORY } from './privateGitMounts.js'
@@ -556,7 +557,7 @@ export async function assertJobRuntimeEntryContext(raw: JobQualificationCandidat
 
 export function validateIsolationMeasurement(probe: Record<string, unknown>, candidate: JobQualificationCandidate, host: { hostPidNamespace: string; hostNetworkNamespace: string; containerId?: string; containerHostname?: string|undefined }) {
   const toolchain = probe.toolchain as Record<string, unknown> | undefined
-  const environment=['CI','FOREMAN_CODE_JOB_INPUT_MANIFEST','GRAPHQL_JOB_INPUT_MANIFEST','HOME','LANG','PATH',...Object.keys(JOB_GIT_ENVIRONMENT)]
+  const environment=['CI',INSTALLATION_NAMES.environment.JOB_INPUT_MANIFEST,'HOME','LANG','PATH',...Object.keys(JOB_GIT_ENVIRONMENT)]
   const managedHostname=Array.isArray(probe.environment)&&probe.environment.includes('HOSTNAME')
   if(managedHostname)environment.push('HOSTNAME')
   const hostnameMatches=managedHostname?typeof probe.hostname==='string'&&probe.hostname.length>0&&/^[a-f0-9]{64}$/.test(host.containerId??'')
@@ -643,7 +644,7 @@ export function validateVerificationIsolationObservation(input: {
 /** Pure exact-layout verifier, reused only after genuine original OCI inspection. */
 export function validateJobQualificationMounts(mounts:QualificationMount[],paths:{sourceRoot:string;inputRoot:string;gitDirectory:string;schedulerDirectory:string},tmpfs:unknown,spoolBytes:number) {
   const expected=[{source:paths.sourceRoot,destination:'/workspace',rw:true},
-    {source:paths.inputRoot,destination:'/workspace/.graphql-job-inputs',rw:false},
+    {source:paths.inputRoot,destination:INSTALLATION_NAMES.paths.containerJobInputs,rw:false},
     {source:paths.gitDirectory,destination:JOB_GIT_CONTAINER_DIRECTORY,rw:false},
     {source:paths.schedulerDirectory,destination:`${JOB_GIT_CONTAINER_DIRECTORY}/graphql-heavy-jobs`,rw:true}]
   // Podman reports only binds in Mounts; its managed /tmp is in HostConfig.Tmpfs.

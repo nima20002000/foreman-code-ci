@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { recoveryExecution } from '../../../test/helpers/recoveryExecution.testSupport.js'
 import type { PostgresAccessService } from '../access/postgres.js'
 import { readRecoverableRemoteReviewer } from './retainedRemoteReviewer.js'
-import { assertWave25WorkerBinding } from './current/credentialAuthority.js'
-import { Wave25WorkerCredentialService } from './current/credentials.js'
+import { assertCurrentWorkerBinding } from './current/credentialAuthority.js'
+import { CurrentWorkerCredentialService } from './current/credentials.js'
 
 vi.mock('./retainedRemoteReviewer.js', () => ({
   readRecoverableRemoteReviewer: vi.fn(), readRetainedRemoteReviewer: vi.fn(async () => undefined),
@@ -40,7 +40,7 @@ function fixture() {
     throw new Error('Unexpected reviewer credential query')
   } }
   const pool = { query: client.query, connect: async () => client } as unknown as pg.Pool
-  const service = new Wave25WorkerCredentialService(pool, {} as PostgresAccessService)
+  const service = new CurrentWorkerCredentialService(pool, {} as PostgresAccessService)
   return { execution, principalId, revoked, pool, service }
 }
 
@@ -51,7 +51,7 @@ describe('reviewer credentials pending authenticated recovery', () => {
       session: { harness: 'codex', providerVersion: '1.0.0', nativeSessionId: f.execution.nativeSessionId! }, detached })
     await f.service.reconcileTerminalCredentials()
     expect(f.revoked).toEqual({ principal: false, binding: false })
-    await expect(assertWave25WorkerBinding(f.pool, f.principalId))
+    await expect(assertCurrentWorkerBinding(f.pool, f.principalId))
       .rejects.toMatchObject({ code: 'REVIEWER_BINDING_REBIND_REQUIRED' })
   })
 
@@ -61,7 +61,7 @@ describe('reviewer credentials pending authenticated recovery', () => {
       generation: '1', principalId: 'replacement-principal',
       session: { harness: 'codex', providerVersion: '1.0.0', nativeSessionId: f.execution.nativeSessionId! }, detached: false,
     })
-    await expect(assertWave25WorkerBinding(f.pool, f.principalId)).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
+    await expect(assertCurrentWorkerBinding(f.pool, f.principalId)).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
     await f.service.reconcileTerminalCredentials()
     expect(f.revoked).toEqual({ principal: true, binding: true })
   })

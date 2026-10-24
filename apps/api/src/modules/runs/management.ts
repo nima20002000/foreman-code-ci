@@ -1,4 +1,4 @@
-import type { SubagentNativeRecoverySource, SubagentControlResolver } from '../subagents/types.js'
+import type { SubagentNativeRecoverySource, SubagentControlResolver } from '../subagents/index.js'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { recoverSubagentCommands } from '../subagents/recovery.js'
 import { RunSubagentService } from '../subagents/service.js'

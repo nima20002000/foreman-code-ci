@@ -2,7 +2,7 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import type { WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root-policies'
 import { sameWorkflowValue } from '@foreman-code/contracts/current'
-import type { SourceAdmissionPort } from '../sources/admissionPorts.js'
+import type { SourceAdmissionPort } from '../sources/index.js'
 import { commandInputHash } from '../commands/postgres.js'
 
 export interface SelectedRunRoot {

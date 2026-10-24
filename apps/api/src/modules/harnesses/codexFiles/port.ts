@@ -2,8 +2,8 @@ import type { Readable } from 'node:stream'
 import type {
   FileRevision, FileWithRevision, MessageAttachmentRef, TemporaryFileScope,
 } from '@foreman-code/contracts/files'
-import type { AgentFileToolService } from '../../files/tools/service.js'
-import type { FileToolOperation } from '../../files/tools/types.js'
+import type { AgentFileToolService } from '../../files/index.js'
+import type { FileToolOperation } from '../../files/index.js'
 
 /** Trusted chat admission, not HTTP input and not a native tool's arguments. */
 export interface AcceptedCodexFileTurn {

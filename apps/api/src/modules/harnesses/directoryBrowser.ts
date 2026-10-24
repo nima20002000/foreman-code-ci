@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import type pg from 'pg'
 import { mkdir, opendir, readdir, realpath, rename, rmdir, lstat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'

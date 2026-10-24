@@ -20,7 +20,7 @@ import {
   DeleteOperatorConversationResponseSchema,
   ExecutionResultSchema,
   OperatorConversationSummarySchema, type OperatorConversationSummary,
-  type HarnessConfiguration, type Conversation, type ExecutionResult, type OperatorAgent, type OperatorConfigurationVersion, type RecordedAgentHarness,
+  type RecordedHarnessConfiguration, type Conversation, type ExecutionResult, type OperatorAgent, type OperatorConfigurationVersion, type RecordedAgentHarness,
   type OperatorConversationState, type PendingNativeInteraction, type SendOperatorMessageRequest,
 } from '@foreman-code/contracts'
 import {
@@ -496,7 +496,7 @@ export class PostgresOperatorConversationRepository extends ConversationReposito
     return Number(row.revision) + 1
   }
 
-  async harnessForMessage(configuration: OperatorConfigurationVersion, input: SendOperatorMessageRequest): Promise<HarnessConfiguration> {
+  async harnessForMessage(configuration: OperatorConfigurationVersion, input: SendOperatorMessageRequest): Promise<RecordedHarnessConfiguration> {
     const settings = input.settings
     if (!settings) return this.accountConfigurations
       ? this.accountConfigurations.resolve(configuration.harness, configuration.harnessProfileSelection) : configuration.harness
@@ -547,7 +547,7 @@ export class PostgresOperatorConversationRepository extends ConversationReposito
   }
 
   /** The first cross-harness message and its child are one durable, idempotent admission. */
-  async beginForkTurn(sourceId: string, input: SendOperatorMessageRequest, ownerId: string, harness: HarnessConfiguration,
+  async beginForkTurn(sourceId: string, input: SendOperatorMessageRequest, ownerId: string, harness: RecordedHarnessConfiguration,
     expectedConfigurationId?: string, validate?: (configuration: OperatorConfigurationVersion) => void,
     preparedProfile?: HarnessProfileSelection,
     prepareInput?: (row: ConversationRow, configuration: OperatorConfigurationVersion, tx: pg.PoolClient) => Promise<AcceptedChatInput>) {
@@ -621,7 +621,7 @@ export class PostgresOperatorConversationRepository extends ConversationReposito
     return forked ?? this.beginTurn(childId, input, ownerId, undefined, undefined, false, validate, undefined, prepareInput)
   }
 
-  async beginTurn(id: string, input: SendOperatorMessageRequest, ownerId: string, harness?: HarnessConfiguration,
+  async beginTurn(id: string, input: SendOperatorMessageRequest, ownerId: string, harness?: RecordedHarnessConfiguration,
     expectedConfigurationId?: string, receiptOnly = false, validate?: (configuration: OperatorConfigurationVersion) => void,
     preparedProfile?: HarnessProfileSelection,
     prepareInput?: (row: ConversationRow, configuration: OperatorConfigurationVersion, tx: pg.PoolClient) => Promise<AcceptedChatInput>) {
