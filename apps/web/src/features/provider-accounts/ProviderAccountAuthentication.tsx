@@ -19,7 +19,7 @@ const stateLabels: Record<ProviderAccountAuthenticationOperation['state'], strin
 
 type Props = {
   account: ProviderAccount; revision: number; open: boolean; canManage: boolean;
-  operationId?: string; onOperation(operationId: string | undefined): void; onClose(): void;
+  operationId?: string; onOperation(operationId: string): void; onClose(): void;
 }
 export function ProviderAccountAuthentication({ account, revision, open, canManage,
   operationId, onOperation, onClose }: Props) {
@@ -162,14 +162,6 @@ export function ProviderAccountAuthentication({ account, revision, open, canMana
       <div className="provider-account-dialog-actions">
         <Button variant="ghost" disabled={discovery.isFetching || query.isFetching || busy}
           onClick={() => { void discovery.refetch(); if (selectedId) void query.refetch() }}>Refresh</Button>
-        {selectedId && query.error?.code === 'PROVIDER_AUTHENTICATION_NOT_FOUND' ? <Button
-          disabled={busy || uncertain || discovery.isFetching} onClick={() => {
-            void discovery.refetch().then(result => {
-              if (!result.isSuccess) return
-              setChoosingAction(!result.data.currentOperation)
-              onOperation(result.data.currentOperation?.id)
-            })
-          }}>Back to account sign-in</Button> : null}
         {selectedId && operation && !operation.nativeClosed ? <Button disabled={!manage || busy || prepareAttempt.unresolved}
           onClick={() => void cancel()}>{cancelAttempt.unresolved ? 'Retry cancel' : 'Cancel sign-in'}</Button> : null}
         {selectedId && operation?.nativeClosed ? <Button disabled={!canPrepare || busy || uncertain}
