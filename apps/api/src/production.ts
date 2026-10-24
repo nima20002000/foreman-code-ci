@@ -5,7 +5,7 @@ import { prepareAgentChatInput, prepareOperatorChatInput } from './modules/colla
 import { ConversationCredentials } from './modules/access/conversationCredentialIssuer.js'
 import { conversationChatTools, readConversationCredential } from './modules/access/conversationCredentials.js'
 import { ConversationNativeAccess } from './modules/collaboration/conversationNativeAccess.js'
-import { createProductionChatDelivery } from './modules/collaboration/chatDeliveryProduction.js'
+import { createProductionWorkflowChat } from './modules/collaboration/groupChatProduction.js'
 import { createMemoryBoardService } from './modules/memory-boards/production.js'
 import { memoryBoardAuthority } from './modules/collaboration/memoryBoardAuthority.js'
 import { WorkflowCollaborationIntegration, type WorkflowFeaturePorts } from './modules/collaboration/workflowIntegration.js'
@@ -115,7 +115,7 @@ import { createProductionWorkerConversations } from './modules/conversations/wor
 import { REMOTE_EXECUTION_EXTENSION, REMOTE_PREPARATION_EXTENSION, WorkerConversationCallbackSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { executionExtension } from './modules/runs/remote/executionRouter.js'
 import { AcceptedHarnessProfileAdmission, AcceptedClaudeProfileAdmission, type AcceptedProfileAuthority } from './modules/harnesses/instanceSettings/acceptedProfile.js'
-import { RETIRED_OPENCODE_MESSAGE, type AgentConfigurationVersion, type RecordedAgentDefaults } from '@foreman-code/contracts'
+import { RETIRED_OPENCODE_MESSAGE, type AgentConfigurationVersion, type AgentDefaults } from '@foreman-code/contracts'
 import { inspectClaudeOperatorConfiguration } from './modules/harnesses/claudeSdk/operatorConfigurationInspection.js'
 import { inspectWorkerClaudeOperatorConfiguration } from './modules/harnesses/workerClaudeOperatorInspection.js'
 import { requireClaudePolicyQualification } from './modules/harnesses/claudeSdk/configuration.js'
@@ -410,7 +410,7 @@ interface ProductionState {
   applicationClose: Promise<void> | undefined
   stopComputerTimers: () => void
   stopSyncTimer: () => void
-  stopChatDelivery: (() => void) | undefined
+  stopWorkflowChat: (() => void) | undefined
 }
 
 type MainTransport = ReturnType<typeof createMainTransport>
@@ -479,7 +479,7 @@ export function buildProductionApp(options: ProductionAppOptions) {
     applicationClose: undefined,
     stopComputerTimers: () => {},
     stopSyncTimer: () => {},
-    stopChatDelivery: undefined,
+    stopWorkflowChat: undefined,
   }
   // Each stage is built from the stages before it. Code that must reach a later stage reads it through `callbacks`
   // or, for services that exist only after startup, through `started`.
@@ -1626,7 +1626,7 @@ function createOperatorServices({ base, callbacks, started, runtimeState, transp
   const { claudeProfiles, harnessCatalog, harnessInstances, selectedProfiles } = profileStage
   const { managers } = managerStage
   const { approvals } = executionStage
-  const { engine, interactions, operatorConversations } = conversationStage
+  const { agentConversations, engine, interactions, operatorConversations } = conversationStage
   const { chat } = operatorChatStage
   const { agentChat, conversationNativeAccess } = agentChatStage
   const nativeFactory = createCurrentNativeProductionFactory({
@@ -1763,14 +1763,15 @@ function createOperatorServices({ base, callbacks, started, runtimeState, transp
     operatorServices.workflows)
   const executionChat = createWorkflowExecutionChatService(database.pool, approvals)
   operatorServices.executionChat = executionChat
-  const chatDelivery = createProductionChatDelivery({ pool: database.pool,
-    agent: agentChat, operator: chat,
+  const workflowChat = createProductionWorkflowChat({ pool: database.pool,
+    agent: agentChat, agentRepository: agentConversations, operator: chat,
     execution: executionChat,
     bindConversationScope: conversationNativeAccess.rebind,
   })
   operatorServices.browser = browser
-  operatorServices.chatDelivery = chatDelivery.router
-  return { operatorServices, chatDelivery }
+  operatorServices.workflowChat = workflowChat.service
+  operatorServices.chatDelivery = workflowChat.router
+  return { operatorServices, workflowChat }
 }
 
 function createHttpApplication({ base, started, transport, accountStage, repositoryStage, qualificationStage, profileStage, conversationStage, operatorChatStage, operatorStage }: {
@@ -1937,7 +1938,7 @@ function createRuntimeControl({ base, callbacks, started, runtimeState, transpor
       { name: 'Codex plugin settings', run: () => harnessSettings.plugins.shutdown() },
       { name: 'harness qualification checks', run: () => Promise.all([harnessCatalog.shutdownChecks(), nativeConfigurations.shutdownChecks()]).then(() => undefined) },
       { name: 'browser runtime', run: async () => { await browser.stop(); callbacks.browserRemote.get().close() } },
-      { name: 'chat delivery', run: async () => { runtimeState.stopChatDelivery?.() } },
+      { name: 'Group chat', run: async () => { runtimeState.stopWorkflowChat?.() } },
       { name: 'Operator chat', run: () => chat.shutdown() },
       { name: 'Agent chat', run: () => agentChat.shutdown() },
       { name: 'automatic reviews', run: () => reviews.shutdown() },
@@ -2014,11 +2015,11 @@ function createRuntimeStartup(services: ProductionServices) {
   const { foundationSettings, harnessRegistry, operators } = repositoryStage
   const { appMcpEndpoint } = qualificationStage
   const { nativeConfigurations } = profileStage
-  const { chatDelivery } = operatorStage
+  const { workflowChat } = operatorStage
   const { app } = httpStage
   const { assertOpen, runtimeOwner, startupDatabase, startupLifetime } = controlStage
   const synchronizeOperatorDefaults = async (
-    template: RecordedAgentDefaults['operator'],
+    template: AgentDefaults['operator'],
   ): Promise<void> => {
     await withTransaction(database.pool, async client => {
       const current = await operators.ensureWithClient(client)
@@ -2065,7 +2066,7 @@ function createRuntimeStartup(services: ProductionServices) {
     return runtimeState.initialization
   }
   app.addHook('onListen', async () => {
-    runtimeState.stopChatDelivery ??= chatDelivery.start()
+    runtimeState.stopWorkflowChat ??= workflowChat.start()
     if (!runtimeState.initialized || runtimeState.closing || !harnessHost.installedClis) return
     runtimeState.nativeDefaultsInitialization ??= (async () => {
       await initializeNativeDefaults({
@@ -2163,7 +2164,7 @@ function createRuntimeHooks({ base, started, runtimeState, accountStage, reposit
   return { reconcile, drainShutdown, shutdown }
 }
 
-async function initializeRuntimeOwner(services: ProductionServices, synchronizeOperatorDefaults: (template: RecordedAgentDefaults['operator']) => Promise<void>) {
+async function initializeRuntimeOwner(services: ProductionServices, synchronizeOperatorDefaults: (template: AgentDefaults['operator']) => Promise<void>) {
   const { base, transport, repositoryStage, profileStage, conversationStage, operatorChatStage, operatorStage, controlStage } = services
   const { config } = base
   const { entrypoint, harnessHost, mainCodex } = transport

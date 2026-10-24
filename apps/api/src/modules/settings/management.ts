@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { errorMessage } from '@foreman-code/contracts/server-kit'
-import { AgentDefaultsSchema, withAdvancedDefaults, CodexSessionCompatibilitySchema, validateHarnessWorkflowCompatibility, type AgentDefaults, type RecordedAgentDefaults, type WorkflowDefaults } from '@foreman-code/contracts'
+import { AgentDefaultsSchema, withAdvancedDefaults, CodexSessionCompatibilitySchema, validateHarnessWorkflowCompatibility, type AgentDefaults, type WorkflowDefaults } from '@foreman-code/contracts'
 import { WorkspaceDefaultsUpdateInputSchema, type WorkspaceDefaultsUpdateInput, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { GeneralSettingsUpdateInputSchema, type GeneralSettingsUpdateInput } from '@foreman-code/contracts/management'
 import { CircleCreditAllowanceUpdateInputSchema, type CircleCreditAllowanceUpdateInput } from '@foreman-code/contracts/management'
@@ -140,7 +140,7 @@ export class FoundationSettingsManagementService {
   }
 
   updateAgentDefaults(principal: ManagementPrincipal, source: 'http' | 'mcp', input: {
-    commandId: string; expectedRevision?: number | undefined; value: RecordedAgentDefaults
+    commandId: string; expectedRevision?: number | undefined; value: AgentDefaults
   }) {
     requireAuthorization(principal, 'settings:update')
     let livePrincipal = principal
@@ -261,7 +261,7 @@ export class FoundationSettingsManagementService {
   }
 
   private async validatePreparedDefaults(client: pg.PoolClient, principal: ManagementPrincipal,
-    value: AgentDefaults, previous: RecordedAgentDefaults): Promise<void> {
+    value: AgentDefaults, previous: AgentDefaults): Promise<void> {
     for (const role of ['master', 'orchestrator', 'coder', 'operator'] as const) {
       const template = value[role], prior = previous[role]
       if (!template) continue

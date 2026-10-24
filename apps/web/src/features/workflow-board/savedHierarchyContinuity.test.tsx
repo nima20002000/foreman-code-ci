@@ -4,7 +4,7 @@ import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet
 import { act, cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { http, HttpResponse, type JsonBodyType } from 'msw'
-import { WorkflowExecutionChatTargetSchema, WorkflowHierarchyReadResultSchema } from '@foreman-code/contracts'
+import { WorkflowHierarchyReadResultSchema } from '@foreman-code/contracts'
 import { LocalHumanAccessSchema } from '@foreman-code/contracts/management'
 import { CURRENT_WORKFLOW_CAPABILITIES, CurrentWorkflowCapabilitiesSchema } from '@foreman-code/contracts/current'
 import { subagentCapabilities } from '@foreman-code/contracts/subagents'
@@ -15,10 +15,7 @@ import { pinnedRunHandlers, reply, runA, runsUrl, scope, versionReply } from '..
 import { base, child, message, receipt } from '../run-subagents/testFixtures'
 import { subagentsKey } from '../run-subagents'
 import { RunsSelectorSearchSchema } from '../runs-selector'
-import { getConversationDraft, executionChatDraftKey, useConversationDraftStore } from '../conversations'
 import { WorkflowBoard } from './WorkflowBoard'
-import type { WorkflowCollaborationSlots } from './WorkflowSidePanel'
-import { acceptFindingsDirection } from './actions/directionWaitModel'
 import { useSidePanelPresentation } from './sidePanelPresentation'
 import { clearBoardStopStorage } from './stopOutbox'
 
@@ -29,7 +26,7 @@ class ReportSource extends EventTarget {
   static instances: ReportSource[] = []
   closed = false
   close() { this.closed = true }
-  /** Only the Master report stream is tracked; other Board streams are not under test here. */
+  /** Only the Master report stream is tracked; other Board streams (such as Group chat) are not under test here. */
   constructor(url: string) { super(); if (url.includes('/hierarchy/events')) ReportSource.instances.push(this) }
 }
 beforeEach(() => {
@@ -39,7 +36,6 @@ beforeEach(() => {
   useSidePanelPresentation.setState({ scroll: {} })
   clearBoardStopStorage()
   localStorage.clear()
-  useConversationDraftStore.getState().clearAllDrafts()
   const commands = new Map<string, Promise<unknown>>()
   Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, work: () => unknown) => {
     const next = (commands.get(key) ?? Promise.resolve()).then(work)
@@ -89,15 +85,13 @@ function install() {
   )
   return { requests, record }
 }
-async function mount(entry = runsUrl('run-a'), { hasHierarchy = true, slots }: {
-  hasHierarchy?: boolean; slots?: WorkflowCollaborationSlots
-} = {}) {
+async function mount(entry = runsUrl('run-a'), { hasHierarchy = true } = {}) {
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   clients.push(cache)
   const root = createRootRoute({ component: Outlet })
   const route = createRoute({ getParentRoute: () => root, path: '/workspaces/$workspaceId', validateSearch: RunsSelectorSearchSchema,
     component: () => <WorkflowBoard {...scope} inspection={{}} selectInspection={() => undefined}
-      selectRun={() => undefined} summaries={[]} collaborationSlots={slots}>
+      selectRun={() => undefined} summaries={[]}>
       <p>Draft editor</p>
     </WorkflowBoard> })
   const router = createRouter({ routeTree: root.addChildren([route]),
@@ -115,41 +109,6 @@ const openMemoryBoard = (router: Awaited<ReturnType<typeof mount>>['router']) =>
   router.history.push(`${pathname}${search ? `${search}&` : '?'}boardMemory=true${hash}`)
 })
 const childScope = { ...scope, runId: 'run-a' }
-
-it.each(['reply', 'accept'] as const)('opens the waiting Master’s exact Agent chat for %s', async action => {
-  install()
-  const target = WorkflowExecutionChatTargetSchema.parse({ kind: 'workflow_execution',
-    agent: { ...scope, workflowNodeId: 'node-x', agentId: 'agent-x' },
-    execution: { runId: 'run-a', workflowVersionId: 'version-a', executionId: 'held-master', attempt: 1 },
-  })
-  const key = executionChatDraftKey(target)
-  useConversationDraftStore.getState().setDraft(key, 'Keep my draft')
-  const requested: URL[] = []
-  server.use(
-    http.get('*/api/management/workspaces/:workspaceId/runs/run-a/executions', () => HttpResponse.json({
-      run: { ...scope, runId: 'run-a', workflowVersionId: 'version-a', executionSemanticsVersion: 3,
-        executionState: 'running', outcome: 'pending', createdAt: '2026-10-01T00:00:00Z', cleanupPending: false,
-        directionWait: { workflowNodeId: 'node-x', agentId: 'agent-x', agentName: 'Master', executionId: 'held-master',
-          findings: ['Review the remaining findings'], findingsCount: 1, since: '2026-10-01T00:00:00Z' } },
-      items: [], pageInfo: { nextCursor: null },
-    })),
-    http.get('*/api/workspaces/:workspaceId/workflows/:workflowId/execution-chat/target', ({ request }) => {
-      requested.push(new URL(request.url))
-      return HttpResponse.json({ kind: 'selected', target, workflowVersionId: 'version-a', source: 'direction', state: 'queued',
-        agent: { ...target.agent, displayName: 'Master', productRole: 'master', configurationVersionId: 'config-x-old' } })
-    }),
-  )
-  const { router } = await mount(runsUrl('run-a'), { slots: {
-    executionChat: () => <textarea aria-label="Waiting Master reply" defaultValue={getConversationDraft(key)} />,
-  } })
-  fireEvent.click(await screen.findByRole('button', { name: action === 'reply' ? 'Reply to Master' : 'Finish & accept findings' }))
-  expect(await screen.findByRole('textbox', { name: 'Waiting Master reply' }))
-    .toHaveValue(action === 'reply' ? 'Keep my draft' : `Keep my draft ${acceptFindingsDirection}`)
-  expect(router.state.location.search).toMatchObject({ runId: 'run-a', workflowVersionId: 'version-a',
-    boardPanel: 'agent', boardAgentTab: 'chat', boardNodeId: 'node-x', boardExecutionId: 'held-master' })
-  expect(requested).toHaveLength(1)
-  expect(requested[0]!.searchParams.get('executionId')).toBe('held-master')
-})
 
 it.each(['graph', 'overview'])('stops an ordinary selected Run from %s and keeps its command after a lost receipt', async view => {
   install()

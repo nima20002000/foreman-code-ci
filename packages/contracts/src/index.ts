@@ -45,7 +45,7 @@ export type { Id, Timestamp } from "./schemaPrimitives.js";
 import {
   ApprovalHandlerSchema, AcceptedWorkflowApprovalConfigurationSchema,
   ExecutionConditionSchema,
-  WorkflowDefinitionCurrentSchema, AuthoringWorkflowDefinitionCurrentSchema, ExecutionSemanticsVersionSchema,
+  WorkflowDefinitionCurrentSchema, ExecutionSemanticsVersionSchema,
 } from "./current/workflowShape.js";
 export {
   ApprovalHandlerSchema, AcceptedWorkflowApprovalConfigurationSchema, WorkflowApprovalConfigurationSchema, ExecutionConditionSchema, WorkflowExecutionPolicySchema,
@@ -57,7 +57,7 @@ export type {
 import type { ApprovalHandler } from "./current/workflowShape.js";
 import type { RunLiveActivity } from "./runLiveActivity.js";
 import { RunStopCauseSchema } from "./runStopCause.js";
-import { GraphqlToolDefaultsSchema, RecordedGraphqlToolDefaultsSchema, activeGraphqlTools, graphqlToolsOutsideRole } from "./graphqlMcpTools.js";
+import { GraphqlToolDefaultsSchema, graphqlToolsOutsideRole } from "./graphqlMcpTools.js";
 export * from "./runStopCause.js";
 export * from "./runState.js";
 export * from "./runLiveActivity.js";
@@ -341,15 +341,6 @@ export function validateHarnessWorkflowCompatibility(
   return HarnessWorkflowCompatibilitySchema.parse({ configuration, workflowApprovalHandler, designatedOrchestrator }).configuration;
 }
 
-function validateAgentTemplate(value: { role: z.infer<typeof ConfiguredAgentProductRoleSchema>; boardAddable: boolean;
-  graphqlTools?: string[] | undefined }, context: z.RefinementCtx): void {
-  if (value.role === "operator" && value.boardAddable) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["boardAddable"], message: "Operator is application-level and cannot be added to a workflow board" });
-  }
-  if (value.graphqlTools && (value.role === 'operator' || graphqlToolsOutsideRole(value.role, activeGraphqlTools(value.graphqlTools)).length)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['graphqlTools'], message: 'Workflow tool defaults must be allowed for the selected Agent role.' });
-  }
-}
 const AgentTemplateSchema = z.object({
   nativeTools: NativeToolsSchema.optional(),
   graphqlTools: GraphqlToolDefaultsSchema.optional(),
@@ -357,7 +348,14 @@ const AgentTemplateSchema = z.object({
   role: ConfiguredAgentProductRoleSchema,
   boardAddable: z.boolean(),
   harness: HarnessConfigurationSchema,
-}).strict().superRefine(validateAgentTemplate);
+}).strict().superRefine((value, context) => {
+  if (value.role === "operator" && value.boardAddable) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["boardAddable"], message: "Operator is application-level and cannot be added to a workflow board" });
+  }
+  if (value.graphqlTools && (value.role === 'operator' || graphqlToolsOutsideRole(value.role, value.graphqlTools).length)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['graphqlTools'], message: 'Workflow tool defaults must be allowed for the selected Agent role.' });
+  }
+});
 
 export const AgentDefaultsSchema = z.object({
   master: AgentTemplateSchema.safeExtend({ role: z.literal("master"), boardAddable: z.literal(true) }).optional(),
@@ -371,33 +369,9 @@ export const AgentDefaultsSchema = z.object({
 }).strict();
 export type AgentDefaults = z.infer<typeof AgentDefaultsSchema>;
 
-/** Saved role templates retain tool metadata after tools leave the active catalog. */
-export const RecordedAgentDefaultsSchema = z.object({
-  master: z.object({ ...AgentDefaultsSchema.shape.master.unwrap().shape, graphqlTools: RecordedGraphqlToolDefaultsSchema.optional() })
-    .strict().superRefine(validateAgentTemplate).optional(),
-  orchestrator: z.object({ ...AgentDefaultsSchema.shape.orchestrator.shape, graphqlTools: RecordedGraphqlToolDefaultsSchema.optional() })
-    .strict().superRefine(validateAgentTemplate),
-  coder: z.object({ ...AgentDefaultsSchema.shape.coder.shape, graphqlTools: RecordedGraphqlToolDefaultsSchema.optional() })
-    .strict().superRefine(validateAgentTemplate),
-  operator: z.object({ ...AgentDefaultsSchema.shape.operator.shape, graphqlTools: RecordedGraphqlToolDefaultsSchema.optional() })
-    .strict().superRefine(validateAgentTemplate),
-}).strict();
-export type RecordedAgentDefaults = z.infer<typeof RecordedAgentDefaultsSchema>;
-
-/** A new settings submission contains only active choices; the saved template stays untouched. */
-export function activeAgentDefaults(defaults: RecordedAgentDefaults): AgentDefaults {
-  const value = structuredClone(defaults);
-  for (const template of Object.values(value)) if (template?.graphqlTools) {
-    template.graphqlTools = activeGraphqlTools(template.graphqlTools);
-  }
-  return AgentDefaultsSchema.parse(value);
-}
-
 /** Old saved defaults stay untouched; a new Master deliberately starts from coordinator settings. */
-export function agentTemplateForRole(defaults: RecordedAgentDefaults, role: WorkflowAgentProductRole) {
-  const template = role === 'master' ? defaults.master ?? { ...defaults.orchestrator, role: 'master' as const } : defaults[role];
-  const { graphqlTools, ...settings } = template;
-  return { ...settings, ...(graphqlTools ? { graphqlTools: activeGraphqlTools(graphqlTools) } : {}) };
+export function agentTemplateForRole(defaults: AgentDefaults, role: WorkflowAgentProductRole) {
+  return role === 'master' ? defaults.master ?? { ...defaults.orchestrator, role: 'master' as const } : defaults[role];
 }
 
 export const WorkflowDefaultsSchema = z.object({ approvalHandler: ApprovalHandlerSchema }).strict();
@@ -765,7 +739,7 @@ export const AgentSchema = z
     prompt: AgentPromptSchema.optional(),
     assignedSkills: z.array(AssignedSkillSchema).optional(),
     /** Default Foreman Code MCP tools; absence retains the pre-collaboration role tools. */
-    graphqlTools: RecordedGraphqlToolDefaultsSchema.optional(),
+    graphqlTools: GraphqlToolDefaultsSchema.optional(),
     ...OptionalTimestampFields,
   })
   .strict();
@@ -787,7 +761,7 @@ export const AgentConfigurationVersionSchema = z
     prompt: AgentPromptSchema,
     assignedSkills: z.array(AssignedSkillSchema),
     resolvedSkills: z.array(ResolvedSkillSchema).max(100).optional(),
-    graphqlTools: RecordedGraphqlToolDefaultsSchema.optional(),
+    graphqlTools: GraphqlToolDefaultsSchema.optional(),
     /** Present on configurations accepted after Skills v1: the persistent prompt and pinned
      * skills are delivered as native app instructions, separate from task text. Absent on
      * earlier accepted configurations, which keep their original in-task delivery. */
@@ -1323,8 +1297,8 @@ export const GetWorkflowResponseSchema = z
 export const SaveWorkflowRequestSchema = z
   .object({
     workspaceId: IdSchema,
-    workflow: AuthoringWorkflowDefinitionCurrentSchema,
-    agents: z.array(AgentSchema.extend({ graphqlTools: GraphqlToolDefaultsSchema.optional() })).optional(),
+    workflow: WorkflowDefinitionCurrentSchema,
+    agents: z.array(AgentSchema).optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -1721,7 +1695,7 @@ export * from './memoryBoards.js';
 export * from './memoryBoardViews.js';
 export * from './workflowKanban.js';
 export * from './chatDelivery.js';
-export * from './engineChat.js';
+export * from './workflowChat.js';
 export * from './browserProfiles.js';
 export * from './browserSessions.js';
 export * from './workflowHierarchy.js';

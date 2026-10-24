@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { ManagementActionSchema, type ManagementGrant } from '@foreman-code/contracts/management'
 import {
-  AcceptedRepeatStartV1Schema, AcceptedWorkflowRunCurrentSchema, CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema, WorkflowVersionCurrentSchema,
-  type RepeatGraphScopeCurrent, type CurrentWorkflowSavedSchema, type makeCurrentWorkflowFixture,
+  AcceptedRepeatStartV1Schema, AcceptedWorkflowRunCurrentSchema, CurrentWorkflowSaveResultSchema, WorkflowVersionCurrentSchema,
+  type RepeatGraphScopeCurrent, type CurrentWorkflowSaveInput, type CurrentWorkflowSavedSchema, type makeCurrentWorkflowFixture,
 } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
@@ -53,13 +53,13 @@ export async function createRepeatFixtureWriter(pool: pg.Pool, fixture: CurrentW
     if (!Number.isSafeInteger(revision)) throw new Error('The disposable repeat fixture has an invalid workflow revision')
     const entry = fixture.version.definition.nodes[0]!, exit = fixture.version.definition.nodes[1]!
     if (!fixture.run.executionLocation) throw new Error('The current fixture requires an execution location')
-    const input = CurrentWorkflowSaveInputSchema.parse({
+    const input: CurrentWorkflowSaveInput = {
       workspaceId: fixture.scope.workspaceId, workflowId: fixture.scope.workflowId, commandId: randomUUID(),
       expectedRevision: revision, expectedWorkflowVersionId: head.current_version_id, executionSemanticsVersion: 3,
       expectedAgentConfigurationVersionIds: fixture.version.agentConfigurationVersionIds,
       graph: { ...fixture.version.definition, repeat: { contractVersion: 1, blocks: [{ id: 'repair', nodeIds: [entry.id, exit.id], entryNodeId: entry.id,
         exitNodeId: exit.id, maxOccurrences, repeatOutcome: 'issues', earlyExitOutcome: 'pass', limitExit: { kind: 'branch_end' } }] } },
-    })
+    }
     const app = buildApp({ readiness: { database: { ping: async () => { await pool.query('select 1') } },
       checkpoints: { ping: async () => undefined } }, operator: { access,
       services: { commands, workflows } as OperatorServices } })

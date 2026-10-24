@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AgentSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
 import { JobWorkflowNodeSchema } from '@foreman-code/contracts/job-workflow'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture, CurrentEditSaveInputSchema, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, type CurrentEditSaveInput, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { prepareCurrentStagedAgents } from '../src/modules/graph-drafts/currentStagedAgents.js'
 import { identity, readContext } from '../src/modules/interactions/current/context.js'
 import type { SqlQuery } from '../src/infrastructure/transaction.js'
@@ -37,10 +37,10 @@ function fixture() {
   const principal: ManagementPrincipal = { id: 'staged-agent-author', name: 'Author', audience: 'operator',
     revokedAt: null, expiresAt: '2099-01-01T00:00:00.000Z',
     grants: [{ actions: ['agents:create'], scope: { workspaceIds: [saved.run.workspaceId] } }] }
-  const input = CurrentEditSaveInputSchema.parse({ workspaceId: saved.run.workspaceId, workflowId: saved.run.workflowId,
+  const input: CurrentEditSaveInput = { workspaceId: saved.run.workspaceId, workflowId: saved.run.workflowId,
     executionSemanticsVersion: 3, commandId: 'mixed-agent-save', expectedRevision: 1,
     expectedWorkflowVersionId: version.id, expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
-    graph: version.definition })
+    graph: version.definition }
   return { ...saved, version, job, requester, interaction, query, principal, input,
     sql: { query } as unknown as SqlQuery, client: { query } as unknown as pg.PoolClient }
 }
@@ -75,7 +75,7 @@ describe('Agent-only native approval and staged configuration boundaries', () =>
   it('refuses staging an Agent configuration through a Job reference before any SQL work', async () => {
     const f = fixture()
     const staged = { agent: AgentSchema.parse({ id: f.job.jobDefinitionId, name: 'Cannot configure a Job as an Agent' }), baseRevision: null }
-    await expect(prepareCurrentStagedAgents(f.client, f.principal, CurrentEditSaveInputSchema.parse({ ...f.input, stagedAgents: [staged] })))
+    await expect(prepareCurrentStagedAgents(f.client, f.principal, { ...f.input, stagedAgents: [staged] }))
       .rejects.toMatchObject({ code: 'AGENT_CONFIGURATION_CONFLICT' })
     expect(f.query).not.toHaveBeenCalled()
   })
@@ -84,7 +84,7 @@ describe('Agent-only native approval and staged configuration boundaries', () =>
     const f = fixture()
     const staged = { agent: AgentSchema.parse({ id: f.job.jobDefinitionId, name: 'Denied stage' }), baseRevision: null }
     const denied = { ...f.principal, grants: [{ actions: ['agents:create' as const], scope: { workspaceIds: ['another-workspace'] } }] }
-    await expect(prepareCurrentStagedAgents(f.client, denied, CurrentEditSaveInputSchema.parse({ ...f.input, stagedAgents: [staged] })))
+    await expect(prepareCurrentStagedAgents(f.client, denied, { ...f.input, stagedAgents: [staged] }))
       .rejects.toMatchObject({ code: 'ACCESS_DENIED', status: 403 })
     expect(f.query).not.toHaveBeenCalled()
   })
