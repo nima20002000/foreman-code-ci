@@ -96,7 +96,7 @@ function ComputerRow({ computer, fresh, complete }: { computer: ComputerActivity
   const hostRef = computer.target.hostRef
   return <HoverRow level={level} label={`${computer.name}, ${main ? 'Main' : 'Worker'}, ${LOAD_LABELS[level]}`}
     runningCount={online ? workloads : 0} name={computer.name}
-    link={{ to: '/settings/computers/$deviceId', params: { deviceId: hostRef.kind === 'device' ? hostRef.deviceId : 'main' } }}
+    link={hostRef.kind === 'device' ? { to: '/settings/computers/$deviceId', params: { deviceId: hostRef.deviceId } } : { to: '/settings/computers' }}
     card={<ComputerDetails computer={computer} online={online} fresh={fresh} complete={complete} level={level} />} />
 }
 
@@ -112,7 +112,7 @@ function CloudRow({ cloud, fresh }: { cloud: CloudCiActivity; fresh: boolean }) 
   return <HoverRow level={level} label={`${cloud.name}, Cloud CI, ${role ? `${role}, ` : ''}${health}`}
     runningCount={fresh && cloud.ready ? cloud.running : 0}
     name={cloud.name} status={role}
-    link={{ to: '/settings/computers', search: cloud.provider === 'circleci' ? { circleAccountId: cloud.circleAccountId ?? DEFAULT_CIRCLE_ACCOUNT_ID, ...(cloud.account ? { cloudAccount: cloud.account } : {}) } : {} }}
+    link={{ to: '/settings/computers' }}
     card={<div className="sidebar-hover-body">
       <CardHeader icon={<Cloud size={16} />} name={cloud.name} role="Cloud CI" />
       {role && <Badge>{role}</Badge>}
@@ -141,7 +141,7 @@ function CircleCredits({ cloud }: { cloud: CloudCiActivity }) {
   </p>
 }
 
-type RowLink = { to: '/settings/computers'; search?: { circleAccountId?: string; cloudAccount?: string } } | { to: '/settings/computers/$deviceId'; params: { deviceId: string } }
+type RowLink = { to: '/settings/computers' } | { to: '/settings/computers/$deviceId'; params: { deviceId: string } }
 
 function HoverRow({ level, label, name, status, link, card, runningCount }: {
   level: ComputerLoadLevel; label: string; name: string; link: RowLink; card: ReactNode; runningCount: number
