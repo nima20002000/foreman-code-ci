@@ -528,7 +528,8 @@ test('cloud startup installs the harness CLIs once into a cacheable prefix and r
   const cache = join(homedir(), '.cache', 'foreman-tmp')
   mkdirSync(cache, { recursive: true })
   const directory = mkdtempSync(join(cache, 'ci-clis-'))
-  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  // The started job writes its last state files just after clis.exit appears; retry until it has finished.
+  t.after(() => rmSync(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }))
   const callsFile = join(directory, 'calls.jsonl')
   const prefix = join(directory, 'clis')
   mkdirSync(join(directory, 'bin'))
