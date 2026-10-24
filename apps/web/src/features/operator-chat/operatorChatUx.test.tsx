@@ -368,7 +368,7 @@ describe('Operator chat UX', () => {
   })
 
 
-  it('continues an established chat with its accepted harness after defaults change', async () => {
+  it('keeps a draft pinned after changing harness and requires explicit new-chat navigation', async () => {
     const source = operatorState({ revision: 7, turnState: 'idle', activeRequestId: null,
       settings: operatorChatSettings(DEFAULT_HARNESS_DEFAULTS.codex),
       messages: [{ id: 'old-message', conversationId: 'conversation-one', role: 'assistant', content: 'Earlier answer' }] })
@@ -382,16 +382,13 @@ describe('Operator chat UX', () => {
     expect(await screen.findByText('Your Operator settings changed. They apply to a new chat.')).toBeVisible()
     const input = screen.getByRole('textbox', { name: 'Message' })
     fireEvent.change(input, { target: { value: 'Continue here' } })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled())
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
     fireEvent.keyDown(input, { key: 'Enter' })
-    await waitFor(() => expect(api.send).toHaveBeenCalledWith('conversation-one', expect.objectContaining({
-      content: 'Continue here', settings: source.settings,
-    })))
+    expect(api.send).not.toHaveBeenCalled()
     expect(useOperatorChatStore.getState().selectedConversationId).toBe('conversation-one')
-    fireEvent.change(input, { target: { value: 'Draft for the original chat' } })
     fireEvent.click(within(screen.getByText('Your Operator settings changed. They apply to a new chat.')).getByRole('button', { name: 'New chat' }))
     await waitFor(() => expect(useOperatorChatStore.getState().selectedConversationId).toBe('new-chat'))
-    expect(useConversationDraftStore.getState().drafts['conversation-one']).toBe('Draft for the original chat')
+    expect(useConversationDraftStore.getState().drafts['conversation-one']).toBe('Continue here')
     expect(await screen.findByRole('textbox', { name: 'Message' })).toHaveValue('')
   })
 
