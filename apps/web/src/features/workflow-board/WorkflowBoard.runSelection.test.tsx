@@ -251,7 +251,7 @@ async function mountWithSummaries(selectRun: () => void) {
   return client
 }
 
-it('keeps the draft selected when a Run starts later and only lights the Running control', async () => {
+it('keeps the draft selected and reads its overlay when a Run starts later', async () => {
   installSelectedHandlers()
   const selectRun = vi.fn(), snapshotReads = vi.fn(() => HttpResponse.json(snapshot('run-a')))
   const listReads = vi.fn(() => runSummaries([]))

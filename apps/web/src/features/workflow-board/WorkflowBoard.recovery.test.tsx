@@ -71,12 +71,12 @@ function fixture(form: Form) {
 }
 type Fixture = ReturnType<typeof fixture>
 async function mount(f: Fixture, href = `/workspaces/${f.mock.workspaceId}?workflowId=${f.workflowId}`) {
-  server.use(...f.mock.handlers,
+  server.use(
     http.get(`*/api/workspaces/${f.mock.workspaceId}`, () => HttpResponse.json({ ...f.mock.details(), ...(f.hideRuns ? { runs: [] } : {}) })),
     http.get(`*/api/management/workspaces/${f.mock.workspaceId}/workflows/${f.workflowId}/runs/summaries`, () =>
       HttpResponse.json({ items: f.hideRuns ? [] : [...f.mock.runs.values()].reverse().map(({ run }) => ({ runId: run.id,
         shortId: run.id, startedAt: run.createdAt, status: run.executionState === 'completed' ? run.outcome : run.executionState, trigger: 'manual' })),
-      pageInfo: { nextCursor: null } })))
+      pageInfo: { nextCursor: null } })), ...f.mock.handlers)
   const query = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } } })
   clients.push(query)
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [href] }), defaultPendingMinMs: 0 })

@@ -81,12 +81,12 @@ afterEach(() => {
 })
 
 async function mount(mock: Mock, href = `/workspaces/${mock.workspaceId}`, hideRuns = false) {
-  server.use(...mock.handlers,
+  server.use(
     http.get(`*/api/workspaces/${mock.workspaceId}`, () => HttpResponse.json({ ...mock.details(), ...(hideRuns ? { runs: [] } : {}) })),
     http.get(`*/api/management/workspaces/${mock.workspaceId}/workflows/:workflowId/runs/summaries`, ({ params }) =>
       HttpResponse.json({ items: hideRuns ? [] : [...mock.runs.values()].reverse().filter(({ run }) => run.workflowId === params.workflowId)
         .map(({ run }) => ({ runId: run.id, shortId: run.id, startedAt: run.createdAt,
-          status: run.executionState === 'completed' ? run.outcome : run.executionState, trigger: 'manual' })), pageInfo: { nextCursor: null } })))
+          status: run.executionState === 'completed' ? run.outcome : run.executionState, trigger: 'manual' })), pageInfo: { nextCursor: null } })), ...mock.handlers)
   const query = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } } })
   clients.push(query)
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [href] }), defaultPendingMinMs: 0 })
@@ -657,10 +657,10 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     if (mode === 'denied') expect(mock.runs.size).toBe(0)
     if (mode !== 'lost') return
     expect(mock.runs.size).toBe(1)
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Reconcile Start' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled())
     mounted.unmount(); mounted.query.clear()
     act(() => useGraphDraftStore.setState({ nextDrafts: {} })); await mount(mock, href)
-    const reconcile = await screen.findByRole('button', { name: 'Reconcile Start' })
+    const reconcile = await screen.findByRole('button', { name: 'Check again' })
     await waitFor(() => expect(reconcile).toBeEnabled())
     await user.click(reconcile)
     await waitFor(() => expect(readBoardStart(key)).toBeUndefined())
@@ -744,7 +744,6 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
   }, 30_000)
 })
 
-
 describe('latest Run on the draft Board', () => {
   it('Start keeps the draft nodes and URL while showing the new Run states and handoff lights', async () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
@@ -813,7 +812,7 @@ describe('latest Run on the draft Board', () => {
     const settings = within(await screen.findByRole('complementary', { name: 'Workflow settings' }))
     expect(settings.getByRole('spinbutton', { name: 'Agents at once' })).toBeDisabled()
     await user.click(settings.getByRole('button', { name: 'Close panel' }))
-    await user.click(canvas.getByRole('button', { name: `Open ${graph.nodes[0]!.name} details` }))
+    await user.click(canvas.getByRole('button', { name: `Open ${graph.nodes[0]!.name} information` }))
     expect(await screen.findByRole('complementary', { name: 'Workflow side panel' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Back to Board' }))
     await user.click(canvas.getByRole('button', { name: `Open ${graph.nodes[0]!.name} chat` }))
