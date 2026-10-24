@@ -4,14 +4,12 @@ import { sameDeviceProvisioningTarget, type DeviceProvisioningTarget } from '@fo
 import { COMPUTER_NAME_MAX_LENGTH, computerDisplayName } from '@foreman-code/contracts/computer-activity'
 import { useBuildComputers, useUpdateBuildComputer } from '../../shared/api/buildComputers'
 import { useComputerActivity, useRenameComputer } from '../../shared/api/computerActivity'
-import { UnsavedEditorGuard, useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Alert, Badge, Button, SettingRow, SettingsSection, Skeleton, Switch, Tabs, TextField } from '../../shared/ui/nocturne'
 import type { ComputerSettingsTab } from './computerSettingsTabs'
 import { ComputerCards, ComputerSyncPanel } from '../computers'
 import { ProviderAccountsSettings } from '../provider-accounts'
-import { ComputerPairingRecovery } from './ComputerPairingRecovery'
 import { ComputerRevokeButton } from './ComputerRevokeButton'
 import { ConnectionSetupStatus } from './DeviceSetupGuide'
 
@@ -62,10 +60,9 @@ export function ComputerDetailSettings({ mainId, devices, registration }: {
       {profiles ? <SettingsSection title="Browser profiles" description="Signed-in browsers Agents can use here.">{profiles}</SettingsSection> : null}
     </> }] : [],
     ...registration ? [{ value: 'connection', label: 'Connection', content: <>
-      <SettingsSection title="Connection" description="How the app sends work to this computer.">
+      {registration.status !== 'revoked' ? <SettingsSection title="Connection" description="How the app sends work to this computer.">
         <ConnectionSetupStatus registration={registration} />
-        <ComputerPairingRecovery registration={registration} />
-      </SettingsSection>
+      </SettingsSection> : null}
       <SettingsSection title="Remove" description="Stop this computer from connecting.">
         <ComputerRevokeButton key={`${registration.mainId}:${registration.deviceId}`} registration={registration} />
       </SettingsSection>
@@ -74,7 +71,7 @@ export function ComputerDetailSettings({ mainId, devices, registration }: {
   return <section className="settings-editor-page computers-page computer-detail-settings" aria-label={`${name} settings`}>
     <header className="settings-experience-heading computer-detail-heading"><h1>{name}</h1>
       {observed ? <Badge tone={online ? 'success' : 'neutral'} dot>{online ? 'Online' : 'Offline'}</Badge> : null}</header>
-    <Tabs label={`${name} settings`} value={tab} items={items} keepMounted
+    <Tabs label={`${name} settings`} value={tab} items={items} keepMounted={false}
       onValueChange={next => void navigate({ to: '.', search: (prev: Record<string, unknown>) => ({ ...prev, tab: next === 'overview' ? undefined : next as ComputerSettingsTab }), replace: true })} />
   </section>
 }
@@ -83,15 +80,12 @@ function NameRow({ name, target }: { name: string; target: DeviceProvisioningTar
   const [draft, setDraft] = useState(name)
   const rename = useRenameComputer()
   const next = draft.trim()
-  const saveName = () => rename.mutateAsync({ target, name: next }).then(() => true, () => false)
-  useUnsavedChanges({ label: 'computer name', dirty: next !== name, busy: rename.isPending,
-    saveDisabled: !next, save: saveName, discard: () => setDraft(name), error: rename.error?.message })
   return <SettingRow title="Computer name">
     <div className="computer-detail-inline">
-      <TextField label="Computer name" className="settings-inline-field" value={draft} maxLength={COMPUTER_NAME_MAX_LENGTH} disabled={rename.isPending}
+      <TextField label="Computer name" className="settings-inline-field" value={draft} maxLength={COMPUTER_NAME_MAX_LENGTH}
         error={rename.isError ? rename.error.message : undefined} onChange={event => setDraft(event.target.value)} />
       <Button size="sm" variant="primary" disabled={!next || next === name || rename.isPending}
-        onClick={() => void saveName()}>{rename.isPending ? 'Saving…' : 'Save name'}</Button>
+        onClick={() => rename.mutate({ target, name: next })}>{rename.isPending ? 'Saving…' : 'Save name'}</Button>
     </div>
   </SettingRow>
 }
@@ -114,13 +108,7 @@ export function ComputerBuildSettings({ target }: { target: DeviceProvisioningTa
   const valid = Number.isInteger(value.buildPriority) && value.buildPriority >= 0 && value.buildPriority <= 100
     && Number.isInteger(value.buildAllowancePercent) && value.buildAllowancePercent >= 10 && value.buildAllowancePercent <= 100
   const stale = draft !== null && draft.revision !== preference.revision
-  const discard = () => { setDraft(null); save.reset() }
-  const saveBuild = () => save.mutateAsync({ target, expectedRevision: value.revision, commandId: crypto.randomUUID(),
-    buildEnabled: value.buildEnabled, buildPriority: value.buildPriority, buildAllowancePercent: value.buildAllowancePercent })
-    .then(() => { setDraft(null); setSaved(true); return true }, () => false)
   return <>
-    <UnsavedEditorGuard editor={{ label: 'computer build settings', dirty: draft !== null, busy: save.isPending,
-      saveDisabled: !valid || stale, save: saveBuild, discard, error: save.error?.message }} />
     <SettingRow title="Run builds here">
       <Switch label="Run builds here" checked={value.buildEnabled} disabled={save.isPending}
         onChange={event => edit({ buildEnabled: event.target.checked })} />
@@ -140,9 +128,11 @@ export function ComputerBuildSettings({ target }: { target: DeviceProvisioningTa
     {save.isError ? <Alert live tone="danger" title="Couldn’t save build settings">{save.error.message}</Alert> : null}
     <div className="computer-detail-actions">
       {saved && !draft ? <span role="status" className="settings-saved-note">Saved.</span> : null}
-      {draft ? <Button size="sm" variant="ghost" disabled={save.isPending} onClick={discard}>Discard</Button> : null}
+      {draft ? <Button size="sm" variant="ghost" disabled={save.isPending} onClick={() => { setDraft(null); save.reset() }}>Discard</Button> : null}
       <Button size="sm" variant="primary" disabled={!draft || !valid || save.isPending}
-        onClick={() => void saveBuild()}>{save.isPending ? 'Saving…' : 'Save build settings'}</Button>
+        onClick={() => save.mutate({ target, expectedRevision: value.revision, commandId: crypto.randomUUID(),
+          buildEnabled: value.buildEnabled, buildPriority: value.buildPriority, buildAllowancePercent: value.buildAllowancePercent },
+        { onSuccess: () => { setDraft(null); setSaved(true) } })}>{save.isPending ? 'Saving…' : 'Save build settings'}</Button>
     </div>
   </>
 }

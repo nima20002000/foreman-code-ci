@@ -266,27 +266,3 @@ it('keeps authentication actions visible and says sign-in continues in the backg
   expect(screen.getByRole('button', { name: 'Sign out' })).toBeVisible()
   expect(screen.getByRole('dialog')).toHaveAccessibleDescription('Sign-in keeps going on its computer if you close this.')
 })
-
-
-it.each([false, true])('lets the user leave an unavailable saved attempt with a current operation present=%s', async hasCurrent => {
-  const stale = '90000000-0000-4000-8000-000000000009'
-  server.use(
-    http.get('/api/provider-accounts/:id/authentication', () => HttpResponse.json({
-      accountId: observedAccount().id, target: accountTarget,
-      currentOperation: hasCurrent ? authenticationOperation() : null, operations: [], nextCursor: null,
-    })),
-    http.post('/api/provider-accounts/authentication/status', async ({ request }) => {
-      const input = await request.json() as { operationId: string }
-      return input.operationId === stale ? HttpResponse.json({ error: { code: 'NOT_FOUND', message: 'Attempt unavailable' } }, { status: 404 })
-        : HttpResponse.json(authenticationOperation())
-    }),
-  )
-  const { user } = mount(stale)
-  await screen.findByText('Attempt unavailable')
-  await user.click(screen.getByRole('button', { name: 'Leave unavailable attempt' }))
-  if (hasCurrent) expect(await screen.findByText('Waiting for human sign-in')).toBeVisible()
-  else await waitFor(() => expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled())
-  await user.click(screen.getByRole('button', { name: 'Close dialog' }))
-  await user.click(screen.getByRole('button', { name: 'Reopen progress' }))
-  expect(screen.queryByText('Attempt unavailable')).not.toBeInTheDocument()
-})

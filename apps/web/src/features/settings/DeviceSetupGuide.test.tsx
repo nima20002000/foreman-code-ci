@@ -1,6 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { http, HttpResponse } from 'msw'
-import { server } from '../../mocks/server'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { DeviceRegistration } from '@foreman-code/contracts/device-identity'
@@ -37,10 +34,7 @@ describe('device setup guidance', () => {
     ['paired', 'unverified', /Connection status unverified\..*Ask the Operator to read and configure its connection, then check readiness/],
     ['revoked', 'blocked', /Blocked\..*registration is revoked/],
   ] as const)('shows a distinct message for a %s computer without inferring approval or readiness', (status, state, message) => {
-    server.use(http.post('*/api/devices/connection-check', () => HttpResponse.json({ registration: registration(status), consent: null,
-      state: 'unavailable', probe: null, checkedAt: '2026-10-24T00:00:00.000Z' })))
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><ConnectionSetupStatus registration={registration(status)} /></QueryClientProvider>)
+    render(<ConnectionSetupStatus registration={registration(status)} />)
     expect(screen.getByRole('region', { name: 'Remote command connection' })).toHaveAttribute('data-state', state)
     expect(screen.getByRole('status')).toHaveTextContent(message)
     expect(screen.queryByText(/not approved|is approved|\bready\b/i)).not.toBeInTheDocument()

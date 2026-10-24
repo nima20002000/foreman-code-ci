@@ -1,7 +1,5 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
 import type { DeviceRegistration } from '@foreman-code/contracts/device-identity'
-import { useTrustedConnection } from '../../shared/api/trustedConnection'
-import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { Button } from '../../shared/ui/nocturne'
 import { askOperator } from '../operator-chat'
 
@@ -28,33 +26,13 @@ export function DeviceSetupGuide() {
 
 /** Pairing alone does not establish connection readiness. */
 export function ConnectionSetupStatus({ registration }: { registration: DeviceRegistration }) {
-  if (registration.status === 'paired') return <PairedConnection registration={registration} />
-  return <section className="device-setup-status" aria-label="Remote command connection" data-state={registration.status === 'revoked' ? 'blocked' : 'needs-pairing'}>
+  const state = registration.status === 'revoked' ? 'blocked' : registration.status === 'paired' ? 'unverified' : 'needs-pairing'
+  return <section className="device-setup-status" aria-label="Remote command connection" data-state={state}>
     <p role="status">{registration.status === 'revoked'
       ? <><strong>Blocked.</strong> This computer’s registration is revoked, so no connection can be set up.</>
-      : <><strong>Pairing needed.</strong> Pair this computer before any connection can be set up.</>}</p>
-  </section>
-}
-
-function PairedConnection({ registration }: { registration: DeviceRegistration }) {
-  const query = useTrustedConnection(registration)
-  const denied = useProtectedAccessError(query)
-  const result = denied ? undefined : query.data
-  const labels = {
-    ready: 'Connection ready.', offline: 'Connection offline.', 'tools-missing': 'Connection tools missing.',
-    'pairing-required': 'Pairing needed.', revoked: 'Registration revoked.', 'consent-required': 'Connection setup needed.',
-    'consent-revoked': 'Connection disabled.', 'identity-changed': 'Computer identity changed.',
-    'authentication-required': 'Connection sign-in required.', 'host-key-mismatch': 'Connection identity mismatch.',
-    'host-key-untrusted': 'Connection identity unverified.', 'permission-denied': 'Connection access denied.',
-    unavailable: 'Connection status unavailable.',
-  } as const
-  return <section className="device-setup-status" aria-label="Remote command connection" data-state={result?.state ?? 'unverified'}>
-    <p role="status">{result ? <>
-      {query.isError ? 'Last checked: ' : null}<strong>{labels[result.state]}</strong>
-      {' '}Checked <time dateTime={result.checkedAt}>{new Date(result.checkedAt).toLocaleString()}</time>.
-    </> : <><strong>Connection status unverified.</strong> This computer is paired. Ask the Operator to read and configure its connection, then check readiness.</>}</p>
-    {query.isError ? <p role="alert">{query.error.message} Check the connection again.</p> : null}
-    <Button size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>Check connection</Button>
-    <Button size="sm" onClick={() => askOperator(`Set up and check the connection to computer ${registration.deviceId} on Main ${registration.mainId}: `, { send: false })}>Ask Operator</Button>
+      : registration.status === 'paired'
+        ? <><strong>Connection status unverified.</strong> This computer is paired. Ask the Operator to read and configure its connection, then check readiness.</>
+        : <><strong>Pairing needed.</strong> Pair this computer before any connection can be set up.</>}</p>
+    {registration.status === 'paired' ? <Button size="sm" onClick={() => askOperator('Set up and check the connection to this computer: ', { send: false })}>Ask Operator</Button> : null}
   </section>
 }

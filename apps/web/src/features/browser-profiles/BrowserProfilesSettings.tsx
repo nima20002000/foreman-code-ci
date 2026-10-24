@@ -19,7 +19,6 @@ export interface BrowserProfilesSettingsProps {
   visible: boolean
   authBoundary: string
   computers: readonly BrowserComputerLabel[]
-  visibleComputerId?: string | undefined
   currentComputerId: string
   port: BrowserProfilesPort
   sessionPort: BrowserUiPort
@@ -34,7 +33,7 @@ export function BrowserProfilesSettings(props: BrowserProfilesSettingsProps) {
   return <VisibleBrowserProfiles key={props.authBoundary} {...props} />
 }
 
-function VisibleBrowserProfiles({ authBoundary, computers, visibleComputerId, currentComputerId, port, sessionPort, files, onOpenSetup, computerAction }: BrowserProfilesSettingsProps) {
+function VisibleBrowserProfiles({ authBoundary, computers, currentComputerId, port, sessionPort, files, onOpenSetup, computerAction }: BrowserProfilesSettingsProps) {
   const queryClient = useQueryClient()
   const [denied, setDenied] = useState(false)
   const catalog = useBrowserProfiles(port, authBoundary, !denied)
@@ -80,7 +79,7 @@ function VisibleBrowserProfiles({ authBoundary, computers, visibleComputerId, cu
       {notice ? <p role="status" className="browser-profile-note">{notice}</p> : null}
       {mutation.error && !editor ? <div role="alert" className="browser-profile-note">{browserErrorMessage(mutation.error)} No new operation is confirmed.
         <Button size="sm" disabled={mutation.isPending} onClick={retry}>Check original request</Button></div> : null}
-      {catalog.data ? <div className="browser-profile-computers">{computers.filter(computer => !visibleComputerId || computer.id === visibleComputerId).map(computer => <section key={computer.id}
+      {catalog.data ? <div className="browser-profile-computers">{computers.map(computer => <section key={computer.id}
         aria-label={`Browser profiles on ${computer.name}`} className="browser-profile-computer">
         <header className="browser-profile-computer-heading">
           <div><h3><span className="browser-profile-dot" data-online={computer.online} aria-hidden="true" />{computer.name}</h3>
