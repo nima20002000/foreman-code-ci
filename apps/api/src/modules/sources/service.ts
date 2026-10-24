@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
-  SourceApproveInputSchema, SourceGetInputSchema, SourceListInputSchema, SourceRootBindInputSchema, SourceRootGetInputSchema, SourceRootListInputSchema,
+  SourceApproveInputSchema, SourceGetInputSchema, SourceListInputSchema, SourceRootBindInputSchema, SourceRootSetupInputSchema, SourceRootGetInputSchema, SourceRootListInputSchema,
   ApprovedSourceSchema, SourceRootRecordSchema, SourceMaterializationRecordSchema,
   type VerifiedSourceWorkingTree, type ApprovedSource, type ApprovedSourcePin, type SourceRootRecord, type SourceMaterializationRecord,
 } from '@foreman-code/contracts/source-admission'
@@ -481,6 +481,33 @@ export class PostgresSourceService implements SourceAdmissionPort {
         on b.root_id=c.root_id and b.binding_revision=c.current_binding_revision where c.workspace_id=$1 order by c.root_id limit $2`, [input.workspaceId, input.limit])
       return { items: rows.rows.map(row => SourceRootRecordSchema.parse(row.record)), readiness: 'metadata-only' as const }
     })
+  }
+  async setupRoot(principal: ManagementPrincipal, source: Transport, raw: unknown) {
+    const input = SourceRootSetupInputSchema.parse(raw)
+    const roots = (await this.rootList(principal, source, { workspaceId: input.workspaceId })).items
+    const template = await this.transaction(async sql => {
+      const live = await authorizeSource(sql, principal, 'source_roots:bind', input.workspaceId)
+      await this.roots.authorize(sql, live.principal, input)
+      const row = (await sql.query<{ record: unknown }>(`select b.record from source_root_catalog c
+        join source_root_bindings b on b.root_id=c.root_id and b.binding_revision=c.current_binding_revision
+        join source_snapshots s on s.snapshot_id=b.snapshot_id
+        where c.workspace_id=$1 and b.record#>>'{selection,hostRef,kind}'='main' and s.availability='retained'
+        order by b.record->>'boundAt' desc, c.root_id limit 1`, [input.workspaceId])).rows[0]
+      return row ? SourceRootRecordSchema.parse(row.record) : undefined
+    })
+    const current = roots.find(root => root.selection.rootPolicyId === input.selection.rootPolicyId
+      && isDeepStrictEqual(root.selection.hostRef, input.selection.hostRef))
+    if (current && isDeepStrictEqual(current.selection, input.selection) && current.binding.accessMode === input.accessMode) {
+      return { value: await this.rootGet(principal, source, { workspaceId: input.workspaceId,
+        rootId: current.binding.rootId, bindingRevision: current.binding.bindingRevision }), replayed: true }
+    }
+    const approved = template ? await this.get(principal, source, { workspaceId: input.workspaceId, ...template.source })
+      : await this.approveProject(principal, { workspaceId: input.workspaceId,
+        commandId: `setup-project-${commandInputHash(input)}` }, { source })
+    const manifest = approved.manifest
+    return this.bindRoot(principal, source, { ...input,
+      commandId: `setup-root-${commandInputHash(input)}`, expectedBindingRevision: current?.binding.bindingRevision ?? 0,
+      source: { approvedSourceId: manifest.approvedSourceId, snapshotId: manifest.snapshotId, manifestDigest: manifest.manifestDigest } })
   }
   async bindRoot(principal: ManagementPrincipal, source: Transport, raw: unknown) {
     const input = SourceRootBindInputSchema.parse(raw)

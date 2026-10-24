@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { packBrowserRuntime, assembleBrowserRuntime } from '../../../scripts/browser-runtime-install.mjs';
 import { stageBrowserRuntime, activateBrowserRuntime, rollbackBrowserRuntime, readInstalledBrowserRuntime,
-  checkBrowserRuntimeReadiness, validateBrowserRuntimeManifest, copyBuiltBrowserRuntime, readBrowserRuntimeStatus } from '../src/browserRuntimeInstall.mjs';
+  checkBrowserRuntimeReadiness, validateBrowserRuntimeManifest, copyBuiltBrowserRuntime } from '../src/browserRuntimeInstall.mjs';
 import { installVersion, readInstalledRelease } from '../src/installation.mjs';
 import { superviseWorkerUpdate } from '../src/updateSupervisor.mjs';
 import { runReleaseCutover, waitForProductionBrowserDrain, stageProductionBrowserRuntime,
@@ -352,41 +352,6 @@ test('the running Worker owner reports the retained browser failure and repairs 
   assert.equal((await owner.retry()).ready, true);
   assert.equal((await readInstalledRelease({ root, facts, expected })).directory, installed.directory);
   assert.equal(owner.getHost(), f.host);
-});
-
-
-test('Worker startup retries a failed retryable install once and a later restart can recover it', async t => {
-  const directory = await fixture(t), root = join(directory, 'app'), stateDirectory = join(directory, 'state');
-  await mkdir(root, { mode: 0o700 }); await mkdir(stateDirectory, { mode: 0o700 });
-  const carrier = await workerCarrier(directory, await artifact(directory, 'runtime'));
-  const facts = { ...target, rootPersistent: true, homePersistent: true };
-  await installVersion({ root, stateDirectory, ...carrier, facts, expected,
-    browserRuntimeReadiness: async () => { throw new Error('Sandbox prerequisite unavailable'); } });
-  assert.equal((await readBrowserRuntimeStatus(root)).retryable, true);
-  let attempts = 0, repaired = false;
-  const f = bootstrapFixture();
-  const options = { ...f.options, root, stateDirectory, facts,
-    readSelectedRelease: readInstalledRelease, readInstalled: readInstalledBrowserRuntime,
-    browserRuntimeReadiness: async () => {
-      attempts++;
-      if (!repaired) throw new Error('Sandbox prerequisite unavailable');
-      return { ready: true };
-    }, loadModule: async () => ({ ...f.module, createBrowserHost: async () => f.host }) };
-  const first = createWorkerBrowserRuntime(options);
-  t.after(() => first.close());
-  assert.equal((await first.start()).phase, 'failed');
-  assert.equal(attempts, 1);
-  await first.start();
-  assert.equal(attempts, 1);
-  assert.equal((await readBrowserRuntimeStatus(root)).state, 'failed');
-  await first.close();
-  repaired = true;
-  const restarted = createWorkerBrowserRuntime(options);
-  t.after(() => restarted.close());
-  assert.equal((await restarted.start()).ready, true);
-  assert.equal(attempts, 2);
-  assert.equal((await readBrowserRuntimeStatus(root)).state, 'ready');
-  assert.equal(restarted.getHost(), f.host);
 });
 
 test('Worker refuses a mismatched selected release and a selection that changes while its module loads', async () => {

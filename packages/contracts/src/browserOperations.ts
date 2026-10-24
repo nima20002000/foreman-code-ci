@@ -3,8 +3,8 @@ import { IdSchema } from './schemaPrimitives.js';
 import { AgentSubjectSchema } from './agentIdentity.js';
 import { BrowserProfileSchema, BrowserProfileReplicaSchema, BrowserProfileSyncPageSchema, BrowserProfileSyncJobSchema,
   BrowserProfileOriginSchema, NodeBrowserSettingsSchema } from './browserProfiles.js';
-import { BrowserControlSchema, BrowserTabLeaseSchema, BrowserPrepareResultSchema,
-  BrowserReleaseResultSchema, BrowserSessionReadbackSchema, BrowserSessionListSchema } from './browserSessions.js';
+import { BrowserControlSchema, BrowserSessionSchema, BrowserTabLeaseSchema, BrowserPrepareResultSchema,
+  BrowserReleaseResultSchema, BrowserSessionReadbackSchema } from './browserSessions.js';
 
 const id = IdSchema;
 const command = { commandId: id.optional(), expectedRevision: z.number().int().nonnegative().optional() };
@@ -136,7 +136,7 @@ export const BrowserOperationResponseSchemas = {
   browser_profile_sync_get: BrowserProfileSyncPageSchema,
   browser_session_open: z.union([BrowserPrepareResultSchema, BrowserSessionDetailsSchema,
     BrowserSessionReadbackSchema.safeExtend({ kind: z.literal('ready') }), BrowserControlSchema]),
-  browser_sessions_list: BrowserSessionListSchema,
+  browser_sessions_list: z.object({ sessions: z.array(BrowserSessionSchema), nextCursor: z.string().nullable() }).strict(),
   browser_session_get: BrowserSessionDetailsSchema,
   browser_session_close: BrowserReleaseResultSchema,
   browser_tabs_list: z.array(BrowserTabLeaseSchema),

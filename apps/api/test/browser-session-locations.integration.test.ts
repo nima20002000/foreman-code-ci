@@ -47,7 +47,6 @@ it('routes and closes a reused session after fresh preparation on a re-paired co
       wrappingKey: async () => { throw new Error('Unexpected key operation') } },
     authority: { callerId: principal => principal.id, actor: async () => 'viewer',
       subject: async () => undefined, session: async () => undefined, setup: async () => undefined },
-    runtimeStatus: async computerId => ({ computerId, ready: true, phase: 'ready', reason: null }),
     computers: async () => ['main'], subjectComputer: async () => 'main',
     transport: { invoke: async (_binding, method, principal, args) =>
       Reflect.apply(worker.sessions[method], worker.sessions, [principal, ...args]) },
