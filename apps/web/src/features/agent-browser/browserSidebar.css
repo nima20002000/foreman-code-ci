@@ -1,5 +1,5 @@
 .browser-sidebar.workflow-floating-panel { left: auto; right: 24px; width: min(680px, calc(100vw - 24px)); }
-.browser-sidebar > .workflow-floating-panel-body { padding: 0; overflow: auto; }
+.browser-sidebar > .workflow-floating-panel-body { padding: 0; overflow-y: auto; }
 .browser-sidebar-tabs { padding: var(--space-2); border-bottom: 1px solid var(--border); }
 .browser-sidebar-tabs { display: flex; flex: 0 0 auto; min-width: 0; gap: var(--space-1); overflow-x: auto; scrollbar-width: none; }
 .browser-sidebar-tab { display: flex; flex: 0 1 auto; align-items: center; min-width: 3.25rem; max-width: 100%; border: 1px solid var(--border);
