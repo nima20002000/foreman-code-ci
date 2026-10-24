@@ -7,7 +7,7 @@ import type {
   ExecutionResult,
   HarnessExecutionRequest,
   HarnessQualification,
-  RecordedHarnessConfiguration,
+  HarnessConfiguration,
   ApprovalResponseOption,
   McpDetection,
   NativeHarnessCapabilities,
@@ -26,7 +26,7 @@ import type { ChatResponseIdentity } from '@foreman-code/contracts/interaction-a
 import type { HarnessCapabilityDescriptors } from './capabilities.js'
 import type { ResponseAvailabilityInspector } from './responseAvailability.js'
 import type { RunSubagent } from '@foreman-code/contracts/subagents'
-import type { SubagentControlLease } from '../subagents/index.js'
+import type { SubagentControlLease } from '../subagents/types.js'
 
 /**
  * Only a qualified adapter may produce these receipts from provider acknowledgements
@@ -53,7 +53,7 @@ export interface NativeEventInput {
 
 /** Read-only settings discovery; this cannot launch, resume, or cancel workflow work. */
 export interface HarnessConfigurationQualifier {
-  qualify(configuration: RecordedHarnessConfiguration, workingDirectory: string, signal?: AbortSignal): Promise<HarnessQualification>
+  qualify(configuration: HarnessConfiguration, workingDirectory: string, signal?: AbortSignal): Promise<HarnessQualification>
 }
 
 /** Values are supplied only to one child process and must never enter logs or persisted graph state. */

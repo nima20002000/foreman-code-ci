@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from './installationNames.mjs'
 import { optionalCommandId } from './management/commands.js'
 import { z } from 'zod'
 
@@ -12,7 +11,7 @@ export const DeviceRegistrationSchema = z.object({
 export type DeviceRegistration = z.infer<typeof DeviceRegistrationSchema>
 export type DeviceScope = z.infer<typeof DeviceScopeSchema>
 export type DevicePrincipal = {
-  audience: typeof INSTALLATION_NAMES.protocol.workerAudience
+  audience: 'graphql-worker'
   mainId: string
   deviceId: string
   workerInstallationId: string
@@ -29,7 +28,7 @@ export type DeviceConnectionIdentity = z.infer<typeof DeviceConnectionIdentitySc
 export type CanonicalMachineReference = { kind: 'main'; mainId: string } | { kind: 'device'; mainId: string; deviceId: string }
 
 export function authorizeDevice(registration: DeviceRegistration, principal: DevicePrincipal, scope: DeviceScope, now: number): boolean {
-  return principal.audience === INSTALLATION_NAMES.protocol.workerAudience && registration.status === 'paired'
+  return principal.audience === 'graphql-worker' && registration.status === 'paired'
     && principal.mainId === registration.mainId && principal.deviceId === registration.deviceId
     && principal.workerInstallationId === registration.workerInstallationId
     && principal.keyRevision === registration.keyRevision
@@ -65,7 +64,7 @@ export const DevicePairingGrantInputSchema = z.object({ workerInstallationId: z.
 export const DeviceRevokeInputSchema = z.object({ deviceId: z.uuid(), expectedRevision: z.number().int().positive(), commandId: optionalCommandId(z.string().min(8).max(200)) }).strict()
 
 export const MainIdentityProofRequestSchema = z.object({
-  audience: z.literal(INSTALLATION_NAMES.protocol.mainAudience), mainId: z.uuid(),
+  audience: z.literal('graphql-worker-main-v1'), mainId: z.uuid(),
   nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/), workerInstallationId: z.uuid(),
   deviceId: z.uuid().optional(), bootId: z.uuid().optional(), connectionGeneration: z.number().int().positive().optional(),
   keyRevision: z.number().int().positive().optional(), authorizationRevision: z.number().int().positive().optional(),
@@ -82,7 +81,7 @@ export type MainSignedIdentityProof = z.infer<typeof MainSignedIdentityProofSche
 
 /** Public selected-main enrollment proof cannot certify an authenticated session. */
 export const MainEnrollmentProofRequestSchema = z.object({
-  audience: z.literal(INSTALLATION_NAMES.protocol.enrollmentAudience), mainId: z.uuid(),
+  audience: z.literal('graphql-worker-main-enrollment-v1'), mainId: z.uuid(),
   nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/), workerInstallationId: z.uuid(),
   protocolVersion: z.number().int().positive(), workerApplicationVersion: z.string().min(1).max(128),
 }).strict()

@@ -13,7 +13,7 @@ describe('NIM-2642 exact command authority before replay', () => {
     // Statements are named by what they bind: the command lock only its key, the receipt read the principal ids, operation
     // and command id, and the receipt write six values. Transaction control binds nothing and keeps its own word.
     const kind = (sql: string, values: unknown[]) => values.length === 0 ? sql : values.length === 1 ? 'lock'
-      : values.length === 3 && Array.isArray(values[0]) ? 'receipt-read' : values.length === 6 ? 'receipt-write' : 'other'
+      : values.length === 3 && Array.isArray(values[0]) ? 'receipt-read' : values.length === 6 && String(values[4]).startsWith('sha256:') ? 'receipt-write' : 'other'
     const query = vi.fn(async (sql: string, values: unknown[] = []) => {
       order.push(kind(sql, values))
       return { rows: kind(sql, values) === 'receipt-read'

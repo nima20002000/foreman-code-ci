@@ -118,7 +118,7 @@ it.each([
   { configured: ['other-server'], disabled: [] },
 ])('isolates model metadata and disables only configured App MCP entries: $configured', async ({ configured, disabled }) => {
   const source = { CODEX_HOME: '/private-provider-profile', OPENAI_API_KEY: 'provider-fixture-key',
-    GRAPHQL_MCP_TOKEN: 'scoped-fixture-token',
+    FOREMAN_CODE_MCP_TOKEN: 'scoped-fixture-token', GRAPHQL_MCP_TOKEN: 'legacy-scoped-token',
     JOB_DISPATCH_DATABASE_URL: 'controller-database', FOREMAN_CODE_TEST_OWNER: 'controller-owner',
     NODE_OPTIONS: '--import=controller-loader' }
   const inspection = recordedInspection(async () => ({ data: [], nextCursor: null }), async () => undefined)
@@ -142,12 +142,12 @@ it.each([
   expect(delivered).toMatchObject({ CODEX_HOME: source.CODEX_HOME, OPENAI_API_KEY: source.OPENAI_API_KEY })
   expect(commandEnvironment).toMatchObject({ CODEX_HOME: source.CODEX_HOME, OPENAI_API_KEY: source.OPENAI_API_KEY })
   expect(disabledMcp).toEqual(disabled)
-  for (const key of ['GRAPHQL_MCP_TOKEN', 'JOB_DISPATCH_DATABASE_URL',
+  for (const key of ['FOREMAN_CODE_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN', 'JOB_DISPATCH_DATABASE_URL',
     'FOREMAN_CODE_TEST_OWNER', 'NODE_OPTIONS']) {
     expect(delivered?.[key]).toBeUndefined()
     expect(commandEnvironment?.[key]).toBeUndefined()
   }
-  expect(source.GRAPHQL_MCP_TOKEN).toBe('scoped-fixture-token')
+  expect(source.FOREMAN_CODE_MCP_TOKEN).toBe('scoped-fixture-token')
   expect(source.NODE_OPTIONS).toBe('--import=controller-loader')
 })
 

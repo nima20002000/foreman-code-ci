@@ -1,4 +1,4 @@
-import { deviceTlsOptions } from '@foreman-code/contracts-node/device-tls-node'
+import { deviceTlsOptions } from '@foreman-code/contracts/device-tls-node'
 import type { WorkerPairingConfiguration } from '@foreman-code/contracts/device-identity'
 import type { DeviceExtensionRegistration } from './deviceApplicationChannel.js'
 import WebSocket from 'ws'

@@ -11,7 +11,7 @@ import type { ResolvedJobDefinitionSpecRecord } from '@foreman-code/contracts/jo
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../access/policy.js'
 import type { PostgresCommandCoordinator } from '../commands/index.js'
-import type { PostgresSourceService } from '../sources/index.js'
+import type { PostgresSourceService } from '../sources/service.js'
 import { lockActiveWorkspace } from '../workspaces/index.js'
 import { DomainError } from '../errors.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
@@ -30,7 +30,7 @@ import { JobVerificationProfileSchema, JobVerificationRuntimeFingerprintSchema, 
 import { createVerificationProfile, requireReviewedVerificationConfiguration } from './verificationProfiles.js'
 import type { z } from 'zod'
 import { verificationDependencyBasis } from './dependencyBasis.js'
-import { retiredHarnessError } from '../harnesses/retiredHarness.js'
+import { retiredHarnessError } from '../harnesses/index.js'
 import { runtimeQualificationFacts, validateRuntimeQualification, qualificationTimeoutMs, qualificationDeadline }
   from './runtimeQualificationFacts.js'
 

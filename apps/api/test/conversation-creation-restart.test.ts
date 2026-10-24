@@ -167,6 +167,8 @@ it.each([['codex', 'fresh'], ['codex', 'worker-profile'], ['codex', 'main-profil
     open: async () => [structuredClone(row)], get: async () => structuredClone(row),
     restoreUnsettled: async () => structuredClone(row), unconfirmedSteers: async () => [],
     nextQueued: async () => undefined,
+    turnPrincipalId: async () => undefined,
+    runExecutionSessionReference: async () => fork ? { reference: f.source } : undefined,
     turnPreparedInput: async () => undefined,
     initialInputOffered: async () => false,
     bindSession: async (_id: string, version: string, sessionId: string) => {

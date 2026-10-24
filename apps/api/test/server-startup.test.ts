@@ -56,7 +56,7 @@ vi.mock('../src/infrastructure/database.js', () => ({ createDatabase: () => ({
     state.calls.push('database closed')
   },
 }) }))
-vi.mock('../src/composition/checkpoints.js', () => ({ createCheckpointStore: () => ({
+vi.mock('../src/infrastructure/checkpoints.js', () => ({ createCheckpointStore: () => ({
   setup: async () => { state.schemaChanges.push('checkpoints'); expect(state.ownerHeld).toBe(true) }, ping: async () => undefined,
   close: async () => { state.calls.push('checkpoints closed') },
 }) }))

@@ -1,3 +1,4 @@
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { createFixtureDatabase, dropFixtureDatabase } from './helpers/testResources.js'
 import { createHash, randomBytes } from 'node:crypto'
 import assert from 'node:assert/strict'
@@ -57,16 +58,7 @@ export async function disposableDatabase<T>(work: (pool: pg.Pool) => Promise<T>)
 }
 
 export async function transaction<T>(pool: pg.Pool, work: (sql: pg.PoolClient) => Promise<T>): Promise<T> {
-  const client = await pool.connect()
-  try {
-    await client.query('begin')
-    const result = await work(client)
-    await client.query('commit')
-    return result
-  } catch (error) {
-    await client.query('rollback')
-    throw error
-  } finally { client.release() }
+  return withTransaction(pool, work)
 }
 
 /** Historical migration setup only; no retired execution records are seeded. */

@@ -7,7 +7,7 @@ import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 const require=createRequire(new URL('../../api/package.json',import.meta.url));
 const {tsImport}=await import(require.resolve('tsx/esm/api'));
-const {deviceTlsOptions}=await tsImport('../../../packages/contracts-node/src/deviceTlsNode.ts',import.meta.url);
+const {deviceTlsOptions}=await tsImport('../../../packages/contracts/src/deviceTlsNode.ts',import.meta.url);
 const {scopedEnrollmentPost}=await tsImport('../src/enrollment.mjs',import.meta.url);
 const certificatePem=rootCertificates.find(pem=>new X509Certificate(pem).ca);
 const trust={certificatePem,sha256:createHash('sha256').update(new X509Certificate(certificatePem).raw).digest('hex')};

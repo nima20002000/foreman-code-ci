@@ -9,7 +9,7 @@ import { fallbackOnMissing } from '../diagnostics/index.js'
 import { DomainError } from '../errors.js'
 import { executableUnavailable } from './executableError.js'
 import { runProcessSettled, hostEnvironment } from '../../shared/process.js'
-import { claudeConfigDir, codexHome, credentialFileName, parseClaudeAuthStatus, parseCodexAuthFile } from '../provider-accounts/accountStatus.js'
+import { claudeConfigDir, codexHome, credentialFileName, parseClaudeAuthStatus, parseCodexAuthFile } from '../provider-accounts/index.js'
 
 export interface AccountProbePorts {
   /** Absolute executable path, or null when the tool is not installed. */
