@@ -186,8 +186,7 @@ describe('WorkspaceShell', () => {
 
     expect(workspaces).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('button', { name: 'Agents' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Project files' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Workspace settings' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Files' })).not.toBeInTheDocument()
 
     await user.click(workspaces)
 
@@ -273,8 +272,7 @@ describe('WorkspaceShell', () => {
     const toggle = screen.getByRole('button', { name: 'Collapse Website' })
     expect(entry).toHaveAttribute('data-testid', 'workspace-entry-workspace-1')
     expectNewTab(entry, '/workspaces/workspace-1/settings')
-    expect(screen.getByRole('button', { name: 'Workspace settings' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Project files' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Workspace settings' })).not.toBeInTheDocument()
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: 'Collapse workflows in Website' })).toBeVisible()
 
@@ -288,8 +286,6 @@ describe('WorkspaceShell', () => {
 
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(await screen.findByRole('button', { name: 'Collapse workflows in Website' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Workspace settings' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Project files' })).toBeVisible()
   })
 
   it('collapses and expands the nested Workflows submenu while Agents stays hidden', async () => {
