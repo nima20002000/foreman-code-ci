@@ -41,7 +41,7 @@ function folderChoices(choices: NodePlacementChoice[]): NodePlacementChoice[] {
     const previous = folders.get(key)
     if (!previous || previous.availability !== 'ready' && choice.availability === 'ready') folders.set(key, choice)
   }
-  return [...folders.values()]
+  return [...folders.values()].sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id))
 }
 
 function matchesConfiguration(profile: HostHarnessOverride, configuration: AgentConfigurationVersion): boolean {

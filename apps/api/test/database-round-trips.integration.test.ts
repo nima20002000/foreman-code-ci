@@ -38,12 +38,12 @@ it('reads ordered Run details and activity with bounded round trips as execution
   for (const size of [1, 80]) {
     const f = await nativeStreamFixture(db, size)
     owners.push(f.owner)
+    // Pending cleanup is already part of the accepted Run snapshot.
+    if (size > 1) await db.pool.query('insert into run_cleanup_intents(run_id) values($1)', [f.scope.runId])
     const event = { ...f.event(0), payload: { text: 'visible diagnostic' } }
     await f.owner.oneShotConnection().transaction(sql =>
       appendNormalizedNativeEvents(sql, [normalizeNativeProducerEvent(event)]))
     const read = () => readCurrentRunDetails(db.pool, f.issued.principal, f.scope.workspaceId, f.scope.runId)
-    // Pending cleanup is already part of the accepted Run snapshot.
-    if (size > 1) await db.pool.query('insert into run_cleanup_intents(run_id) values($1)', [f.scope.runId])
     const result = await measure(`run_get executions=${size}`, read)
     expect(result.value.cleanupPending).toBe(size > 1)
     expect(result.value.executions).toEqual(f.executions)

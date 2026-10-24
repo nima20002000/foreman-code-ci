@@ -77,9 +77,6 @@ export function readCurrentRunDetails(pool: pg.Pool, principal: ManagementPrinci
       ...(row.harness_execution_id ? { harnessExecutionId: row.harness_execution_id } : {}),
       occurredAt: row.occurred_at.toISOString(), payload: row.payload,
     }))
-    const cleanup = (await sql.query<{ pending: boolean }>(
-      'select exists(select 1 from run_cleanup_intents where run_id=$1 and pending) as pending', [runId])).rows[0]
-    if (!cleanup || typeof cleanup.pending !== 'boolean') throw new DomainError('RUN_DETAIL_INVALID', 'Cleanup status is unavailable.', 409)
     const activitySnapshot = await readRunActivitySnapshot(sql,
       { workspaceId: run.workspaceId, workflowId: run.workflowId, runId: run.id, workflowVersionId: run.workflowVersionId }, snapshot.version)
     const treeRows = await sql.query<{ record: unknown }>('select record from run_worktrees where run_id=$1', [run.id])
@@ -103,7 +100,7 @@ export function readCurrentRunDetails(pool: pg.Pool, principal: ManagementPrinci
       }))
     }
     const directionWait = await readRunDirectionWaitLocked(sql, snapshot)
-    const detail = { run, ...(worktrees.length ? { worktrees } : {}), executions, activity, activitySnapshot, activityPageInfo: { hasEarlier: activityRows.length > 100 }, cleanupPending: cleanup.pending,
+    const detail = { run, ...(worktrees.length ? { worktrees } : {}), executions, activity, activitySnapshot, activityPageInfo: { hasEarlier: activityRows.length > 100 }, cleanupPending: snapshot.cleanupPending,
       ...(directionWait ? { directionWait } : {}) }
     if (graphJsonBytes(detail) > RUN_GRAPH_LIMITS.snapshotBytes) throw new DomainError('RUN_DETAIL_TOO_LARGE', 'Use bounded graph metadata and activity pages for this Run.', 409)
     const parsed = SavedRunDetailsSchema.parse(detail)
