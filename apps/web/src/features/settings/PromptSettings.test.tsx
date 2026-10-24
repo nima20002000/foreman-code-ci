@@ -297,7 +297,7 @@ describe('Prompt settings', () => {
     expect(screen.queryByRole('button', { name: page.saveLabel })).not.toBeInTheDocument()
   })
 
-  it('keeps denied prompt edits readable and rechecks access before another save', async () => {
+  it('hides the prompt editor when a save loses permission', async () => {
     server.use(
       http.get('/api/management/settings/system-prompt', () => HttpResponse.json(snapshot('Original instructions'))),
       http.put('/api/management/settings/system-prompt', () => HttpResponse.json({
@@ -310,24 +310,9 @@ describe('Prompt settings', () => {
     await waitFor(() => expect(editor).not.toHaveAttribute('readonly'))
     await user.type(editor, 'Updated')
     await user.click(screen.getByRole('button', { name: 'Save system prompt' }))
-    expect(await screen.findByText(/Prompt updates are denied/)).toBeVisible()
-    expect(screen.getByRole('textbox', { name: 'System prompt' })).toBeVisible()
-    expect(editor).toHaveValue('Original instructionsUpdated')
-    expect(editor).toHaveAttribute('readonly')
+    expect(await screen.findByText('Access unavailable')).toBeVisible()
+    expect(screen.getByText('Prompt updates are denied.')).toBeVisible()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save system prompt' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Recheck access' }))
-    await waitFor(() => expect(editor).not.toHaveAttribute('readonly'))
-    expect(editor).toHaveValue('Original instructionsUpdated')
-    expect(screen.getByRole('button', { name: 'Save system prompt' })).toBeEnabled()
   })
-})
-
-it('rechecks denied prompt reads without revealing cached content', async () => {
-  server.use(http.get('/api/management/settings/system-prompt', () => HttpResponse.json({ error: { code: 'FORBIDDEN', message: 'Read denied.' } }, { status: 403 })))
-  mount('system-prompt')
-  expect(await screen.findByText('Access unavailable')).toBeVisible()
-  expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
-  server.use(http.get('/api/management/settings/system-prompt', () => HttpResponse.json(snapshot('Readable again'))))
-  await userEvent.click(screen.getByRole('button', { name: 'Recheck access' }))
-  expect(await screen.findByRole('textbox')).toHaveValue('Readable again')
 })

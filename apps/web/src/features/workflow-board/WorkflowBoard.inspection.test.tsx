@@ -144,3 +144,13 @@ describe('mounted historical identity and keyboard regressions', () => {
     expect(wire.writes()).toHaveLength(0)
   }, 15_000)
 })
+
+it('manages current reference files while a historical Run is selected', async () => {
+  const scope = fixture.runs.before.scope
+  measureBoardWire(fixture.mock)
+  await mountMeasuredBoard(boardHref(scope))
+  await userEvent.click(await screen.findByRole('button', { name: 'Files' }))
+  const files = await screen.findByRole('dialog', { name: 'Files' })
+  expect(within(files).getByRole('button', { name: 'Add file' })).toBeVisible()
+  expect(within(files).getByText(/Current reference files/)).toBeVisible()
+})
