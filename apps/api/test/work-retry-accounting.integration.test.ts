@@ -11,9 +11,9 @@ import { postgresEnabled } from './helpers/database.js'
 
 // Only the physical provider close is doubled. This test proves real SQL
 // attempt/quota identity, not provider delivery, approval or cleanup.
-vi.mock('../src/modules/interactions/repeatNativeSettlement.js', async (importOriginal) => ({
+vi.mock('../src/modules/interactions/repeatNativeSettlementBatch.js', async (importOriginal) => ({
   ...await importOriginal<Record<string, unknown>>(),
-  settleRepeatNativeExecutionLocked: vi.fn(async () => undefined),
+  settleRepeatNativeExecutionsWithProofLocked: vi.fn(async () => undefined),
 }))
 
 describe.skipIf(!postgresEnabled)('NIM-2691 technical attempt accounting', () => {

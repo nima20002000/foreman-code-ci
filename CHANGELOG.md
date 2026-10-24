@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+- One Board with states: a Run paints its live states on the workflow's own nodes, editing locks while it runs, Stop sits in Run's place.
+- Workers: a workspace's project can be set up on a paired computer from the Computer picker or workspace settings; workspaces without Git run in a plain folder there; exact Codex profiles are prepared on the Worker automatically.
+- Agent browser: floating browser window, readable session names, Worker browser failures shown with their real reason, a failed browser install is retried when the Worker starts.
+- Speed: credit reads no longer fork a lock process, MCP tool catalogs are reused per caller, the Agent chat re-renders only changed messages, engine overhead per Agent turn cut by about half.
+- Shutdown: open Operator chat reads and closed browser sessions no longer hold the API's shutdown until systemd kills it.
+- UX: Kanban cards show the Agent's notes; many plain-language and dead-end fixes across the Board, Computers, Cloud CI, schedules, Runs and Activities; group chat removed.
+
 ## [0.0.117] - 2026-10-23
 
 ### UI

@@ -13,6 +13,14 @@ import { projectFilesClient } from './projectFilesClient'
 import { readUploadBytes } from '../../shared/api/bytes'
 import { projectFilesKeys } from './projectFilesQueries'
 
+it('explains that project uploads are shared workflow references rather than repository files', async () => {
+  mount()
+  await screen.findByText('No files.')
+  const panel = screen.getByRole('region', { name: 'Project files' })
+  expect(within(panel).getByText('Uploaded reference files shared with workflows in this workspace. Repository files stay in the working tree.')).toBeVisible()
+  expect(within(panel).getByRole('button', { name: 'Upload' })).toBeEnabled()
+})
+
 it.each(['panel', 'heading', 'toolbar', 'Upload', 'hint', 'empty', 'list', 'row'])(
   'drops on the %s through one workspace upload and persisted list readback', async (surface) => {
     if (surface === 'list' || surface === 'row') rows.set(A, [fixture('existing')])

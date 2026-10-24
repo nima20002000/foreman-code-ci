@@ -446,7 +446,6 @@ export const internalImports = new Set([
   'runs>interactions/nativePersistence.ts',
   'runs>interactions/pendingLaneTurn.ts',
   'runs>interactions/repeatNativeEvidence.ts',
-  'runs>interactions/repeatNativeSettlement.ts',
   'runs>interactions/repeatNativeSettlementBatch.ts',
   'runs>interactions/repeatObservation.ts',
   'runs>interactions/retainedRemoteReviewer.ts',

@@ -32,7 +32,7 @@
 .schedule-form .n-input { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; }
 .schedule-form .n-field-error { overflow-wrap: anywhere; }
 .schedule-note, .schedule-next, .schedule-feedback p { margin: 0; font: var(--type-body); }
-.schedule-next { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
+.schedule-next { overflow-wrap: anywhere; color: var(--text-muted); }
 .schedule-policy { font: var(--type-caption); color: var(--text-faint); }
 .schedule-last-attempt { display: grid; gap: 4px; min-width: 0; border-top: 1px solid var(--border); padding-top: 8px; }
 .schedule-last-attempt h3 { margin: 0; font: var(--type-control); color: var(--text-strong); }
