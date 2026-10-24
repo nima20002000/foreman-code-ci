@@ -52,6 +52,7 @@ it('opens a past Run without a sidebar and restores Current Agent chat', async (
 
   expect(await screen.findByTestId('agent-conversation')).toHaveAttribute('data-chat-key', agentChatContextKey(context()))
   expect(screen.queryByRole('complementary', { name: 'Agent chat' })).not.toBeInTheDocument()
+  await waitFor(() => expect(client.isFetching()).toBe(0))
   await userEvent.click(screen.getByRole('button', { name: 'Runs' }))
   const menu = await screen.findByRole('menu', { name: 'Runs' })
   await userEvent.click(await within(menu).findByRole('menuitemradio', { name: /run-a/i }))

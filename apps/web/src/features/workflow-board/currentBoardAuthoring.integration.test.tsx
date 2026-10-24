@@ -97,7 +97,8 @@ async function mount(mock: Mock, href = `/workspaces/${mock.workspaceId}`, hideR
   return { ...result, router, query }
 }
 async function create(mock: Mock, user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole('button', { name: 'New workflow' }))
+  const navigation = await screen.findByRole('complementary', { name: 'Primary navigation' })
+  await user.click(await within(navigation).findByRole('button', { name: 'New workflow' }))
   const dialog = await screen.findByRole('dialog', { name: 'New workflow' })
   const name = within(dialog).getByRole('textbox', { name: 'Name' })
   await user.click(name)
@@ -163,6 +164,17 @@ async function returnToDraft(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Runs' }))
   await user.click(await screen.findByRole('button', { name: 'Return to workflow' }))
   await screen.findByRole('region', { name: 'Workflow authoring' })
+}
+
+async function chooseRun(user: ReturnType<typeof userEvent.setup>, runId: string) {
+  await user.click(screen.getByRole('button', { name: 'Runs' }))
+  const menu = await screen.findByRole('menu', { name: 'Runs' })
+  const option = await waitFor(() => {
+    const button = within(menu).getAllByRole('menuitemradio').find(item => item.getAttribute('data-run-id') === runId)
+    expect(button).toBeDefined()
+    return button!
+  })
+  await user.click(option)
 }
 
 // Supply canonical execution facts through the same HTTP fixture the Board polls.
@@ -671,8 +683,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
     const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
     const run = await start(mock, user), scope = mock.currents.get(run.id)!.scope
-    await user.click(screen.getByRole('button', { name: 'Runs' }))
-    await user.click(await within(await screen.findByRole('menu', { name: 'Runs' })).findByRole('menuitemradio', { name: new RegExp(run.id) }))
+    await chooseRun(user, run.id)
     await screen.findByRole('region', { name: 'Selected Run board' })
     await user.click(screen.getByRole('button', { name: 'Activities' }))
     mock.controls.loseStopReply = true
@@ -763,7 +774,7 @@ describe('latest Run on the draft Board', () => {
     expect.soft(liveSecond).toBe(second)
     expect(mounted.router.state.location.href).toBe(href)
     expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
-    expect(control('Stop').closest('[aria-label="Workflow controls"]')).toBe(slot)
+    expect.soft(control('Stop').closest('[aria-label="Workflow controls"]')).toBe(slot)
     expect(within(controls()).queryByRole('button', { name: 'Start saved version' })).not.toBeInTheDocument()
     const current = mock.currents.get(run.id)!, sender = current.state.executions[0]!, recipient = current.state.executions[1]!
     const digest = `sha256:${'1'.repeat(64)}`
@@ -863,8 +874,7 @@ describe('latest Run on the draft Board', () => {
     const node = useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!
     await waitFor(() => expect(canvasNode(node.id)).toHaveTextContent('Running'))
     const editor = authoring()
-    await user.click(screen.getByRole('button', { name: 'Runs' }))
-    await user.click(await within(await screen.findByRole('menu', { name: 'Runs' })).findByRole('menuitemradio', { name: new RegExp(older.id) }))
+    await chooseRun(user, older.id)
     expect(await screen.findByRole('region', { name: 'Selected Run board' })).toHaveAttribute('data-run-id', older.id)
     expect(mounted.router.state.location.search.selectedRunId).toBe(older.id)
     expect(await screen.findByRole('group', { name: `${node.name}, saved agent, read only` })).toBeVisible()
@@ -874,7 +884,7 @@ describe('latest Run on the draft Board', () => {
     await waitFor(() => expect(canvasNode(node.id)).toHaveTextContent('Running'))
   }, 30_000)
 
-  it.each(['Save workflow', 'Undo', 'Redo', 'keyboard undo', 'Agent settings'])(
+  it.each(['Save workflow', 'Undo', 'Redo', 'keyboard undo', 'keyboard redo', 'Agent settings'])(
     'locks %s when an external Run arrives while the draft has unsaved edits', async action => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
     const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
@@ -897,10 +907,10 @@ describe('latest Run on the draft Board', () => {
       await user.click(within(canvasNode(node.id)).getByRole('button', { name: `Open ${node.name} settings` }))
       const panel = await screen.findByRole('complementary', { name: 'Workflow side panel' })
       expect(within(panel).getByRole('textbox', { name: 'Name' })).toBeDisabled()
-    } else if (action === 'keyboard undo') {
+    } else if (action === 'keyboard undo' || action === 'keyboard redo') {
       const before = structuredClone(useGraphDraftStore.getState().nextDrafts[key]!.graph)
       await user.click(screen.getByRole('button', { name: 'Graph' }))
-      await user.keyboard('{Control>}z{/Control}')
+      await user.keyboard(action === 'keyboard undo' ? '{Control>}z{/Control}' : '{Control>}y{/Control}')
       expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).toEqual(before)
     } else expect(screen.getByRole('button', { name: action })).toBeDisabled()
     expect(mock.versions.size).toBe(1)

@@ -112,7 +112,13 @@ function recover(f: Fixture, runId: string, state: 'running' | 'interrupted') {
 }
 async function showActions(user: ReturnType<typeof userEvent.setup>, runId: string) {
   await user.click(screen.getByRole('button', { name: 'Runs' }))
-  await user.click(await within(await screen.findByRole('menu', { name: 'Runs' })).findByRole('menuitemradio', { name: new RegExp(runId) }))
+  const menu = await screen.findByRole('menu', { name: 'Runs' })
+  const option = await waitFor(() => {
+    const button = within(menu).getAllByRole('menuitemradio').find(item => item.getAttribute('data-run-id') === runId)
+    expect(button).toBeDefined()
+    return button!
+  })
+  await user.click(option)
   await screen.findByRole('region', { name: 'Selected Run board' })
   await user.click(screen.getByRole('button', { name: 'Activities' }))
   await screen.findByRole('region', { name: 'Selected Run actions' })
