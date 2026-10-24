@@ -6,7 +6,7 @@ import {
 } from '@foreman-code/contracts/current'
 import { currentDatabase } from './helpers/database.js'
 import { writerFixture, type WriterFixture } from './writer-fixtures.js'
-import { graphRpcValue } from './graph-composition-fixture.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 
 describe('workflow Agent active-time budget through authenticated MCP', () => {
   let db: Awaited<ReturnType<typeof currentDatabase>>
@@ -39,9 +39,8 @@ describe('workflow Agent active-time budget through authenticated MCP', () => {
       (await f.call(CURRENT_WORKFLOW_TOOLS.capabilities, {})).result))
     expect(capabilities.agentActiveTimeBudget).toEqual({ defaultMs: 600_000,
       maximumMs: MAX_AGENT_ACTIVE_TIMEOUT_MS, perExecution: true, approvalWaitExcluded: true })
-    const schema = await f.call('tool_schema', { name: CURRENT_WORKFLOW_TOOLS.save })
-    expect(schema.result?.isError).not.toBe(true)
-    expect(JSON.stringify(graphRpcValue(schema.result))).toContain('agentActiveTimeoutMs')
+    const tools = await graphRpc(f.app, f.writer.token, 'tools/list')
+    expect(JSON.stringify(tools.result)).toContain('agentActiveTimeoutMs')
 
     f.input.graph.executionPolicy!.agentActiveTimeoutMs = 3_600_000
     const reader = await f.credential([{ actions: ['workflows:read', 'graph:read'],

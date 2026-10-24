@@ -21,7 +21,7 @@ it('reads bundle skew and persisted publication errors through authenticated HTT
     ? [{ ...principal, expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }]
     : [{ record: registration }] }))
   const pool = { connect: async () => ({ query, release() {} }) } as unknown as pg.Pool
-  const commands = { recordDenied: vi.fn() } as unknown as PostgresCommandCoordinator
+  const commands = { recordDenied: vi.fn(async () => undefined) } as unknown as PostgresCommandCoordinator
   const fleet = new FleetMaintenanceService(pool, f.identity.mainId, () => f.endpoint, commands,
     { drain: async () => {} } as ComputerMaintenance, {} as FleetSources)
   const access = { authenticate: async (token: string) => token === 'reader' ? principal
