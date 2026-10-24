@@ -6,6 +6,7 @@ import {
 } from '@foreman-code/contracts/workspace-root-policies'
 import {
   WorkspaceBoundLocationReadbackSchema, WorkspaceBoundLocationSetInputSchema, WorkspaceBoundLocationSetResultSchema,
+  WorkspaceRootConfigurationAdoptSchema, WorkspaceRootConfigurationAdoptResultSchema,
   WorkspaceBoundLocationValidationSchema, WorkspaceBoundLocationBrowseResultSchema,
   type WorkspaceBoundLocationReadback, type WorkspaceBoundLocationSetInput,
 } from '@foreman-code/contracts/workspace-bound-location'
@@ -36,6 +37,20 @@ export function useWorkspaceRootChoices(workspaceId: string, enabled = true) {
       if (result.workspaceId !== workspaceId || result.policies.some(value => value.workspaceId !== workspaceId)) invalid('Root choices belong to another workspace.')
       return result
     } })
+}
+export function useAdoptWorkspaceRootConfiguration(workspaceId: string) {
+  const client = useQueryClient(), generation = useHarnessSessionEpoch()
+  return useMutation({ mutationKey: [...locationMutationKey(workspaceId), generation, 'root-adopt'],
+    mutationFn: async (input: { hostRef: WorkspaceRootSelection['hostRef']; commandId: string }) => {
+      const result = await apiClient.request(`${path(workspaceId)}/root-configurations/adopt`, WorkspaceRootConfigurationAdoptResultSchema,
+        { method: 'POST', body: WorkspaceRootConfigurationAdoptSchema.parse({ ...input, workspaceId }) })
+      if (!sameComputer(result.value.hostRef, input.hostRef)) invalid('Computer folder settings belong to another host.')
+      return result
+    },
+    onSuccess: async () => {
+      if (generation === sessionGeneration()) await client.invalidateQueries({ queryKey: boundLocationKeys.choices(workspaceId) })
+    },
+  })
 }
 export function useBoundWorkspaceLocation(workspaceId: string, enabled = true) {
   useHarnessSessionEpoch()
@@ -140,6 +155,8 @@ export function useSetBoundWorkspaceLocation(workspaceId: string) {
       void client.invalidateQueries({ queryKey: boundLocationKeys.scope(workspaceId, generation) })
       void client.invalidateQueries({ queryKey: queryKeys.managedWorkspace(workspaceId) })
       void client.invalidateQueries({ queryKey: queryKeys.managedWorkspaces })
+      void client.invalidateQueries({ queryKey: ['node-placement-choices', generation],
+        predicate: query => query.queryKey[3] === workspaceId })
     },
   })
 }
