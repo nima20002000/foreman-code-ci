@@ -13,6 +13,7 @@ import {
 } from '@foreman-code/contracts/management'
 import { server } from '../../mocks/server'
 import type { PromptSettingsPage } from '../../shared/api/promptSettings'
+import { ToastProvider } from '../../shared/ui/nocturne'
 import { PromptSettings } from './PromptSettings'
 import { clearRevisionedFormPersistence } from './revisionedForm'
 
@@ -297,7 +298,7 @@ describe('Prompt settings', () => {
     expect(screen.queryByRole('button', { name: page.saveLabel })).not.toBeInTheDocument()
   })
 
-  it('hides the prompt editor when a save loses permission', async () => {
+  it('keeps denied prompt edits readable and rechecks access before another save', async () => {
     server.use(
       http.get('/api/management/settings/system-prompt', () => HttpResponse.json(snapshot('Original instructions'))),
       http.put('/api/management/settings/system-prompt', () => HttpResponse.json({
@@ -310,9 +311,48 @@ describe('Prompt settings', () => {
     await waitFor(() => expect(editor).not.toHaveAttribute('readonly'))
     await user.type(editor, 'Updated')
     await user.click(screen.getByRole('button', { name: 'Save system prompt' }))
-    expect(await screen.findByText('Access unavailable')).toBeVisible()
-    expect(screen.getByText('Prompt updates are denied.')).toBeVisible()
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(await screen.findByText(/Prompt updates are denied/)).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'System prompt' })).toBeVisible()
+    expect(editor).toHaveValue('Original instructionsUpdated')
+    expect(editor).toHaveAttribute('readonly')
     expect(screen.queryByRole('button', { name: 'Save system prompt' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Recheck access' }))
+    await waitFor(() => expect(editor).not.toHaveAttribute('readonly'))
+    expect(editor).toHaveValue('Original instructionsUpdated')
+    expect(screen.getByRole('button', { name: 'Save system prompt' })).toBeEnabled()
   })
+})
+
+it('rechecks denied prompt reads without revealing cached content', async () => {
+  server.use(http.get('/api/management/settings/system-prompt', () => HttpResponse.json({ error: { code: 'FORBIDDEN', message: 'Read denied.' } }, { status: 403 })))
+  mount('system-prompt')
+  expect(await screen.findByText('Access unavailable')).toBeVisible()
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  server.use(http.get('/api/management/settings/system-prompt', () => HttpResponse.json(snapshot('Readable again'))))
+  await userEvent.click(screen.getByRole('button', { name: 'Recheck access' }))
+  expect(await screen.findByRole('textbox')).toHaveValue('Readable again')
+})
+
+it('removes the failed-save notification when a corrected prompt save succeeds', async () => {
+  let writes = 0
+  server.use(
+    http.get('/api/management/settings/system-prompt', () => HttpResponse.json(snapshot('Original'))),
+    http.put('/api/management/settings/system-prompt', async ({ request }) => {
+      const input = PromptSettingUpdateInputSchema.parse(await request.json())
+      writes++
+      return writes === 1 ? HttpResponse.json({ error: { code: 'INVALID_REQUEST', message: 'Review the prompt.' } }, { status: 422 })
+        : HttpResponse.json({ value: snapshot(input.value.text, 4), replayed: false })
+    }),
+  )
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  clients.push(client)
+  render(<QueryClientProvider client={client}><ToastProvider><PromptSettings page="system-prompt" /></ToastProvider></QueryClientProvider>)
+  const editor = await screen.findByRole('textbox', { name: 'System prompt' })
+  await waitFor(() => expect(editor).not.toHaveAttribute('readonly'))
+  await userEvent.type(editor, ' updated')
+  await userEvent.click(screen.getByRole('button', { name: 'Save system prompt' }))
+  expect(await screen.findByText('Could not save system prompt')).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: 'Save system prompt' }))
+  expect(await screen.findByText('System prompt saved')).toBeVisible()
+  expect(screen.queryByText('Could not save system prompt')).not.toBeInTheDocument()
 })

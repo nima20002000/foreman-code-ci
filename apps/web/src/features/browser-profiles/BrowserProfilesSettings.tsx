@@ -69,7 +69,12 @@ function VisibleBrowserProfiles({ authBoundary, computers, currentComputerId, po
   const profileNames = new Map(catalog.data?.profiles.map(profile => [profile.id, profile.name]) ?? [])
   const accessDenied = denied || browserAccessDenied(catalog.error)
   return <section className="browser-profiles-settings" aria-label="Browser profiles">
-    {accessDenied ? <p role="alert" className="browser-profile-note">Browser profiles are unavailable right now.</p> : <>
+    {accessDenied ? <div className="browser-profile-note"><p role="alert">Browser profiles are unavailable right now.</p>
+      <Button size="sm" disabled={catalog.isFetching} onClick={() => {
+        void catalog.refetch().then(result => {
+          if (active.current && result.isSuccess) { mutation.reset(); setDenied(false) }
+        })
+      }}>Recheck access</Button></div> : <>
       <div className="browser-profile-toolbar">
         <Button variant="primary" disabled={busy || !catalog.data} onClick={() => openEditor({ profile: null, computerId: currentComputerId })}>Add profile</Button>
         <Button variant="ghost" disabled={busy || !catalog.data?.profiles.length} onClick={() => sync()}>Sync profiles to all computers</Button>
