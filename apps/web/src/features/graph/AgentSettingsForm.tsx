@@ -298,7 +298,7 @@ function EditableAgentSettingsForm(props: AgentSettingsFormProps) {
         <AgentHarnessRows value={configuration} issues={harnessIssues} onChange={updateConfiguration} accountHost={placement?.hostRef} />
         {slots.main}
         <AgentMemoryRow role={role} defaults={foremanTools.defaults} override={foremanTools.override} readOnly={readOnly} onChange={changeTools} />
-        {showPlacement ? <NodePlacementField value={placement} options={placementOptions ?? []} unavailableComputers={unavailableComputers}
+        {showPlacement ? <NodePlacementField workspaceId={workspaceId} value={placement} options={placementOptions ?? []} unavailableComputers={unavailableComputers}
           optionsState={placementOptionsState} note={placementNote} disabled={worktreeDisabled} inheritedWorktree={workflowWorktreeLabel}
           onChange={next => {
             if (onFormChange) changeForm({ placement: next })

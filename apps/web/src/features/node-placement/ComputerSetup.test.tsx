@@ -101,7 +101,8 @@ it('lets compact settings add a Worker folder while keeping Main selected by def
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(writes).toHaveLength(1)
   expect(writes[0]).toMatchObject({ hostRef: workerRoot.hostRef, relativePath: 'studio-project', expectedLocationRevision: 1 })
-  await user.selectOptions(screen.getByRole('combobox', { name: 'Computer and folder' }), within(computer).getByRole('option', { name: /Main computer/ }))
+  const computers = screen.getByRole('combobox', { name: 'Computer and folder' })
+  await user.selectOptions(computers, within(computers).getByRole('option', { name: /Main computer/ }))
   expect(await screen.findByRole('button', { name: 'Execution location' })).toHaveAttribute('title', '/projects/shared/main-project')
 })
 

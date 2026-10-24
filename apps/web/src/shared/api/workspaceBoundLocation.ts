@@ -140,6 +140,8 @@ export function useSetBoundWorkspaceLocation(workspaceId: string) {
       void client.invalidateQueries({ queryKey: boundLocationKeys.scope(workspaceId, generation) })
       void client.invalidateQueries({ queryKey: queryKeys.managedWorkspace(workspaceId) })
       void client.invalidateQueries({ queryKey: queryKeys.managedWorkspaces })
+      void client.invalidateQueries({ queryKey: ['node-placement-choices', generation],
+        predicate: query => query.queryKey[3] === workspaceId })
     },
   })
 }
