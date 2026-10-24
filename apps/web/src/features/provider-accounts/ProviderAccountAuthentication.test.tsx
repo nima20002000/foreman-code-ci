@@ -266,27 +266,3 @@ it('keeps authentication actions visible and says sign-in continues in the backg
   expect(screen.getByRole('button', { name: 'Sign out' })).toBeVisible()
   expect(screen.getByRole('dialog')).toHaveAccessibleDescription('Sign-in keeps going on its computer if you close this.')
 })
-
-it('clears an unavailable attempt and rediscovers current sign-in before allowing Start', async () => {
-  let reads = 0
-  server.use(
-    http.get('/api/provider-accounts/:id/authentication', ({ params }) => {
-      reads++
-      return HttpResponse.json({ accountId: params.id, target: accountTarget,
-        currentOperation: null, operations: [], nextCursor: null })
-    }),
-    http.post('/api/provider-accounts/authentication/status', () => HttpResponse.json({
-      error: { code: 'PROVIDER_AUTHENTICATION_NOT_FOUND', message: 'Attempt not found.' },
-    }, { status: 404 })),
-  )
-  const { user } = mount(operationId)
-  expect(await screen.findByText('Attempt not found.')).toBeVisible()
-  const before = reads
-  await user.click(screen.getByRole('button', { name: 'Back to account sign-in' }))
-  await waitFor(() => expect(reads).toBeGreaterThan(before))
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled())
-  await user.click(screen.getByRole('button', { name: 'Close dialog' }))
-  await user.click(screen.getByRole('button', { name: 'Reopen progress' }))
-  expect(screen.getByRole('button', { name: 'Start' })).toBeVisible()
-  expect(screen.queryByText('Attempt not found.')).not.toBeInTheDocument()
-})

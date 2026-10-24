@@ -5,7 +5,6 @@ import {
   type PromptSettingsPage,
 } from '../../shared/api/promptSettings'
 import { useLocalHumanAccessQuery } from '../../shared/api/settingsExperience'
-import { isApiAccessError } from '../../shared/api/accessError'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { ProtectedAccessError } from '../../shared/ui/ProtectedAccessError'
 import { Alert, Button, ErrorState, Skeleton, Textarea } from '../../shared/ui/nocturne'
@@ -33,15 +32,10 @@ export function PromptSettings({ page }: { page: PromptSettingsPage; onBack?(): 
   const mutation = useUpdatePromptSettingMutation(page)
   const access = useLocalHumanAccessQuery()
   const form = useRevisionedForm<PromptText>(query.data, `settings:${page}`)
-  const promptAccessError = useProtectedAccessError(query)
+  const promptAccessError = useProtectedAccessError(query, mutation.error)
   const localAccessError = useProtectedAccessError(access)
   const info = presentation[page]
-  const writeDenied = isApiAccessError(mutation.error)
-  const recheck = async () => {
-    const [prompt, principal] = await Promise.all([query.refetch(), access.refetch()])
-    if (prompt.isSuccess && principal.isSuccess) mutation.reset()
-  }
-  const canEdit = !writeDenied && Boolean(access.isSuccess && Date.parse(access.data.principal.expiresAt) > Date.now()
+  const canEdit = Boolean(access.isSuccess && Date.parse(access.data.principal.expiresAt) > Date.now()
     && access.data.principal.grants.some(grant => grant.actions.includes('settings:update')
       && !grant.scope.workspaceIds && !grant.scope.workflowIds && !grant.scope.runIds))
   const accessError = promptAccessError ?? localAccessError
@@ -51,7 +45,7 @@ export function PromptSettings({ page }: { page: PromptSettingsPage; onBack?(): 
       const response = await mutation.mutateAsync(input)
       return response.value
     }, value => PromptTextSchema.parse(value))} />
-  if (accessError) return <><ProtectedAccessError error={accessError} onRetry={() => void recheck()} />{actions}</>
+  if (accessError) return <><ProtectedAccessError error={accessError} />{actions}</>
   const draft = form.draft
   return <section className="settings-editor-page prompt-settings" aria-label={`${info.label} settings`}>
     <header className="settings-experience-heading">
@@ -72,8 +66,6 @@ export function PromptSettings({ page }: { page: PromptSettingsPage; onBack?(): 
     </Alert> : null}
     {form.uncertain ? <Alert live tone="warning" title="Save not confirmed">{form.checking
       ? 'Checking again by itself until the app answers.' : 'Retry to check it.'} Your edits are kept.</Alert> : null}
-    {writeDenied ? <Alert tone="warning" title="Prompt updates are unavailable"
-      action={<Button size="sm" disabled={query.isFetching || access.isFetching} onClick={() => void recheck()}>Recheck access</Button>} /> : null}
     {form.error && !form.conflicted && !form.uncertain ? <Alert live tone="danger" title="Prompt was not saved">
       {form.error} Your edits are still here.
     </Alert> : null}
