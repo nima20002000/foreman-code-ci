@@ -573,9 +573,18 @@ export class PostgresSourceService implements SourceAdmissionPort {
       }
     }
     const setupKey = commandInputHash({ ...input, bindingRevision: current?.binding.bindingRevision ?? 0 })
+    const captureCommandId = `setup-project-${setupKey}`
+    // Terminal captures need a new command; active attempts keep the same identity across callers.
+    const failedCaptures = template ? 0 : await this.transaction(async sql => {
+      const row = (await sql.query<{ count: string }>(`select count(*) from source_approvals
+        where workspace_id=$1 and requested_by=$2 and state='failed'
+          and (command_id=$3 or command_id like $4)`,
+      [input.workspaceId, principal.id, captureCommandId, `${captureCommandId}-retry-%`])).rows[0]!
+      return Number(row.count)
+    })
     const approved = template ? await this.get(principal, source, { workspaceId: input.workspaceId, ...template.source })
       : await this.approveProject(principal, { workspaceId: input.workspaceId,
-        commandId: `setup-project-${setupKey}` }, { source })
+        commandId: failedCaptures ? `${captureCommandId}-retry-${failedCaptures}` : captureCommandId }, { source })
     const manifest = approved.manifest
     return this.bindRoot(principal, source, { ...input,
       commandId: `setup-root-${setupKey}`, expectedBindingRevision: current?.binding.bindingRevision ?? 0,

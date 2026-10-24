@@ -167,7 +167,7 @@ it('retries failed automatic captures on discovery and shares the active retry b
     expect((await pool.query('select state from source_approvals where workspace_id=$1 and state=$2',
       [input.workspaceId, 'failed'])).rows).toHaveLength(2)
 
-    writer.mockClear().mockImplementation(async function (...args) {
+    writer.mockClear().mockImplementation(async function (this: PrivateSourceSnapshotStore, ...args) {
       await resume.promise
       return write.apply(this, args)
     })
