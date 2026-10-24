@@ -31,7 +31,7 @@ export function toolError(result: Awaited<ReturnType<Client['callTool']>>) {
   return JSON.parse(text.text)
 }
 
-export async function fixture(options: { plainWorkspace?: boolean; gitSource?: boolean; deviceCount?: 1 | 2; unboundFirstDeviceSource?: boolean; unconfiguredFirstDeviceRoot?: boolean } = {}) {
+export async function fixture(options: { physicalWorker?: boolean; plainWorkspace?: boolean; gitSource?: boolean; deviceCount?: 1 | 2; unboundFirstDeviceSource?: boolean; unconfiguredFirstDeviceRoot?: boolean } = {}) {
   let placementProducer: Awaited<ReturnType<typeof mixedComputerPlacement>>['producer'] | undefined
   const base = await currentOperatorIntegration({ fixture: makeCurrentWorkflowFixture(randomUUID(), 'sequential'),
     admitPlacementExecutionLocked: async (sql, owner, run, execution, ref, inputDigest) => {
@@ -44,6 +44,8 @@ export async function fixture(options: { plainWorkspace?: boolean; gitSource?: b
   try {
     directory = await privateFixtureDirectory('mixed-placement-')
     const placement = await mixedComputerPlacement(base, directory, {
+      ...(options.plainWorkspace ? { plainWorkspace: true } : {}),
+      ...(options.physicalWorker ? { physicalWorker: true } : {}),
       sourceAccessMode: options.gitSource ? 'exclusive-write' : 'read-only',
       deviceCount: options.deviceCount ?? 1,
       unboundMainSource: options.plainWorkspace ?? false,

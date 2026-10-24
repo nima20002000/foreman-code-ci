@@ -1,5 +1,5 @@
 import { sameWorkflowValue } from '@foreman-code/contracts/current'
-import { SourceRootSetupInputSchema, SourceRootBindResultSchema, type SourceRootSetupInput } from '@foreman-code/contracts/source-admission'
+import { SourceRootSetupInputSchema, SourceRootSetupResultSchema, type SourceRootSetupInput } from '@foreman-code/contracts/source-admission'
 import { sameComputer } from './sameComputer'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -168,8 +168,25 @@ export function useSetupWorkspaceSourceRoot(workspaceId: string) {
   return useMutation({ mutationKey: [...locationMutationKey(workspaceId), generation, 'source-setup'],
     mutationFn: async (input: SourceRootSetupInput) => {
       if (input.workspaceId !== workspaceId) invalid('Project setup belongs to another workspace.')
-      const result = await apiClient.request(`${path(workspaceId)}/source-roots/setup`, SourceRootBindResultSchema,
+      const result = await apiClient.request(`${path(workspaceId)}/source-roots/setup`, SourceRootSetupResultSchema,
         { method: 'POST', body: SourceRootSetupInputSchema.parse(input) })
+      if ('kind' in result.value && result.value.kind === 'selection-required') {
+        if (!('hostRef' in input)) invalid('Project setup did not confirm the selected root.')
+        return result
+      }
+      if ('kind' in result.value && result.value.kind === 'plain') {
+        const policy = result.value.policy
+        if ('hostRef' in input) {
+          if (policy.workspaceId !== workspaceId || !sameComputer(policy.hostRef, input.hostRef)) invalid('Project setup returned another computer.')
+          return result
+        }
+        if (policy.workspaceId !== workspaceId || !sameWorkflowValue(policy.hostRef, input.selection.hostRef)
+          || policy.rootPolicyId !== input.selection.rootPolicyId || policy.rootPolicyRevision !== input.selection.rootPolicyRevision
+          || policy.locationRevision !== input.selection.locationRevision
+          || input.accessMode === 'exclusive-write' && policy.accessMode !== 'read-write') invalid('Project setup returned another folder.')
+        return result
+      }
+      if ('hostRef' in input || 'kind' in result.value) invalid('Project setup did not confirm a folder.')
       if (result.value.binding.workspaceId !== workspaceId || result.value.binding.accessMode !== input.accessMode
         || !sameWorkflowValue(result.value.selection, input.selection)) invalid('Project setup returned another root binding.')
       return result

@@ -6,7 +6,7 @@ import { PlacementDigestSchema, type AcceptedNodePlacement, type DispatchIntent,
 export const RuntimeLeafAttestationSchema = z.object({
   executionId: z.string().min(1), attemptId: z.string().min(1), operationId: z.string().min(1), bindingHash: PlacementDigestSchema,
   canonicalRuntimeDirectory: z.string().startsWith('/'), directoryIdentityHash: PlacementDigestSchema,
-  materializationId: z.string().min(1), materializationDigest: PlacementDigestSchema,
+  materializationId: z.string().min(1).nullable(), materializationDigest: PlacementDigestSchema.nullable(),
 }).strict()
 export type RuntimeLeafAttestation = z.infer<typeof RuntimeLeafAttestationSchema>
 export function assertRuntimeLeafPath(runtimeDirectory: string, placement: AcceptedNodePlacement) {
@@ -18,11 +18,11 @@ export function assertRuntimeLeafPath(runtimeDirectory: string, placement: Accep
 export function assertRuntimeLeafBinding(raw: RuntimeLeafAttestation, runtimeDirectory: string, intent: DispatchIntent, placement: AcceptedNodePlacement, executionPlacement?: NativeExecutionPlacement) {
   assertRuntimeLeafPath(runtimeDirectory, placement)
   const proof = RuntimeLeafAttestationSchema.parse(raw)
-  const native = 'kind' in placement.source && placement.source.kind === 'pending'
+  const native = 'kind' in placement.source && ['pending', 'plain'].includes(placement.source.kind)
     ? readNativeExecutionBinding(placement, intent, executionPlacement) : undefined
   const original = 'materializationId' in placement.source ? placement.source : undefined
-  const materializationId = native?.materialization.receipt.materializationId ?? original?.materializationId
-  const materializationDigest = native?.workingTree.materializationDigest ?? original?.materializationDigest
+  const materializationId = (native && !('kind' in native) ? native.materialization.receipt.materializationId : null) ?? original?.materializationId ?? null
+  const materializationDigest = (native && !('kind' in native) ? native.workingTree.materializationDigest : null) ?? original?.materializationDigest ?? null
   if (proof.canonicalRuntimeDirectory !== runtimeDirectory || proof.executionId !== intent.executionId || proof.attemptId !== intent.attemptId
     || proof.operationId !== intent.operationId || proof.bindingHash !== (native?.bindingHash ?? intent.bindingHash) || proof.materializationId !== materializationId
     || proof.materializationDigest !== materializationDigest) throw new Error('Runtime leaf attestation does not own this immutable operation')

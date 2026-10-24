@@ -127,6 +127,20 @@ export async function resolveBoundRootPlacement(input: {
   const applicationInstallationId = root.registration?.workerInstallationId ?? mainId
   if (!sameWorkflowValue(policy.hostRef, hostRef) || !sameWorkflowValue(policy.registration, root.registration)
     || policy.applicationInstallationId !== applicationInstallationId) return unavailable('selected_root_policy')
+  const placement = await resolveFolderPlacement({ ...input, policy })
+  return { ...placement, source: root.source,
+    rootBinding: { rootId: root.binding.rootId, bindingRevision: root.binding.bindingRevision } }
+}
+
+export async function resolveFolderPlacement(input: {
+  sql: SqlQuery; configuration: AgentConfigurationVersion; nodeId?: string
+  policy: WorkspaceRootPolicy; installations: HarnessInstallationRegistry
+  qualificationSuites: Readonly<Record<CompatibilityHarness, string>>
+  assertProfileReady?: (profile: HostHarnessOverride) => void | Promise<void>
+}): Promise<SavedNodePlacement> {
+  const { sql, configuration, policy } = input
+  const hostRef = policy.hostRef
+  const applicationInstallationId = policy.applicationInstallationId
   const profiles = await sql.query<{ record: unknown }>(`select settings.record from harness_instance_settings settings
     where settings.record#>>'{target,applicationInstallationId}'=$1
       and settings.record#>'{target,hostRef}'=$2::jsonb
@@ -185,6 +199,5 @@ export async function resolveBoundRootPlacement(input: {
     locationRevision: policy.locationRevision, projectRoot: policy.canonicalProjectRoot,
     cwdPolicy: 'project-root', relativeCwd: '', instanceId: profile.instanceId,
     instanceRevision: profile.instanceRevision, harnessInstallationId: profile.target.harnessInstallationId,
-    source: root.source, rootBinding: { rootId: root.binding.rootId, bindingRevision: root.binding.bindingRevision },
   })
 }

@@ -34,7 +34,7 @@ import { legacyProviderAccountBinding } from '../provider-accounts/index.js'
 import { readAcceptedPlacement, insertDispatchIntent } from './persistence.js'
 import type { RunPlacementAdmissionPort, PreparedRunPlacementAdmission } from './startPort.js'
 import { readLocalMainRoot, readPlacementRootBinding, resolveBoundRootPlacement, resolveLocalMainPlacement,
-  resolvePlacementRootPolicy, resolveWorkflowRootBinding } from './localMainPlacement.js'
+  resolveFolderPlacement, resolvePlacementRootPolicy, resolveWorkflowRootBinding } from './localMainPlacement.js'
 import { prepareRunRoots, type SelectedRunRoot } from './runRoots.js'
 import { bindGeneratedWorktreeRun, generatedWorktreePrefix } from '../sources/worktreeRequest.js'
 import type { SourceRootRecord } from '@foreman-code/contracts/source-admission'
@@ -74,6 +74,9 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
       source: 'http' | 'mcp'; sourcePreparationStarted?: () => void
     } = { source: 'mcp' }): Promise<PreparedRunPlacementAdmission | undefined> {
     signal?.throwIfAborted()
+    if (await this.sources.isPlainWorkspace?.(principal, input.workspaceId)) {
+      return this.prepareFolders(input, principal, signal, options)
+    }
     let initial = await this.readSelectedRoots(input, principal)
     const savedVersion = initial.version
     signal?.throwIfAborted()
@@ -246,6 +249,92 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
         }) }
     })), signal ?? new AbortController().signal, undefined, options.sourcePreparationStarted)
   }
+  private async prepareFolders(input: RunStartCurrentInput, principal: ManagementPrincipal,
+    signal: AbortSignal | undefined, options: { source: 'http' | 'mcp'; sourcePreparationStarted?: () => void }) {
+    const version = await this.readVersion(this.pool, input)
+    if (!workflowUsesAgentPlacements(version.definition)) return undefined
+    if (version.definition.defaultWorktree || version.definition.nodes.some(node => node.kind !== 'job' && node.worktree)) {
+      throw new DomainError('WORKTREE_BRANCH_UNAVAILABLE', 'An Agent branch requires a Git repository source.', 409)
+    }
+    const hosts = version.definition.nodes.filter(node => node.kind !== 'job')
+      .map(node => node.placement?.hostRef ?? { kind: 'main' as const, mainId: this.mainId })
+    if (this.assertBundleReady || this.refreshProfileInventory) options.sourcePreparationStarted?.()
+    for (const host of hosts) await this.assertBundleReady?.(host)
+    await this.refreshProfileInventory?.(hosts, signal)
+    return admitWhenChecked(() => withExclusiveGraphConnection(this.pool, connection => connection.transaction(async sql => {
+      signal?.throwIfAborted()
+      if (signal) beforeGraphCommit(sql, async () => signal.throwIfAborted())
+      const current = await this.readVersion(sql, input)
+      if (!sameWorkflowValue(current, version)
+        || !sameWorkflowValue(version.agentConfigurationVersionIds, input.expectedAgentConfigurationVersionIds)) this.conflict()
+      const policies = await this.roots.read(sql, principal, input.workspaceId)
+      const prepared = []
+      for (const node of version.definition.nodes) {
+        if (node.kind === 'job') continue
+        const selected = node.placement
+        const policy = policies.find(policy => selected
+          ? policy.rootPolicyId === selected.rootPolicyId && sameWorkflowValue(policy.hostRef, selected.hostRef)
+          : policy.hostRef.kind === 'main' && policy.bindingPurpose !== 'ci-enrollment')
+        if (!policy) this.conflict()
+        const resolved = await this.roots.resolve(sql, principal, { workspaceId: input.workspaceId, ...policy })
+        const row = (await sql.query<{ record: unknown }>(
+          'select record from agent_configuration_versions where id=$1 and workspace_id=$2',
+          [version.agentConfigurationVersionIds[node.agentId], input.workspaceId])).rows[0]
+        const configuration = AgentConfigurationVersionSchema.parse(row?.record)
+        const saved = selected ?? await resolveFolderPlacement({ sql, configuration, nodeId: node.id, policy: resolved,
+          installations: this.registry.installations, qualificationSuites: this.qualificationSuites,
+          ...(this.assertProfileReady ? { assertProfileReady: this.assertProfileReady } : {}) })
+        if (saved.source || saved.rootBinding || saved.hostRef.mainId !== this.mainId
+          || saved.rootPolicyRevision !== resolved.rootPolicyRevision || saved.locationRevision !== resolved.locationRevision
+          || saved.projectRoot !== resolved.canonicalProjectRoot
+          || saved.relativeCwd !== '' || saved.cwdPolicy !== 'project-root') this.conflict()
+        this.workerExecution.requireEnabled(saved.hostRef)
+        if (requiredLocationAccess([configuration]) === 'read-write' && resolved.accessMode !== 'read-write') this.conflict()
+        const instance = await this.readInstance(sql, saved.instanceId)
+        await this.assertProfileReady?.(instance)
+        if (!instance.enabled || instance.instanceRevision !== saved.instanceRevision
+          || !sameWorkflowValue(instance.target.hostRef, saved.hostRef)
+          || instance.target.applicationInstallationId !== resolved.applicationInstallationId
+          || instance.target.harnessInstallationId !== saved.harnessInstallationId) this.conflict()
+        const selection = this.registry.pinOverride(instance)
+        const account = this.accounts && configuration.harness.harness !== 'opencode' && configuration.harness.accountId
+          ? await this.accounts.resolve(configuration.harness.harness, configuration.harness.accountId, { allowDefault: false }) : null
+        const accountBinding = account?.binding ?? legacyProviderAccountBinding(configuration.harness, configuration.harnessProfileSelection)
+        const pins: Omit<AcceptedNodePlacement, 'runId' | 'bindingHash'> = {
+          schemaVersion: 1, mainId: this.mainId, mainInstallationId: this.mainId, nodeId: node.id,
+          ...(!selected ? { labelAtAcceptance: 'Main' } : {}), hostRef: saved.hostRef, registration: resolved.registration,
+          destination: { canonicalProjectRoot: resolved.canonicalProjectRoot, canonicalCwd: resolved.canonicalProjectRoot,
+            managedRuntimeRoot: resolved.managedRuntimeRoot, directoryIdentityHash: resolved.directoryIdentityHash,
+            rootPolicyId: resolved.rootPolicyId, rootPolicyRevision: resolved.rootPolicyRevision, locationRevision: resolved.locationRevision,
+            attestationId: resolved.attestationId, attestationHash: resolved.attestationDigest },
+          source: { kind: 'plain', filesystem: resolved.filesystem, accessMode: resolved.accessMode },
+          payload: { kind: 'agent', resultProtocol: COORDINATION_RESULT_PROTOCOL, agentId: configuration.agentId,
+            agentConfigurationVersionId: configuration.id, ...(accountBinding ? { accountBinding } : {}),
+            ...(node.artifactOutputs ? { artifactOutputs: structuredClone(node.artifactOutputs) } : {}),
+            driverId: selection.selection.driverId, driverRevision: selection.installation.driverRevision,
+            instanceId: selection.selection.instanceId, instanceRevision: selection.selection.instanceRevision,
+            harnessInstallationId: selection.selection.harnessInstallationId, installationFingerprint: selection.selection.installationFingerprint,
+            runtimeContractVersion: 1, protocolRevision: selection.installation.protocolRevision, credentialScopeRefs: [] },
+        }
+        const facts = await this.harnessFacts(sql, { ...pins, runId: 'preparing', bindingHash: '' })
+        if (pins.payload.kind !== 'agent') this.conflict()
+        pins.payload.profileProofDigest = placementDigest(facts.profileProof)
+        if (facts.qualification) pins.payload.qualificationDigest = placementDigest(facts.qualification)
+        prepared.push({ pins, saved, configuration, implicit: !selected, selection })
+      }
+      const bind = (item: typeof prepared[number], runId: string) => freezePlacement({ ...structuredClone(item.pins), runId })
+      return { bind: (runId: string) => prepared.map(item => bind(item, runId)),
+        fence: (transaction: SqlTransaction) => startPlacementFence(pin => {
+          const saved = prepared.find(item => item.pins.nodeId === pin.nodeId)
+          if (!saved || !sameWorkflowValue(bind(saved, pin.runId), pin)) this.conflict()
+          this.registry.installations.assertCurrent(saved.selection)
+          return saved
+        }, async pin => {
+          const live = await readLiveManagementPrincipal(transaction, principal.id)
+          await this.assertPinsCurrent(transaction, pin, live, input.workspaceId)
+        }) }
+    })), signal ?? new AbortController().signal, undefined, options.sourcePreparationStarted)
+  }
   private async readSelectedRoots(input: RunStartCurrentInput, principal: ManagementPrincipal,
     options: { includeImplicitMain?: boolean } = {}) {
     return withExclusiveGraphConnection(this.pool, async connection => {
@@ -308,6 +397,15 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
   }
   private async assertSourceCurrent(sql: SqlQuery, pin: AcceptedNodePlacement,
     principal: ManagementPrincipal, workspaceId: string): Promise<void> {
+    if ('kind' in pin.source && pin.source.kind === 'plain') {
+      const policy = await this.resolveFolderPolicy(sql, pin, principal, workspaceId)
+      if (!sameWorkflowValue(policy.filesystem, pin.source.filesystem) || policy.accessMode !== pin.source.accessMode
+        || !sameWorkflowValue(policy.registration, pin.registration) || policy.attestationDigest !== pin.destination.attestationHash
+        || policy.canonicalProjectRoot !== pin.destination.canonicalProjectRoot
+        || policy.directoryIdentityHash !== pin.destination.directoryIdentityHash
+        || pin.payload.kind !== 'agent' || pin.payload.worktree) this.conflict()
+      return
+    }
     if (!('kind' in pin.source) || pin.source.kind !== 'pending') this.conflict()
     const source = pin.source as Extract<AcceptedNodePlacement['source'], { kind: 'pending' }>
     const root = await this.sources.resolveRootBinding(sql, principal, { workspaceId, rootId: source.rootId,
@@ -319,6 +417,16 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
     const registration = await assertDeviceHostInstallation(sql, pin.hostRef, pin.registration?.workerInstallationId ?? pin.mainInstallationId)
     if (!sameWorkflowValue(registration === null ? null : { workerInstallationId: registration.workerInstallationId,
       keyRevision: registration.keyRevision, authorizationRevision: registration.authorizationRevision }, pin.registration)) this.conflict()
+  }
+  resolveFolderPolicy(sql: SqlQuery, pin: AcceptedNodePlacement, principal: ManagementPrincipal, workspaceId: string) {
+    return this.roots.resolve(sql, principal, { workspaceId, hostRef: pin.hostRef,
+      rootPolicyId: pin.destination.rootPolicyId, rootPolicyRevision: pin.destination.rootPolicyRevision,
+      locationRevision: pin.destination.locationRevision })
+  }
+  async inspectFolder(sql: SqlQuery, pin: AcceptedNodePlacement, principal: ManagementPrincipal, workspaceId: string) {
+    const policy = await this.resolveFolderPolicy(sql, pin, principal, workspaceId)
+    await this.roots.inspect(sql, principal, policy)
+    return policy
   }
   private async readInstance(sql: SqlQuery, instanceId: string) {
     // Match settings append's lock so a new revision cannot cross the commit fence.

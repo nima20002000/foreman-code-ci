@@ -13,7 +13,7 @@ import { useBoundLocationDraftStore } from '../settings/workspaceBoundLocationDr
 import { usePlacementChoices } from './usePlacementChoices'
 import { NodePlacementField } from './NodePlacementField'
 
-it('sets up a plain folder on Paired computer and refreshes the Computer picker without a source pin', async () => {
+it.each([true, false])('sets up a plain folder and refreshes the Computer picker (managed: %s)', async automatic => {
   const workspaceId = 'empty-workspace'
   const scope = { workspaceId, workflowId: 'workflow', nodeId: 'node', agentConfigurationVersionId: 'configuration' }
   let policy: ReturnType<typeof rootSetReadback> | undefined
@@ -44,7 +44,14 @@ it('sets up a plain folder on Paired computer and refreshes the Computer picker 
       return HttpResponse.json({ value: policy, replayed: false })
     }),
     http.post(`*/api/management/workspaces/${workspaceId}/source-roots/setup`, async ({ request }) => {
-      writes.push(await request.json())
+      const input = await request.json() as { hostRef?: unknown }
+      writes.push(input)
+      if (input.hostRef) {
+        if (!automatic) return HttpResponse.json({ value: { kind: 'selection-required' }, replayed: false })
+        policy = rootSetReadback({ workspaceId, hostRef: workerRoot.hostRef, allowedBaseId: workerRoot.bases[0]!.baseId,
+          configurationRevision: '1', relativePath: 'empty-workspace', accessMode: 'read-write',
+          expectedLocationRevision: 1, expectedRootPolicyRevision: 0 }, workerRoot)
+      }
       if (policy?.evidence !== 'bound') throw new Error('Folder must be saved before setup')
       ready = true
       return HttpResponse.json({ value: { kind: 'plain', policy: policy.binding }, replayed: false })
@@ -65,12 +72,15 @@ it('sets up a plain folder on Paired computer and refreshes the Computer picker 
     await screen.findByRole('option', { name: 'Paired computer · unavailable' })
     await user.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), 'computer:0')
     await user.click(screen.getByRole('button', { name: 'Set up on Paired computer' }))
-    await user.type(await screen.findByRole('textbox', { name: 'Subfolder' }), 'empty-workspace')
-    await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+    if (!automatic) {
+      await user.type(await screen.findByRole('textbox', { name: 'Subfolder' }), 'empty-workspace')
+      await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+    }
+    await screen.findByRole('option', { name: 'Paired computer' })
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await user.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), '0')
     expect(selected).toEqual(placement)
     expect(selected).not.toHaveProperty('source')
-    expect(writes).toHaveLength(2)
+    expect(writes).toHaveLength(automatic ? 1 : 3)
   } finally { view.unmount(); client.clear(); useBoundLocationDraftStore.getState().reset() }
 })

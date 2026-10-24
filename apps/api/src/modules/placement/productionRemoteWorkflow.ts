@@ -341,7 +341,8 @@ async function prepareRemoteWorkflowBinding(input: ProductionRemoteWorkflowInput
   let comparable = previous
   if (previous && binding) {
     comparable = { ...previous, intent: { ...previous.intent, owner: binding.intent.owner } }
-    if (previous.executionPlacement && binding.executionPlacement) {
+    if (previous.executionPlacement && !('kind' in previous.executionPlacement)
+      && binding.executionPlacement && !('kind' in binding.executionPlacement)) {
       comparable.executionPlacement = { ...previous.executionPlacement,
         materialization: { ...previous.executionPlacement.materialization,
           state: binding.executionPlacement.materialization.state } }

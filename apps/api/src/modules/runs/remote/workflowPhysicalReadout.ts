@@ -1,3 +1,4 @@
+import { attestWorkspaceRoot } from '../../sources/index.js'
 import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { sourceWorkingTreeComponents, sourceWorkingTreePath } from '../../sources/index.js'
 import { isDeepStrictEqual } from 'node:util'
@@ -105,14 +106,33 @@ export async function assertOriginalPhysicalDirectories(input:{source:RemoteWork
   assertCurrent():void;authorize():Promise<void>}):Promise<void> {
   const check=()=>{input.signal.throwIfAborted();input.assertCurrent();input.signal.throwIfAborted()}
   const authorize=async()=>{check();await input.authorize();check()}
-  const {source,runtimeLeaf,approvedRoots,placement}=input,receipt=source.record.receipt,cwd=source.workingTree.cwdAttestation
+  const {source,runtimeLeaf,approvedRoots,placement}=input
+  const inspectSource = (() => {
+    if ('kind' in source && source.kind === 'plain') return async () => {
+      check()
+      const policy = source.policy
+      if (!isDeepStrictEqual(policy.hostRef, placement.hostRef)
+        || policy.applicationInstallationId !== placement.registration?.workerInstallationId
+        || policy.attestationDigest !== placement.destination.attestationHash
+        || policy.canonicalProjectRoot !== placement.destination.canonicalProjectRoot
+        || source.workingTree.canonicalCwd !== policy.canonicalProjectRoot
+        || !isDeepStrictEqual(source.workingTree.filesystem, policy.filesystem)) return unavailable()
+      const observed = await attestWorkspaceRoot(approvedRoots, { workspaceId: policy.workspaceId, hostRef: policy.hostRef,
+        allowedBaseId: policy.allowedBaseId, configurationRevision: policy.configurationRevision,
+        relativePath: policy.relativePath, accessMode: policy.accessMode,
+        expectedLocationRevision: Number(policy.locationRevision), expectedRootPolicyRevision: Number(policy.rootPolicyRevision) })
+      check()
+      if (!isDeepStrictEqual(observed.filesystem, policy.filesystem)
+        || observed.directoryIdentityHash !== policy.directoryIdentityHash) return unavailable()
+    }
+    const receipt=source.record.receipt,cwd=source.workingTree.cwdAttestation
   if(!isDeepStrictEqual(approvedRoots.hostRef,placement.hostRef)||approvedRoots.applicationInstallationId!==placement.registration?.workerInstallationId
     ||approvedRoots.managedRuntimeRoot!==placement.destination.managedRuntimeRoot
     ||!receipt.binding.canonicalPath.startsWith(`${approvedRoots.managedRuntimeRoot}/`)
     ||source.workingTree.canonicalProjectRoot!==sourceWorkingTreePath(receipt)
     ||source.workingTree.canonicalCwd!==cwd.canonicalCwd||cwd.canonicalCwd!==join(source.workingTree.canonicalProjectRoot,cwd.relativeCwd)
     ||cwd.attestationDigest!==sourceCwdAttestationDigest(cwd))return unavailable()
-  const inspectSource=async()=>{
+    return async()=>{
     check()
     let directory=await openPrivateRoot(receipt.binding.canonicalPath)
     try {
@@ -131,6 +151,7 @@ export async function assertOriginalPhysicalDirectories(input:{source:RemoteWork
       check()
     } finally {await directory.close()}
   }
+  })()
   const inspectRuntime=async()=>{
     check()
     const base=await openPrivateRoot(approvedRoots.managedRuntimeRoot)
@@ -156,7 +177,7 @@ export async function assertOriginalPhysicalDirectories(input:{source:RemoteWork
       } finally {await directory.close()}
     } finally {await base.close()}
   }
-  try {if(cwd.relativeCwd)sourcePath(cwd.relativeCwd);assertRuntimeLeafPath(runtimeLeaf.canonicalRuntimeDirectory,placement)
+  try {if(!('kind' in source) && source.workingTree.cwdAttestation.relativeCwd)sourcePath(source.workingTree.cwdAttestation.relativeCwd);assertRuntimeLeafPath(runtimeLeaf.canonicalRuntimeDirectory,placement)
     // Main authorizes the whole inspection; local fences guard each filesystem step.
     await authorize()
     await inspectSource();await inspectRuntime();await inspectSource();await inspectRuntime()

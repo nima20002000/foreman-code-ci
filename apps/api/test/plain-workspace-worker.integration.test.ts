@@ -1,3 +1,6 @@
+import { readdir, stat } from 'node:fs/promises'
+import { ManagedWorkspaceRootService } from '../src/modules/workspace-roots/managedRoot.js'
+import { WorkspaceBoundLocationService } from '../src/modules/workspace-roots/service.js'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { NodePlacementChoicesResultSchema } from '@foreman-code/contracts/placement-readback'
@@ -11,12 +14,16 @@ import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('plain workspace Worker placement', () => {
-  it('sets up an empty folder, discovers Paired computer and accepts its Run without capturing source', async () => {
-    const f = await fixture({ plainWorkspace: true })
+  it.each([false, true])('sets up an empty folder, discovers the Worker and accepts its Run (managed: %s)', async managed => {
+    const f = await fixture({ plainWorkspace: true, physicalWorker: managed, unconfiguredFirstDeviceRoot: managed })
     let app: ReturnType<typeof buildApp> | undefined
     try {
       const workspaceId = f.saveInput.workspaceId
       const pool = f.base.db.pool
+      const folders = new ManagedWorkspaceRootService(f.base.commands,
+        new WorkspaceBoundLocationService(pool, f.base.commands, f.placement.policies), f.placement.policies)
+      f.placement.sources.setupFolder = (principal, source, workspaceId, target) => folders.ensure(principal, source, workspaceId, target)
+      expect(await readdir(f.placement.local.projectRoot)).toEqual([])
       const evidence = new HostHarnessProfileEvidenceRepository(pool)
       const discovery = new ProductionPlacementChoiceDiscovery(pool, () => ({
         roots: f.placement.policies, sources: f.placement.sources,
@@ -31,15 +38,26 @@ describe.skipIf(!postgresEnabled)('plain workspace Worker placement', () => {
       })
       const setup = await app.inject({ method: 'POST',
         url: `/api/management/workspaces/${workspaceId}/source-roots/setup`, headers: f.headers,
-        payload: { workspaceId, commandId: randomUUID(), selection: {
+        payload: managed ? { workspaceId, commandId: randomUUID(), hostRef: f.placement.remote.hostRef }
+          : { workspaceId, commandId: randomUUID(), selection: {
           hostRef: f.placement.remote.hostRef, rootPolicyId: f.placement.remote.rootPolicyId,
           rootPolicyRevision: f.placement.remote.rootPolicyRevision, locationRevision: f.placement.remote.locationRevision,
         }, accessMode: 'exclusive-write' },
       })
       expect(setup.statusCode, setup.body).toBe(200)
       expect(setup.json().value).toMatchObject({ kind: 'plain', policy: {
-        hostRef: f.placement.remote.hostRef, canonicalProjectRoot: f.placement.remote.projectRoot,
+        hostRef: f.placement.remote.hostRef,
       } })
+      if (managed) {
+        const folder = setup.json().value.policy.canonicalProjectRoot as string
+        expect(folder.startsWith(`${f.placement.remote.projectRoot}/`)).toBe(true)
+        expect((await stat(folder)).isDirectory()).toBe(true)
+        expect(await readdir(folder)).toEqual([])
+        const repeated = await f.placement.sources.setupRoot(f.base.writer.principal, 'http', {
+          workspaceId, commandId: randomUUID(), hostRef: f.placement.remote.hostRef,
+        })
+        expect(repeated.value).toEqual(setup.json().value)
+      }
       const saved = await f.save('http')
       const node = agentWorkflowNode(saved.version.definition.nodes[1])
       const result = await app.inject({ method: 'GET', headers: f.headers,
@@ -66,6 +84,7 @@ describe.skipIf(!postgresEnabled)('plain workspace Worker placement', () => {
             destination: { canonicalCwd: choice.placement.projectRoot } } })
       }
       expect((await pool.query('select 1 from source_root_catalog where workspace_id=$1', [workspaceId])).rowCount).toBe(0)
+      expect((await pool.query('select 1 from source_snapshots where workspace_id=$1', [workspaceId])).rowCount).toBe(0)
     } finally { await app?.close(); await f.close() }
   }, 120_000)
 })
