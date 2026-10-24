@@ -88,6 +88,22 @@ describe('Operator chat interactions', () => {
       expect.objectContaining({ target: { kind: 'operator_conversation', conversationId: 'conversation-one' },
         intent, content: 'After this turn' }),
     ]))
+    if (intent === 'next_turn') expect([...deliveryFixture.commands.values()][0]).not.toHaveProperty('expectedNativeTurnId')
+  })
+  it('keeps a selected active-turn action visible after the Operator becomes idle so it can be reset', async () => {
+    useOperatorChatStore.setState({ open: true })
+    renderChat()
+    fireEvent.change(await findOperatorComposer(), { target: { value: 'My next message' } })
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Delivery action' }), { target: { value: 'interrupt_and_send' } })
+    const idle = operatorState({ revision: 2, turnState: 'idle', activeRequestId: null })
+    vi.mocked(getOperatorConversation).mockResolvedValue(idle)
+    act(() => vi.mocked(subscribeOperatorChat).mock.calls.at(-1)![1].snapshot(idle))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Stop response' })).not.toBeInTheDocument())
+    expect(screen.getByRole('combobox', { name: 'Delivery action' })).toHaveValue('interrupt_and_send')
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Delivery action' }), { target: { value: 'auto' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled())
+    expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue('My next message')
   })
   it('pins a draft typed while its target loads only after the target is read, so it can still be sent', async () => {
     useOperatorChatStore.setState({ open: true })
