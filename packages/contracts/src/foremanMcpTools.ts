@@ -5,16 +5,16 @@ import { z } from "zod";
 
 /** Who is calling the one Foreman Code MCP server. Operator credentials manage the app; Worker
  * credentials belong to a workflow Agent whose pinned configuration sets its product role. */
-export type GraphqlMcpRole = "operator" | WorkflowAgentProductRole;
+export type ForemanMcpRole = "operator" | WorkflowAgentProductRole;
 
-export const GRAPHQL_MCP_ROLE_LABELS: Record<GraphqlMcpRole, string> = {
+export const FOREMAN_MCP_ROLE_LABELS: Record<ForemanMcpRole, string> = {
   operator: agentProductRoleLabel("operator"), master: agentProductRoleLabel("master"),
   orchestrator: agentProductRoleLabel("orchestrator"), coder: agentProductRoleLabel("coder"),
 };
 
 /** Agent-facing Foreman Code MCP tools. Every other Foreman Code MCP tool is Operator-only and can
  * never be enabled for an Agent. Grants and scope are still checked per call. */
-const LEGACY_GRAPHQL_AGENT_TOOLS = {
+const LEGACY_FOREMAN_AGENT_TOOLS = {
   bug_report: {
     label: 'Report a bug',
     description: 'Always available to workflow Agents. Report a Foreman Code feature or MCP tool failure. '
@@ -76,13 +76,13 @@ const LEGACY_GRAPHQL_AGENT_TOOLS = {
       + "Available only on workflow nodes with a loop enabled.",
     roles: ["master", "orchestrator", "coder"],
   },
-} as const satisfies Record<string, { label: string; description: string; roles: readonly GraphqlMcpRole[] }>;
+} as const satisfies Record<string, { label: string; description: string; roles: readonly ForemanMcpRole[] }>;
 
 /** Reserved collaboration tools remain dormant until their implemented names are explicitly supplied. */
-export const GRAPHQL_AGENT_TOOLS = { ...LEGACY_GRAPHQL_AGENT_TOOLS, ...COLLABORATION_AGENT_TOOLS } as const;
+export const FOREMAN_AGENT_TOOLS = { ...LEGACY_FOREMAN_AGENT_TOOLS, ...COLLABORATION_AGENT_TOOLS } as const;
 
 /** Explicit Operator catalog. Listing a tool never supplies a grant or native qualification. */
-export const GRAPHQL_OPERATOR_TOOLS = {
+export const FOREMAN_OPERATOR_TOOLS = {
   workspace_repository_get: {
     label: 'Read workspace project', description: 'Read the prepared repository or an incomplete import by its original command ID.',
     roles: ['operator'], action: 'read-workspace-repository',
@@ -97,66 +97,66 @@ export const GRAPHQL_OPERATOR_TOOLS = {
     scope: 'workspace', readOnly: false,
   },
   workspace_root_configuration_adopt: { label: "Adopt protected root configuration", description: "Audit adoption of the selected host's approved roots, including private product storage approved by human computer pairing. Arbitrary user paths require explicit local approval; caller paths are not accepted.", roles: ["operator"], action: "adopt-workspace-root-configuration", actions: ["source_roots:bind", "workspace_locations:update"], scope: "workspace", readOnly: false },
-} as const satisfies Record<string, { label: string; description: string; roles: readonly GraphqlMcpRole[]; action: string; actions: readonly string[]; scope: "run" | "workspace" | "caller"; readOnly: boolean }>;
+} as const satisfies Record<string, { label: string; description: string; roles: readonly ForemanMcpRole[]; action: string; actions: readonly string[]; scope: "run" | "workspace" | "caller"; readOnly: boolean }>;
 
-export const GraphqlAgentToolSchema = z.enum(
-  Object.keys(GRAPHQL_AGENT_TOOLS) as [keyof typeof GRAPHQL_AGENT_TOOLS, ...(keyof typeof GRAPHQL_AGENT_TOOLS)[]],
+export const ForemanAgentToolSchema = z.enum(
+  Object.keys(FOREMAN_AGENT_TOOLS) as [keyof typeof FOREMAN_AGENT_TOOLS, ...(keyof typeof FOREMAN_AGENT_TOOLS)[]],
 );
-export type GraphqlAgentTool = z.infer<typeof GraphqlAgentToolSchema>;
+export type ForemanAgentTool = z.infer<typeof ForemanAgentToolSchema>;
 
 /** Absent saved defaults retain the legacy role tools; future families require explicit choices. */
-export const GraphqlToolDefaultsSchema = z.array(GraphqlAgentToolSchema).max(100)
+export const ForemanToolDefaultsSchema = z.array(ForemanAgentToolSchema).max(100)
   .refine((tools) => new Set(tools).size === tools.length, "Foreman Code MCP tools must be unique");
 
 /** A workflow node's tool changes. bug_report remains available even when named in remove. */
-export const GraphqlToolOverrideSchema = z.object({
-  add: z.array(GraphqlAgentToolSchema).max(100),
-  remove: z.array(GraphqlAgentToolSchema).max(100),
+export const ForemanToolOverrideSchema = z.object({
+  add: z.array(ForemanAgentToolSchema).max(100),
+  remove: z.array(ForemanAgentToolSchema).max(100),
 }).strict().superRefine((value, context) => {
   const removed = new Set(value.remove);
   for (const [index, tool] of value.add.entries()) {
     if (removed.has(tool)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["add", index], message: "a Foreman Code MCP tool cannot be both added and removed" });
   }
 });
-export type GraphqlToolOverride = z.infer<typeof GraphqlToolOverrideSchema>;
+export type ForemanToolOverride = z.infer<typeof ForemanToolOverrideSchema>;
 
-export function graphqlToolRoles(name: string): readonly GraphqlMcpRole[] {
-  return (GRAPHQL_AGENT_TOOLS as Record<string, { roles: readonly GraphqlMcpRole[] }>)[name]?.roles
-    ?? (GRAPHQL_OPERATOR_TOOLS as Record<string, { roles: readonly GraphqlMcpRole[] }>)[name]?.roles ?? ["operator"];
+export function foremanToolRoles(name: string): readonly ForemanMcpRole[] {
+  return (FOREMAN_AGENT_TOOLS as Record<string, { roles: readonly ForemanMcpRole[] }>)[name]?.roles
+    ?? (FOREMAN_OPERATOR_TOOLS as Record<string, { roles: readonly ForemanMcpRole[] }>)[name]?.roles ?? ["operator"];
 }
 
 /** Enabled by a node's interval setting, never by Agent defaults or node tool changes. */
-export const GRAPHQL_INTERVAL_TOOLS: readonly GraphqlAgentTool[] = ["run_status_get"];
+export const FOREMAN_INTERVAL_TOOLS: readonly ForemanAgentTool[] = ["run_status_get"];
 
 /** The Agent tools a product role may be given, in catalog order. */
-export function graphqlRoleTools(role: WorkflowAgentProductRole, implementedCollaborationTools: readonly string[] = []): GraphqlAgentTool[] {
-  return GraphqlAgentToolSchema.options.filter((tool) => graphqlToolRoles(tool).includes(role)
-    && !GRAPHQL_INTERVAL_TOOLS.includes(tool)
+export function foremanRoleTools(role: WorkflowAgentProductRole, implementedCollaborationTools: readonly string[] = []): ForemanAgentTool[] {
+  return ForemanAgentToolSchema.options.filter((tool) => foremanToolRoles(tool).includes(role)
+    && !FOREMAN_INTERVAL_TOOLS.includes(tool)
     && (!isCollaborationAgentTool(tool) || implementedCollaborationTools.includes(tool)));
 }
 
 /** Copy only into a newly created Agent. Old absent tool choices retain their legacy meaning. */
-export function newAgentGraphqlTools(role: WorkflowAgentProductRole): GraphqlAgentTool[] {
-  return [...graphqlRoleTools(role), ...memoryBoardTools(newAgentMemoryBoardAccess())];
+export function newAgentForemanTools(role: WorkflowAgentProductRole): ForemanAgentTool[] {
+  return [...foremanRoleTools(role), ...memoryBoardTools(newAgentMemoryBoardAccess())];
 }
 
 /** Tools named here that the role can never use. */
-export function graphqlToolsOutsideRole(role: WorkflowAgentProductRole, tools: readonly string[]): string[] {
-  return tools.filter((tool) => !graphqlToolRoles(tool).includes(role));
+export function foremanToolsOutsideRole(role: WorkflowAgentProductRole, tools: readonly string[]): string[] {
+  return tools.filter((tool) => !foremanToolRoles(tool).includes(role));
 }
 
 /** Applies saved tool choices within the role. Bug reporting is available to every workflow Agent. */
-export function effectiveGraphqlTools(
-  role: WorkflowAgentProductRole, defaults?: readonly string[], override?: GraphqlToolOverride, interval = false,
+export function effectiveForemanTools(
+  role: WorkflowAgentProductRole, defaults?: readonly string[], override?: ForemanToolOverride, interval = false,
   implementedCollaborationTools: readonly string[] = [],
-): GraphqlAgentTool[] {
-  const roleTools = graphqlRoleTools(role, implementedCollaborationTools);
+): ForemanAgentTool[] {
+  const roleTools = foremanRoleTools(role, implementedCollaborationTools);
   // Missing old defaults retain the old capability set even after new handlers are enabled.
-  const enabled = new Set<string>(defaults ?? graphqlRoleTools(role));
+  const enabled = new Set<string>(defaults ?? foremanRoleTools(role));
   // Agent memory on means read and write; a workflow node's change or read-only access narrows it.
   if (defaults?.some((tool) => tool.startsWith('memory_'))) for (const tool of memoryBoardTools('write')) enabled.add(tool);
   for (const tool of override?.add ?? []) enabled.add(tool);
   for (const tool of override?.remove ?? []) enabled.delete(tool);
   enabled.add('bug_report');
-  return [...roleTools.filter((tool) => enabled.has(tool)), ...(interval ? GRAPHQL_INTERVAL_TOOLS : [])];
+  return [...roleTools.filter((tool) => enabled.has(tool)), ...(interval ? FOREMAN_INTERVAL_TOOLS : [])];
 }

@@ -3,7 +3,7 @@ export { endpointMatches } from './nativeMcpEndpoint.js'
 import {
   McpDetectionSchema,
   ScopedMcpDetectionSchema,
-  GraphqlAgentToolSchema,
+  ForemanAgentToolSchema,
   type AgentHarness,
   type McpDetection,
   type McpCredentialArrangement,
@@ -91,7 +91,7 @@ const details: Record<McpDetection['state'], string> = {
   status_unavailable: 'Native configuration is available; connection health has not been established.',
   check_failed: 'Native MCP inspection failed. Check provider configuration and command access.',
 }
-const appTools = new Set<string>(GraphqlAgentToolSchema.options)
+const appTools = new Set<string>(ForemanAgentToolSchema.options)
 function toolFilter(values: readonly string[]): string[] {
   if (!Array.isArray(values)) throw new Error('Invalid native tool filter.')
   // Unknown tool names cannot grant access to the current App catalog. Do not

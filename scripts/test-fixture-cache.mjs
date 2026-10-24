@@ -19,7 +19,7 @@ export async function workerFixtureInputs(repository, commit) {
   const paths = [
     'apps/api/src', 'apps/ci/src', 'apps/worker/src', 'apps/worker/artifacts', 'packages/contracts/src', 'packages/contracts-node/src',
     'apps/web/public/graphql.svg', 'scripts/build-worker-artifact.mjs', 'scripts/worker-artifact-files.mjs',
-    'scripts/quota-helper-abi.mjs', 'scripts/graphql-mcp.mjs',
+    'scripts/quota-helper-abi.mjs', 'scripts/foreman-mcp.mjs',
     'scripts/worker-snapshot-policy.mjs', ...verificationRuntimeFiles,
     'packages/contracts/package.json', 'packages/contracts-node/package.json', 'apps/ci/package.json', 'apps/worker/package.json', 'package.json',
     'pnpm-workspace.yaml', 'pnpm-lock.yaml',

@@ -2,20 +2,20 @@ import { useState } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it } from 'vitest'
-import { effectiveGraphqlTools, memoryBoardTools, type GraphqlAgentTool, type GraphqlToolOverride } from '@foreman-code/contracts'
-import { GraphqlToolsFields } from './GraphqlToolsFields'
+import { effectiveForemanTools, memoryBoardTools, type ForemanAgentTool, type ForemanToolOverride } from '@foreman-code/contracts'
+import { ForemanToolsFields } from './ForemanToolsFields'
 
 it('changes grouped memory access without changing other node tools or agent defaults', async () => {
   const user = userEvent.setup()
   function Settings() {
-    const [defaults, setDefaults] = useState<GraphqlAgentTool[] | undefined>(['context_get'])
-    const [override, setOverride] = useState<GraphqlToolOverride | undefined>({ add: ['interaction_get'], remove: [] })
+    const [defaults, setDefaults] = useState<ForemanAgentTool[] | undefined>(['context_get'])
+    const [override, setOverride] = useState<ForemanToolOverride | undefined>({ add: ['interaction_get'], remove: [] })
     return <>
-      <GraphqlToolsFields role="coder" defaults={defaults} override={override} onChange={(next, change) => {
+      <ForemanToolsFields role="coder" defaults={defaults} override={override} onChange={(next, change) => {
         setDefaults(next)
         setOverride(change)
       }} />
-      <output aria-label="Effective tools">{effectiveGraphqlTools('coder', defaults, override, false, memoryBoardTools('write')).join(',')}</output>
+      <output aria-label="Effective tools">{effectiveForemanTools('coder', defaults, override, false, memoryBoardTools('write')).join(',')}</output>
       <output aria-label="Agent defaults">{defaults?.join(',')}</output>
     </>
   }

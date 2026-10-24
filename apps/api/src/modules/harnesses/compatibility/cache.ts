@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, mkdir, open } from 'node:fs/promises'
@@ -24,7 +25,7 @@ export interface CompatibilityCache {
 }
 export function compatibilityCacheDirectory(environment: NodeJS.ProcessEnv = hostEnvironment()): string {
   const configured = environment.XDG_CACHE_HOME
-  return join(configured && isAbsolute(configured) ? configured : join(homedir(), '.cache'), 'graphql', 'harness-compatibility-v2')
+  return join(configured && isAbsolute(configured) ? configured : join(homedir(), '.cache'), INSTALLATION_NAMES.paths.storageDirectory, 'harness-compatibility-v2')
 }
 
 /** One bounded, atomically replaced record per provider. No DB or network dependency. */

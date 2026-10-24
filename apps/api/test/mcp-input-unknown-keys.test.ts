@@ -2,7 +2,7 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { expect, it } from 'vitest'
 import { z } from 'zod'
 
-import { createGraphqlMcpServer } from '../src/mcp/unified/server.js'
+import { createForemanMcpServer } from '../src/mcp/unified/server.js'
 
 it('strips unknown MCP input fields while preserving validation, open records and strict outputs', async () => {
   const item = z.object({ label: z.string().min(1) }).strict().describe('Item label')
@@ -18,7 +18,7 @@ it('strips unknown MCP input fields while preserving validation, open records an
     metadata: z.record(z.string(), z.unknown()),
     limit: z.number().int().positive().default(10),
   }).strict().refine(value => value.items.length <= value.limit, 'Too many items')
-  const server = await createGraphqlMcpServer({
+  const server = await createForemanMcpServer({
     role: 'coder', principal: {
       id: 'schema-caller', name: 'Schema caller', audience: 'worker', agentId: 'schema-agent',
       grants: [], expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null,

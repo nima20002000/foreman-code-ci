@@ -99,20 +99,20 @@ export function registerProductionLifecycleFixture() {
       native.inspections++
       return { providerVersion: '0.154.0', binary: 'fixture', cwd, serverName: 'foreman-code', inspectionScope: 'effective_config', configured: {
         enabled: true, required: true, transport: 'streamable_http', url: 'http://127.0.0.1:4100/mcp',
-        bearerTokenEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN', enabledTools: null, disabledTools: [], defaultToolsApprovalMode: null, tools: {},
+        bearerTokenEnvironmentVariable: 'GRAPHQL_MCP_TOKEN', enabledTools: null, disabledTools: [], defaultToolsApprovalMode: null, tools: {},
       } }
     })
     vi.spyOn(CodexAppServerSessionManager.prototype, 'createSession').mockImplementation(async function (this: CodexAppServerSessionManager, input) {
       if (!isWorkflowStart(input)) throw new Error('Unexpected Operator launch')
       const reference = { harness: this.harness, providerVersion: '0.154.0', nativeSessionId: `session-${input.request.executionId}` }
       sessions.set(reference.nativeSessionId, { input, pending: [], turns: new Map(), asks: 0 })
-      connections.set(this, { id: randomUUID(), events: [], token: input.environment!.variables.FOREMAN_CODE_MCP_TOKEN!, sessionId: reference.nativeSessionId })
+      connections.set(this, { id: randomUUID(), events: [], token: input.environment!.variables.GRAPHQL_MCP_TOKEN!, sessionId: reference.nativeSessionId })
       return reference
     })
     vi.spyOn(CodexAppServerSessionManager.prototype, 'attachSession').mockImplementation(async function (this: CodexAppServerSessionManager, reference, input) {
       native.attaches++
       if (!sessions.has(reference.nativeSessionId)) throw new Error('Cannot replace a native session')
-      connections.set(this, { id: randomUUID(), events: [], token: input.environment!.variables.FOREMAN_CODE_MCP_TOKEN!, sessionId: reference.nativeSessionId })
+      connections.set(this, { id: randomUUID(), events: [], token: input.environment!.variables.GRAPHQL_MCP_TOKEN!, sessionId: reference.nativeSessionId })
       event(this, 'thread.attached', { threadId: reference.nativeSessionId })
       return reference
     })

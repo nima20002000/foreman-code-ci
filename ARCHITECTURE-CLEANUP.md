@@ -176,8 +176,11 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   (2,824 occurrences; no name collided, so none was skipped). `RepeatGraphCurrentV3` became
   `RepeatGraphCurrentCurrent`, which the owner should review. Left alone: `wave25_*` SQL,
   migration file names, `wave25*` test file names, string literals, JSON keys, prose, docs and history.
-- [ ] #35 Unfinished graphql → foreman-code rename (646 files; compose/DB names, rsync path, env compat layer).
-  Deployed names need a migration plan.
+- [~] #35 Code rename reconciled on `fix/re2-a35-graphql` over `merge/arch2` at `b33a05a909`.
+  Frozen deployed and saved names live in contracts `installationNames.mjs`; no environment alias layer.
+  Preserved the newer harness capabilities, recorded configuration types, contracts-node split and worker build inputs.
+  Deployed manifests, migration SQL and historical evidence stay unchanged; standalone artifacts embed frozen names.
+  Foreman CI verification pending. No deployed installation cutover.
 - [~] #36 Retired `opencode` harness: active/recorded configuration split reconciled on `fix/re-a16-provider`; verification blocked by the shared CI build (see #16).
   - Done: one `isReadOnlyHarnessConfiguration` (contracts) replaces 8 copies of the "retired or read-only" check, and one
     `retiredHarnessError()` (`harnesses/retiredHarness.ts`) replaces 20 `HARNESS_RETIRED` throws. The unused

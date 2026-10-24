@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { readFile } from 'node:fs/promises';
 import { resolve, isAbsolute } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -88,7 +89,7 @@ async function main() {
     } catch { errors.push('identity_invalid'); }
     let service = { active: false, userManagerAvailable: false };
     try {
-      const { stdout } = await execute('/usr/bin/systemctl', ['--user', 'show', 'graphql-worker.service', '--property=ActiveState', '--property=LoadState'], { timeout: 2000, maxBuffer: 4096, env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } });
+      const { stdout } = await execute('/usr/bin/systemctl', ['--user', 'show', INSTALLATION_NAMES.services.worker, '--property=ActiveState', '--property=LoadState'], { timeout: 2000, maxBuffer: 4096, env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } });
       service = { active: stdout.includes('ActiveState=active\n'), userManagerAvailable: true };
     } catch { errors.push('systemd_user_manager_missing'); }
     let status;
