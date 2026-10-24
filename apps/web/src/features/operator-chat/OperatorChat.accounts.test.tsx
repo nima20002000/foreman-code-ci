@@ -108,7 +108,7 @@ function setup(provider: AccountProvider, mode: 'explicit' | 'default' | 'defaul
         return HttpResponse.json({ error: { code: 'CONVERSATION_REVISION_CONFLICT',
           message: 'The conversation changed before the handoff.' } }, { status: 409 })
       }
-      if (mode !== 'explicit') {
+      if (input.settings?.accountId === sourceAccountId) {
         expect(input.settings).toMatchObject({ harness: provider, accountId: sourceAccountId })
         source.messages.push({ id: 'same-account-reply', conversationId: source.conversation.id,
           requestId: input.requestId, role: 'assistant', content: 'Continued using the original account' })
@@ -138,7 +138,7 @@ function setup(provider: AccountProvider, mode: 'explicit' | 'default' | 'defaul
   return { messages, edits, source, client, user: userEvent.setup() }
 }
 
-it.each(['codex', 'claude'] as const)('keeps the selected %s target and draft pinned after choosing another account', async provider => {
+it.each(['codex', 'claude'] as const)('continues the selected %s chat with its accepted account after choosing another default', async provider => {
   const { user, messages, edits, source } = setup(provider, 'explicit')
   expect(await screen.findByText('Earlier answer')).toBeVisible()
   await user.click(screen.getByRole('button', { name: /Agent settings:/ }))
@@ -149,11 +149,12 @@ it.each(['codex', 'claude'] as const)('keeps the selected %s target and draft pi
   expect(await screen.findByText('Your Operator settings changed. They apply to a new chat.')).toBeVisible()
   const composer = within(screen.getByRole('form', { name: 'Conversation composer' }))
   fireEvent.change(composer.getByRole('textbox', { name: 'Message' }), { target: { value: 'Continue here' } })
-  expect(composer.getByRole('button', { name: 'Send message' })).toBeDisabled()
+  await waitFor(() => expect(composer.getByRole('button', { name: 'Send message' })).toBeEnabled())
   fireEvent.keyDown(composer.getByRole('textbox', { name: 'Message' }), { key: 'Enter' })
-  expect(messages).toHaveLength(0)
+  expect(await screen.findByText('Continued using the original account')).toBeVisible()
+  expect(messages[0]).toMatchObject({ settings: { harness: provider, accountId: sourceAccountId } })
   expect(useOperatorChatStore.getState().selectedConversationId).toBe(source.conversation.id)
-  expect(composer.getByRole('textbox', { name: 'Message' })).toHaveValue('Continue here')
+  await waitFor(() => expect(composer.getByRole('textbox', { name: 'Message' })).toHaveValue(''))
   expect(screen.getByText('Earlier answer')).toBeVisible()
 })
 

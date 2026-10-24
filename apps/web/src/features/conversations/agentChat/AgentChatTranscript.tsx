@@ -2,7 +2,7 @@ import type { AgentChatState, AgentChatTurn, SendAgentChatMessageRequest } from 
 import type { MessageAttachmentRef } from '@foreman-code/contracts/files'
 import { parseSessionCommand, type ChatDeliveryReceipt, type InteractionResponseValue, type Message, type SessionMode } from '@foreman-code/contracts'
 import { X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Button, IconButton, Tooltip } from '../../../shared/ui/nocturne'
 import { ChatMessageFiles } from '../ChatMessageFiles'
 import { ChatDecisionReceipts } from '../ChatDecisionReceipts'
@@ -24,9 +24,10 @@ import { commandMayHaveBeenAccepted, type AgentChatCommandRecord, type useAgentC
 
 export function AgentChatTranscript({
   state, name, commands, history, readOnly = false, cancelReason, responseReason, resendReason, controlResendReason,
-  onRefresh, refreshing, onCancel, onRespond, onSendAgain, onDenied, onReceipt,
+  onRefresh, refreshing, onCancel, onRespond, onSendAgain, onDenied, onReceipt, children,
 }: {
   state: AgentChatState; name: string; commands: AgentChatCommandRecord[]; history: ReturnType<typeof useAgentChat>['history']
+  children?: ReactNode
   readOnly?: boolean; cancelReason?: string; responseReason?: string; resendReason?: string; controlResendReason?: string
   onRefresh?(): void; refreshing?: boolean
   onDenied?(error: Error): void
@@ -105,6 +106,7 @@ export function AgentChatTranscript({
     </>
   }
   return <ConversationViewport revision={revision} storageKey={`${agentChatContextKey(state.context)}:${id ?? 'native'}`}>{onBrowse => <>
+    {children}
     {history.hasGap ? <HistoryWindowNotice pending={history.isFetching && !history.isRefetching}
       onReload={() => { onBrowse(); void history.reloadNearer() }} /> : null}
     {id && (state.hasEarlierMessages && !history.data || history.hasNextPage) ? <Button size="sm" variant="ghost"

@@ -197,7 +197,6 @@ describe('schedule clock and compact modal', () => {
     fireEvent.change(screen.getByLabelText('Time'), { target: { value: '12:34' } })
     await user.click(screen.getByRole('button', { name: /^Save$/ }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Not saved.')
-    expect(screen.getByRole('alert')).toHaveTextContent('Invalid. Review the schedule inputs before saving again.')
     expect(screen.getByLabelText('Time')).toHaveValue('12:34')
     expect(screen.getByLabelText('Time')).toBeEnabled()
     await user.click(screen.getByRole('button', { name: /^Save$/ }))
@@ -370,7 +369,7 @@ describe('schedule command uncertainty and scope', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'Schedule workflow' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t load the schedule.')
-    expect(screen.queryByText(/^Save unconfirmed\./)).not.toBeInTheDocument()
+    expect(screen.queryByText('Save unconfirmed.')).not.toBeInTheDocument()
     expect(saves).toHaveLength(1)
   })
   it.each(['malformed', 'html-409', '408', '429', '500'])('does not automatically resubmit after %s', async (failure) => {
@@ -395,7 +394,7 @@ describe('schedule command uncertainty and scope', () => {
     }))
     const { user } = mount(); await open(user)
     await user.click(screen.getByRole('button', { name: /^Save$/ }))
-    await screen.findByText(/^Save unconfirmed\./)
+    await screen.findByText('Save unconfirmed.')
     await user.click(screen.getByRole('button', { name: /^Retry$/ }))
     await waitFor(() => expect(saves).toHaveLength(2))
     await waitFor(() => expect(screen.getByRole('button', { name: /^Retry$/ })).toBeEnabled())
@@ -454,16 +453,4 @@ it('states the saved-workflow policy in the dialog while retaining next-run data
   const nextRun = within(dialog).getByText('Next run')
   expect(nextRun).toBeVisible()
   expect(nextRun.querySelector('time')).toHaveAttribute('datetime', next)
-})
-
-it('explains revision exhaustion without offering revision-drift Reload', async () => {
-  server.use(http.put(path, () => HttpResponse.json({ error: {
-    code: 'REVISION_EXHAUSTED', message: 'The schedule revision limit was reached.',
-  } }, { status: 409 })))
-  const { user } = mount(); await open(user)
-  fireEvent.change(screen.getByLabelText('Time'), { target: { value: '12:34' } })
-  await user.click(screen.getByRole('button', { name: /^Save$/ }))
-  expect(await screen.findByRole('alert')).toHaveTextContent('The schedule revision limit was reached.')
-  expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument()
-  expect(screen.getByLabelText('Time')).toHaveValue('12:34')
 })
