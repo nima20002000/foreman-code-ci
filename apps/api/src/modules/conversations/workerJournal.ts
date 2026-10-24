@@ -1,4 +1,4 @@
-import { capabilityDescriptorsOf } from '../harnesses/index.js'
+import { capabilityDescriptorsOf } from '../../shared/harnessPolicy.js'
 import { isDeepStrictEqual } from 'node:util'
 import type { CompactionState, ExecutionResult, NativeSessionReference, SessionPreferences, SessionMode } from '@foreman-code/contracts'
 import type { NativeMessageSubmission } from '@foreman-code/contracts/claude'

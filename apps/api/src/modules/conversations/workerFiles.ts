@@ -1,4 +1,4 @@
-import { capabilityDescriptorsOf } from '../harnesses/index.js'
+import { capabilityDescriptorsOf } from '../../shared/harnessPolicy.js'
 import { Readable } from 'node:stream'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'

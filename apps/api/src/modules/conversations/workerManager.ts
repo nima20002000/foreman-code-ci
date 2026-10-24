@@ -1,4 +1,4 @@
-import { capabilityDescriptorsOf, harnessCapabilityDescriptors } from '../harnesses/index.js'
+import { capabilityDescriptorsOf, harnessCapabilityDescriptors } from '../../shared/harnessPolicy.js'
 import { nativeChatPrompt, prepareWorkerChatFrame, workerInputProof, type AcceptedChatInput, type PreparedChatInput } from './nativeChatInput.js'
 import { sessionStartConfiguration, sessionStartDirectory } from '../harnesses/sessionStart.js'
 import { definedProperties } from '../definedProperties.js'

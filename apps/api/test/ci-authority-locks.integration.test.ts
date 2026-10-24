@@ -14,43 +14,43 @@ import { postgresEnabled } from './helpers/database.js'
 async function authorityFixture() {
   const database = await migratedDatabase()
   const pool = createTestPool({ connectionString: database.databaseUrl,
-      options: '-c lock_timeout=500 -c statement_timeout=5000' })
+    options: '-c lock_timeout=500 -c statement_timeout=5000' })
   try {
-      const fixture = await seedWorkflowFixture(database.pool, database.directory)
-      await pool.query(`update runs set execution_state='running',
-        record=jsonb_set(record,'{executionState}','"running"'::jsonb) where id=$1`, [fixture.run.id])
-      const execution = { ...candidateFor(fixture), state: 'running', startedAt: fixture.createdAt,
-        nativeSessionId: 'credential-session' }
-      await pool.query(`insert into harness_executions(id,run_id,workflow_node_id,agent_id,attempt,record)
-        values($1,$2,$3,$4,1,$5::jsonb)`,
-      [execution.id, execution.runId, execution.workflowNodeId, execution.agentId, JSON.stringify(execution)])
-      const coordination = new PostgresInteractionCoordinationRepository(pool)
-      const session = { harness: fixture.configurations[0]!.harness.harness,
-        providerVersion: 'fixture-provider', nativeSessionId: execution.nativeSessionId }
-      await coordination.bindWorkflowSession(execution.id, session)
-      await coordination.ensureLane({ id: 'credential-lane', harness: session.harness,
-        nativeSessionId: session.nativeSessionId, ownerAgentId: execution.agentId,
-        observedStatus: 'busy', connectionGeneration: 1, revision: 0, observedAt: fixture.createdAt })
-      await new PostgresApprovalBudgetRepository(pool).ensure(execution.id, 'credential-thread', 60_000)
-      // Give the accepted Run owner the CI actions exercised below.
-      await pool.query('update management_principals set grants=$2::jsonb where id=$1',
-        [fixture.run.authorizationPrincipalId, JSON.stringify([{ actions: [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS],
-          scope: { workspaceIds: [fixture.scope.workspaceId] } }])])
-      const access = new PostgresAccessService(pool)
-      const caller = await access.currentOperator(fixture.run.authorizationPrincipalId!)
-      const accepted = await withTransaction(pool, async sql => {
-        const accepted = await acceptRunAuthority(sql, caller)
-        await bindRunAuthority(sql, fixture.run.id, accepted)
-        await sql.query(`update runs set record=jsonb_set(record,'{authorizationPrincipalId}',to_jsonb($2::text)) where id=$1`,
-          [fixture.run.id, accepted.principal.id])
-        return accepted
-      })
-      const credentials = new CurrentWorkerCredentialService(pool, access)
-      const issued = await credentials.issueForExecution(execution.id)
-      const worker = await access.authenticate(issued.environment.variables.GRAPHQL_MCP_TOKEN!, 'worker')
-      const authority = new RunCiAuthority(pool)
-      return { pool, fixture, execution, session, accepted, credentials, worker, authority,
-        async close() { await pool.end(); await database.close() } }
+    const fixture = await seedWorkflowFixture(database.pool, database.directory)
+    await pool.query(`update runs set execution_state='running',
+      record=jsonb_set(record,'{executionState}','"running"'::jsonb) where id=$1`, [fixture.run.id])
+    const execution = { ...candidateFor(fixture), state: 'running', startedAt: fixture.createdAt,
+      nativeSessionId: 'credential-session' }
+    await pool.query(`insert into harness_executions(id,run_id,workflow_node_id,agent_id,attempt,record)
+      values($1,$2,$3,$4,1,$5::jsonb)`,
+    [execution.id, execution.runId, execution.workflowNodeId, execution.agentId, JSON.stringify(execution)])
+    const coordination = new PostgresInteractionCoordinationRepository(pool)
+    const session = { harness: fixture.configurations[0]!.harness.harness,
+      providerVersion: 'fixture-provider', nativeSessionId: execution.nativeSessionId }
+    await coordination.bindWorkflowSession(execution.id, session)
+    await coordination.ensureLane({ id: 'credential-lane', harness: session.harness,
+      nativeSessionId: session.nativeSessionId, ownerAgentId: execution.agentId,
+      observedStatus: 'busy', connectionGeneration: 1, revision: 0, observedAt: fixture.createdAt })
+    await new PostgresApprovalBudgetRepository(pool).ensure(execution.id, 'credential-thread', 60_000)
+    // Give the accepted Run owner the CI actions exercised below.
+    await pool.query('update management_principals set grants=$2::jsonb where id=$1',
+      [fixture.run.authorizationPrincipalId, JSON.stringify([{ actions: [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS],
+        scope: { workspaceIds: [fixture.scope.workspaceId] } }])])
+    const access = new PostgresAccessService(pool)
+    const caller = await access.currentOperator(fixture.run.authorizationPrincipalId!)
+    const accepted = await withTransaction(pool, async sql => {
+      const accepted = await acceptRunAuthority(sql, caller)
+      await bindRunAuthority(sql, fixture.run.id, accepted)
+      await sql.query(`update runs set record=jsonb_set(record,'{authorizationPrincipalId}',to_jsonb($2::text)) where id=$1`,
+        [fixture.run.id, accepted.principal.id])
+      return accepted
+    })
+    const credentials = new CurrentWorkerCredentialService(pool, access)
+    const issued = await credentials.issueForExecution(execution.id)
+    const worker = await access.authenticate(issued.environment.variables.GRAPHQL_MCP_TOKEN!, 'worker')
+    const authority = new RunCiAuthority(pool)
+    return { pool, fixture, execution, session, accepted, credentials, worker, authority,
+      async close() { await pool.end(); await database.close() } }
   } catch (error) {
     await pool.end(); await database.close(); throw error
   }

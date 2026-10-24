@@ -44,7 +44,7 @@ it('preserves caller identity, inferred workspace and audit sources through the 
 })
 
 it('preserves read options, structured results and service errors', async () => {
-  const get = vi.fn<CiServiceClient['get']>().mockResolvedValue({ run, tests: null, queue: null, group: null, partitions: [] })
+  const get = vi.fn<CiServiceClient['get']>().mockResolvedValue({ run, tests: null, queue: null, group: { groupId: run.groupId, state: run.state }, partitions: [] })
   const tests = vi.fn<CiServiceClient['tests']>().mockResolvedValue({ ticketId: run.id, tests: null })
   const list = vi.fn<CiServiceClient['list']>().mockResolvedValue({ runId: 'run-1', jobs: [], truncated: false })
   const logs = vi.fn<CiServiceClient['logs']>().mockResolvedValue({ text: 'tail', nextOffset: 4, logBytes: 4, maxBytes: 20, source: 'saved-tail' })
@@ -52,7 +52,7 @@ it('preserves read options, structured results and service errors', async () => 
   const client = await connect({ get, tests, list, logs, computers })
   const read = { ticketId: run.id, waitUntil: 'group-terminal' as const, waitSeconds: 30,
     logTail: false, testStatus: ['failed' as const, 'skipped' as const] }
-  expect(await client.get(caller, read)).toEqual({ run, tests: null, queue: null, group: null, partitions: [] })
+  expect(await client.get(caller, read)).toEqual({ run, tests: null, queue: null, group: { groupId: run.groupId, state: run.state }, partitions: [] })
   expect(get).toHaveBeenCalledWith(caller, read, expect.any(AbortSignal))
   expect(await client.tests(caller, { ticketId: run.id, status: ['failed'] })).toEqual({ ticketId: run.id, tests: null })
   expect(tests).toHaveBeenCalledWith(caller, { ticketId: run.id, status: ['failed'] })
@@ -109,7 +109,7 @@ it('aborts the service wait when the HTTP client cancels its request', async () 
   const client = await connect({ get: async (_caller, _input, signal) => {
     entered.resolve()
     await new Promise<void>(resolve => signal!.addEventListener('abort', () => { aborted.resolve(); resolve() }, { once: true }))
-    return { run, queue: null, group: null, partitions: [] }
+    return { run, queue: null, group: { groupId: run.groupId, state: run.state }, partitions: [] }
   } })
   const controller = new AbortController()
   const result = client.get(caller, { ticketId: run.id, waitUntil: 'group-terminal', waitSeconds: 60 }, controller.signal)
