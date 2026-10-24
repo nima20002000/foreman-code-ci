@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from 'react'
-import { replaceEqualDeep, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AgentChatContext, AgentChatExecutionActivityPage, AgentChatExecutionItem, AgentChatExecutionSummary,
 } from '@foreman-code/contracts/agent-chat'
@@ -59,7 +59,7 @@ function upsertItems(previous: AgentChatExecutionItem[], incoming: AgentChatExec
       const revision = BigInt(item.revision) - BigInt(existing.revision)
       if (revision < 0 || revision === 0n && keepsExpandedDetails(existing, item)) continue
     }
-    items.set(itemKey(item), replaceEqualDeep(existing, item))
+    items.set(itemKey(item), item)
   }
   return [...items.values()]
 }
@@ -184,13 +184,9 @@ export function mergeExecutionActivity(previous: ExecutionActivityFeed | undefin
 /** Polls about once a second while an execution works; slower once every execution has finished. */
 export function useExecutionActivity(context: AgentChatContext) {
   const client = useQueryClient()
-  const contextKey = agentChatContextKey(context)
-  const generation = sessionGeneration()
-  const key = useMemo(() => ['agent-chat', generation, contextKey, 'execution-activity'] as const, [contextKey, generation])
+  const key = useMemo(() => ['agent-chat', sessionGeneration(), agentChatContextKey(context), 'execution-activity'] as const, [context])
   const query = useQuery({
     queryKey: key, enabled: !!context.runId, staleTime: 0,
-    // The merge shares rows by execution/item ID, including when the bounded window shifts.
-    structuralSharing: false,
     queryFn: async ({ signal }) => {
       const cursor = client.getQueryData<ExecutionActivityFeed>(key)?.cursor
       const page = await agentChatApi.executionActivity(context, cursor ? { cursor } : {}, { signal })
@@ -204,8 +200,6 @@ export function useExecutionActivity(context: AgentChatContext) {
     },
   })
   const reads = useExecutionActivityReads(context, key, mergeExecutionActivity)
-  const read = reads.read
-  const expand = useCallback((executionId: string, itemId: string) => read({ executionId, itemId }), [read])
   return {
     query,
     readState: reads.readState,
@@ -213,7 +207,7 @@ export function useExecutionActivity(context: AgentChatContext) {
       const before = historyBoundary(client.getQueryData<ExecutionActivityFeed>(key), executionId)
       return reads.read({ executionId, ...(before !== undefined ? { before } : {}) })
     },
-    expand,
+    expand: (executionId: string, itemId: string) => reads.read({ executionId, itemId }),
     backToLatest: () => {
       reads.abandonHistory()
       client.setQueryData<ExecutionActivityFeed>(key, previous => {

@@ -53,20 +53,13 @@ export class CircleCreditCache {
     if (!this.path) return work(this.state)
     const path = this.path
     await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-    const read = async (): Promise<CacheState> => {
-      try { return cacheSchema.parse(JSON.parse(await readFile(path, 'utf8'))) }
+    return (await withHostCiRunLock(this.context, dirname(path), async () => {
+      let state: CacheState
+      try { state = cacheSchema.parse(JSON.parse(await readFile(path, 'utf8'))) }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-        return {}
+        state = {}
       }
-    }
-    // Writes replace the file atomically, so a transaction that changes nothing needs no lock. The host lock
-    // costs a flock child process, which made frequent credit reads a large share of the API's CPU.
-    const unlocked = await read(), before = structuredClone(unlocked)
-    const quick = await work(unlocked)
-    if (isDeepStrictEqual(before, unlocked)) return quick
-    return (await withHostCiRunLock(this.context, dirname(path), async () => {
-      const state = await read()
       const previous = structuredClone(state)
       const result = await work(state)
       if (isDeepStrictEqual(previous, state)) return result

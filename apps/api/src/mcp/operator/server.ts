@@ -1,4 +1,3 @@
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { browserOperatorTools } from '../../modules/collaboration/browserTools.js'
 import { MCP_DISPLAY_NAME, PRODUCT_SLUG } from '@foreman-code/contracts/product'
 import { registerWorkspaceRootAdoptionTool } from '../../modules/workspace-roots/transports.js'
@@ -83,8 +82,7 @@ export function operatorToolCatalog(services: OperatorServices): readonly BoundT
   const dependencies = [...Object.values(services), ...Object.values(services.extensions ?? {}),
     ...Object.values(services.harnessSettings ?? {}), services.workflows?.current, services.workflows?.schedules,
     services.runs?.inspection, services.runs?.history, services.runs?.subagents,
-    services.harnessInstances?.qualificationSupported, services.extensions?.workspace?.provisioningEnabled,
-    services.browser?.handlers, services.browser?.codecs]
+    services.harnessInstances?.qualificationSupported]
   let cached = catalogs.get(services)
   if (!cached || !sameCatalogDependencies(cached.dependencies, dependencies)) {
     const tools = collectBoundTools<CatalogContext>({ services, principal: catalogPrincipal }, (collector, bound) =>
@@ -95,25 +93,9 @@ export function operatorToolCatalog(services: OperatorServices): readonly BoundT
   return cached.tools
 }
 
-const callerCatalogs = new WeakMap<readonly BoundTool<CatalogContext>[], Map<string, {
-  principal: string; tools: readonly BoundTool<CatalogContext>[]
-}>>()
-
 export function operatorRequestTools(context: OperatorRequestContext, catalog?: OperatorCatalog) {
   const request: CatalogContext = { ...context, principal: authorizationPrincipal(context.principal), catalog }
-  const definitions = operatorToolCatalog(context.services)
-  let callers = callerCatalogs.get(definitions)
-  if (!callers) { callers = new Map(); callerCatalogs.set(definitions, callers) }
-  // Authentication returns fresh snapshots. Compare their facts, including expiration, rather than object identity.
-  const principal = canonicalJson({ ...request.principal, expired: Date.parse(request.principal.expiresAt) <= Date.now() })
-  let cached = callers.get(request.principal.id)
-  if (!cached || cached.principal !== principal) {
-    cached = { principal, tools: definitions.filter(tool => catalogToolAvailable(request, tool.name, OPERATOR_TOOLS)) }
-    // Bound retained caller snapshots; evicted callers simply rebuild their discovery catalog.
-    if (callers.size >= 128) callers.delete(callers.keys().next().value!)
-    callers.set(request.principal.id, cached)
-  }
-  return cached.tools.map(tool => ({
+  return operatorToolCatalog(context.services).filter(tool => catalogToolAvailable(request, tool.name, OPERATOR_TOOLS)).map(tool => ({
     name: tool.name,
     description: tool.description,
     register: (server: McpServer) => tool.register(server, request),

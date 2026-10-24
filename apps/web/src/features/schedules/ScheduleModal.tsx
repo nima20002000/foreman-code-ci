@@ -164,7 +164,7 @@ export function ScheduleModal({ scope, store, returnFocusRef, onSelectRun, onRev
               })}</div>
               {state.errors.weekdays && <span id={`${id}-days-error`} className="n-field-error">{state.errors.weekdays}</span>}
             </fieldset>
-            <TextField label="Time on this device" hint={draft.timezone} type="time" value={draft.time} error={state.errors.time} onChange={(event) => state.edit({ time: event.currentTarget.value })} />
+            <TextField label="Time" type="time" value={draft.time} error={state.errors.time} onChange={(event) => state.edit({ time: event.currentTarget.value })} />
           </>}
           {draft.mode === 'interval' && <div className="schedule-pair">
             <TextField label="Every" type="number" inputMode="numeric" min={1} step={1} value={draft.every} error={state.errors.every}
@@ -178,7 +178,7 @@ export function ScheduleModal({ scope, store, returnFocusRef, onSelectRun, onRev
           {draft.mode === 'once' && <div className="schedule-pair schedule-once">
             <TextField label="Date" type="date" value={draft.localDate} error={state.errors.localDate}
               onChange={(event) => state.edit({ localDate: event.currentTarget.value })} />
-            <TextField label="Time on this device" hint={draft.timezone} type="time" value={draft.time} error={state.errors.time}
+            <TextField label="Time" type="time" value={draft.time} error={state.errors.time}
               onChange={(event) => state.edit({ time: event.currentTarget.value })} />
           </div>}
         </div>
@@ -186,10 +186,8 @@ export function ScheduleModal({ scope, store, returnFocusRef, onSelectRun, onRev
         <Switch label="Enabled" checked={draft.enabled} onChange={(event) => state.edit({ enabled: event.currentTarget.checked })} />
       </fieldset>}
       {draft ? <>
-        <p className="schedule-next" role="status">{!query.isError && !persisted
-          ? 'Not saved yet. Save to activate this schedule.'
-          : <>Next run {query.isError ? 'unavailable' : nextAt
-            ? <time dateTime={nextAt} title={nextLabel ?? undefined}>{nextLabel}</time> : 'not scheduled'}</>}</p>
+        <p className="schedule-next" role="status">Next run {query.isError ? 'unavailable' : nextAt
+          ? <time dateTime={nextAt} title={nextLabel ?? undefined}>{nextLabel}</time> : 'not scheduled'}</p>
         <ScheduleLastAttempt scope={scope} open={state.open} historyOpen={state.historyOpen} toggleHistory={state.toggleHistory}
           onSelectRun={onSelectRun ? runId => leaveFor(() => onSelectRun(runId)) : undefined}
           onReviewWorkflow={onReviewWorkflow ? () => leaveFor(onReviewWorkflow) : undefined} />

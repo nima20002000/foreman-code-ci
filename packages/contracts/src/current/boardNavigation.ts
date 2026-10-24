@@ -1,4 +1,3 @@
-import { RunDropdownStatusSchema } from '../runSnapshots.js'
 import { MemoryBoardSearchSchema } from '../memoryBoardViews.js'
 import { z } from 'zod'
 import { UrlSearchSelectionSchema } from '../index.js'
@@ -74,7 +73,6 @@ export const WorkspaceBoardSearchSchema = UrlSearchSelectionSchema.extend({
   ...BoardSurfaceSelectionFields,
   ...MemoryBoardSearchSchema.shape,
   ...WorkspaceBoardInspectionSchema.shape,
-  runStatus: RunDropdownStatusSchema.optional(),
   activityKind: RunActivityPublicKindSchema.optional(), activityAgentId: GraphIdSchema.optional(),
   runId: GraphIdSchema.optional(),
   workflowVersionId: GraphIdSchema.optional(),
@@ -178,7 +176,7 @@ export function staysOnWorkflowBoard(current: { pathname: string; search: unknow
 
 function authoringSelection(search: WorkspaceBoardSearch): WorkspaceBoardSearch {
   const value = { ...search }
-  for (const key of ['runStatus', 'activityKind', 'activityAgentId', 'boardView', 'boardPanel', 'boardAgentTab',
+  for (const key of ['activityKind', 'activityAgentId', 'boardView', 'boardPanel', 'boardAgentTab',
     'boardRunId', 'boardCiTicketId', 'browserSessionId', 'browserTabId', 'boardNodeId', 'boardExecutionId', 'boardWaitingActivationId', 'boardTeamId', 'boardMemory',
     'boardBrowsers', 'browserTab'] as const) delete value[key]
   return value

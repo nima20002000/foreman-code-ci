@@ -186,18 +186,6 @@ export class ProjectionDatabase {
       if (q.startsWith('with projection_nodes as materialized')) {
         return result([this.projectionRows(s, values)])
       }
-      if (q.startsWith('with attention as materialized')) {
-        const latest = this.initialized ? s.sources.filter((row) => row.source_kind === 'run' && row.source_id === values[0])
-          .sort((a, b) => Number(b.source_revision) - Number(a.source_revision))[0] : undefined
-        return result(values[0] === this.scope.runId ? [{ record: this.run(s),
-          workspace_id: this.scope.workspaceId, workflow_id: this.scope.workflowId,
-          workflow_version_id: this.scope.workflowVersionId, execution_state: s.executionState,
-          outcome: s.outcome, stopped: s.stopped, cleanup_pending: s.cleanupPending,
-          written_here: true, created_here: this.fresh, attention: [],
-          head_sequence: this.initialized ? String(s.head) : null, source_revision: latest?.source_revision ?? null,
-          source_digest: latest?.source_digest ?? null, semantic_digest: latest?.semantic_digest ?? null,
-          first_sequence: latest?.first_sequence ?? null }] : [])
-      }
       if (q === 'select projection_test_owner_fence') return result([{ owner_id: '42', fence: this.ownerFence }])
       if (q === 'update projection_test_domain set revision=revision+1') { s.domain++; return result() }
       if (q.startsWith('select effect_kind,entity_id,payload_digest from run_repeat_effects')) return result([])
