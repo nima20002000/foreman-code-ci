@@ -209,7 +209,7 @@ afterEach(() => {
 })
 
 describe('Selected Board history', { timeout: 30_000 }, () => {
-  it('keeps the 320px controls together and Files read only on the selected Run', async () => {
+  it('keeps the 320px controls together and current reference files editable on the selected Run', async () => {
     const user = userEvent.setup()
     vi.stubGlobal('innerWidth', 320)
     installBoardHistory()
@@ -232,8 +232,10 @@ describe('Selected Board history', { timeout: 30_000 }, () => {
     expect(controls.closest('header')).toHaveStyle({ minWidth: '0', boxSizing: 'border-box' })
     await user.click(files)
     const dialog = await screen.findByRole('dialog', { name: 'Files' })
-    expect(within(dialog).queryByRole('button', { name: 'Upload workflow file' })).not.toBeInTheDocument()
-    expect(within(dialog).queryByLabelText('Choose workflow file')).not.toBeInTheDocument()
+    expect(within(dialog).getByText('Current reference files')).toBeVisible()
+    expect(within(dialog).getByRole('button', { name: 'Add file' })).toBeEnabled()
+    expect(within(dialog).getByLabelText('Choose workflow file')).toBeEnabled()
+    expect(board).toHaveAttribute('data-run-id', 'run-a')
     await user.click(within(dialog).getByRole('button', { name: 'Close files' }))
     await waitFor(() => expect(dialog).not.toBeInTheDocument())
   })
