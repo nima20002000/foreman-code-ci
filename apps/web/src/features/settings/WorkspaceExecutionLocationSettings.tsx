@@ -26,14 +26,14 @@ import './computerSettings.css'
 
 type Props = { workspaceId: string; presentation?: 'field' | 'card' | 'tile' | 'compact' | 'dialog'; onSaved?: () => void; triggerRef?: RefObject<HTMLButtonElement | null>
   /** With presentation "dialog", only the folder picker dialog renders and its parent opens and closes it. */
-  open?: boolean; onOpenChange?(open: boolean): void }
+  open?: boolean; onOpenChange?(open: boolean): void; initialHostRef?: WorkspaceRootSelection['hostRef'] }
 function hostLabel(host: WorkspaceRootSelection['hostRef']) { return host.kind === 'main' ? 'Main computer' : `Worker computer ${host.deviceId.slice(0, 8)}` }
 function revision(value: string | undefined) {
   const result = Number(value ?? 0)
   if (!Number.isSafeInteger(result) || result < 0) throw new Error('This root policy revision cannot be represented by the location API.')
   return result
 }
-function useLocationSettings({ workspaceId, presentation = 'field', onSaved }: Props) {
+function useLocationSettings({ workspaceId, presentation = 'field', onSaved, initialHostRef }: Props) {
   const epoch = useHarnessSessionEpoch(), scope = `${epoch}:${workspaceId}`
   const toasts = useContext(ToastContext)
   const workspace = useManagedWorkspaceQuery(workspaceId)
@@ -49,6 +49,7 @@ function useLocationSettings({ workspaceId, presentation = 'field', onSaved }: P
   type SaveFacts = { selection: WorkspaceRootSelection; host: ApprovedRootAllowlist }
   const operation = useRef({ attempt: new CommandAttempt<SaveFacts>(), original: undefined as SaveFacts | undefined, uncertain: false, saving: false }).current
   const active = useRef(true)
+  const initialHostSelected = useRef(false)
   useEffect(() => {
     active.current = true
     const signal = sessionSignal(), reset = usePickers.getState().reset
@@ -85,7 +86,7 @@ function useLocationSettings({ workspaceId, presentation = 'field', onSaved }: P
     change(previous => ({ ...previous, selected: key, candidates: { ...previous.candidates, [key]: previous.candidates[key] ?? {
       relativePath: previousPolicy?.allowedBaseId === record.base.baseId ? previousPolicy.relativePath : '',
       accessMode: previousPolicy?.allowedBaseId === record.base.baseId && record.base.accessModes.includes(previousPolicy.accessMode) ? previousPolicy.accessMode
-        : presentation === 'compact' && record.base.accessModes.includes('read-write') ? 'read-write' : record.base.accessModes[0]!,
+        : (presentation === 'compact' || initialHostRef) && record.base.accessModes.includes('read-write') ? 'read-write' : record.base.accessModes[0]!,
       locationRevision: saved.data.locationRevision, rootPolicyRevision: revision(previousPolicy?.rootPolicyRevision),
     } } }))
     browse.reset(); validate.reset()
@@ -100,8 +101,12 @@ function useLocationSettings({ workspaceId, presentation = 'field', onSaved }: P
     ?? mainRecords.find(record => record.base.canonicalPath === defaults.data?.parentPath)
     ?? (mainRecords.length === 1 ? mainRecords[0] : undefined)
   useEffect(() => {
-    // Auto-select only the server's actual Main installation and an approved known base.
-    if (presentation === 'compact' && savedBinding?.hostRef.kind !== 'device' && !identity.isError && mainRecord && picker.selected !== mainRecord.key && !locked && saved.isSuccess) choose(mainRecord.key)
+    // Preselect a requested computer once; otherwise compact settings starts on the actual Main installation.
+    if (initialHostRef && !initialHostSelected.current && !locked && saved.isSuccess) {
+      const record = records.find(record => sameComputer(record.host.hostRef, initialHostRef))
+      if (record) { choose(record.key); initialHostSelected.current = true }
+    }
+    if (!initialHostRef && presentation === 'compact' && savedBinding?.hostRef.kind !== 'device' && !identity.isError && mainRecord && !picker.selected && !locked && saved.isSuccess) choose(mainRecord.key)
   })
   const changeCandidate = (fields: Partial<Candidate>) => {
     if (!chosen || !candidate) return
@@ -184,13 +189,13 @@ function useLocationSettings({ workspaceId, presentation = 'field', onSaved }: P
   }
 }
 
-function LocationSettings({ workspaceId, presentation = 'field', onSaved, triggerRef, open: dialogOpen, onOpenChange }: Props) {
+function LocationSettings({ workspaceId, presentation = 'field', onSaved, triggerRef, open: dialogOpen, onOpenChange, initialHostRef }: Props) {
   const {
     scope, toasts, workspace, identity, defaults, current, saved, choices, browse, validate, save, operation,
     busy, picker, update, records, chosen, candidate, selection, locked, setPickerOpen, archived, conflict,
     choose, savedBinding, mainRecord, changeCandidate, reload, submit, runBrowse, runValidate,
   } = useLocationSettings({
-    workspaceId, presentation, onSaved, triggerRef,
+    workspaceId, presentation, onSaved, triggerRef, initialHostRef,
   })
   const guard = <UnsavedEditorGuard editor={{ label: 'execution folder command', dirty: operation.attempt.unresolved, busy, uncertain: operation.attempt.unresolved,
     save: submit, discard: () => { if (!operation.attempt.unresolved) update(scope, () => empty()) }, error: save.error?.message }} />
@@ -211,12 +216,16 @@ function LocationSettings({ workspaceId, presentation = 'field', onSaved, trigge
   const savedPath = saved.data.executionLocation?.rootPath ?? ''
   const browsingCurrent = sameRootSelection(browse.data?.selection, selection)
   const validationCurrent = sameRootSelection(validate.data?.selection, selection)
-  if (presentation === 'compact' && savedBinding?.hostRef.kind !== 'device' && !identity.isError && !defaults.isError) {
-    if (identity.isPending || mainRecord && (chosen?.key !== mainRecord.key || !selection)) return <section className="workspace-location-form workspace-location-form--compact" aria-label="Project folder">
+  const computerSelect = <Select label="Computer and folder" value={picker.selected ?? ''} disabled={locked || archived}
+    options={[{ value: '', label: 'Choose a computer' }, ...records.map(record => ({ value: record.key, label: `${hostLabel(record.host.hostRef)} · ${record.base.canonicalPath}` }))]}
+    onChange={event => choose(event.target.value)} />
+  const compactComputerSelect = presentation === 'compact' && savedBinding?.hostRef.kind !== 'device' && records.length > 1 ? computerSelect : null
+  if (presentation === 'compact' && savedBinding?.hostRef.kind !== 'device' && chosen?.host.hostRef.kind !== 'device' && !identity.isError && !defaults.isError) {
+    if (identity.isPending || mainRecord && !chosen) return <section className="workspace-location-form workspace-location-form--compact" aria-label="Project folder">
       {guard}{recovery}<LoadingState label="Reading Main folder settings…" />
     </section>
-    if (identity.isSuccess && mainRecord && chosen?.key === mainRecord.key && selection) return <section className="workspace-location-form workspace-location-form--compact" aria-label="Project folder">
-      {guard}{recovery}
+    if (identity.isSuccess && chosen?.host.hostRef.kind === 'main' && selection) return <section className="workspace-location-form workspace-location-form--compact" aria-label="Project folder">
+      {guard}{recovery}{compactComputerSelect}
       <WorkspaceFolderPicker value={savedPath} label="Execution location" presentation="compact" triggerRef={triggerRef}
         directoryBinding={{ input: selection, expectedHost: chosen.host }} disabled={archived || busy}
         onReloadSavedLocation={reload}
@@ -245,9 +254,7 @@ function LocationSettings({ workspaceId, presentation = 'field', onSaved, trigge
           {busy ? 'Saving…' : operation.attempt.unresolved ? 'Retry save' : 'Use this folder'}
         </Button></>}>
       {recovery}
-      <Select label="Computer and folder" value={picker.selected ?? ''} disabled={locked || archived}
-        options={[{ value: '', label: 'Choose a computer' }, ...records.map(record => ({ value: record.key, label: `${hostLabel(record.host.hostRef)} · ${record.base.canonicalPath}` }))]}
-        onChange={event => choose(event.target.value)} />
+      {computerSelect}
       {!records.length ? <Alert tone="warning" title="No approved folders yet. Approve a folder on a computer first." /> : null}
       {chosen && candidate ? <>
         <ComputerPresenceReadback key={chosen.key} host={chosen.host.hostRef} applicationInstallationId={chosen.host.applicationInstallationId} />
@@ -272,7 +279,7 @@ function LocationSettings({ workspaceId, presentation = 'field', onSaved, trigge
     </Dialog>
   if (presentation === 'dialog') return <>{guard}{pickerDialog}</>
   return <section className="workspace-location-form" aria-label="Project folder">
-    {guard}
+    {guard}{compactComputerSelect}
     {archived ? <Alert tone="warning" title="This workspace is archived. Its execution location cannot be edited." /> : null}
     <WorkspaceLocationCard presentation={presentation === 'compact' ? 'compact' : 'card'} label={locationLabel} path={savedPath}
       triggerRef={triggerRef}
