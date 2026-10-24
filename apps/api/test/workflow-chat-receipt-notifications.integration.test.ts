@@ -23,7 +23,7 @@ it('retains later Run receipt changes in the shared direct delivery journal afte
   const unavailable = () => { throw new Error('No standalone native session is needed') }
   const agent = new AgentChatService(f.db.pool, agentRepository, messages, f.workflows, f.runs, unavailable, f.db.directory)
   const operator = new OperatorChatService(messages, new PostgresOperatorRepository(f.db.pool), unavailable, f.db.directory,
-    new PostgresOperatorChatAuthority(f.db.pool, f.access, new NativeRollout({ FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '1' }),
+    new PostgresOperatorChatAuthority(f.db.pool, f.access, new NativeRollout({ GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '1' }),
       f.db.directory, `${f.address}/mcp`))
   const execution = createWorkflowExecutionChatService(f.db.pool, f.native)
   const feature = createProductionChatDelivery({ pool: f.db.pool, agent, operator, execution,

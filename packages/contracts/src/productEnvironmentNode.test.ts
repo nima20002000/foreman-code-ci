@@ -9,18 +9,18 @@ describe('product env file selection', () => {
     const directory = mkdtempSync(join(tmpdir(), 'foreman-env-'))
     try {
       const custom = join(directory, 'custom.env')
-      writeFileSync(custom, 'FOREMAN_CODE_WEB_PORT=5199\nFOREMAN_CODE_LAPTOP_EXECUTION_ENABLED=0\nDATABASE_URL=file-db\n')
-      const environment: NodeJS.ProcessEnv = { FOREMAN_CODE_API_ENV_FILE: custom, FOREMAN_CODE_WEB_PORT: '5198', DATABASE_URL: 'process-db' }
+      writeFileSync(custom, 'GRAPHQL_WEB_PORT=5199\nGRAPHQL_LAPTOP_EXECUTION_ENABLED=0\nDATABASE_URL=file-db\n')
+      const environment: NodeJS.ProcessEnv = { GRAPHQL_API_ENV_FILE: custom, GRAPHQL_WEB_PORT: '5198', DATABASE_URL: 'process-db' }
       loadProductEnvFile(join(directory, 'missing-default.env'), environment)
-      expect(environment.FOREMAN_CODE_WEB_PORT).toBe('5198')
-      expect(environment.FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED).toBe('0')
+      expect(environment.GRAPHQL_WEB_PORT).toBe('5198')
+      expect(environment.GRAPHQL_LAPTOP_EXECUTION_ENABLED).toBe('0')
       expect(environment.DATABASE_URL).toBe('process-db')
-      expect(environment.GRAPHQL_WEB_PORT).toBeUndefined()
+      expect(environment.FOREMAN_CODE_WEB_PORT).toBeUndefined()
     } finally { rmSync(directory, { recursive: true, force: true }) }
   })
 
   it('does not use a product-name selector and leaves the environment unchanged on a missing file', () => {
-    const environment = { GRAPHQL_API_ENV_FILE: '/missing/alias.env' }
+    const environment = { FOREMAN_CODE_API_ENV_FILE: '/missing/alias.env' }
     const original = { ...environment }
     expect(() => loadProductEnvFile('/missing/selected.env', environment)).toThrow('selected.env')
     expect(environment).toEqual(original)

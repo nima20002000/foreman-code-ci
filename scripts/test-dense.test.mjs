@@ -101,7 +101,7 @@ test('dense queue validates worker and supervision bounds and refuses missing po
 })
 
 test('full dense gate refuses frozen integration subset selectors', async () => {
-  for (const name of ['FOREMAN_CODE_INTEGRATION_START_AT', 'FOREMAN_CODE_INTEGRATION_FAILED_LOG', 'FOREMAN_CODE_INTEGRATION_TEST_NAME_PATTERN']) {
+  for (const name of ['GRAPHQL_INTEGRATION_START_AT', 'GRAPHQL_INTEGRATION_FAILED_LOG', 'FOREMAN_CODE_INTEGRATION_TEST_NAME_PATTERN']) {
     await assert.rejects(runDense([], { env: { [name]: 'subset' }, inventory,
       integrationRunner: async () => { assert.fail('partial gate must not run') } }), /requires full integration coverage/)
   }

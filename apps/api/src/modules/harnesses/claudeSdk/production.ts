@@ -7,6 +7,7 @@ import { productionClaudeFileAdmission } from './fileProduction.js'
 import type pg from 'pg'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import type { NativeSessionReference, CoordinatorConsultationBinding } from '@foreman-code/contracts'
+import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { appMcpServerName, isSupportedAppMcpServerName } from '../appMcpLauncher.js'
 import { DomainError } from '../../errors.js'
@@ -163,7 +164,7 @@ function bindConsultationAccess(manager: ClaudeNativeSessionManager,
 }
 
 function assertNoInheritedAppMcpToken(input: ProductionClaudeInput, start: NativeSessionStart): void {
-  if (input.appMcpAccess === 'none' && start.environment?.variables[INSTALLATION_NAMES.environment.MCP_TOKEN]) throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID',
+  if (input.appMcpAccess === 'none' && APP_MCP_TOKEN_NAMES.some((name) => start.environment?.variables[name])) throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID',
     'This Claude owner cannot inherit an application MCP credential.', 403)
 }
 

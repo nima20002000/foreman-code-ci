@@ -58,7 +58,7 @@ export class DeterministicNativeSessionManager implements NativeHarnessSessionMa
 
   async inspectMcp(): Promise<McpDetection> {
     return { harness: this.harness, serverName: INSTALLATION_NAMES.mcp.server, state: 'connected', endpointMatches: true,
-      credentialEnvironmentVariable: INSTALLATION_NAMES.environment.PRODUCT_MCP_TOKEN, checkedAt: '2026-09-16T00:00:00.000Z' }
+      credentialEnvironmentVariable: INSTALLATION_NAMES.environment.MCP_TOKEN, checkedAt: '2026-09-16T00:00:00.000Z' }
   }
 
   private register(reference: NativeSessionReference): FixtureSession {

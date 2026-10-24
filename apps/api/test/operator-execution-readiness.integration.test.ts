@@ -28,7 +28,7 @@ it.skipIf(!postgresEnabled)('reads the exact persisted Operator readiness throug
     const { configuration } = await operators.ensure()
     const defaults = await settings.getAgentDefaults()
     const executionReadiness = new ExecutionReadinessService(new NativeRollout({ NODE_ENV: 'production',
-      FOREMAN_CODE_LOCAL_PRODUCTION: '1', HOST: '127.0.0.1', DATABASE_URL: process.env.TEST_DATABASE_URL }),
+      GRAPHQL_LOCAL_PRODUCTION: '1', HOST: '127.0.0.1', DATABASE_URL: process.env.TEST_DATABASE_URL }),
     f.services.harnesses, async (principal, id) => {
       principal = await f.access.currentHarnessInspectionPrincipal(principal.id)
       if (id) await authorizeOperatorConfigurationRead(f.db.pool, principal, id)

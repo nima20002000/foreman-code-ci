@@ -31,9 +31,9 @@ async function fixture() {
   await copyFile(process.execPath, previousNode)
   const service = `ExecStart=${previousNode} ${join(root, 'current/src/cli.mjs')} run --state ${stateDirectory}\n`
   await writeFile(join(root, 'graphql-worker.service.previous'), service, { mode: 0o600 })
-  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', undefined)
-  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', dirname(launcher))
-  const entry = { command: previousNode, args: [launcher], env_vars: ['FOREMAN_CODE_MCP_TOKEN'], enabled: false,
+  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
+  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', dirname(launcher))
+  const entry = { command: previousNode, args: [launcher], env_vars: ['GRAPHQL_MCP_TOKEN'], enabled: false,
     disabled_tools: ['interaction_respond'] }
   return { home, root, stateDirectory, releaseDirectory, launcher, previousNode, service, entry }
 }
@@ -77,7 +77,7 @@ it('unblocks paired-computer preflight after startup registers its previous inte
     ...input, providerVersion: 'fixture', inspectedAt: new Date().toISOString(),
     entry: { name: 'graphql', transport: 'stdio', enabled: true,
       automaticEndpoint: isAppLauncher({ ...f.entry, enabled: true }),
-      credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN' },
+      credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN' },
   }) }, 'https://app.invalid/mcp')
   const manager = { harness: 'codex', inspectMcp: async () => (await detection.inspect(input)).detection,
     capabilities: async () => ({ provider: 'codex', providerVersion: 'fixture' }) }

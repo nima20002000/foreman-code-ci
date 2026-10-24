@@ -182,7 +182,7 @@ export function testEnvironment(environment, resource) {
   }
   for (const key of Object.keys(clean)) {
     if (/^PG/.test(key) || (!key.startsWith('FOREMAN_CODE_TEST_') && /(?:_API_KEY|_AUTH_TOKEN|_ACCESS_TOKEN)$/.test(key))
-      || [...Object.values(INSTALLATION_NAMES.privateEnvironment), INSTALLATION_NAMES.environment.MCP_TOKEN, INSTALLATION_NAMES.environment.PRODUCT_MCP_TOKEN, 'LOG_FILE',
+      || [...Object.values(INSTALLATION_NAMES.privateEnvironment), INSTALLATION_NAMES.environment.MCP_TOKEN, 'LOG_FILE',
         INSTALLATION_NAMES.environment.PRODUCTION_DB_PASSWORD, INSTALLATION_NAMES.environment.WEB_DIST, 'NODE_OPTIONS'].includes(key)) delete clean[key]
   }
   for (const key of new Set([...databaseVariables, ...Object.keys(clean).filter(key => key.endsWith('DATABASE_URL'))])) {

@@ -194,14 +194,14 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('Operator mana
     runtimeHome = await privateFixtureDirectory('.af02-runtime-')
     await writeFile(join(f.directory, 'file-turn'), '')
     await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'graphql', enabled: true, required: true,
-      transport: { type: 'streamable_http', url: managementEndpoint, bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } }))
+      transport: { type: 'streamable_http', url: managementEndpoint, bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } }))
     // Audit key presence only, not credential values. The fixture's worker
     // default is absent because the actual Operator service supplies its input.
     const binary = await readFile(f.binary, 'utf8')
     const seam = "const agent = process.env.TEST_AGENT_ID || 'agent-a'"
     assert.equal(binary.split(seam).length, 2)
     await writeFile(f.binary, binary.replace(seam,
-      `log({ af02CredentialKeys: Object.keys(process.env).filter((key) => /^(?:GRAPHQL|FOREMAN_CODE).*(?:TOKEN|CREDENTIAL)/.test(key) && key !== 'FOREMAN_CODE_HEAVY_JOB_TOKEN') })\n${seam}`))
+      `log({ af02CredentialKeys: Object.keys(process.env).filter((key) => /GRAPHQL.*(?:TOKEN|CREDENTIAL)/.test(key) && key !== 'GRAPHQL_HEAVY_JOB_TOKEN') })\n${seam}`))
     config = { host: '127.0.0.1', port, readinessTimeoutMs: 2000,
       database: { connectionString: connectionString!, maxConnections: 4, connectionTimeoutMs: 2000, queryTimeoutMs: 5000 },
       checkpoints: { schema: 'langgraph' }, workspaceStorageRoot: join(f.directory, 'projects'), fileStorageRoot: join(vault, 'files'),
@@ -327,7 +327,7 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('Operator mana
       workspaceId: workspace.id, name: 'File token denied', commandId: randomUUID(),
     })).response.status).toBe(401)
     expect((await calls(f.directory)).some((entry) =>
-      (entry.af02CredentialKeys as string[] | undefined)?.includes('FOREMAN_CODE_MCP_TOKEN'))).toBe(true)
+      (entry.af02CredentialKeys as string[] | undefined)?.includes('GRAPHQL_MCP_TOKEN'))).toBe(true)
     const create = { workspaceId: workspace.id, commandId: randomUUID(), name: 'Spec workflow' }
     const created = SavedManagedWorkflowCommandResultSchema.parse(
       decodeMcpToolResult((await nativeMcp(file.context.nativeSessionId, 'workflow_create', create))))

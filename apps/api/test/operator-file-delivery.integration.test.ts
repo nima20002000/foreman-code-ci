@@ -28,7 +28,7 @@ import type { FileToolContext } from '../src/modules/files/tools/types.js'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import { calls, emit, finish, fixtureQualification, input, processesForRequests, state, until, type Fixture } from './fixtures/codex-test-helpers.js'
 import { fileRuntimeFixture } from './fixtures/codex-file-runtime-helpers.js'
-import { APP_MCP_TOKEN, appLauncherPath, installAppLauncher } from '../src/modules/harnesses/appMcpLauncher.js'
+import { appLauncherPath, installAppLauncher } from '../src/modules/harnesses/appMcpLauncher.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { reportIntegrationPhase } from './helpers/integrationPhase.js'
 import { postgresEnabled } from './helpers/database.js'
@@ -103,7 +103,7 @@ async function expectCodexCredentialIsolation(directory: string, auditOffset = 0
   expect(execution.length).toBeGreaterThan(0)
   expect(metadata.length).toBeGreaterThan(0)
   expect(execution.every(entry => (entry.af02CredentialKeys as string[])
-    .includes(APP_MCP_TOKEN))).toBe(true)
+    .includes(OPERATOR_MCP_ENVIRONMENT_VARIABLE))).toBe(true)
   expect(metadata.every(entry => (entry.af02CredentialKeys as string[]).length === 0)).toBe(true)
   const connections = audit.filter(entry => typeof entry.appMcpEnabled === 'boolean')
   const metadataConnections = connections.filter(entry => metadataPids.has(entry.processPid))
@@ -165,7 +165,7 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
     const seam = "const agent = process.env.TEST_AGENT_ID || 'agent-a'"
     assert.equal(binary.split(seam).length, 2)
     await writeFile(f.binary, binary.replace(seam,
-      `log({ af02CredentialKeys: Object.keys(process.env).filter((key) => /^(?:GRAPHQL|FOREMAN_CODE).*(?:TOKEN|CREDENTIAL)/.test(key) && key !== 'FOREMAN_CODE_HEAVY_JOB_TOKEN' && key !== 'FOREMAN_CODE_HEAVY_JOB_TOKEN') })\n${seam}`))
+      `log({ af02CredentialKeys: Object.keys(process.env).filter((key) => /^(?:GRAPHQL|FOREMAN_CODE).*(?:TOKEN|CREDENTIAL)/.test(key) && key !== 'GRAPHQL_HEAVY_JOB_TOKEN' && key !== 'GRAPHQL_HEAVY_JOB_TOKEN') })\n${seam}`))
     const reservation = createServer()
     await new Promise<void>((resolve, reject) => {
       reservation.once('error', reject)
@@ -178,7 +178,7 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
     managementEndpoint = `http://127.0.0.1:${port}/mcp`
     await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'graphql', enabled: true, required: true,
       transport: { type: 'streamable_http', url: managementEndpoint,
-        bearer_token_env_var: APP_MCP_TOKEN } }))
+        bearer_token_env_var: OPERATOR_MCP_ENVIRONMENT_VARIABLE } }))
     config = { host: '127.0.0.1', port, readinessTimeoutMs: 2000,
       database: { connectionString: connectionString!, maxConnections: 4, connectionTimeoutMs: 2000, queryTimeoutMs: 5000 },
       checkpoints: { schema: 'langgraph' }, workspaceStorageRoot: join(f.directory, 'projects'), fileStorageRoot: join(vault, 'files'),
@@ -262,12 +262,12 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
   }
 
   it('keeps the production managed launcher process warm while replacing and revoking each turn credential', async () => {
-    vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', join(runtimeHome, 'app-mcp'))
-    vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', undefined)
+    vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', join(runtimeHome, 'app-mcp'))
+    vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
     await installAppLauncher()
     await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'foreman-code', enabled: true, required: true,
       transport: { type: 'stdio', command: process.execPath, args: [appLauncherPath()],
-        env_vars: [APP_MCP_TOKEN] } }))
+        env_vars: [OPERATOR_MCP_ENVIRONMENT_VARIABLE] } }))
     const current = await operators.ensure()
     await operators.update(input(f.directory).request.configuration.harness, current.operator.currentConfigurationVersionId)
     const conversation = await chat.create(owner)
@@ -311,7 +311,7 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
           if (!client) {
             client = new Client({ name: 'warm-production-authority', version: '1' })
             await client.connect(new StdioClientTransport({ command: process.execPath, args: [appLauncherPath()],
-              env: { ...process.env, [APP_MCP_TOKEN]: processToken } }))
+              env: { ...process.env, [OPERATOR_MCP_ENVIRONMENT_VARIABLE]: processToken } }))
           }
           const tools = { tools: await operatorCatalog(client) }
           expect(tools.tools.some(tool => tool.name === 'operator_handoff_history_get')).toBe(true)
@@ -346,7 +346,7 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
 
   it('revokes each text turn credential before a following turn receives fresh management authority', async () => {
     await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'graphql', enabled: true, required: true,
-      transport: { type: 'streamable_http', url: managementEndpoint, bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } }))
+      transport: { type: 'streamable_http', url: managementEndpoint, bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } }))
     const current = await operators.ensure()
     await operators.update(input(f.directory).request.configuration.harness, current.operator.currentConfigurationVersionId)
     const conversation = await chat.create(owner)
@@ -385,7 +385,7 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
       await writeFile(join(f.directory, 'version.json'), JSON.stringify(version))
       // Exercise the real text-mode setup/credential path, not a mocked authority.
       await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'graphql', enabled: true, required: true,
-        transport: { type: 'streamable_http', url: managementEndpoint, bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } }))
+        transport: { type: 'streamable_http', url: managementEndpoint, bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } }))
       const current = await operators.ensure()
       const native = input(f.directory).request.configuration.harness
       assert(native.harness === 'codex')
@@ -441,7 +441,7 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
       const textDelegate = await access.authenticate(textToken)
       expect(textDelegate.id).not.toBe(owner.id)
       expect((await calls(f.directory)).some((entry) =>
-        (entry.af02CredentialKeys as string[] | undefined)?.includes('FOREMAN_CODE_MCP_TOKEN'))).toBe(true)
+        (entry.af02CredentialKeys as string[] | undefined)?.includes('GRAPHQL_MCP_TOKEN'))).toBe(true)
       await finish(f.directory, nativeSessionId, 'Text-only turn completed.')
       await until(async () => (await chat.get(conversation.id, owner)).turnState === 'idle', 10000)
       await until(async () => managers.size === 0, 10000)
@@ -577,7 +577,7 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
       expect(thread.params!.dynamicTools).toBeInstanceOf(Array)
       expect(prompt).toContain(item.filename)
       expect(prompt).not.toContain(config.fileStorageRoot!)
-      expect(prompt).not.toMatch(/(?:FOREMAN_CODE|GRAPHQL)_MCP_TOKEN/)
+      expect(prompt).not.toContain('GRAPHQL_MCP_TOKEN')
       expect(prompt).not.toContain(issued[0]!.token)
       // Find the immutable original, not a model-selected/API-storage path.
       const hostFiles = await paths(codexChatHostDirectory(config.fileStorageRoot!))
@@ -666,7 +666,7 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
     await operators.update(input(f.directory).request.configuration.harness, current.operator.currentConfigurationVersionId)
     await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'graphql', enabled: false, required: false,
       transport: { type: 'streamable_http', url: managementEndpoint,
-        bearer_token_env_var: APP_MCP_TOKEN } }))
+        bearer_token_env_var: OPERATOR_MCP_ENVIRONMENT_VARIABLE } }))
     const conversation = await chat.create(owner)
     const refs: MessageAttachmentRef[] = []
     if (attachments) {

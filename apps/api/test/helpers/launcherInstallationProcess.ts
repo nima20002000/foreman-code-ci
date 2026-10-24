@@ -58,8 +58,8 @@ const program = `
     const { upgradeProductionMcpLauncher } = await import(${JSON.stringify(upgradeModule)});
     await upgradeProductionMcpLauncher(operation.home);
   } else if (operation.kind === 'recognize') {
-    delete process.env.FOREMAN_CODE_APP_MCP_DIRECTORY;
-    process.env.FOREMAN_CODE_APP_MCP_DIRECTORY = dirname(operation.launcher);
+    delete process.env.GRAPHQL_APP_MCP_DIRECTORY;
+    process.env.GRAPHQL_APP_MCP_DIRECTORY = dirname(operation.launcher);
     const recognized = Array.isArray(operation.entry)
       ? operation.entry.map(entry => isAppLauncher(entry)) : isAppLauncher(operation.entry);
     console.log(JSON.stringify(recognized));

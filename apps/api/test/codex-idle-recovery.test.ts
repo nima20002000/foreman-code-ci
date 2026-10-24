@@ -16,10 +16,10 @@ import { calls, errorCode, fixture, fixtureProtocol, input, processesForRequests
 async function ownedFixture() {
   const f = await fixture()
   await writeFile(f.binary, (await readFile(f.binary, 'utf8')).replace('log({ cli: args })',
-    `log({cli:args,hasAppToken:Boolean(process.env.FOREMAN_CODE_MCP_TOKEN),
+    `log({cli:args,hasAppToken:Boolean(process.env.GRAPHQL_MCP_TOKEN || process.env.GRAPHQL_MCP_TOKEN),
       controllerVariables:Object.keys(process.env).filter(key => key.endsWith('DATABASE_URL')
         || key.startsWith('FOREMAN_CODE_TEST_') || key.startsWith('GRAPHQL_TEST_') || key === 'PGPASSWORD'),
-      refreshedToken:(process.env.FOREMAN_CODE_MCP_TOKEN) === 'replacement-fixture-token'})`))
+      refreshedToken:(process.env.GRAPHQL_MCP_TOKEN || process.env.GRAPHQL_MCP_TOKEN) === 'replacement-fixture-token'})`))
   const registry = new NativeProcessRegistry(join(f.directory, 'recovery'))
   const owner = 'idle-codex-owner'
   const recovery = registry.scope(owner)

@@ -80,7 +80,7 @@ export async function nativeHttpIsolation(launch: (input: NativeHttpIsolationInp
         }
         const client = new Client({name:'native-isolation-client',version:'1'});
         await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', ${JSON.stringify(origin)}),
-          {authProvider:{token:async()=>process.env.FOREMAN_CODE_MCP_TOKEN}}));
+          {authProvider:{token:async()=>process.env.GRAPHQL_MCP_TOKEN}}));
         const tools = await client.listTools();
         const read = await client.callTool({name:'workflow_defaults_get',arguments:{}});
         let denied;

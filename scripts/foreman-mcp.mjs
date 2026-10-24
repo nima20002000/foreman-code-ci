@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
 import { setTimeout as wait } from 'node:timers/promises'
 
-const token = process.env[INSTALLATION_NAMES.environment.PRODUCT_MCP_TOKEN]
+const token = process.env[INSTALLATION_NAMES.environment.MCP_TOKEN]
 const directory = join(dirname(fileURLToPath(import.meta.url)), 'routes')
 const output = (value) => process.stdout.write(`${JSON.stringify(value)}\n`)
 let protocolVersion = '2025-03-26'

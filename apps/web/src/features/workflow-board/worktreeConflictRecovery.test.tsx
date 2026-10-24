@@ -18,7 +18,7 @@ const correctedPrefix = 'foreman/site/coordinator'
 const conflictMessage = `Worktree prefix "${sharedPrefix}" is used by Agent One on Main and Agent Two on Worker laptop. `
   + 'Place Agents using this worktree setting on one computer, or choose different branch prefixes.'
 const draft = (f: Fixture) => useGraphDraftStore.getState().nextDrafts[f.key]!
-const authoring = () => within(screen.getByRole('region', { name: 'Workflow authoring' }))
+const authoring = () => within(screen.getByRole('banner', { name: 'Board toolbar' }))
 
 async function recoveryFixture() {
   const f = await meaningfulSaveFixture()

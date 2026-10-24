@@ -3,17 +3,17 @@ import { useMemo } from 'react'
 import { ExecutionBranch } from './ExecutionBranch'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  readRunInspectionKey, runInspectionKey, type RepeatGraphScopeCurrent, type RunExecutionDetail,
-  type RunExecutionSummary, type WorkflowVersionCurrent, type WorkspaceBoardExecutionSelection,
+  readRunInspectionKey, runInspectionKey, type RepeatGraphScopeCurrent, type RunExecutionSummary, type WorkflowVersionCurrent, type WorkspaceBoardExecutionSelection,
 } from '@foreman-code/contracts/current'
 import { Alert, Button, Select } from '../../../shared/ui/nocturne'
 import { useProtectedAccessError } from '../../../shared/api/useProtectedAccessError'
 import { JobRunResult } from '../../jobs'
 import { useBoardSelection } from '../../board-core'
 import { assertExecutionVersion } from '../runDetailsClient'
-import { useBindingPages, useExecutionPages, useExecutionQuery, executionPagesKey, bindingsPagesKey, refreshFirstInspectionPage } from './queries'
-import { useInspectionPresentation } from './presentation'
-import { JsonValue, JsonDisclosure } from './JsonValue'
+import { useExecutionPages, useExecutionQuery, executionPagesKey, refreshFirstInspectionPage } from './queries'
+import { JsonDisclosure } from './JsonValue'
+import { useRunHandoffsQuery } from '../runHandoffsQuery'
+import { ExecutionBindings, ExecutionEvidence, ExecutionRepetitionPicker } from './ExecutionEvidence'
 import './inspection.css'
 
 export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScopeCurrent; version: WorkflowVersionCurrent }) {
@@ -45,8 +45,6 @@ export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScope
     ...(inspection.runRelationshipId ? { runRelationshipId: inspection.runRelationshipId } : {}),
     ...(runInspectionKey(next) ? { runExchangeKey: runInspectionKey(next) } : {}),
   })
-  const occurrences = new Map(listed.flatMap((execution) => execution.occurrence
-    ? [[execution.occurrence.occurrenceId, execution.occurrence] as const] : []))
   return <section aria-label="Exact execution inputs and results" className="run-execution-inspector">
     <header><h3>Execution inputs and accepted results<InfoHint label="Execution history">History is a recorded read, not a live status feed. It changes only when you load or refresh it. Only the five most recently loaded pages are retained. Refresh returns to the first page.</InfoHint></h3>
       {(nodeId || inspection.runRelationshipId || inspection.runExchangeKey) ? <Button size="sm" onClick={() => board?.selectInspection({})}>Clear detail filter</Button> : null}
@@ -61,16 +59,13 @@ export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScope
       A node or repetition in the current draft is not historical evidence. Clear the filter to inspect this exact version.
     </Alert> : <>
       {relationship ? <p>Relationship <code>{relationship.id}</code>: inspecting recipient <code>{relationship.target}</code>.</p> : null}
+      {relationship ? <ConnectionEvidence scope={scope} relationshipId={relationship.id} /> : null}
       {node ? <JsonDisclosure disclosureKey={JSON.stringify([scope, node.id, 'saved-node'])}
         summary="Saved node configuration (this Run)" label={`Saved Run node ${node.id}`}
         value={node.kind==='job'?{node,jobDefinitionVersionId:node.jobDefinitionVersionId}:{node,agentConfigurationVersionId:version.agentConfigurationVersionIds[node.agentId]}} /> : null}
       {version.definition.repeat ? <div className="run-occurrence-picker">
-        <Select label="Business repetition" labelHint={<InfoHint label="Business repetition">Options come from loaded execution pages only. Load more executions to discover older or later repetitions. An attempt is not a repetition.</InfoHint>} value={selection.occurrenceId ?? ''} onChange={(event) => select(event.target.value ? { occurrenceId: event.target.value } : {})} options={[
-          { value: '', label: 'All recorded repetitions' },
-          ...(selection.occurrenceId && !occurrences.has(selection.occurrenceId) ? [{ value: selection.occurrenceId, label: `Requested occurrence ${selection.occurrenceId}` }] : []),
-          ...[...occurrences.values()].sort((x, y) => x.blockId.localeCompare(y.blockId) || x.occurrenceIndex - y.occurrenceIndex)
-            .map((item) => ({ value: item.occurrenceId, label: `${item.blockId} · repetition ${item.occurrenceIndex} · ${item.occurrenceId}` })),
-        ]} />
+        <ExecutionRepetitionPicker executions={listed} occurrenceId={selection.occurrenceId}
+          onSelect={occurrenceId => select(occurrenceId ? { occurrenceId } : {})} />
       </div> : <p>This saved version has no repeat blocks.</p>}
       {denied ? <Alert tone="warning" title="Execution history access is unavailable." /> : pages.isError ? <Alert tone="warning" title="Execution history could not be refreshed.">
         Previously loaded executions stay listed. <Button size="sm" onClick={() => void refreshFirstInspectionPage(cache, executionPagesKey(scope, filters))}>Retry executions</Button>
@@ -101,10 +96,23 @@ export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScope
   </section>
 }
 
+function ConnectionEvidence({ scope, relationshipId }: { scope: RepeatGraphScopeCurrent; relationshipId: string }) {
+  const query = useRunHandoffsQuery(scope, true)
+  const denied = useProtectedAccessError(query)
+  const connection = !denied && !query.isError ? query.data?.connections.find(item => item.relationshipId === relationshipId) : undefined
+  return <section aria-label="Saved connection handoffs">
+    {connection ? <p>Work handoffs: {connection.used} used · {connection.limit ?? 'unlimited'} maximum per Run · {connection.remaining ?? 'unlimited'} remaining.</p>
+      : <p>{query.isPending ? 'Loading handoff usage…' : query.isError || denied ? 'Handoff usage unavailable.'
+        : query.data?.policy === 'not_configured' ? 'This saved Run has no work handoff policy.' : 'No handoff usage recorded for this connection.'}</p>}
+    {query.isError && !denied ? <Button size="sm" onClick={() => void query.refetch()}>Retry handoff usage</Button> : null}
+  </section>
+}
+
 function ExactExecution({ scope, version, executionId, nodeId, occurrenceId, relationshipId }: {
   scope: RepeatGraphScopeCurrent; version: WorkflowVersionCurrent; executionId: string
   nodeId?: string; occurrenceId?: string; relationshipId?: string
 }) {
+  const board = useBoardSelection()
   const query = useExecutionQuery(scope, executionId)
   const denied = useProtectedAccessError(query)
   const checked = useMemo(() => {
@@ -126,54 +134,18 @@ function ExactExecution({ scope, version, executionId, nodeId, occurrenceId, rel
   return <article aria-label={`Execution ${executionId}`} className="run-exact-execution">
     <h4>{execution.workflowNodeId} · technical attempt {execution.attempt}</h4>
     {query.isPaused ? <p role="status">Refresh is paused. These are previously verified recorded execution facts.</p> : null}
-    <dl><dt>Execution identity</dt><dd><code>{execution.executionId}</code></dd>
-      <dt>Immutable configuration</dt><dd><code>{execution.kind==='job'?execution.jobDefinitionVersionId:execution.agentConfigurationVersionId}</code></dd>
-      <dt>Business occurrence</dt><dd>{occurrence
-        ? <>{occurrence.blockId} · {occurrence.occurrenceIndex} · <code>{occurrence.occurrenceId}</code></> : 'None — ordinary execution outside a configured repeat block'}</dd>
-      <dt>Recorded state</dt><dd>{execution.state}</dd></dl>
     {execution.kind === 'job' ? <section aria-label={`Job result for execution ${executionId}`}>
       <JobRunResult key={executionId} definitionVersionId={execution.jobDefinitionVersionId} reference={{ kind: 'job',
         workspaceId: scope.workspaceId, workflowId: scope.workflowId, runId: scope.runId, workflowVersionId: scope.workflowVersionId,
         nodeId: execution.workflowNodeId, nodeExecutionId: execution.executionId,
         occurrenceId: occurrence?.occurrenceId ?? null, occurrenceIndex: occurrence?.occurrenceIndex ?? 0 }} />
     </section> : null}
-    <p>Accepted input digest <code>{checked.acceptedInput.digest}</code></p>
-    <JsonValue label={`Input ${executionId}`} value={checked.acceptedInput.value} />
-    {checked.acceptedResult.status === 'accepted' ? <>
-      <p>Accepted result digest <code>{checked.acceptedResult.digest}</code></p>
-      <JsonValue label={`Accepted result ${executionId}`} value={checked.acceptedResult.value} />
-    </> : <p>No accepted result is recorded for this exact execution. <InfoHint label="Accepted result">A native terminal report is not an accepted predecessor result.</InfoHint></p>}
-    {checked.reportedResult ? <JsonDisclosure disclosureKey={JSON.stringify([scope, executionId, 'native-report'])}
-      summary="Recorded execution result (not proof of acceptance)" label={`Reported result ${executionId}`} value={checked.reportedResult} /> : null}
+    <ExecutionEvidence scope={scope} detail={checked} />
     <Button size="sm" variant="ghost" disabled={query.isFetching && !query.isRefetching} onClick={() => void query.refetch()}>Refresh exact execution</Button>
     <ExecutionBindings scope={scope} detail={checked} relationshipId={relationshipId} />
+    {board?.selectSidePanel ? <Button size="sm" variant="ghost" onClick={() => board.selectSidePanel?.({
+      kind: 'agent', nodeId: execution.workflowNodeId, executionId, tab: 'details',
+    })}>Open node Details</Button> : null}
   </article>
 }
 
-function ExecutionBindings({ scope, detail, relationshipId }: { scope: RepeatGraphScopeCurrent; detail: RunExecutionDetail; relationshipId?: string }) {
-  const cache = useQueryClient()
-  const disclosure = JSON.stringify([scope, detail.execution.executionId, 'bindings'])
-  const open = useInspectionPresentation((state) => !!state.open[disclosure])
-  const query = useBindingPages(scope, detail, open)
-  const denied = useProtectedAccessError(query)
-  const bindings = denied ? [] : [...new Map(
-    (query.data?.pages.flatMap((page) => page.items) ?? []).map((binding) => [binding.bindingId, binding]),
-  ).values()]
-  const visible = relationshipId ? bindings.filter((binding) => binding.kind !== 'carry' && binding.source.relationshipId === relationshipId) : bindings
-  return <details open={open} onToggle={(event) => useInspectionPresentation.getState().setOpen(disclosure, event.currentTarget.open)}>
-    <summary>Exact predecessor/result bindings</summary>
-    {open ? <>
-      {query.isPaused ? <p role="status">Input binding refresh is paused.</p> : query.isPending ? <p role="status">Loading input bindings…</p> : null}
-      {query.isError || denied ? <Alert tone="warning" title="Input bindings are unavailable.">
-        {bindings.length ? 'Previously loaded bindings stay listed. ' : 'No stale bindings are substituted. '}{!denied ? <Button size="sm" onClick={() => void refreshFirstInspectionPage(cache, bindingsPagesKey(scope, detail))}>Retry bindings</Button> : null}
-      </Alert> : null}
-      <ol>{visible.map((binding) => <li key={binding.bindingId}><p>{binding.kind} · ordinal {binding.ordinal} · <code>{binding.bindingId}</code></p>
-        <JsonValue label={`Binding ${binding.bindingId}`} value={binding} /></li>)}</ol>
-      {query.data && !query.isError && !denied && !visible.length ? <p>No matching bindings in the loaded pages.</p> : null}
-      {query.hasNextPage && !query.isError && !denied ? <Button size="sm" disabled={query.isFetching && !query.isRefetching}
-        onClick={() => void query.fetchNextPage()}>Load more bindings</Button> : null}
-      <Button size="sm" variant="ghost" disabled={query.isFetching || !!denied}
-        onClick={() => void refreshFirstInspectionPage(cache, bindingsPagesKey(scope, detail))}>Refresh bindings</Button>
-    </> : null}
-  </details>
-}

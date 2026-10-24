@@ -87,9 +87,9 @@ async function startBridge(endpoint: string, options: { clockScale?: number; cla
     args.push('--import', clock)
   }
   const environment = Object.fromEntries(Object.entries(process.env)
-    .filter(([name]) => name !== 'FOREMAN_CODE_MCP_TOKEN'))
+    .filter(([name]) => name !== 'GRAPHQL_MCP_TOKEN'))
   const child: ChildProcessWithoutNullStreams = spawn(process.execPath, [...args, launcher],
-    { env: { ...environment, FOREMAN_CODE_MCP_TOKEN: token,
+    { env: { ...environment, GRAPHQL_MCP_TOKEN: token,
       ...(options.claudeTimeoutMs ? { MCP_TOOL_TIMEOUT: String(options.claudeTimeoutMs) } : {}) }, stdio: 'pipe' })
   cleanup.push(() => { child.kill() })
   const replies = new Map<number, (message: BridgeReply) => void>()

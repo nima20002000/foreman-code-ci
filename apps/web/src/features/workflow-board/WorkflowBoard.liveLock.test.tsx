@@ -13,7 +13,6 @@ import { installBoardTestLifecycle, mountMeasuredBoard } from './eng05D.testSupp
 
 installBoardTestLifecycle()
 let serial = 0
-const authoring = () => screen.getByLabelText('Workflow authoring')
 const canvas = () => within(screen.getByLabelText('Editable workflow graph'))
 const controls = () => within(screen.getByLabelText('Workflow controls'))
 
@@ -47,13 +46,13 @@ async function fixture(asking = false) {
       expectedWorkflowRevision: managed.revision, expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
       expectedLocationRevision: 1, input: {} })
     await mounted.cache.invalidateQueries()
-    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeDisabled())
+    await waitFor(() => expect(within(screen.getByLabelText('Board toolbar')).getByTitle('Rename workflow')).toBeDisabled())
     return result.run
   }
   const finish = async (runId: string) => {
     mock.settle(runId)
     await mounted.cache.invalidateQueries()
-    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeEnabled())
+    await waitFor(() => expect(within(screen.getByLabelText('Board toolbar')).getByTitle('Rename workflow')).toBeEnabled())
   }
   return { ...mounted, mock, key, draft, externalRun, finish }
 }
@@ -110,7 +109,7 @@ describe('live Board edit lock', () => {
     // The saved version uses user approvals. An unsaved draft selects native handling;
     // an external Run still starts the exact saved version while that draft stays open.
     act(() => useGraphDraftStore.getState().changeNextDraft(f.key, graph => ({ ...graph, approval: { handler: 'native' } })))
-    await user.click(within(authoring()).getByRole('button', { name: /^Workflow alerts,/ }))
+    await user.click(screen.getByRole('button', { name: /^Workflow alerts,/ }))
     const alerts = await screen.findByRole('dialog', { name: 'Workflow alerts' })
     const repair = within(alerts).getByRole('button', { name: 'Set these agents to never ask' })
     expect(repair).toBeEnabled()

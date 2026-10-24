@@ -19,8 +19,8 @@ async function callThroughLauncher(renewalFailure?: string) {
   const token = `expired-route-${Math.random().toString(36).slice(2)}`
   await registerAppRoute(token, 'http://127.0.0.1:9/mcp', new Date(Date.now() - 1_000).toISOString(), launcher,
     renewalFailure ? { renewalFailure } : {})
-  const environment = Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== 'FOREMAN_CODE_MCP_TOKEN'))
-  const child = spawn(process.execPath, [launcher], { env: { ...environment, FOREMAN_CODE_MCP_TOKEN: token }, stdio: 'pipe' })
+  const environment = Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== 'GRAPHQL_MCP_TOKEN'))
+  const child = spawn(process.execPath, [launcher], { env: { ...environment, GRAPHQL_MCP_TOKEN: token }, stdio: 'pipe' })
   cleanup.push(() => { child.kill() })
   const reply = new Promise<{ error: { message: string; data: { kind: string } } }>(resolve => {
     createInterface({ input: child.stdout }).on('line', line => resolve(JSON.parse(line)))

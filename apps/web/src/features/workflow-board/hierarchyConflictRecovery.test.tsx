@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vitest'
 import { useGraphDraftStore, readConflictRecoveries, readEditOutbox } from '../graph'
 import { nextDraftDirty } from '../board-core'
 import { installBoardTestLifecycle } from './eng05D.testSupport'
-import { authoring, draft, findDialog, inspectLatest, labelled, mount, queryDialog, recovery, recoveryFixture, rename, settings,
+import { boardToolbar, draft, findDialog, inspectLatest, labelled, mount, queryDialog, recovery, recoveryFixture, rename, settings,
   storedRecoveries, toolbar } from './hierarchyRecovery.testSupport'
 
 installBoardTestLifecycle()
@@ -20,7 +20,7 @@ it('opens latest into a fresh durable base after a rejected save and saves only 
   const rejected = f.requests[0]!
   expect(readEditOutbox(f.key)).toBeUndefined()
   await inspectLatest()
-  await waitFor(() => expect(authoring().getByTitle('Rename workflow')).toHaveTextContent('Other saved name'))
+  await waitFor(() => expect(boardToolbar().getByTitle('Rename workflow')).toHaveTextContent('Other saved name'))
   const freshId = draft(f).context.draft.id
   expect(freshId).not.toBe(originalId)
   expect(draft(f).context.draft.baseWorkflowVersionId).toBe(f.saved().currentVersionId)
@@ -45,12 +45,12 @@ it('retains repeated recoveries through refresh, saves into the newest base and 
   await rename('My first unsaved name')
   f.externalEdit('Other saved name')
   await inspectLatest()
-  await waitFor(() => expect(authoring().getByTitle('Rename workflow')).toHaveTextContent('Other saved name'))
+  await waitFor(() => expect(boardToolbar().getByTitle('Rename workflow')).toHaveTextContent('Other saved name'))
   expect(readConflictRecoveries(f.key)).toHaveLength(1)
   await rename('My second unsaved name')
   f.externalEdit('Newer saved name')
   await inspectLatest()
-  await waitFor(() => expect(authoring().getByTitle('Rename workflow')).toHaveTextContent('Newer saved name'))
+  await waitFor(() => expect(boardToolbar().getByTitle('Rename workflow')).toHaveTextContent('Newer saved name'))
   expect(readConflictRecoveries(f.key)).toHaveLength(2)
   const finalBase = { id: draft(f).context.draft.id, revision: draft(f).context.draft.publishedRevision,
     version: draft(f).context.draft.baseWorkflowVersionId }

@@ -916,10 +916,10 @@ export async function detachedStdioEnvironment(scope: NativeProcessRecovery, sig
   socket.destroy()
   const variables = recordObject(reply.variables)
   if (Object.entries(variables).some(([name, value]) =>
-    name !== INSTALLATION_NAMES.environment.PRODUCT_MCP_TOKEN || typeof value !== 'string' || !value)) {
+    name !== INSTALLATION_NAMES.environment.MCP_TOKEN || typeof value !== 'string' || !value)) {
     throw new Error('Invalid retained native credential environment.')
   }
-  const token = variables[INSTALLATION_NAMES.environment.PRODUCT_MCP_TOKEN]
+  const token = variables[INSTALLATION_NAMES.environment.MCP_TOKEN]
   if (typeof token !== 'string' || !token) {
     throw new Error('Retained native credential is missing.')
   }

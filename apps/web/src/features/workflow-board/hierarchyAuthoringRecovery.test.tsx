@@ -10,7 +10,7 @@ import { useGraphDraftStore } from '../graph'
 import { fixture } from '../graph/nextDraft/core.cases'
 import { MasterOverview } from '../workflow-hierarchy'
 import { installBoardTestLifecycle } from './eng05D.testSupport'
-import { agentList, authoring, draft, findDialog, hierarchyForm, inspectLatest, labelled, mount, queryDialog, rail, recovery,
+import { agentList, boardToolbar, draft, findDialog, hierarchyForm, inspectLatest, labelled, mount, queryDialog, rail, recovery,
   recoveryFixture, settings, storedRecoveryText, toolbar, type Fixture } from './hierarchyRecovery.testSupport'
 
 installBoardTestLifecycle()
@@ -27,7 +27,7 @@ async function openAgent(name: string) {
 }
 /** The plus adds a Worker from its Settings profile; its team, name and task are then edited in its settings. */
 async function createWorker(parent: string, name: string, prompt: string, { apply = true } = {}) {
-  await userEvent.click(authoring().getByRole('button', { name: 'Add agent' }))
+  await userEvent.click(toolbar('Workflow controls').getByRole('button', { name: 'Add agent' }))
   const worker = within(screen.getByRole('menu', { name: 'Add agent' })).getByRole('menuitem', { name: 'Worker' })
   await waitFor(() => expect(worker).not.toHaveAttribute('aria-disabled'))
   await userEvent.click(worker)
@@ -81,7 +81,7 @@ it('recovers an applied creation after the saved workflow changed', async () => 
   await inspectLatestFromSettings(1)
   expect(await compare()).toHaveTextContent('Created Worker')
   expect(storedRecoveryText(f)).toContain('Applied creation task')
-  expect(authoring().getByTitle('Rename workflow')).toHaveTextContent('Saved on another computer')
+  expect(boardToolbar().getByTitle('Rename workflow')).toHaveTextContent('Saved on another computer')
   expect(agentList().queryByRole('button', { name: 'Created Worker' })).not.toBeInTheDocument()
 }, 30000)
 

@@ -41,7 +41,7 @@ test('runs the local command on a CI machine and keeps its exit code', () => {
 test('refuses to run tests on a developer machine when Main is unreachable, and says how to proceed', () => {
   const run = spawnSync(process.execPath, [script, 'unit', '--', process.execPath, '-e', 'process.exit(0)'],
     { env: { ...process.env, CI: '', FOREMAN_CODE_CI_LOCAL: '', FOREMAN_CODE_MAIN_URL: 'http://127.0.0.1:9',
-      FOREMAN_CODE_OPERATOR_TOKEN: 'test-token' }, encoding: 'utf8' })
+      GRAPHQL_OPERATOR_TOKEN: 'test-token' }, encoding: 'utf8' })
   assert.equal(run.status, 1)
   assert.match(run.stderr, /FOREMAN_CODE_CI_LOCAL=1/)
 })

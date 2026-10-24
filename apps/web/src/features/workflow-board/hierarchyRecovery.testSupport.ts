@@ -22,8 +22,8 @@ export function labelled(name: string, root: HTMLElement = document.body) {
   return found[0]!
 }
 export const authoringRegion = () => labelled('Workflow authoring')
-export const authoring = () => within(authoringRegion())
-export const toolbar = (name: 'Draft actions' | 'Workflow controls') => within(labelled(name, authoringRegion()))
+export const boardToolbar = () => within(labelled('Board toolbar'))
+export const toolbar = (name: 'Draft actions' | 'Workflow controls') => within(labelled(name, labelled('Board toolbar')))
 export const recovery = () => within(labelled('Draft conflict recovery'))
 export const hierarchyForm = () => within(labelled('Master hierarchy'))
 export const agentList = () => within(labelled('Agents and connections', authoringRegion()))
@@ -103,8 +103,8 @@ export async function mount(f: Fixture) {
 }
 /** Enter applies the rename to the draft straight away. */
 export async function rename(name: string) {
-  await userEvent.click(authoring().getByTitle('Rename workflow'))
-  const field = labelled('Workflow name', authoringRegion())
+  await userEvent.click(boardToolbar().getByTitle('Rename workflow'))
+  const field = labelled('Workflow name', labelled('Board toolbar'))
   await userEvent.clear(field); await userEvent.type(field, `${name}{Enter}`)
 }
 export async function settings() {

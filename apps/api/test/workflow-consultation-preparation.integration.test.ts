@@ -57,7 +57,7 @@ describe.skipIf(!postgresEnabled)('coordinator consultation preparation', () => 
         return { harness: input.harness, providerVersion: '0.154.0', runnerId: input.runnerId,
           workingDirectory: input.workingDirectory, inspectedAt: new Date().toISOString(),
           entry: { name: input.serverName, transport: 'streamable-http', endpoint: 'http://127.0.0.1:4100/mcp/app',
-            enabled: true, credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN', status: 'connected' } }
+            enabled: true, credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN', status: 'connected' } }
       } }),
     })
     let first: Promise<unknown> | undefined

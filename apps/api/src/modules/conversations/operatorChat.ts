@@ -21,7 +21,7 @@ import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import type { ChatResponseAcknowledgment } from '@foreman-code/contracts/interaction-activity'
 import { withInteractionResponse, isSessionNativeInteraction } from '@foreman-code/contracts'
 import { publicOperatorConversation } from './operatorConversationRecord.js'
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
+import { APP_MCP_TOKEN } from '../harnesses/appMcpLauncher.js'
 import type { SessionControlRequest } from '@foreman-code/contracts'
 import { pendingSessionControls, type ChatModelCatalog } from '../harnesses/sessionControlDefaults.js'
 import { supportsExpectedTurnSteer } from '../harnesses/index.js'
@@ -866,7 +866,7 @@ export class OperatorChatService {
         // Do not mint fresh owner authority merely to inspect/stop old work.
         environment: { agentId: configuration.operatorId,
           variables: fileInputs && capabilityDescriptorsOf(configuration.harness).files === 'session_bridge'
-            ? {} : { [INSTALLATION_NAMES.environment.MCP_TOKEN]: 'operator-cleanup-disabled' } },
+            ? {} : { [APP_MCP_TOKEN]: 'operator-cleanup-disabled' } },
         ...(row.active_native_turn_id ? { nativeTurnId: row.active_native_turn_id } : {}),
       }, signal)
     }
