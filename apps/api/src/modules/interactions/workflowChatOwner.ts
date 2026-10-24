@@ -2,8 +2,8 @@ import { canonicalJson, type EngineChatReadback, type HarnessExecution,
   type NativeSessionReference } from '@foreman-code/contracts'
 import type { SqlQuery, SqlTransaction } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
-import type { PostgresRunRepository } from '../runs/postgres.js'
-import type { RunOwnership } from '../runs/ownership.js'
+import type { PostgresRunRepository } from '../runs/index.js'
+import type { RunOwnership } from '../runs/index.js'
 import { markWorkflowControlCommandLocked, readWorkflowControlCommandLocked } from '../collaboration/index.js'
 import type { WorkflowChatNativeTarget, WorkflowChatOwnerPort,
   WorkflowChatTarget, WorkflowControlCommand } from '../collaboration/index.js'

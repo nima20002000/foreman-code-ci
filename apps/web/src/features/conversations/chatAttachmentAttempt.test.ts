@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Message } from '@foreman-code/contracts'
 import type { ConversationAttachments, AttachmentSendSnapshot } from '../attachments'
-import { messageAttachmentRefs, prepareChatAttachments, sameAttachmentRefs } from './chatAttachmentAttempt'
+import { messageAttachmentRefs, prepareChatAttachments, sameAttachmentRefs } from '../chat-core'
 
 function draft(snapshot: AttachmentSendSnapshot | null, acknowledgeSent = vi.fn()): ConversationAttachments {
   return { items: [], readyRefs: [], hasAttachments: true, hasBlockingAttachments: snapshot === null,

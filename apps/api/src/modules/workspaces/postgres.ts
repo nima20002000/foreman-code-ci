@@ -12,7 +12,7 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import { SavedWorkspaceDetailsSchema, type SavedWorkspaceDetails } from '@foreman-code/contracts/current'
 
 import { DomainError } from '../errors.js'
-import type { PostgresRunRepository } from '../runs/postgres.js'
+import type { PostgresRunRepository } from '../runs/index.js'
 import type { PostgresWorkflowRepository } from '../workflows/index.js'
 
 function requireWorkspaceRead(principal: ManagementPrincipal, workspaceId: string): void {

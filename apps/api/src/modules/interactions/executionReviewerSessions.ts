@@ -1,7 +1,7 @@
 import type { ReviewNativeCapture, ReviewOriginalNativeSource } from './reviewNativeCapture.js'
 import { setTimeout as delay } from 'node:timers/promises'
 import { isDeepStrictEqual } from 'node:util'
-import type { HarnessExecution, NativeSessionReference, PendingNativeInteraction, ReviewJob } from '@foreman-code/contracts'
+import type { DurableInteraction, HarnessExecution, NativeSessionReference, PendingNativeInteraction, ReviewJob } from '@foreman-code/contracts'
 import { remainingCredentialLifetime } from '../access/credentialLifetime.js'
 import { WORKER_CREDENTIAL_RENEWAL_WINDOW_MS } from '../access/workerCredentials.js'
 import { DomainError } from '../errors.js'
@@ -9,7 +9,7 @@ import { nativePersistenceRedactor } from './nativePersistence.js'
 import type { ReviewCleanupSession, ReviewCredentialMaintenance } from './reviewerRuntime.js'
 import { isLeaseLost } from './sessionWriter.js'
 import { isTransientRefreshFailure, renewOwnedLeases } from '../leases/ownerLeases.js'
-import type { RunOwnership } from '../runs/ownership.js'
+import type { RunOwnership } from '../runs/index.js'
 import type { SessionWriteLease } from './sessionWriter.js'
 import { readRecoverableRemoteReviewer, readRetainedRemoteReviewer, retainRemoteReviewerCredential } from './retainedRemoteReviewer.js'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
@@ -17,7 +17,7 @@ import { reviewPreflightIdentity } from './reviewPolicy.js'
 import { assertSameReviewJob, reviewPhysicallySettled } from './repeatObservation.js'
 import { isRunInProgress } from '../runs/runState.js'
 import { isRestartCancellation } from './executionPredicates.js'
-import type { ExecutionSessionHost, OwnedNativeSession } from './execution.js'
+import type { ExecutionSessionHost, OwnedNativeSession } from './executionSessionHost.js'
 
 /** Reviewer native sessions: credential upkeep, capture, retained-reviewer recovery and idle finish. */
 export class ExecutionReviewerSessions {
@@ -539,5 +539,46 @@ export class ExecutionReviewerSessions {
         throw error
       }
     }
+  }
+
+  /** Bind only an existing execution of the designated reviewer in this Run. Never spawn a substitute. */
+  async enqueueReview(interaction: DurableInteraction): Promise<void> {
+    if (interaction.status !== 'pending' || interaction.approval.handler !== 'orchestrator') return
+    const agentId = interaction.approval.designatedOrchestratorAgentId
+    if (!agentId || agentId === interaction.requestingAgentId) return
+    const connection = await this.host.interactions.assertOrchestratorConnection(interaction)
+    const existingJob = await this.host.interactions.coordination.findReviewJob(interaction.id, agentId)
+    if (existingJob) {
+      await this.host.interactions.coordination.assertReviewConnection(existingJob)
+      return
+    }
+    if (!this.host.repeatReviewerBindings || !connection) throw new DomainError('REPEAT_REVIEW_IDENTITY_CONFLICT',
+      'The occurrence-qualified reviewer binding is unavailable.', 409)
+    const executions = [(await this.host.repeatReviewerBindings.select(interaction, connection.orchestratorNodeId)).execution]
+    const candidates = executions
+      .filter((execution) => execution.agentId === agentId && execution.workflowNodeId === connection?.orchestratorNodeId
+        && execution.nativeSessionId && execution.workingDirectory && execution.runtimeDirectory)
+    // No guessing between attempts/sessions. The pending interaction remains the recovery source.
+    if (candidates.length !== 1) return
+    const execution = candidates[0]!
+    const configuration = await this.host.runs.getExecutionConfiguration(execution.agentConfigurationVersionId, execution)
+    if (!configuration || (configuration.productRole !== 'master' && configuration.productRole !== 'orchestrator')) return
+    const native = await this.host.interactions.coordination.workflowSession(execution.id)
+    if (!native?.finalized || execution.state !== 'completed') return
+    await this.host.reviewers.enqueue(interaction, agentId, {
+      ...native.session,
+    }, { executionId: execution.id, workingDirectory: execution.workingDirectory! })
+  }
+
+  /** Pending interactions repair a crash between creation and enqueue, including sessions bound later. */
+  async reconcileReviews(onError: (error: unknown) => void): Promise<void> {
+    let afterId: string | undefined
+    do {
+      const page = await this.host.interactions.list({ handler: 'orchestrator', status: 'pending', limit: 100,
+        ...(afterId ? { afterId } : {}) })
+      for (const interaction of page) await this.enqueueReview(interaction).catch(onError)
+      afterId = page.length === 100 ? page.at(-1)!.id : undefined
+    } while (afterId)
+    await this.host.reviewers.reconcile(onError)
   }
 }

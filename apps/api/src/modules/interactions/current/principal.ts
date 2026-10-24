@@ -1,10 +1,11 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { DurableInteraction } from '@foreman-code/contracts'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { SqlTransaction } from '../../../infrastructure/transaction.js'
 import { requireRespondableInteraction } from '../../access/appPolicy.js'
 import { canUserInteract } from '../../access/userPolicy.js'
 import { requireAuthorization } from '../../access/policy.js'
-import { assertWave25WorkerBinding } from './credentialAuthority.js'
+import { assertCurrentWorkerBinding } from './credentialAuthority.js'
 import { fail, type ApprovalContext } from './context.js'
 
 /** Use durable grants and binding, including on an exact decision replay. */
@@ -43,9 +44,9 @@ export async function lockPrincipal(sql: SqlTransaction, snapshot: ManagementPri
   if (!binding || binding.revoked_at || binding.execution_id !== reviewer.id || binding.run_id !== context.scope.runId
     || binding.agent_id !== reviewer.agentId || binding.workspace_id !== context.scope.workspaceId
     || binding.workflow_id !== context.scope.workflowId || binding.purpose !== 'reviewer'
-    || binding.environment_variable !== 'GRAPHQL_MCP_TOKEN'
+    || binding.environment_variable !== INSTALLATION_NAMES.environment.MCP_TOKEN
     || binding.approval_native_session_id !== reviewer.nativeSessionId) return fail('AUTH_REVOKED')
-  await assertWave25WorkerBinding(sql, principal.id)
+  await assertCurrentWorkerBinding(sql, principal.id)
   if (replay) return principal
   const active = await sql.query(`select 1 from review_jobs j join native_session_lanes l
       on l.harness=j.record->>'provider' and l.native_session_id=j.record->>'nativeSessionId'

@@ -303,22 +303,19 @@ describe.skipIf(!postgresEnabled).each(APP_MCP_SERVER_NAMES)(
       assert.equal(await f.repository.claim(id, request.requestId), true)
       assert.equal(await f.repository.beginSessionCreation(id, request.requestId), true)
       const before = { row: await f.repository.get(id), turn: await f.repository.turn(id, request.requestId) }
-      let retired = false
-      const faultPool = {
-        connect: async () => {
-          const client = await pool.connect()
-          return { release: () => client.release(), query: async (sql: string, values?: unknown[]) => {
-            if (sql.startsWith('update operator_conversations set record=record -')) {
-              const result = await client.query(sql, values); retired = result.rowCount === 1; return result
-            }
-            if (sql.startsWith('update operator_conversation_turns')) throw new Error('H1 fault after marker retirement, before receipt settlement.')
-            return client.query(sql, values)
-          } }
-        },
-      } as unknown as pg.Pool
+      await pool.query(`create function reject_h1_receipt() returns trigger language plpgsql as $$
+        begin
+          if exists(select 1 from operator_conversations where id=new.conversation_id
+            and not (record ? 'sessionCreation')) then
+            raise exception 'H1 fault after marker retirement, before receipt settlement.';
+          end if;
+          return new;
+        end $$;
+        create trigger reject_h1_receipt before update on operator_conversation_turns
+          for each row execute function reject_h1_receipt()`)
       const result: ExecutionResult = { outcome: 'failed', error: { code: 'FIXTURE', message: 'Definitely rejected.', retryable: true } }
-      await assert.rejects(new PostgresAgentChatRepository(faultPool).finish(id, request.requestId, result, undefined, true), /H1 fault/)
-      assert.equal(retired, true)
+      await assert.rejects(f.repository.finish(id, request.requestId, result, undefined, true), /H1 fault/)
+      await pool.query('drop trigger reject_h1_receipt on operator_conversation_turns; drop function reject_h1_receipt()')
       assert.deepEqual({ row: await f.repository.get(id), turn: await f.repository.turn(id, request.requestId) }, before)
       assert.equal(await f.repository.finish(id, request.requestId, result, undefined, true), true)
       assert.equal((await f.repository.get(id))?.record.sessionCreation, undefined)

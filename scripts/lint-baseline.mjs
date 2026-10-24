@@ -16,7 +16,7 @@ const allowlist = JSON.parse(readFileSync(file, 'utf8'))
 const paths = lintFilePaths(root, allowlist)
 
 const failing = new Map(Object.keys(allowlist.eslint).map(id => [id, new Set()]))
-for (const project of ['apps/api', 'apps/ci', 'apps/web', 'apps/worker', 'packages/contracts']) {
+for (const project of ['apps/api', 'apps/ci', 'apps/web', 'apps/worker', 'packages/contracts', 'packages/contracts-node']) {
   const result = spawnSync('corepack', ['pnpm', '--dir', project, 'exec', 'eslint', '.', '--format', 'json'], {
     cwd: root, encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024, env: { ...process.env, FOREMAN_LINT_BASELINE: '1' },
   })

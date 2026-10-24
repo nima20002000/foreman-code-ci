@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { parse } from 'yaml'
-import { deployProductionApi, pruneApiDependencies } from '../../../../scripts/local-production-runtime.mjs'
+import { copyVerificationRuntime, deployProductionApi, pruneApiDependencies } from '../../../../scripts/local-production-runtime.mjs'
 import { copyApiRuntime } from '../../../../scripts/copy-api-runtime.mjs'
 import { cachedTestFixture, testFixtureCacheRoot, withTestFixtureCacheLock } from '../../../../scripts/test-fixture-cache.mjs'
 import { createRuntimeBuildIdentity } from '@foreman-code/contracts/runtime-build-identity-node'
@@ -76,7 +76,8 @@ async function artifactInputs() {
     }
   }
   for (const path of ['scripts', 'patches', 'apps/api/src', 'apps/ci/src', 'apps/worker/src',
-    'apps/worker/artifacts/ci-runtime', 'packages/contracts']) {
+    'apps/worker/artifacts/ci-runtime', 'packages/contracts', 'packages/contracts-node',
+    'packages/verification-runner', 'packages/ci-protocol']) {
     await append(path)
   }
   return inputs
@@ -87,6 +88,7 @@ async function buildArtifact(directory: string) {
   const api = join(release, 'apps/api')
   await mkdir(dirname(api), { recursive: true, mode: 0o700 })
   await cp(join(repository, 'scripts'), join(release, 'scripts'), { recursive: true })
+  await copyVerificationRuntime(repository, release)
   await cp(join(repository, 'packages/contracts/src'), join(release, 'packages/contracts/src'), { recursive: true })
   // Package from a disposable workspace so fixture setup cannot change the installed source.
   const deployment = join(directory, 'deployment-source')
@@ -100,9 +102,11 @@ async function buildArtifact(directory: string) {
     await mkdir(join(deployment, 'apps', name), { recursive: true })
     await copyFile(join(repository, 'apps', name, 'package.json'), join(deployment, 'apps', name, 'package.json'))
   }
-  await cp(join(repository, 'packages/contracts'), join(deployment, 'packages/contracts'), {
-    recursive: true, filter: path => path !== join(repository, 'packages/contracts/node_modules'),
-  })
+  for (const name of ['contracts', 'contracts-node']) {
+    await cp(join(repository, 'packages', name), join(deployment, 'packages', name), {
+      recursive: true, filter: path => path !== join(repository, 'packages', name, 'node_modules'),
+    })
+  }
   // The installer's shared dependency tree is deployed once per lockfile, not copied again for every fixture.
   // The installed API's own modules are transformed below.
   await mkdir(join(deployment, 'apps/api/dist'), { recursive: true })

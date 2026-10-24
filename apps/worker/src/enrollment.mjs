@@ -1,10 +1,11 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { request as httpsRequest } from 'node:https';
-import { deviceTlsOptions } from '../../../packages/contracts/src/deviceTlsNode.ts';
-import { verifiedWorkerEnrollmentCode } from '../../../packages/contracts/src/deviceSetupNode.ts';
+import { deviceTlsOptions } from '../../../packages/contracts-node/src/deviceTlsNode.ts';
+import { verifiedWorkerEnrollmentCode } from '../../../packages/contracts-node/src/deviceSetupNode.ts';
 import { randomBytes, sign } from 'node:crypto';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { WorkerEnrollmentInputSchema, DevicePairingResultSchema } from '../../../packages/contracts/src/deviceIdentity.ts';
-import { pairingProof, verifyMainEnrollmentProof, persistWorkerPairing, loadWorkerPairing } from '../../../packages/contracts/src/deviceIdentityNode.ts';
+import { pairingProof, verifyMainEnrollmentProof, persistWorkerPairing, loadWorkerPairing } from '../../../packages/contracts-node/src/deviceIdentityNode.ts';
 import { requirePrivateDirectory, WorkerError } from './diagnostics.mjs';
 import { ensurePairedManagedSetup } from './managedSetup.mjs';
 import { acquireWorkerLock } from './runtime.mjs';
@@ -139,7 +140,7 @@ async function enrollWorkerInput({stateDirectory,identity,enrollment,appVersion,
     if (endpoint.protocol !== 'wss:' || endpoint.username || endpoint.password || endpoint.pathname !== '/device/connect' || endpoint.search || endpoint.hash) throw new WorkerError('enrollment_endpoint_invalid');
     const http = new URL(endpoint);
     http.protocol = 'https:';
-    const proofRequest = { audience: 'graphql-worker-main-enrollment-v1', mainId: enrollment.mainId, workerInstallationId: identity.workerInstallationId, nonce: randomBytes(32).toString('base64url'), protocolVersion: 1, workerApplicationVersion: appVersion };
+    const proofRequest = { audience: INSTALLATION_NAMES.protocol.enrollmentAudience, mainId: enrollment.mainId, workerInstallationId: identity.workerInstallationId, nonce: randomBytes(32).toString('base64url'), protocolVersion: 1, workerApplicationVersion: appVersion };
     http.pathname = '/device/challenge';
     const proof = await enrollmentPost(post, http.href, proofRequest, false);
     if (!await verifyMainEnrollmentProof(proof, proofRequest, enrollment.mainPublicKeyFingerprint)) throw new WorkerError('wrong_main_proof');

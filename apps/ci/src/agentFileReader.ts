@@ -1,6 +1,6 @@
 import { AGENT_SNAPSHOT_NAMESPACE, AgentSnapshotResultSchema } from '@foreman-code/contracts/source-materialization'
 import type { CiContext, DeviceEndpoint } from './environment.js'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import type { ReadAgentFiles } from './agentSnapshots.js'
 
 export function agentFileReader(context: CiContext, endpointForDomains: () => Pick<DeviceEndpoint, 'capabilities' | 'request'>): ReadAgentFiles {

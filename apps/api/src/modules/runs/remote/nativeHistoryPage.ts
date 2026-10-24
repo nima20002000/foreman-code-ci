@@ -1,7 +1,7 @@
 import { DEVICE_HISTORY_PAGE_BYTES, DEVICE_JSON_CONTINUATION_BYTES, type DeviceHistoryPage,
   type DeviceJsonContinuation, type DeviceJsonContinuationRequest } from '@foreman-code/contracts/device-application'
 import type { NativeHarnessEvent } from '@foreman-code/contracts'
-import type { NativeHistory } from '../../harnesses/port.js'
+import type { NativeHistory } from '../../harnesses/index.js'
 import { DomainError } from '../../errors.js'
 import { HarnessExecutionError } from '../../harnesses/errors.js'
 import { deviceRequestTimeoutMs } from '../../devices/deviceRequestRetry.js'

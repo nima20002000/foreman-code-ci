@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { buildCiRuntimeContext } from '../../../scripts/build-ci-runtime-context.mjs';
@@ -62,7 +63,10 @@ test('another project uses installed runtime controls without copying project bu
   assert.equal(receipt.sourceCommit, captured);
   assert.equal(await readFile(join(f.output, 'source-lock/package.json'), 'utf8'), '{"packageManager":"pnpm@11.27.0"}');
   assert.ok((await readFile(join(f.output, 'Containerfile'))).length > 0);
-  assert.ok((await readFile(join(f.output, 'verification/verify-repository.mjs'))).length > 0);
+  const result = execFileSync(process.execPath, ['--input-type=module', '-e',
+    'const runtime = await import(process.argv[1]); console.log(typeof runtime.finalizeVerification)',
+    pathToFileURL(join(f.output, 'verification/verify-repository.mjs')).href], { encoding: 'utf8' });
+  assert.equal(result, 'function\n');
 });
 
 

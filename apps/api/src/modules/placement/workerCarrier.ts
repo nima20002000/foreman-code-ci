@@ -2,7 +2,7 @@ import { RemoteExecutionRpcRequestSchema, REMOTE_EXECUTION_EXTENSION, REMOTE_PRE
 import { RemoteOperationReceiptSchema, type RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
 import { DeviceConnectionIdentitySchema, type DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
 import { WorkspaceRootWorkerRequestSchema, WORKSPACE_ROOT_EXTENSION } from '@foreman-code/contracts/workspace-root-policies'
-import type { RootWorkerClient } from '../sources/rootHosts.js'
+import type { RootWorkerClient } from '../sources/index.js'
 import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { RemoteNativeSessionManager, type RemoteNativeManagerOptions } from '../runs/remote/nativeManagerProxy.js'
 import { readRemoteReceiptResponse } from '../runs/remote/installedWorkflowResponsePages.js'

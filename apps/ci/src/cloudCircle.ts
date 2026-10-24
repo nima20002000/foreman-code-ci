@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import { CloudHttp } from './cloudHttp.js'
 import { circleJobLog, renderTerminal } from './cloudLog.js'
 import type { CiContext } from './environment.js'

@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
@@ -15,7 +16,7 @@ function assertTestRoot(resource: { directory: string; token: string }): void {
   const stat = lstatSync(resource.directory)
   if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(resource.directory) !== resolve(resource.directory)
     || (stat.mode & 0o077) !== 0 || stat.uid !== uid) throw new Error('Test root is not privately owned')
-  const marker = join(resource.directory, '.graphql-test-owner.json')
+  const marker = join(resource.directory, INSTALLATION_NAMES.paths.testOwner)
   const markerStat = lstatSync(marker)
   if (!markerStat.isFile() || markerStat.isSymbolicLink() || (markerStat.mode & 0o077) !== 0
     || markerStat.uid !== uid) throw new Error('Test root ownership marker is unsafe')
@@ -45,8 +46,8 @@ function assertTestPath(root: string, path: string): void {
 
 export function readTestResourcesIdentity(config: ApiConfig): string | undefined {
   const environment = resolveProductEnvironment(hostEnvironment())
-  if (!environment.FOREMAN_CODE_TEST_ROOT && !environment.FOREMAN_CODE_TEST_OWNER) return undefined
-  const resource = { directory: environment.FOREMAN_CODE_TEST_ROOT!, token: environment.FOREMAN_CODE_TEST_OWNER! }
+  if (!environment[INSTALLATION_NAMES.environment.TEST_ROOT] && !environment[INSTALLATION_NAMES.environment.TEST_OWNER]) return undefined
+  const resource = { directory: environment[INSTALLATION_NAMES.environment.TEST_ROOT]!, token: environment[INSTALLATION_NAMES.environment.TEST_OWNER]! }
   assertTestRoot(resource)
   const home = environment.HOME ?? homedir()
   const configHome = environment.XDG_CONFIG_HOME ?? join(home, '.config')
@@ -59,12 +60,12 @@ export function readTestResourcesIdentity(config: ApiConfig): string | undefined
     environment.XDG_RUNTIME_DIR,
     environment.CODEX_HOME ?? join(home, '.codex'),
     environment.CLAUDE_CONFIG_DIR ?? join(home, '.claude'),
-    environment.FOREMAN_CODE_APP_MCP_DIRECTORY ?? join(home, '.local/share/graphql/mcp'),
+    environment[INSTALLATION_NAMES.environment.APP_MCP_DIRECTORY] ?? join(home, INSTALLATION_NAMES.paths.mcpDirectory),
     environment.TMPDIR ?? tmpdir(),
     config.fileStorageRoot ?? defaultFileStorageRoot(),
     config.workspaceStorageRoot ?? workspaceStorageRoot(),
     config.harnesses.workspaceRoot,
-    environment.FOREMAN_CODE_API_ENV_FILE,
+    environment[INSTALLATION_NAMES.environment.API_ENV_FILE],
     ...(logFile ? [dirname(logFile)] : []),
   ]
   for (const path of paths) {

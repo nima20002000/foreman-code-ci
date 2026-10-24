@@ -85,6 +85,9 @@ it('keeps an active database session and its rows when another checkout starts t
     for (const name of ['test-db.mjs', 'test-postgres-init.sql', 'ci-postgres-cache.mjs']) {
       await copyFile(new URL(`../../../scripts/${name}`, import.meta.url), join(scripts, name))
     }
+    await mkdir(join(fixture.directory, 'packages/contracts/src'), { recursive: true })
+    await copyFile(new URL('../../../packages/contracts/src/installationNames.mjs', import.meta.url),
+      join(fixture.directory, 'packages/contracts/src/installationNames.mjs'))
     for (let attempt = 0; attempt < 2; attempt++) {
       await execute(process.execPath, [join(scripts, 'test-db.mjs'), 'up'], {
         cwd: fixture.directory, timeout: 30_000,
@@ -127,6 +130,9 @@ it.skipIf(process.env.FOREMAN_CODE_VERIFICATION_ENVIRONMENT === 'isolated-job-v1
       await copyFile(new URL(`../../../scripts/${name}`, import.meta.url), join(checkout, 'scripts', name))
       await chmod(join(checkout, 'scripts', name), 0o600)
     }
+    await mkdir(join(checkout, 'packages/contracts/src'), { recursive: true })
+    await copyFile(new URL('../../../packages/contracts/src/installationNames.mjs', import.meta.url),
+      join(checkout, 'packages/contracts/src/installationNames.mjs'))
     const jobs = await Promise.all([0, 1].map(async index => {
       const runDirectory = join(checkout, `run-${index}`)
       await mkdir(runDirectory, { mode: 0o700 })

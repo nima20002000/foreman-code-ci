@@ -1,5 +1,5 @@
 import { CI_LOG_MAX_BYTES } from '@foreman-code/contracts'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import type { HostCiComputer, HostCiEndpoint } from './service.js'
 import { sanitizeCiText } from './text.js'
 

@@ -30,13 +30,13 @@ import { unavailableWorkflowScheduleToolCall } from '../operator/tools/workflowS
 import { unavailableRunHistoryToolCall } from '../operator/tools/runHistory.js'
 import type { OperatorServices } from '../operator/types.js'
 import type { McpRole } from './roles.js'
-import { createGraphqlMcpServer, roleDeniedToolCall, type McpRequestRegistration } from './server.js'
+import { createForemanMcpServer, roleDeniedToolCall, type McpRequestRegistration } from './server.js'
 import { operatorToolCatalog } from '../operator/server.js'
 import { dispatchToolRun } from '../operator/discovery.js'
 import { McpRequestCancellation } from '../shared/cancellation.js'
 import { withDatabaseReadRetry } from '../../infrastructure/databaseRetry.js'
 
-export const GRAPHQL_MCP_PATH = '/mcp'
+export const FOREMAN_MCP_PATH = '/mcp'
 const RpcIdSchema = z.union([z.string(), z.number().int()])
 const CancellableRequestSchema = z.object({
   jsonrpc: z.literal('2.0'), id: RpcIdSchema, method: z.literal('tools/call'),
@@ -53,7 +53,7 @@ export interface WorkerArtifactMcpExtension {
   call(request: FastifyRequest, principal: ManagementPrincipal, body: unknown): Promise<unknown | undefined>
 }
 
-export interface GraphqlMcpServices {
+export interface ForemanMcpServices {
   access: PostgresAccessService
   /** Serves Operator credentials. */
   operator?: OperatorServices
@@ -66,7 +66,7 @@ export interface GraphqlMcpServices {
 }
 
 /** The single, stateless Foreman Code MCP endpoint. The bearer credential decides the role. */
-export function registerGraphqlMcp(app: FastifyInstance, services: GraphqlMcpServices): void {
+export function registerForemanMcp(app: FastifyInstance, services: ForemanMcpServices): void {
   const cancellations = new McpRequestCancellation()
   // FIL-03 is composed after buildProductionApp. Bind the same service before any MCP request,
   // rather than constructing another storage/auth boundary or changing server startup ownership.
@@ -81,7 +81,7 @@ export function registerGraphqlMcp(app: FastifyInstance, services: GraphqlMcpSer
   const audiences: ManagementAudience[] = [
     ...(services.operator ? ['operator' as const] : []), ...(services.interactions ? ['worker' as const] : []),
   ]
-  app.post(GRAPHQL_MCP_PATH, { bodyLimit: services.operator ? MAX_REFERENCE_MCP_BODY_BYTES : 1_000_000,
+  app.post(FOREMAN_MCP_PATH, { bodyLimit: services.operator ? MAX_REFERENCE_MCP_BODY_BYTES : 1_000_000,
     // Large inline adds must authenticate before Fastify buffers/parses their bounded JSON body.
     onRequest: async (request) => {
       requireLocalRequest(request)
@@ -161,7 +161,7 @@ export function registerGraphqlMcp(app: FastifyInstance, services: GraphqlMcpSer
       : await invokeArtifact()
     if (artifactCall !== undefined) return reply.send(artifactCall)
     const server = await withDatabaseReadRetry(() =>
-      createGraphqlMcpServer(context, request.body, registration), operation?.signal)
+      createForemanMcpServer(context, request.body, registration), operation?.signal)
     // Artifact calls are dispatched above. Discovery's execution locks are only
     // needed for catalogs, not unrelated status or interaction reads.
     if (!call.success) await artifacts?.register(server, request, principal)
@@ -185,7 +185,7 @@ export function registerGraphqlMcp(app: FastifyInstance, services: GraphqlMcpSer
     }, reply.raw, request.body)
   })
   for (const method of ['GET', 'DELETE'] as const) {
-    app.route({ method, url: GRAPHQL_MCP_PATH, handler: async (request, reply) => {
+    app.route({ method, url: FOREMAN_MCP_PATH, handler: async (request, reply) => {
       requireLocalRequest(request)
       await services.access.authenticate(bearerToken(request.headers.authorization), audiences)
       return reply.code(405).send({
