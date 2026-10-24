@@ -41,7 +41,7 @@ it('guards an invalid schedule draft when returning to a pinned Run alias on the
   </UnsavedChangesProvider></QueryClientProvider>)
   try {
     fireEvent.click(screen.getByRole('button', { name: 'Schedule workflow' }))
-    const time = await screen.findByLabelText('Time')
+    const time = await screen.findByLabelText('Time on this device')
     fireEvent.change(time, { target: { value: '' } })
     let navigation!: Promise<boolean>
     act(() => {

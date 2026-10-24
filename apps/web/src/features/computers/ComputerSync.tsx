@@ -24,9 +24,13 @@ function ComputerSyncContent({ state, online }: { state: ReturnType<typeof useCo
           disabled={update.isPending || update.isError}
           onChange={event => change(folder.workspaceId, event.target.checked, folder.revision)} />
         <small className="computer-sync-state" title={folder.status?.path}>
-          {!folder.participating ? 'Starts when an Agent from this workspace runs here'
+          {!folder.enabled ? 'Sync off' : !folder.participating ? 'Starts when an Agent from this workspace runs here'
             : folder.status ? `${folder.status.connected ? 'Connected' : 'Disconnected'} · ${folder.status.state}` : ''}
         </small>
+        {folder.enabled && folder.participating && folder.status && !folder.status.connected ? <div>
+          <p className="computer-sync-note">Waiting for a sync peer. This computer can be online while file sync is disconnected.</p>
+          <Button size="sm" variant="ghost" disabled={status.isFetching} onClick={() => void refresh()}>Recheck sync status</Button>
+        </div> : null}
         {folder.status?.message && <p className="computer-sync-note" role="alert">{folder.status.message}</p>}
         {folder.status && folder.status.conflicts.length > 0 && <div><p>Conflicting copies need your review:</p>
           <ul>{folder.status.conflicts.map(file => <li key={file}>{file}</li>)}</ul></div>}

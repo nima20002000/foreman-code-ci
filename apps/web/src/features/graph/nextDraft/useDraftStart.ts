@@ -142,7 +142,7 @@ export function useDraftStartMutation({ draftKey, edit, editIntent, core, startS
         if (board?.showRunOnBoard) board.showRunOnBoard(result.run.id)
         else board?.selectRun(scopeForBoardRun(result.run))
       }
-      setMessage('Start acknowledged for the exact saved version. Run status is read separately.')
+      setMessage('Run started.')
     } catch (error) {
       // A definite rejection is shown as one plain message, never as an uncertain earlier Start.
       let shown = error
