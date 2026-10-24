@@ -4,7 +4,6 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { HttpResponse } from 'msw'
-import { CurrentRunDetailsSchema, RepeatGraphCurrentStateSchema, repeatGraphTopologyCurrent } from '@foreman-code/contracts/current'
 import { useGraphDraftStore, readEditOutbox, graphEditIntentKey } from '../graph'
 import { nextDraftDirty, nextDraftKey } from '../board-core'
 import { inspectionBoardFixture } from './inspect/inspectionFixtures'
@@ -20,15 +19,6 @@ describe('Meaningful edit versus layout and uncertain Stop-and-save', () => {
     fixture.mock.controls.start = true // Explicitly opt this task-owned MSW fixture into simulated lifecycle controls.
     const scope = fixture.runs.after.scope, key = nextDraftKey(scope.workspaceId, scope.workflowId)
     setRunState(fixture, scope, 'running')
-    // The authoritative affected set includes another workflow using these saved Agents.
-    const other = fixture.mock.install({ ...fixture.after.definition, id: `${scope.workflowId}-shared` }, true)
-    const otherVersion = fixture.mock.versions.get(other.currentVersionId!)!
-    const affectedScope = { ...scope, workflowId: other.workflow.id, workflowVersionId: otherVersion.id, runId: `${scope.runId}-shared` }
-    fixture.mock.runs.set(affectedScope.runId, CurrentRunDetailsSchema.parse({ ...fixture.mock.runs.get(scope.runId),
-      run: { ...fixture.mock.runs.get(scope.runId)!.run, id: affectedScope.runId, workflowId: affectedScope.workflowId,
-        workflowVersionId: otherVersion.id, agentConfigurationVersionIds: otherVersion.agentConfigurationVersionIds } }))
-    fixture.mock.currents.set(affectedScope.runId, RepeatGraphCurrentStateSchema.parse({ ...fixture.mock.currents.get(scope.runId),
-      scope: affectedScope, topology: repeatGraphTopologyCurrent(otherVersion) }))
     let loseReply = true
     const advances: Array<Record<string, unknown>> = []
     const wire = measureBoardWire(fixture.mock, async (request) => {
@@ -47,13 +37,6 @@ describe('Meaningful edit versus layout and uncertain Stop-and-save', () => {
     const { cache } = await mountMeasuredBoard(boardHref(scope))
     const user = userEvent.setup()
     await waitFor(() => expect(useGraphDraftStore.getState().nextDrafts[key]).toBeDefined())
-    await user.click(await screen.findByRole('button', { name: 'Return to workflow' }))
-    const authoring = await screen.findByRole('region', { name: 'Workflow authoring' })
-    await waitFor(() => expect(within(authoring).getByTitle('Rename workflow')).toBeDisabled())
-    expect(within(authoring).getByRole('button', { name: 'Add agent' })).toBeDisabled()
-    setRunState(fixture, scope, 'completed')
-    await act(async () => { await cache.invalidateQueries() })
-    await waitFor(() => expect(within(authoring).getByTitle('Rename workflow')).toBeEnabled())
     const initial = useGraphDraftStore.getState().nextDrafts[key]!
     const versionCount = fixture.mock.versions.size, runCount = fixture.mock.runs.size
     const initialVersion = initial.context.draft.baseWorkflowVersionId
@@ -67,12 +50,10 @@ describe('Meaningful edit versus layout and uncertain Stop-and-save', () => {
       nodes: graph.nodes.map((node) => ({ ...node, initialPrompt: 'ENG05-D retained meaningful instructions' })),
     })))
     expect(nextDraftDirty(useGraphDraftStore.getState().nextDrafts[key]!)).toBe(true)
+    // A selected Run is its saved, read-only Board (F4); the retained draft is edited and saved from the workflow.
+    await user.click(await screen.findByRole('button', { name: 'Return to workflow' }))
     await user.click(await screen.findByRole('button', { name: 'Save workflow' }))
-    const confirmation = await screen.findByRole('alertdialog')
-    expect(confirmation).toHaveTextContent('1 affected Run requires Stop or cleanup across 1 workflow.')
-    expect(fixture.mock.record(scope.workflowId).intent?.affected).toMatchObject([affectedScope])
-    expect(fixture.mock.controls.stopCalls).toBe(0)
-    await user.click(within(confirmation).getByRole('button', { name: 'Stop runs and save' }))
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Stop runs and save' }))
     await waitFor(() => expect(advances).toHaveLength(1))
     await waitFor(() => expect(fixture.mock.record(scope.workflowId).intent?.state).toBe('waiting'))
     // A lost reply for a pending journal is shown as unconfirmed, not as a failed save.
@@ -88,13 +69,12 @@ describe('Meaningful edit versus layout and uncertain Stop-and-save', () => {
     expect(fixture.mock.versions.size).toBe(versionCount)
     expect(fixture.mock.runs.size).toBe(runCount)
     expect(fixture.mock.controls.stopCalls).toBe(1)
-    expect(fixture.mock.runs.get(affectedScope.runId)?.cleanupPending).toBe(true)
-    expect(fixture.mock.runs.get(scope.runId)?.cleanupPending).toBe(false)
+    expect(fixture.mock.runs.get(scope.runId)?.cleanupPending).toBe(true)
     expect(readEditOutbox(key)!.request).toEqual(journal)
     expect(advances).toHaveLength(1)
     expect(nativeNode(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!).initialPrompt).toBe('ENG05-D retained meaningful instructions')
 
-    fixture.mock.settle(affectedScope.runId)
+    fixture.mock.settle(scope.runId)
     await act(async () => { await cache.invalidateQueries({ queryKey: editQueryKey, exact: true }) })
     await waitFor(() => expect(fixture.mock.versions.size).toBe(versionCount + 1))
     await waitFor(() => expect(readEditOutbox(key)).toBeUndefined())

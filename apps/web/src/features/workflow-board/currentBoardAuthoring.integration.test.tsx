@@ -82,7 +82,6 @@ afterEach(() => {
 
 async function mount(mock: Mock, href = `/workspaces/${mock.workspaceId}`, hideRuns = false) {
   server.use(
-    http.get('*/api/browser/profiles', () => HttpResponse.json({ profiles: [], replicas: [], presentReplicas: [], pendingReplicas: [], nextCursor: null, revision: 0 })),
     http.get(`*/api/workspaces/${mock.workspaceId}`, () => HttpResponse.json({ ...mock.details(), ...(hideRuns ? { runs: [] } : {}) })),
     http.get(`*/api/management/workspaces/${mock.workspaceId}/workflows/:workflowId/runs/summaries`, ({ params }) =>
       HttpResponse.json({ items: hideRuns ? [] : [...mock.runs.values()].reverse().filter(({ run }) => run.workflowId === params.workflowId)
