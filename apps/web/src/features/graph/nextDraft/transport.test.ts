@@ -3,14 +3,19 @@ import { describe, expect, it, vi } from 'vitest'
 import { ApiClient } from '../../../shared/api/client'
 import { createNextDraftApi } from './transport'
 import { createCurrentBoardMock } from '../../../shared/mocks/currentBoard'
+import { nativeNode } from '../../../shared/mocks/nativeFixtureTypes'
 import { CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/current'
-import { currentWorkflowFixture as makeCurrentFixture } from '../../../shared/mocks/currentWorkflow'
-import type { DraftRequest } from '../../board-core'
+import { currentWorkflowFixture as makeWave25Fixture } from '../../../shared/mocks/currentWorkflow'
+import { activeWorkflowNode, type DraftRequest } from '../../board-core'
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 describe('workflow HTTP client boundary', () => {
-  function harness() {
-    const saved = makeCurrentFixture('transport')
+  function harness(historicalTools = false) {
+    const saved = makeWave25Fixture('transport')
+    if (historicalTools) saved.version.definition = { ...saved.version.definition,
+      nodes: saved.version.definition.nodes.map(node => ({ ...nativeNode(node), graphqlTools: {
+        add: ['context_get', 'workflow_chat_post'], remove: ['workflow_chat_read'],
+      } })) }
     const mock = createCurrentBoardMock({ workspaceId: saved.scope.workspaceId, initialWorkflow: saved.version.definition,
       agents: saved.configurations.map((c) => ({ id: c.agentId, name: c.agentId, productRole: c.productRole, configurationVersionId: c.id,
         harness: c.harness.harness, harnessConfiguration: c.harness, prompt: c.prompt, assignedSkills: c.assignedSkills })) })
@@ -27,7 +32,7 @@ describe('workflow HTTP client boundary', () => {
     const target = { ...draft.graph, nodes: draft.graph.nodes.map((node) => ({ ...node, initialPrompt: 'Edited' })) }
     const request: DraftRequest = { kind: 'apply', executionSemanticsVersion: 3, workspaceId: draft.workspaceId,
       workflowId: draft.workflowId, draftId: draft.id, commandId: 'local-apply', expectedRevision: draft.revision,
-      operations: target.nodes.map((node) => ({ type: 'node.replace_v3', node })) }
+      operations: target.nodes.map((node) => ({ type: 'node.replace_v3', node: activeWorkflowNode(node) })) }
     const before = fetch.mock.calls.length
     const applied = await api.write(request, target)
     expect(fetch.mock.calls).toHaveLength(before)
@@ -43,6 +48,25 @@ describe('workflow HTTP client boundary', () => {
     expect(mock.versions.size).toBe(2)
     expect(mock.calls.some((call) => call.path.includes('/drafts'))).toBe(false)
   })
+  it('reads recorded node tools unchanged and submits active copies for validation and a new save', async () => {
+    const { saved, mock, fetch, api } = harness(true)
+    const draft = await api.open(saved.scope.workspaceId, saved.scope.workflowId)
+    const recorded = structuredClone(draft.graph)
+    const priorVersionId = draft.baseWorkflowVersionId!
+    const priorVersion = structuredClone(mock.versions.get(priorVersionId))
+    await api.validate(draft.workspaceId, draft.workflowId, draft.id)
+    expect(JSON.parse(String(fetch.mock.calls.at(-1)![1]!.body)).graph.nodes[0].graphqlTools)
+      .toEqual({ add: ['context_get'], remove: [] })
+    expect((await api.get(draft.workspaceId, draft.workflowId, draft.id)).graph).toEqual(recorded)
+    const result = await api.write({ kind: 'save', executionSemanticsVersion: 3, workspaceId: draft.workspaceId,
+      workflowId: draft.workflowId, draftId: draft.id, commandId: 'save-active-tools', expectedRevision: draft.revision })
+    expect(JSON.parse(String(fetch.mock.calls.at(-1)![1]!.body)).graph.nodes[0].graphqlTools)
+      .toEqual({ add: ['context_get'], remove: [] })
+    expect(result.draft.graph.nodes[0]).toMatchObject({ graphqlTools: { add: ['context_get'], remove: [] } })
+    expect(mock.versions.get(priorVersionId)).toEqual(priorVersion)
+    expect(draft.graph).toEqual(recorded)
+  })
+
   it('surfaces denied permission without alternate endpoints or credentials', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ error: { code: 'FORBIDDEN', message: 'Denied' } }, 403))
     await expect(createNextDraftApi(new ApiClient({ fetch })).open('workspace', 'workflow')).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 })
@@ -94,7 +118,7 @@ describe('workflow HTTP client boundary', () => {
       saved.scope.workflowId, 'definition', 'agents', saved.scope.workflowId, 'definition'])
   })
   it('starts the saved V3 version through local HTTP and rejects mismatched admission', async () => {
-    const saved = makeCurrentFixture('web-start')
+    const saved = makeWave25Fixture('web-start')
     const input = { workspaceId: saved.scope.workspaceId, workflowId: saved.scope.workflowId,
       workflowVersionId: saved.scope.workflowVersionId, executionSemanticsVersion: 3 as const,
       expectedWorkflowRevision: 1, expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
@@ -114,7 +138,7 @@ describe('workflow HTTP client boundary', () => {
     await expect(api.start(input)).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
   })
   it('requests bounded Run pages by cursor and rejects an out-of-scope list row', async () => {
-    const saved = makeCurrentFixture('web-pages')
+    const saved = makeWave25Fixture('web-pages')
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => response({ items: [saved.run], pageInfo: { nextCursor: 'run-next' } }))
     const api = createNextDraftApi(new ApiClient({ fetch }))
     const first = await api.runs(saved.scope.workspaceId, saved.scope.workflowId)

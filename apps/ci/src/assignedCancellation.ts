@@ -1,5 +1,5 @@
 import type { CiRunRecord } from '@foreman-code/contracts'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import type { CiRunSettlement, HostCiComputer, HostCiEndpoint } from './serviceTypes.js'
 import { ciExecutionRunId } from './executionAttempt.js'
 

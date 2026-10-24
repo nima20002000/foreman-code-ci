@@ -1,8 +1,8 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { AgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS, applyOperatorChatSettings, OperatorConfigurationVersionSchema, withAdvancedDefaults,
-  type RecordedHarnessConfiguration, type OperatorConfigurationVersion, type SendOperatorMessageRequest } from '@foreman-code/contracts'
+import { RecordedAgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS, applyOperatorChatSettings, OperatorConfigurationVersionSchema, withAdvancedDefaults,
+  type HarnessConfiguration, type OperatorConfigurationVersion, type SendOperatorMessageRequest } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import type { ProviderAccountConfigurationService } from '../harnesses/providerAccountConfiguration.js'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
@@ -24,7 +24,7 @@ export async function operatorMessageBase(query: Queryable, current: OperatorCon
   await query.query('select pg_advisory_xact_lock(hashtext($1))', ['application-operator'])
   const defaults = (await query.query<{ record: unknown; revision: number }>(
     'select record,revision from application_settings where key=$1 for share', ['agent-defaults-v1'])).rows[0]
-  const preset = AgentDefaultsSchema.parse(defaults?.record ?? DEFAULT_AGENT_DEFAULTS).operator
+  const preset = RecordedAgentDefaultsSchema.parse(defaults?.record ?? DEFAULT_AGENT_DEFAULTS).operator
   if (input.defaultsRevision === undefined || input.defaultsRevision !== Number(defaults?.revision ?? 0)
     || preset.harness.harness !== input.settings.harness) throw new DomainError('CONVERSATION_REVISION_CONFLICT',
     'Operator defaults changed before this handoff. Review the current defaults before sending a new command.', 409)
@@ -46,7 +46,7 @@ export async function operatorMessageBase(query: Queryable, current: OperatorCon
 /** Called only after the conversation lock, receipt comparison and idle admission check. */
 export async function acceptOperatorConfiguration(query: Queryable, current: OperatorConfigurationVersion,
   input: SendOperatorMessageRequest, prior: { operator_configuration_version_id: string | null } | undefined,
-  suppliedHarness?: RecordedHarnessConfiguration, validate?: (configuration: OperatorConfigurationVersion) => void,
+  suppliedHarness?: HarnessConfiguration, validate?: (configuration: OperatorConfigurationVersion) => void,
   accounts?: ProviderAccountConfigurationService,
   preparedProfile?: HarnessProfileSelection,
 ): Promise<OperatorConfigurationVersion> {

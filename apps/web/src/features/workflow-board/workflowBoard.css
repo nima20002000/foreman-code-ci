@@ -10,7 +10,7 @@
 .workflow-collaboration-canvas .run-board .run-board-canvas { flex: 1; height: auto; min-height: 0; }
 .workflow-collaboration-canvas .run-board-current[hidden] { display: none; }
 .workflow-overview-slot { padding: var(--space-4); }
-.workflow-floating-panel { position: fixed; z-index: 40; top: 80px; left: 24px; width: min(480px, calc(100vw - 24px)); height: min(560px, calc(100vh - 24px)); min-width: 280px; min-height: 220px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow: visible; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-raised); box-shadow: var(--shadow-window); }
+.workflow-floating-panel { position: fixed; z-index: 40; top: 80px; left: 24px; width: min(480px, calc(100vw - 24px)); height: min(560px, calc(100vh - 24px)); min-width: 280px; min-height: 220px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow: visible; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-raised); box-shadow: var(--shadow-lg, 0 12px 32px rgb(0 0 0 / 0.35)); }
 .workflow-floating-panel[hidden] { display: none; }
 .workflow-floating-panel > header, .workflow-floating-panel > nav { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); padding: var(--space-2); }
 .workflow-floating-panel > header { justify-content: space-between; cursor: move; user-select: none; touch-action: none; border-bottom: 1px solid var(--border); }
@@ -194,7 +194,6 @@
 /* Loading shape of the Board: the editor's footprint with node-sized placeholders in the canvas. */
 .board-loading .board-loading-nodes { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: var(--space-6); padding-top: 4rem; }
 .board-loading .board-control-cluster { display: flex; }
-.workflow-group-chat-dialog .workflow-chat-panel > header > h2 { display: none; }
 /* One tab row for the selected agent plus Browser; the panel body is the only scroller. */
 .workflow-floating-panel > header { flex-wrap: nowrap; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); }
 .workflow-floating-panel > header > h2 { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

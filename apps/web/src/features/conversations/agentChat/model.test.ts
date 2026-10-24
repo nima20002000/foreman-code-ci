@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { agentChatFixtures, codexChatCapabilities, type AgentChatState } from '@foreman-code/contracts/agent-chat'
-import { acceptAgentChatState, agentChatContextKey, approvalReplyAvailable, intentUnavailable, mergeChatMessages, stateBelongsToContext } from '../../chat-core'
+import { acceptAgentChatState, agentChatContextKey, approvalReplyAvailable, intentUnavailable, mergeChatMessages, stateBelongsToContext } from './model'
 import type { Message } from '@foreman-code/contracts'
 import { approvalState } from './testSupport'
 

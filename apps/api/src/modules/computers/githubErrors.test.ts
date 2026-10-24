@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { GitHubLoginRequest } from '@foreman-code/contracts/computer-accounts'
-import { registerForemanMcp } from '../../mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../../mcp/unified/transport.js'
 import type { OperatorServices } from '../../mcp/operator/types.js'
 import type { PostgresAccessService } from '../access/postgres.js'
 import { DeviceApplicationError, deviceApplicationFailure } from '../devices/deviceApplicationError.js'
@@ -32,7 +32,7 @@ it.each([
   const app = Fastify()
   const access = { authenticate: async (token: string) => token === 'owner' ? f.principal
     : { ...f.principal, id: 'denied', grants: [] } } as unknown as PostgresAccessService
-  registerForemanMcp(app, { access, operator: { computerGitHub, commands: f.commands } as unknown as OperatorServices })
+  registerGraphqlMcp(app, { access, operator: { computerGitHub, commands: f.commands } as unknown as OperatorServices })
   const call = async (token: string, target = f.target) => {
     const argumentsForRequest = 'loginId' in request ? { loginId: request.loginId } : {}
     const response = await app.inject({ method: 'POST', url: '/mcp',

@@ -11,8 +11,8 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import { lockActiveWorkspace } from '../workspaces/admission.js'
-import type { OperatorAgentMutationService } from '../workspaces/index.js'
-import type { CurrentWorkflowAuthoring } from '../workflows/index.js'
+import type { OperatorAgentMutationService } from '../workspaces/operatorAgents.js'
+import type { CurrentWorkflowAuthoring } from '../workflows/currentAuthoring.js'
 
 type Source = 'http' | 'mcp'
 type UpdatePlan = Awaited<ReturnType<typeof readUsage>>

@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { errorMessage } from '../../shared/errorMessage'
 import { sameWorkflowValue } from '@foreman-code/contracts/current'
@@ -12,8 +11,8 @@ import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   AgentHarnessSchema, CodexSessionCompatibilitySchema, agentTemplateForRole, legacyEffortForHarness,
-  validateHarnessWorkflowCompatibility, withAdvancedDefaults,
-  type Agent, type ApprovalHandler, type AssignedSkill, type ForemanToolOverride, type HarnessDefaults, type WorkflowExecutionPolicy,
+  validateHarnessWorkflowCompatibility, withAdvancedDefaults, activeGraphqlTools, activeGraphqlToolOverride,
+  type Agent, type ApprovalHandler, type AssignedSkill, type GraphqlToolOverride, type RecordedGraphqlToolOverride, type HarnessDefaults, type WorkflowExecutionPolicy,
 } from '@foreman-code/contracts'
 
 import { Alert, Button, Icon, IconButton, Select, Textarea, TextField } from '../../shared/ui/nocturne'
@@ -25,7 +24,7 @@ import {
   FieldValidationError, fieldMessage, focusFirstInvalid, issuesAt, validationIssues, type FieldIssue,
 } from '../settings'
 import { ProviderAccountSelect } from '../provider-accounts'
-import { ForemanToolsFields } from './ForemanToolsFields'
+import { GraphqlToolsFields } from './GraphqlToolsFields'
 import { AgentHarnessRows, AgentMemoryRow, NodeRow } from './AgentMainFields'
 import { harnessSwitchPreset, switchAgentHarness } from './harnessSwitch'
 import { AgentSkillsField } from '../skills'
@@ -37,7 +36,7 @@ export type AgentSettingsSave = {
   initialPrompt?: string
   executionPolicy: WorkflowExecutionPolicy
   /** This node's change to the Agent's default Foreman Code MCP tools. */
-  [INSTALLATION_NAMES.fields.nodeTools]?: ForemanToolOverride
+  nodeGraphqlTools?: GraphqlToolOverride
   placement?: SavedNodePlacement
   worktree?: AgentWorktreeSettings
 }
@@ -46,7 +45,7 @@ export type AgentSettingsSave = {
 export type AgentSettingsNode = {
   initialPrompt?: string
   /** This node's change to the Agent's default Foreman Code MCP tools. */
-  [INSTALLATION_NAMES.fields.agentTools]?: ForemanToolOverride
+  graphqlTools?: RecordedGraphqlToolOverride
   placement?: SavedNodePlacement
   worktree?: AgentWorktreeSettings
   executionPolicy?: WorkflowExecutionPolicy
@@ -113,14 +112,14 @@ type AgentSettingsFormProps = {
 }
 
 function useAgentSettingsForm({ agent, creationDefaults, node = {}, workflow = {}, draft = {}, onClose, onSave }: AgentSettingsFormProps) {
-  const { initialPrompt, [INSTALLATION_NAMES.fields.agentTools]: nodeForemanTools, placement: nodePlacement, worktree: nodeWorktree,
+  const { initialPrompt, graphqlTools: nodeGraphqlTools, placement: nodePlacement, worktree: nodeWorktree,
     executionPolicy = { maxNodeExecutions: 1, maxParallelism: 1 } } = node
   const { approvalHandler: workflowApprovalHandler, designatedOrchestrator = false } = workflow
   const { retained: retainedForm, onChange: onFormChange, onDiscard: onDiscardForm, canResume, extraDirty: additionalDirty = false } = draft
   const [localName, setLocalName] = useState(agent.name)
   const [localPrompt, setLocalPrompt] = useState(initialPrompt ?? '')
-  const [localForemanTools, setLocalForemanTools] = useState<NonNullable<AgentForm[typeof INSTALLATION_NAMES.fields.agentTools]>>(() => ({
-    ...(agent[INSTALLATION_NAMES.fields.agentTools] ? { defaults: agent[INSTALLATION_NAMES.fields.agentTools] } : {}), ...(nodeForemanTools ? { override: nodeForemanTools } : {}) }))
+  const [localGraphqlTools, setLocalGraphqlTools] = useState<NonNullable<AgentForm['graphqlTools']>>(() => ({
+    ...(agent.graphqlTools ? { defaults: agent.graphqlTools } : {}), ...(nodeGraphqlTools ? { override: nodeGraphqlTools } : {}) }))
   const [localInstructions, setLocalInstructions] = useState(agent.prompt?.system ?? '')
   const [localSkills, setLocalSkills] = useState<AssignedSkill[]>(agent.assignedSkills ?? [])
   const [error, setError] = useState<string>()
@@ -135,18 +134,18 @@ function useAgentSettingsForm({ agent, creationDefaults, node = {}, workflow = {
   })
   const [localPlacement, setLocalPlacement] = useState(nodePlacement)
   const [localPrefix, setLocalPrefix] = useState(nodeWorktree?.branchPrefix ?? '')
-  const base = JSON.stringify({ agent, initialPrompt, [INSTALLATION_NAMES.fields.nodeTools]: nodeForemanTools, nodePlacement, nodeWorktree })
+  const base = JSON.stringify({ agent, initialPrompt, nodeGraphqlTools, nodePlacement, nodeWorktree })
   const retained = retainedForm && sameWorkflowValue(JSON.parse(retainedForm.base), JSON.parse(base)) ? retainedForm : undefined
   const name = retained?.name ?? localName, prompt = retained?.prompt ?? localPrompt, editor = retained?.editor ?? localEditor
   const placement = retained ? retained.placement : localPlacement
   const branchPrefix = retained?.branchPrefix ?? localPrefix
-  const foremanTools = retained?.[INSTALLATION_NAMES.fields.agentTools] ?? localForemanTools
+  const graphqlTools = retained?.graphqlTools ?? localGraphqlTools
   const instructions = retained?.instructions ?? localInstructions, skills = retained?.skills ?? localSkills
-  const changeForm = (patch: Partial<AgentForm>) => onFormChange?.({ base, name, prompt, editor, [INSTALLATION_NAMES.fields.agentTools]: foremanTools,
+  const changeForm = (patch: Partial<AgentForm>) => onFormChange?.({ base, name, prompt, editor, graphqlTools,
     instructions, skills, branchPrefix, ...(placement ? { placement } : {}), ...patch })
   const setName = (value: string) => { if (onFormChange) changeForm({ name: value }); else setLocalName(value) }
   const setPrompt = (value: string) => { if (onFormChange) changeForm({ prompt: value }); else setLocalPrompt(value) }
-  const setForemanTools = (value: NonNullable<AgentForm[typeof INSTALLATION_NAMES.fields.agentTools]>) => { if (onFormChange) changeForm({ [INSTALLATION_NAMES.fields.agentTools]: value }); else setLocalForemanTools(value) }
+  const setGraphqlTools = (value: NonNullable<AgentForm['graphqlTools']>) => { if (onFormChange) changeForm({ graphqlTools: value }); else setLocalGraphqlTools(value) }
   const setInstructions = (value: string) => { if (onFormChange) changeForm({ instructions: value }); else setLocalInstructions(value) }
   const setSkills = (value: AssignedSkill[]) => { if (onFormChange) changeForm({ skills: value }); else setLocalSkills(value) }
   const setEditor = (update: typeof editor | ((current: typeof editor) => typeof editor)) => {
@@ -154,7 +153,7 @@ function useAgentSettingsForm({ agent, creationDefaults, node = {}, workflow = {
     if (onFormChange) changeForm({ editor: value }); else setLocalEditor(value)
   }
   const initialSnapshot = useRef<string | undefined>(undefined)
-  if (!initialSnapshot.current) initialSnapshot.current = JSON.stringify({ name: agent.name, prompt: initialPrompt ?? '', editor: localEditor, [INSTALLATION_NAMES.fields.agentTools]: localForemanTools,
+  if (!initialSnapshot.current) initialSnapshot.current = JSON.stringify({ name: agent.name, prompt: initialPrompt ?? '', editor: localEditor, graphqlTools: localGraphqlTools,
     instructions: agent.prompt?.system ?? '', skills: agent.assignedSkills ?? [], placement: nodePlacement,
     branchPrefix: nodeWorktree?.branchPrefix ?? '' })
   const defaultsQuery = useHarnessDefaultsQuery({ enabled: !creationDefaults })
@@ -188,7 +187,7 @@ function useAgentSettingsForm({ agent, creationDefaults, node = {}, workflow = {
       disabled: Boolean(reason), reason }
   })
   const harnessReason = harnessOptions.find((option) => option.value === configuration.harness)?.reason
-  const currentSnapshot = JSON.stringify({ name, prompt, editor, [INSTALLATION_NAMES.fields.agentTools]: foremanTools, instructions, skills, placement, branchPrefix })
+  const currentSnapshot = JSON.stringify({ name, prompt, editor, graphqlTools, instructions, skills, placement, branchPrefix })
   const isDirty = additionalDirty || currentSnapshot !== initialSnapshot.current
   const nameError = fieldMessage(issues, 'name')
   const clearErrors = () => { setError(undefined); setIssues([]) }
@@ -227,9 +226,9 @@ function useAgentSettingsForm({ agent, creationDefaults, node = {}, workflow = {
       onSave({ agent: { ...agent, name: name.trim(), harness: nextConfiguration.harness, model: nextConfiguration.model,
         effort: legacyEffortForHarness(nextConfiguration), fastMode: nextConfiguration.harness === 'codex' ? nextConfiguration.serviceTier === 'priority' : undefined,
         harnessConfiguration: nextConfiguration,
-        ...(foremanTools.defaults ? { [INSTALLATION_NAMES.fields.agentTools]: foremanTools.defaults } : {}),
+        graphqlTools: graphqlTools.defaults ? activeGraphqlTools(graphqlTools.defaults) : undefined,
         prompt: instructions.trim() ? { system: instructions.trim() } : {}, assignedSkills: skills,
-      }, initialPrompt: prompt.trim() || undefined, executionPolicy, [INSTALLATION_NAMES.fields.nodeTools]: foremanTools.override, placement, worktree })
+      }, initialPrompt: prompt.trim() || undefined, executionPolicy, nodeGraphqlTools: activeGraphqlToolOverride(graphqlTools.override), placement, worktree })
       return true
     } catch (failure) {
       initialSnapshot.current = previousSnapshot
@@ -247,7 +246,7 @@ function useAgentSettingsForm({ agent, creationDefaults, node = {}, workflow = {
   })
   return {
     error, issues, moreOpen, setMoreOpen, root, setLocalPlacement, setLocalPrefix, name, prompt, editor, placement,
-    branchPrefix, [INSTALLATION_NAMES.fields.agentTools]: foremanTools, instructions, skills, changeForm, setName, setPrompt, setForemanTools,
+    branchPrefix, graphqlTools, instructions, skills, changeForm, setName, setPrompt, setGraphqlTools,
     setInstructions, setSkills, setEditor, providerDefaults, configuration, harnessOptions, harnessReason,
     isDirty, nameError, clearErrors, updateConfiguration, switchHarness, save, leave, role,
   }
@@ -271,13 +270,13 @@ function EditableAgentSettingsForm(props: AgentSettingsFormProps) {
   const { onChange: onFormChange, onDiscard: onDiscardForm } = draft
   const form = useAgentSettingsForm(props)
   const { error, issues, moreOpen, setMoreOpen, root, setLocalPlacement, setLocalPrefix, name, prompt, editor, placement,
-    branchPrefix, [INSTALLATION_NAMES.fields.agentTools]: foremanTools, instructions, skills, changeForm, setName, setPrompt, setForemanTools,
+    branchPrefix, graphqlTools, instructions, skills, changeForm, setName, setPrompt, setGraphqlTools,
     setInstructions, setSkills, setEditor, providerDefaults, configuration, harnessOptions, harnessReason,
     isDirty, nameError, clearErrors, updateConfiguration, switchHarness, save, leave, role } = form
   const readOnly = configuration.harness === 'opencode' || configuration.sandbox === 'read-only'
   const harnessIssues = issuesAt(issues, ['harness'])
-  const changeTools = (defaults: Parameters<typeof setForemanTools>[0]['defaults'], override: Parameters<typeof setForemanTools>[0]['override']) => {
-    setForemanTools({ ...(defaults ? { defaults } : {}), ...(override ? { override } : {}) }); clearErrors()
+  const changeTools = (defaults: Parameters<typeof setGraphqlTools>[0]['defaults'], override: Parameters<typeof setGraphqlTools>[0]['override']) => {
+    setGraphqlTools({ ...(defaults ? { defaults } : {}), ...(override ? { override } : {}) }); clearErrors()
   }
   const showPlacement = !placementHidden && Boolean(workspaceId || node.placement || placementOptions)
   return <div ref={root} className={`agent-settings-panel${embedded ? ' agent-settings-panel-embedded' : ''}`}>
@@ -297,7 +296,7 @@ function EditableAgentSettingsForm(props: AgentSettingsFormProps) {
         </NodeRow>
         <AgentHarnessRows value={configuration} issues={harnessIssues} onChange={updateConfiguration} accountHost={placement?.hostRef} />
         {slots.main}
-        <AgentMemoryRow role={role} defaults={foremanTools.defaults} override={foremanTools.override} readOnly={readOnly} onChange={changeTools} />
+        <AgentMemoryRow role={role} defaults={graphqlTools.defaults} override={graphqlTools.override} readOnly={readOnly} onChange={changeTools} />
         {showPlacement ? <NodePlacementField value={placement} options={placementOptions ?? []} unavailableComputers={unavailableComputers}
           optionsState={placementOptionsState} note={placementNote} disabled={worktreeDisabled} inheritedWorktree={workflowWorktreeLabel}
           onChange={next => {
@@ -339,7 +338,7 @@ function EditableAgentSettingsForm(props: AgentSettingsFormProps) {
             labelHint={<InfoHint label="Initial prompt">The task this node starts with.</InfoHint>}
             onChange={(event) => { setPrompt(event.target.value); clearErrors() }} />
           {slots.more}
-          <ForemanToolsFields role={role} defaults={foremanTools.defaults} override={foremanTools.override} hideMemory
+          <GraphqlToolsFields role={role} defaults={graphqlTools.defaults} override={graphqlTools.override} hideMemory
             executionReadOnly={configuration.harness === 'codex' && configuration.sandbox === 'read-only'} readOnly={readOnly} onChange={changeTools} />
           <HarnessConfigurationFields editor={editor} issues={harnessIssues} onChange={(next) => { setEditor(next); clearErrors() }} allowHarnessChange={false} harnessDefaults={providerDefaults} workspaceId={workspaceId} routedApproval={Boolean(workflowApprovalHandler)} allowAutoReview={workflowApprovalHandler === 'orchestrator'} compact advancedOnly />
         </div>

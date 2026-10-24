@@ -1,3 +1,4 @@
+import { removeGroupChatMigration } from './removeGroupChatMigration.js'
 import {
   agentCiActivityMigration,
   ciActivityRequesterLookupMigration,
@@ -56,7 +57,7 @@ import { workflowFileContextSessionMigration } from './workflowFileContextSessio
 import { nativeBatchReadMigration } from './nativeBatchReadMigration.js'
 import { withTransaction } from './transaction.js'
 import { checkpointOwnerMigration } from './checkpointOwnerMigration.js'
-import { errorMessage } from '@foreman-code/contracts-node/server-kit'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { providerAccountsMigration, providerAccountObservationsMigration } from './providerAccountsMigration.js'
 import { nativeProofSourceLimitMigration } from './nativeProofSourceLimitMigration.js'
 import { nativeActivityNoiseMigration } from './nativeActivityNoiseMigration.js'
@@ -1062,6 +1063,7 @@ export const migrations = [
   workReplyRequestMigration,
   ciActivityEventsMigration,
   ciActivityConsumerMigration,
+  removeGroupChatMigration,
 ] as const
 
 /**

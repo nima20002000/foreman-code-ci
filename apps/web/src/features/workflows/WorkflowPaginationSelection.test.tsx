@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { expect, it } from 'vitest'
-import type { ManagedWorkflow } from '@foreman-code/contracts/management'
+import type { ManagedWorkflow, WorkflowReorderInput } from '@foreman-code/contracts/management'
 import { server } from '../../mocks/server'
 import { renderWithRouter } from '../../test/renderWithRouter'
 import { WorkflowDirectory } from './WorkflowDirectory'
@@ -160,4 +160,79 @@ it('keeps a deep-linked active workflow visible without fetching intervening pag
   }
   expect(pages).toBe(1); expect(details).toBe(1)
   expect(screen.getByRole('button', { name: 'Show more workflows' })).toBeVisible()
+})
+
+it('keeps the selected shortcut and its controls stable when its page arrives', async () => {
+  server.use(
+    http.get('/api/management/workspaces/workspace-1/workflows', ({ request }) => HttpResponse.json({
+      items: new URL(request.url).searchParams.has('cursor') ? [workflow('Zeta')] : [workflow('Alpha')],
+      pageInfo: { nextCursor: new URL(request.url).searchParams.has('cursor') ? null : 'Alpha' },
+    })),
+    http.get('/api/management/workspaces/workspace-1/workflows/Zeta', () => HttpResponse.json(workflow('Zeta'))),
+  )
+  renderWithRouter(<WorkflowNavigation workspaceId="workspace-1" activeWorkflowId="Zeta" />)
+  const selected = await screen.findByRole('button', { name: /^Zeta/ })
+  await screen.findByRole('button', { name: /^Alpha/ })
+  expect(screen.getAllByRole('button').filter(button => button.classList.contains('workflow-navigation-item'))[0]).toBe(selected)
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Show more workflows' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Show more workflows' })).not.toBeInTheDocument())
+  expect(screen.getByRole('button', { name: /^Zeta/ })).toBe(selected)
+  expect(screen.getAllByRole('button').filter(button => button.classList.contains('workflow-navigation-item'))[0]).toBe(selected)
+  expect(screen.queryByRole('button', { name: 'Move Zeta up' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Move Zeta down' })).not.toBeInTheDocument()
+  selected.focus()
+  expect(selected).toHaveFocus()
+})
+
+
+it.each([false, true])('reorders only visible neighbors after the selected page arrives (neighbor: %s)', async (hasNeighbor) => {
+  let ids = hasNeighbor ? ['Alpha', 'Zeta', 'Beta'] : ['Alpha', 'Zeta']
+  let revision = 4
+  const requests: WorkflowReorderInput[] = []
+  server.use(
+    http.get('/api/management/workspaces/workspace-1/workflows', ({ request }) => {
+      const nextPage = new URL(request.url).searchParams.has('cursor')
+      return HttpResponse.json({ items: (nextPage ? ids.slice(1) : ids.slice(0, 1)).map(workflow),
+        orderRevision: revision, pageInfo: { nextCursor: nextPage ? null : 'next' } })
+    }),
+    http.get('/api/management/workspaces/workspace-1/workflows/Zeta', () => HttpResponse.json(workflow('Zeta'))),
+    http.put('/api/management/workspaces/workspace-1/workflows/order', async ({ request }) => {
+      const input = await request.json() as WorkflowReorderInput
+      requests.push(input)
+      const remaining = [...input.workflowIds]
+      ids = ids.map(id => input.workflowIds.includes(id) ? remaining.shift()! : id)
+      revision += 1
+      return HttpResponse.json({ value: { workspaceId: input.workspaceId, workflowIds: input.workflowIds,
+        orderRevision: revision }, replayed: false })
+    }),
+  )
+  const user = userEvent.setup()
+  renderWithRouter(<WorkflowNavigation workspaceId="workspace-1" activeWorkflowId="Zeta" />)
+  const selected = await screen.findByRole('button', { name: /^Zeta/ })
+  await user.click(await screen.findByRole('button', { name: 'Show more workflows' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Show more workflows' })).not.toBeInTheDocument())
+  const visibleOrder = () => screen.getAllByRole('listitem').map(row =>
+    within(row).getByRole('button', { name: /^(Alpha|Beta|Zeta)/ }).getAttribute('title'))
+  expect(visibleOrder()).toEqual(hasNeighbor ? ['Zeta', 'Alpha', 'Beta'] : ['Zeta', 'Alpha'])
+  expect(screen.getByRole('button', { name: 'Move Alpha up' })).toBeDisabled()
+  if (hasNeighbor) {
+    screen.getByRole('button', { name: 'Move Alpha down' }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(visibleOrder()).toEqual(['Zeta', 'Beta', 'Alpha']))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Move Alpha up' })).toBeEnabled())
+    expect(requests[0]).toMatchObject({ workflowIds: ['Beta', 'Alpha'], expectedRevision: 4 })
+    screen.getByRole('button', { name: /^Alpha/ }).focus()
+    await user.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    await waitFor(() => expect(visibleOrder()).toEqual(['Zeta', 'Alpha', 'Beta']))
+    await waitFor(() => expect(requests).toHaveLength(2))
+    expect(requests[1]).toMatchObject({ workflowIds: ['Alpha', 'Beta'], expectedRevision: 5 })
+  } else {
+    expect(screen.getByRole('button', { name: 'Move Alpha down' })).toBeDisabled()
+    screen.getByRole('button', { name: /^Alpha/ }).focus()
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    expect(requests).toHaveLength(0)
+    expect(visibleOrder()).toEqual(['Zeta', 'Alpha'])
+  }
+  expect(screen.getByRole('button', { name: /^Zeta/ })).toBe(selected)
 })

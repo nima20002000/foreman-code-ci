@@ -17,6 +17,12 @@ export const HarnessSettingsSearchSchema = z.object({
   pluginOffset: z.coerce.number().int().min(0).optional().catch(undefined),
   pluginId: z.string().max(240).optional().catch(undefined),
 });
+/** Cloud CI selection in the existing computer settings page. */
+export const ComputersSettingsSearchSchema = z.object({
+  circleAccountId: z.string().trim().min(1).max(200).optional().catch(undefined),
+  cloudAccount: z.string().trim().min(1).max(200).optional().catch(undefined),
+});
+
 /** Settings → Skills list filters. Selection is part of the route path. */
 export const SkillSettingsSearchSchema = z.object({
   workspace: z.string().trim().min(1).max(200).optional().catch(undefined),

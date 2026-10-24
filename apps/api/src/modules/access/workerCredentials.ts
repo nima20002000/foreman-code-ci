@@ -1,5 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
-import { workflowChatGrants } from './workflowChatGrants.js'
 import { canonicalJson, CoordinatorConsultationBindingSchema, HarnessExecutionSchema, WorkflowRunSchema,
   type CoordinatorConsultationBinding } from '@foreman-code/contracts'
 import { withTransaction } from '../../infrastructure/transaction.js'
@@ -13,7 +11,7 @@ import { lockActiveWorkerPrincipal, lockWorkerExecution, requireActiveWorkerExec
 import { RETAINED_REVIEWER_SETTLEMENT_PENDING, WORKER_BINDING_ELIGIBLE } from './workerEligibility.js'
 import { readCoordinatorCredentialAuthority, readConsultationCredentialSubject } from './consultationAuthority.js'
 
-export const APP_MCP_TOKEN_ENVIRONMENT_VARIABLE = INSTALLATION_NAMES.environment.MCP_TOKEN
+export const APP_MCP_TOKEN_ENVIRONMENT_VARIABLE = 'GRAPHQL_MCP_TOKEN'
 export const DEFAULT_WORKER_CREDENTIAL_TTL_MS = 15 * 60 * 1000
 export { WORKER_CREDENTIAL_EXPIRY_MARGIN_MS } from './credentialLifetime.js'
 /** Main renews the execution credential this early so every dependent Worker relay and launcher route,
@@ -60,7 +58,7 @@ export class WorkerCredentialService {
       const expiry = await this.issueExpiry(client)
       const issued = await this.access.issue({ name: `consultation:${binding.consultationId}`,
         audience: 'worker', agentId: authority.subject.agent.agentId,
-        grants: [...await workflowChatGrants(client, authority.source_execution_id), { actions: ['bug_reports:report', 'interactions:read'], scope: {
+        grants: [{ actions: ['bug_reports:report', 'interactions:read'], scope: {
           workspaceIds: [authority.workspace_id], workflowIds: [authority.workflow_id], runIds: [binding.runId],
         } }], expiresAt: expiry.expiresAt }, client)
       await client.query(`insert into worker_credential_bindings
@@ -192,7 +190,7 @@ export class WorkerCredentialService {
         name: `execution:${identity.execution_id}`,
         audience: 'worker',
         agentId: identity.agent_id,
-        grants: [...await workflowChatGrants(client, executionId), {
+        grants: [{
           actions: [
             'bug_reports:report',
             'interactions:read',

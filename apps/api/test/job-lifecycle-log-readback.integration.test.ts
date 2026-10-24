@@ -21,7 +21,7 @@ import { RemoteOperationJournal } from '../src/modules/runs/remote/operationJour
 import { RemoteJobExecutionHost } from '../src/modules/runs/remote/jobExecutionHost.js'
 import { jobSpec } from './helpers/jobFixture.js'
 import { postgresEnabled } from './helpers/database.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 vi.mock('../src/modules/jobs/executor.js', async importOriginal => ({
   ...await importOriginal<typeof import('../src/modules/jobs/executor.js')>(), executeJob: vi.fn(),
@@ -88,11 +88,11 @@ describe.skipIf(!postgresEnabled)('Job retained-log MCP readback', () => {
         observeReceipt: async receipt => {
           const sql = await db.connect()
           try {
-            await withTransaction({ client: sql }, async transaction => {
-              const original = await jobs.repository.execution(transaction, workspaceId, execution.id, true)
-              await projectJobReceiptLocked(transaction, original, receipt, { verifyRequiredOutputs: async () => {} })
-            })
-          } finally { sql.release() }
+            await beginTransaction(sql)
+            const original = await jobs.repository.execution(sql, workspaceId, execution.id, true)
+            await projectJobReceiptLocked(sql, original, receipt, { verifyRequiredOutputs: async () => {} })
+            await commitTransaction(sql)
+          } catch (error) { await rollbackTransaction(sql); throw error } finally { sql.release() }
         },
       })
       await host.deliver(intent, execution); await host.drain()

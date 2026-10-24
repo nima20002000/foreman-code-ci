@@ -9,7 +9,7 @@ import { DomainError } from '../errors.js'
 import { withExclusiveGraphConnection } from '../run-graph/index.js'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { Principal } from './ports.js'
-import { asWorkflowChatTarget, controlDigest, workflowTargetRunId } from './workflowControlRecords.js'
+import { asWorkflowChatTarget, controlDigest, workflowTargetRunId, CONTROL_RECEIPT } from './workflowControlRecords.js'
 import { readWorkflowChatIdentity } from './workflowChatIdentity.js'
 import type { WorkflowChatOwnerPort, WorkflowChatTarget } from './workflowControlTypes.js'
 
@@ -41,7 +41,7 @@ export async function withWorkflowChatRead<T>(pool: pg.Pool, principal: Principa
 
 async function receiptPage(sql: SqlQuery, target: WorkflowChatTarget, cursor: PageCursor, limit: number) {
   const candidates = cursor.receiptsDone ? [] : (await sql.query<{ bytes: number; sequence: string }>(
-    `select octet_length(receipt::text) as bytes,sequence::text from run_chat_commands where run_id=$1 and target_key=$2 and kind='delivery'
+    `select octet_length((${CONTROL_RECEIPT})::text) as bytes,sequence::text from run_chat_commands where run_id=$1 and target_key=$2 and kind='delivery'
       and ($3::bigint is null or sequence<$3) order by sequence desc limit $4`,
   [workflowTargetRunId(target), controlDigest(target), cursor.beforeReceipt, limit + 1])).rows
   const selected:string[]=[]
@@ -53,7 +53,7 @@ async function receiptPage(sql: SqlQuery, target: WorkflowChatTarget, cursor: Pa
   if(candidates.length&&!selected.length) throw new DomainError('CHAT_RECEIPT_READ_LIMIT',
     'This receipt identity exceeds the bounded page. Replay the original command to read its exact receipt.',409)
   const page=selected.length?(await sql.query<{receipt:unknown;sequence:string}>(
-    'select receipt,sequence::text from run_chat_commands where run_id=$1 and sequence=any($2::bigint[]) order by sequence desc',
+    `select ${CONTROL_RECEIPT} as receipt,sequence::text from run_chat_commands where run_id=$1 and sequence=any($2::bigint[]) order by sequence desc`,
     [workflowTargetRunId(target),selected])).rows:[]
   const hasMore=candidates.length>page.length
   const revision = (await sql.query<{ revision: string }>(
@@ -114,6 +114,6 @@ export async function readWorkflowExecutionChat(pool: pg.Pool, owner: WorkflowCh
 }
 
 export async function readWorkflowDeliveryReceipt(sql: SqlQuery, id: string): Promise<ChatDeliveryReceipt | undefined> {
-  const row = (await sql.query<{ receipt: unknown }>('select receipt from run_chat_commands where id=$1 and kind=\'delivery\'', [id])).rows[0]
+  const row = (await sql.query<{ receipt: unknown }>(`select ${CONTROL_RECEIPT} as receipt from run_chat_commands where id=$1 and kind='delivery'`, [id])).rows[0]
   return row ? ChatDeliveryReceiptSchema.parse(row.receipt) : undefined
 }

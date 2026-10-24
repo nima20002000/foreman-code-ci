@@ -1,12 +1,11 @@
 import type { HarnessExecution, HarnessNativeEvent, NativeSessionReference } from '@foreman-code/contracts'
 import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { frozenJsonCopy } from '../../shared/deepFreeze.js'
-import type { NativeCaptureLane } from '../../shared/nativeCapture.js'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import type { NativeHistory } from '../harnesses/port.js'
 import { DomainError } from '../errors.js'
-import type { RunOwnership } from '../runs/index.js'
-import type { RepeatNativeEvidence } from '../runs/index.js'
+import type { RunOwnership } from '../runs/ownership.js'
+import type { RepeatNativeEvidence } from '../runs/repeatNativeRepository.js'
 import type { SessionWriteLease, SingleWriterSessionManager } from './sessionWriter.js'
 
 /** This channel is private production composition, not an HTTP/MCP input. A
@@ -43,7 +42,9 @@ export interface WorkflowNativeCapture {
   readonly kind: 'live' | 'recovery'
   readonly lifetimeGeneration: number
   readonly closureGeneration: string | null
-  readonly lane: NativeCaptureLane | null
+  readonly lane: null | {
+    id: string; token: string; connectionGeneration: number; providerId: string | null
+  }
   assertCurrent(): void
 }
 export interface WorkflowNativeCapturePort {

@@ -19,7 +19,7 @@ import { RunSubagentService } from '../src/modules/subagents/service.js'
 import { backfillRunSubagents, recoverSubagentCommands } from '../src/modules/subagents/recovery.js'
 import type { SubagentControlLease } from '../src/modules/subagents/types.js'
 import { registerRunSubagentRoutes } from '../src/routes/runSubagents.js'
-import { registerForemanMcp } from '../src/mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { DomainError } from '../src/modules/errors.js'
 import { SubagentDispatchRejectedError } from '../src/modules/subagents/controlErrors.js'
@@ -118,7 +118,7 @@ describe('durable per-Run children over SQL and authenticated MCP', () => {
     const app = Fastify()
     registerOperatorHttpSecurity(app, f.access)
     registerRunSubagentRoutes(app, services)
-    registerForemanMcp(app, { access: f.access, operator: services })
+    registerGraphqlMcp(app, { access: f.access, operator: services })
     const clients: Client[] = []
     try {
       const origin = await app.listen({ host: '127.0.0.1', port: 0 })
@@ -521,7 +521,7 @@ describe('durable per-Run children over SQL and authenticated MCP', () => {
     })
     registerOperatorHttpSecurity(app, f.access)
     registerRunSubagentRoutes(app, services)
-    registerForemanMcp(app, { access: f.access, operator: services })
+    registerGraphqlMcp(app, { access: f.access, operator: services })
     const address = await app.listen({ host: '127.0.0.1', port: 0 })
     const clients: Client[] = []
     const connect = async (token: string) => {
@@ -611,7 +611,7 @@ describe('durable per-Run children over SQL and authenticated MCP', () => {
     })
     registerOperatorHttpSecurity(app, f.access)
     registerRunSubagentRoutes(app, services)
-    registerForemanMcp(app, { access: f.access, operator: services })
+    registerGraphqlMcp(app, { access: f.access, operator: services })
     const address = await app.listen({ host: '127.0.0.1', port: 0 })
     const clients: Client[] = []
     const connect = async (token: string) => { const client = new Client({ name: 'subagent-core', version: '1' }); clients.push(client); await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => token } })); return client }

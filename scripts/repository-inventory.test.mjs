@@ -24,7 +24,7 @@ test('script inventory discovers unlisted top-level and nested tests', t => {
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'foreman-code', scripts: {
     'test:scripts': 'node --test scripts/listed.test.mjs',
   } }))
-  for (const file of ['packages/contracts/src/fixture.test.ts', 'packages/contracts-node/src/fixture.test.ts', 'apps/api/src/fixture.test.ts',
+  for (const file of ['packages/contracts/src/fixture.test.ts', 'apps/api/src/fixture.test.ts',
     'apps/web/src/fixture.test.tsx', 'apps/worker/test/fixture.test.mjs']) {
     mkdirSync(join(root, file, '..'), { recursive: true })
     writeFileSync(join(root, file), '')

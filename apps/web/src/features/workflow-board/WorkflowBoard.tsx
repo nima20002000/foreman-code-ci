@@ -1,8 +1,9 @@
 import { MemoryBoardSurface } from './MemoryBoardSurface'
 import { activeRunCandidates } from '@foreman-code/contracts/run-snapshots'
-import { MasterOverview, createWorkflowExecutionChatSlot } from '../workflow-hierarchy'
+import { MasterOverview, createWorkflowExecutionChatSlot, resolveExecutionChat } from '../workflow-hierarchy'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from 'react'
 import { useLocation, useRouter } from '@tanstack/react-router'
+import { useMutation } from '@tanstack/react-query'
 import type { ExecutionRef, WorkflowRunSummary } from '@foreman-code/contracts'
 import type { BoardSidePanel, RepeatGraphScopeCurrent, WorkspaceBoardInspection } from '@foreman-code/contracts/current'
 import { Alert, Button, Icon, IconButton } from '../../shared/ui/nocturne'
@@ -24,9 +25,9 @@ import { useBoardDrawers } from './useBoardDrawers'
 import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
 import { PanelFooterSlotContext, PanelHeaderSlotContext } from '../../shared/ui/panelHeaderSlot'
 import { SelectedRunControls } from './actions/SelectedRunControls'
-import { GroupChatPanel } from './GroupChatPanel'
+import { appendExecutionChatDraft } from '../conversations'
 import { DirectionWaitNotice } from './actions/directionWait'
-import { acceptFindingsDirection, mentionInGroupChat, useRunDirectionWait } from './actions/directionWaitModel'
+import { acceptFindingsDirection, useRunDirectionWait } from './actions/directionWaitModel'
 import './workflowBoard.css'
 
 /** This component is keyed by workspace/workflow only, NEVER by selected Run. */
@@ -158,6 +159,24 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     ? { workspaceId, workflowId, runId: boardSelection.identity.runId,
       ...(picked?.kind === 'available' ? { workflowVersionId: picked.workflowVersionId } : {}) } : undefined
   const direction = useRunDirectionWait(runControlsScope)
+  const directionChat = useMutation({
+    mutationFn: async ({ scope, waiting }: { scope: NonNullable<typeof runControlsScope>;
+      waiting: NonNullable<typeof direction>; token: number; text?: string }) => {
+      const selected = await resolveExecutionChat({ ...scope,
+        workflowNodeId: waiting.workflowNodeId, executionId: waiting.executionId })
+      if (selected.kind !== 'selected') throw new Error('The waiting Agent chat is unavailable. Refresh this Run and try again.')
+      return selected
+    },
+    onSuccess: (selected, request) => {
+      if (request.token !== getSelectionToken()) return
+      if (request.text) appendExecutionChatDraft(selected.target, request.text)
+      side.selectChatTarget(selected.target, selected.workflowVersionId)
+    },
+  })
+  const openDirectionChat = (text?: string) => {
+    if (direction && runControlsScope) directionChat.mutate({ scope: runControlsScope, waiting: direction,
+      token: getSelectionToken(), text })
+  }
   const suppliedOverview = collaborationSlots?.overview
   const overviewContent = side.memoryOpen ? null : suppliedOverview?.()
   // Over the Run's canvas it floats like the draft's own toolbar, so the canvas keeps the draft's exact box.
@@ -166,17 +185,12 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         style={side.view === 'graph' ? { flexWrap: 'wrap', justifyContent: 'flex-end', boxSizing: 'border-box', minWidth: 0 }
           : { position: 'relative', inset: 'auto', zIndex: 10, flex: '0 0 auto', flexWrap: 'wrap', justifyContent: 'flex-end', padding: 'var(--space-2)', boxSizing: 'border-box', minWidth: 0 }}>
         {side.view === 'graph' ? <div className="board-run-caption" ref={setRunCaptionHost} /> : null}
-        {direction && !side.memoryOpen ? <DirectionWaitNotice direction={direction} onAnswer={() => {
-          mentionInGroupChat({ workspaceId, workflowId }, direction)
-          side.selectPanel({ kind: 'group_chat' })
-        }} onAccept={() => {
-          mentionInGroupChat({ workspaceId, workflowId }, direction, acceptFindingsDirection)
-          side.selectPanel({ kind: 'group_chat' })
-        }} /> : null}
+        {direction && !side.memoryOpen ? <DirectionWaitNotice direction={direction}
+          onAnswer={() => openDirectionChat()} onAccept={() => openDirectionChat(acceptFindingsDirection)} /> : null}
+        {directionChat.isError && directionChat.variables.token === getSelectionToken() ? <p role="alert">{directionChat.error.message}</p> : null}
         <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection}
           runsLabel={current && side.view === 'overview' ? 'Choose run' : undefined} />
         {detailsScope && !runUnreadable ? <IconButton label="Activities" onClick={() => setRunsOpen(true)}><Icon name="history" size={16} /></IconButton> : null}
-        <IconButton label="Group chat" onClick={() => side.selectPanel({ kind: 'group_chat' })}><Icon name="chat" size={16} /></IconButton>
         {runControlsScope ?
           <SelectedRunControls key={boardSelection.identity.runId} visible={!side.memoryOpen}
             scope={runControlsScope} runActionRef={setRunActionHost} /> : null}
@@ -234,8 +248,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         workflowVersionId={legacyRun?.workflowVersionId ?? (picked?.kind === 'available' ? picked.workflowVersionId : undefined)}
         opener={side.opener} runId={legacyRun?.runId ?? pickedRunId} selection={side.panel} agentSelection={side.agentSelection} onSelect={selectPanel} bodyRef={setSidePanelHost} headerSlotRef={setPanelHeaderSlot} footerSlotRef={setPanelFooterSlot}
         onSelectTarget={side.selectChatTarget} onSelectRun={side.selectChatRun}
-        modalOpen={side.memoryOpen} slots={{ ...collaborationSlots, groupChat: collaborationSlots?.groupChat ?? (() =>
-          <GroupChatPanel workspaceId={workspaceId} workflowId={workflowId} runId={legacyRun?.runId ?? pickedRunId} onSelect={side.selectPanel} />) }} />
+        modalOpen={side.memoryOpen} slots={collaborationSlots} />
       {browsersOpen && !side.memoryOpen ? collaborationSlots?.browserSidebar?.({ workspaceId, workflowId, runId: legacyRun?.runId ?? pickedRunId,
         workflowVersionId: legacyRun?.workflowVersionId ?? (picked?.kind === 'available' ? picked.workflowVersionId : undefined) }) : null}
       </div>

@@ -8,7 +8,6 @@ type DependencyCommandRunner = (
 
 export function apiServiceTemplate(databaseUnit: string): string
 export function installProductionDependencies(run: DependencyCommandRunner): Promise<void>
-export function copyVerificationRuntime(source: string, release: string): Promise<void>
 export function deployProductionApi(
   run: DependencyCommandRunner,
   destination: string,
