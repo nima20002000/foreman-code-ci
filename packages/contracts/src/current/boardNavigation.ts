@@ -178,7 +178,7 @@ export function staysOnWorkflowBoard(current: { pathname: string; search: unknow
 
 function authoringSelection(search: WorkspaceBoardSearch): WorkspaceBoardSearch {
   const value = { ...search }
-  for (const key of ['activityKind', 'activityAgentId', 'boardView', 'boardPanel', 'boardAgentTab',
+  for (const key of ['runStatus', 'activityKind', 'activityAgentId', 'boardView', 'boardPanel', 'boardAgentTab',
     'boardRunId', 'boardCiTicketId', 'browserSessionId', 'browserTabId', 'boardNodeId', 'boardExecutionId', 'boardWaitingActivationId', 'boardTeamId', 'boardMemory',
     'boardBrowsers', 'browserTab'] as const) delete value[key]
   return value

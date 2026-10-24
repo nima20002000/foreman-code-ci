@@ -282,9 +282,11 @@ function ActivityRow({ item, count = 1, showActor = true }: { item: RunActivityP
       <div className="board-activity-line"><p>{item.summary}{count > 1 ? <span className="board-activity-count"> ×{count}</span> : null}</p>
         {item.status !== 'unknown' ? <span className={`board-activity-status is-${item.severity}`}>{item.status.replaceAll('_', ' ')}</span> : null}</div>
       {item.detail ? <p className="board-activity-detail">{item.detail}</p> : null}
-      {item.status === 'failed' && executionId && board ? <Button size="sm" variant="ghost" onClick={() => board.selectInspection({
-        ...(participant ? { runNodeId: participant.nodeId } : {}), runExchangeKey: runInspectionKey({ executionId }),
-      })}>Inspect failure</Button> : null}
+      {item.status === 'failed' && executionId && board ? <Button size="sm" variant="ghost" onClick={() => {
+        board.selectInspection({ ...(participant ? { runNodeId: participant.nodeId } : {}),
+          runExchangeKey: runInspectionKey({ executionId }) }, item.scope)
+        board.openRuns()
+      }}>Inspect failure</Button> : null}
       {item.ci ? <p className="board-activity-detail">
         {item.ci.part ? `${item.ci.part} · ` : ''}
         {item.ci.partition ? `Partition ${item.ci.partition.index + 1} of ${item.ci.partition.count} · ` : ''}
