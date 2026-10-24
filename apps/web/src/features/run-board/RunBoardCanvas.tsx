@@ -1,4 +1,5 @@
 import { memo, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, type EdgeProps, type NodeProps } from '@xyflow/react'
 import { AgentNodeView } from '../../shared/ui/nocturne/Canvas'
@@ -89,6 +90,7 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   hierarchy?: WorkflowHierarchyReadResult; definition?: WorkflowDefinitionCurrent; visible?: boolean
 }) {
   const board = useWorkflowBoard()
+  const location = useLocation(), navigate = useNavigate()
   const { containerRef, onInit, onMove, onMoveEnd, onManualMove, refit, defaultViewport, fitOnMount } = useResponsiveGraphViewport<
     SavedBoardNode | CiServerFlowNode | KanbanFlowNode, SavedBoardEdge | CiTransferFlowEdge | KanbanActivityFlowEdge>({
     fitViewOptions, viewportKey: boardViewportKey(snapshot.workspaceId, snapshot.workflowId),
@@ -139,9 +141,12 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   const ciDenied = useProtectedAccessError(ciList)
   const names = useMemo(() => new Map(snapshot.nodes.map((node) => [node.id, node.name])), [snapshot.nodes])
   const towerNodes = useMemo(() => nodes.map((node) => ({ position: node.position, width: node.initialWidth, height: node.initialHeight })), [nodes])
-  const ci = useBoardCiServer({ nodes: towerNodes, names, scope, workflow: { workspaceId: scope.workspaceId, workflowId: scope.workflowId },
+  const ciTicketId = scope.runId === (location.search.selectedRunId ?? location.search.runId) ? location.search.boardCiTicketId : undefined
+  const ci = useBoardCiServer({ ticketId: ciTicketId, onCloseTicket: () => {
+    void navigate({ to: location.pathname, replace: true, search: previous => ({ ...previous, boardCiTicketId: undefined }) })
+  }, nodes: towerNodes, names, scope, workflow: { workspaceId: scope.workspaceId, workflowId: scope.workflowId },
     jobs: !ciDenied && ciList.data?.runId === scope.runId ? ciList.data.jobs : undefined,
-    truncated: !ciDenied && (ciList.data?.truncated ?? false), error: Boolean(ciDenied) || ciList.isError, loading: ciList.isPending })
+    truncated: !ciDenied && (ciList.data?.truncated ?? false), error: Boolean(ciDenied) || ciList.isError, loading: ciList.isPending, readError: ciDenied ?? ciList.error, onRefresh: () => void ciList.refetch() })
   // The workflow's Kanban sits on its Board in every view, so Agents' card changes show live during the Run.
   const shownIds = useMemo(() => new Set(visibleNodes.map(node => node.id)), [visibleNodes])
   const kanban = useBoardKanban({ workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId, nodes: towerNodes,

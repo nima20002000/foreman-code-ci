@@ -7,10 +7,10 @@ import type { SourceRootReference } from '@foreman-code/contracts/worktree-setti
 import { HostHarnessOverrideSchema, type HostHarnessOverride } from '@foreman-code/contracts/harness-registry'
 import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
-import type { WorkspaceRootPolicyPort } from '../sources/index.js'
+import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
 import type { HarnessInstallationRegistry } from '../harnesses/index.js'
 import { DomainError } from '../errors.js'
-import type { SourceAdmissionPort } from '../sources/index.js'
+import type { SourceAdmissionPort } from '../sources/admissionPorts.js'
 import { readPlacementHarnessFacts } from './harnessFacts.js'
 
 const unavailable = (reason: string): never => {

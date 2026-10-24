@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 import { CI_HOST_NAMESPACE } from '@foreman-code/contracts'
 import { negotiateDeviceExtensions, parseExtensionDescriptors, type DeviceApplicationResult }
   from '@foreman-code/contracts/device-application'
-import { mainIdentityProofMessage } from '@foreman-code/contracts-node/device-identity-node'
+import { mainIdentityProofMessage } from '@foreman-code/contracts/device-identity-node'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { deferred } from '../../../test/helpers/deferred.js'
 import { DeviceApplicationChannel, extensionDescriptors } from './deviceApplicationChannel.js'

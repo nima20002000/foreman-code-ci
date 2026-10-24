@@ -2,7 +2,7 @@ import { captureVerificationInventory } from '../../shared/verificationRunner.js
 import { isDeepStrictEqual } from 'node:util'
 import { JobVerificationOfflineSeedReceiptSchema, JobVerificationRepositoryContextSchema, JobVerificationQualificationCandidateSchema }
   from '@foreman-code/contracts/job-verification-runtime'
-import type { JobSystemInput } from '../files/index.js'
+import type { JobSystemInput } from '../files/jobInputs/delivery.js'
 import type { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
 import { readProtectedRuntimeFile,
   type InstalledRuntimeConfigurationLocation } from './installedRuntimeHost.js'

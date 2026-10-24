@@ -77,3 +77,20 @@ describe('CI details after access changes', () => {
     }
   })
 })
+
+
+it('retries a completed ticket log through a visible recovery control', async () => {
+  let failed = true
+  server.use(
+    http.get(`/api/management/workspaces/workspace/ci/${ticketId}/tests`, () => HttpResponse.json({ ticketId, tests: null })),
+    http.get(`/api/management/workspaces/workspace/ci/${ticketId}/logs`, () => failed
+      ? HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Connection interrupted.' } }, { status: 503 })
+      : HttpResponse.json({ text: 'Recovered completed log', nextOffset: 23, logBytes: 23, maxBytes: 32768 })),
+  )
+  await mount()
+  await userEvent.click(screen.getByRole('tab', { name: 'Log' }))
+  await screen.findByText('The log is unavailable right now.')
+  failed = false
+  await userEvent.click(screen.getByRole('button', { name: 'Retry log' }))
+  expect(await screen.findByText('Recovered completed log')).toBeVisible()
+})

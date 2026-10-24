@@ -146,8 +146,8 @@ test('restart drains a captured reviewer finalizer before detaching its native l
     await held
     return readRun()
   }
-  vi.spyOn(f.manager, 'retainsReviewerSession', 'get').mockReturnValue(true)
   Object.assign(f.manager, {
+    retainsReviewerSession: true,
     closeForRestart: async () => { order.push('detach') },
   })
   Object.assign(f.closures, { recordDetached: async () => { order.push('detached') } })

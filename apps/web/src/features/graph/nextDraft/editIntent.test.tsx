@@ -1,5 +1,5 @@
 import { nativeNode } from '../../../shared/mocks/nativeFixtureTypes'
-import { RecordedHarnessConfigurationSchema } from '@foreman-code/contracts'
+import { HarnessConfigurationSchema } from '@foreman-code/contracts'
 import { journalIntent, savedJournal } from './nim2644Journal.fixture'
 import { boardStartClient } from '../../workflow-board'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -269,7 +269,7 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
     const context = repairFixture(1)
     const agent = context.agents[0]!.agent
     agent.harness = 'opencode'
-    agent.harnessConfiguration = RecordedHarnessConfigurationSchema.parse({
+    agent.harnessConfiguration = HarnessConfigurationSchema.parse({
       harness: 'opencode', model: 'provider/historical-model', variant: 'saved-variant',
       nativeAgent: 'saved-agent', thinking: true, autoApprove: false,
     })

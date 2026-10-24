@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { installAppLauncher } from './appMcpLauncher.js'
 import type { NativeProcessRecovery } from './recovery/processRegistry.js'
 import { backupNativeUserFile, readNativeUserFile, resolveNativeUserFile } from './nativeConfigFiles.js'
@@ -79,7 +78,7 @@ export class CodexMcpConnections implements NativeMcpAdapter {
         const source = await readNativeUserFile(file, { whenMissing: '', requireDirectory: true })
         await backupNativeUserFile(file, source)
         signal.throwIfAborted()
-        if (managed?.preset === INSTALLATION_NAMES.mcp.server && change.kind === 'add') await this.installLauncher(signal)
+        if (managed?.preset === 'graphql' && change.kind === 'add') await this.installLauncher(signal)
         signal.throwIfAborted()
         // A later error cannot establish whether the native write was delivered.
         writing()

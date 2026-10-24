@@ -10,7 +10,7 @@ import { JobRuntimeApprovalRecordSchema, JobRuntimeProfileRecordSchema, JobRunti
   jobRuntimeProfilePolicy, jobRuntimeProfileLimits, jobRuntimeQualificationAnchorAt } from '@foreman-code/contracts/job-verification-runtime'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { PostgresCommandCoordinator } from '../commands/index.js'
-import type { PostgresSourceService } from '../sources/index.js'
+import type { PostgresSourceService } from '../sources/service.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../access/policy.js'
 import { DomainError } from '../errors.js'

@@ -1,7 +1,7 @@
 import { type JobAuthoringChoicesRecord } from '@foreman-code/contracts/job-verification'
 import type { JobRunCleanup } from '@foreman-code/contracts/job-run-cleanup'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import type { RunOwnership } from '../runs/index.js'
+import type { RunOwnership } from '../runs/ownership.js'
 import type { JobSql } from './repository.js'
 import type { JobArtifact, JobValidation } from '@foreman-code/contracts/jobs'
 import type { JobAcceptedSpecRecord, JobDefinitionRecord, JobDefinitionSpecRecord, ResolvedJobDefinitionSpecRecord, JobExecutionRecord, PreparedJobSpecRecord } from '@foreman-code/contracts/job-verification'

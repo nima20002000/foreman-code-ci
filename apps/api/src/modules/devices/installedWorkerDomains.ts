@@ -28,6 +28,7 @@ import { createInstalledJobSource } from '../runs/index.js'
 import { createRemoteExecutionHandler, executionExtension } from '../runs/index.js'
 import { workflowPreparationExtension } from '../runs/index.js'
 import { REMOTE_EXECUTION_EXTENSION, REMOTE_PREPARATION_EXTENSION } from '@foreman-code/contracts/remote-execution-rpc'
+import { createWorkerJobInputPort } from '../files/jobInputs/workerFactory.js'
 import { JOB_INPUT_NAMESPACE } from '../files/jobInputs/protocol.js'
 import { createWorkerJobOutputCollector } from '../runs/index.js'
 import { createInstalledJobOutputRsync } from '../runs/index.js'
@@ -38,7 +39,7 @@ import type { RemoteJobExecutionHost, RemoteJobExecutionHostPorts } from '../run
 import { RemoteOperationJournal } from '../runs/index.js'
 import { NativeProcessRegistry } from '../harnesses/recovery/processRegistry.js'
 import { createWorkerQualificationExtension } from '../jobs/index.js'
-import type { InstalledRuntimeConfigurationLocation } from '../jobs/index.js'
+import type { InstalledRuntimeConfigurationLocation } from '../jobs/installedRuntimeHost.js'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { selectInstalledClaude } from '../computers/installedClaudeSelection.js'
@@ -145,7 +146,7 @@ interface WorkerState {
   openWorkflow: ((location: InstalledWorkflowConfigurationLocation) => Promise<void>) | undefined
   jobs: RemoteJobExecutionHost | undefined
   jobOpening: Promise<RemoteJobExecutionHost> | undefined
-  jobInputs: ReturnType<typeof createInstalledJobInputRsync> | undefined
+  jobInputs: ReturnType<typeof createWorkerJobInputPort> | ReturnType<typeof createInstalledJobInputRsync> | undefined
   conversations: Awaited<ReturnType<typeof createInstalledWorkerConversations>> | null
   activation: Promise<void> | undefined
   shutdown: Promise<void> | undefined
@@ -395,22 +396,8 @@ async function createWorkerSources({ input, state, transfers }: {
   if (approved) {
     receiver = createAuthenticatedTransferReceiver({ stagingRoot: join(input.stateDirectory, 'source-transfer-staging'),
       current: deviceId => { const binding = input.connection()?.currentBinding(); return binding?.deviceId === deviceId ? binding : undefined },
-      accepted: rsync.kind === 'configured' ? input.rsync!.accepted : {
-        async intent(id, binding) {
-          const inputs = transfers.jobInputRsync
-          return inputs && await inputs.ownsId(id) ? inputs.accepted.intent(id, binding) : sourceTransfersOnMain(request, current).intent(id, binding)
-        },
-        async authorize(intent, context, operation) {
-          const inputs = transfers.jobInputRsync
-          if (inputs && await inputs.ownsId(intent.transferId)) await inputs.accepted.authorize(intent, context, operation)
-          else await sourceTransfersOnMain(request, current).authorize(intent, context, operation)
-        },
-      },
+      accepted: rsync.kind === 'configured' ? input.rsync!.accepted : sourceTransfersOnMain(request, current),
       ...(rsync.kind === 'configured' ? { receiver: input.rsync!.receiver } : {}) })
-    if (!transfers.jobInputRsync && input.jobConfiguration) transfers.jobInputRsync = createInstalledJobInputRsync({
-      systemInput: transfers.systemInput,
-      receiver: receiver.receiver, journal: await jobJournal(), channel: { request, currentBinding: current },
-      receiptRoot: join(input.stateDirectory, 'job-input-receipts'), admissionRoot: join(input.stateDirectory, 'job-input-rsync-admissions') })
     const sources = new SourceOperationWorkerService({
       mainNow: mainNow,
       authenticate: async context => {
@@ -714,13 +701,14 @@ async function createWorkerExecution({ input, state, transfers }: {
   state: WorkerState
   transfers: WorkerTransfers
 }) {
-  const { approved, configurationLocation, current, extensions, jobInputRsync, jobJournal, jobOutputRsync, jobRegistry, journal, lifetime, registry, request, roots } = transfers
+  const { approved, configurationLocation, current, extensions, jobInputRsync, jobJournal, jobOutputRsync, jobRegistry, journal, lifetime, registry, request, roots, systemInput } = transfers
   const { accounts } = state
   const openJobs = () => state.jobOpening ??= (async () => {
     const connection = current(), retained = await jobJournal()
     const application = new WorkerJobApplicationSink({ request })
-    if (!jobInputRsync) throw new DomainError('JOB_INPUT_UNAVAILABLE', 'The canonical job input receiver is unavailable.', 409)
-    state.jobInputs = jobInputRsync
+    state.jobInputs = jobInputRsync ?? createWorkerJobInputPort({ channel: { request, currentBinding: current },
+      systemInput,
+      stagingRoot: join(input.stateDirectory, 'job-input-transfer-staging'), receiptRoot: join(input.stateDirectory, 'job-input-receipts') })
     const host = createInstalledJobExecutionHost({ configuration: input.jobConfiguration ?? null, registry: jobRegistry,
       ...input.jobReports,
       connection, incarnationId: randomUUID(), journal: retained, currentBinding: current,

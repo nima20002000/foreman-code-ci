@@ -4,7 +4,7 @@ import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { WorkerConversationProfileFactsSchema, workerConversationProfileSelection, type WorkerConversationBinding,
   type WorkerConversationConfiguration } from '@foreman-code/contracts/remote-execution-rpc'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import type { HarnessQualificationRepository } from '../harnesses/index.js'
+import type { HarnessQualificationRepository } from '../harnesses/qualification/repository.js'
 import type { InstalledHarnessInspection } from '../harnesses/installedCodexInspection.js'
 import { QUALIFICATION_TARGET_PROFILE } from '../harnesses/qualification/profiles.js'
 import { DomainError } from '../errors.js'

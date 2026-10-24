@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../installationNames.mjs'
 import { NodeBrowserSettingsSchema } from '../browserProfiles.js'
 import { WorkflowHierarchySchema } from '../workflowHierarchy.js'
 import { WorkflowWorktreeSettingsSchema, AgentWorktreeSettingsSchema } from '../worktreeSettings.js'
@@ -7,7 +6,7 @@ import { IdSchema, GraphIdSchema, TimestampSchema } from '../schemaPrimitives.js
 import { JobWorkflowNodeSchema } from '../jobWorkflow.js'
 import { SavedNodePlacementSchema } from '../nodePlacement.js'
 import { WorkflowArtifactInputsV1Schema, WorkflowArtifactOutputsV1Schema } from '../workflowArtifactDeclarations.js'
-import { ForemanToolOverrideSchema } from '../foremanMcpTools.js'
+import { GraphqlToolOverrideSchema } from '../graphqlMcpTools.js'
 import { ChoiceOutcomeSchema, ChoiceTargetSchema, WorkflowChoiceSchema } from './choice.js'
 import { NodeSkillOverrideSchema, OutputSchemaSchema } from './outputContract.js'
 export { ChoiceOutcomeSchema, ChoiceTargetSchema, WorkflowChoiceSchema } from './choice.js'
@@ -111,7 +110,7 @@ const CurrentAgentWorkflowNodeFields = {
   width: z.number().finite().positive().optional(), height: z.number().finite().positive().optional(),
   join: z.object({ mode: z.literal('all') }).strict().optional(), choice: WorkflowChoiceSchema.optional(),
   /** Changes the Agent's default Foreman Code MCP tools for this node only. */
-  [INSTALLATION_NAMES.fields.agentTools]: ForemanToolOverrideSchema.optional(),
+  graphqlTools: GraphqlToolOverrideSchema.optional(),
   browser: NodeBrowserSettingsSchema.optional(),
   artifactOutputs: WorkflowArtifactOutputsV1Schema.optional(),
   interval: AgentIntervalSchema.optional(),

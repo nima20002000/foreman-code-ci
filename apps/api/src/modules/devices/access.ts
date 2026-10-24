@@ -1,12 +1,11 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { DeviceSetupApproveInputSchema,DeviceSetupOptionsSchema,encodeWorkerEnrollmentCode,type DeviceSetupApproveInput,type DeviceSetupOptions } from '@foreman-code/contracts/device-setup'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { verifiedWorkerIdentityRequest } from '@foreman-code/contracts-node/device-setup-node'
+import { verifiedWorkerIdentityRequest } from '@foreman-code/contracts/device-setup-node'
 import { createHmac, randomBytes, randomUUID, verify } from 'node:crypto'
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { authorizeDevice, DevicePairingRequestSchema, DeviceRegistrationSchema, revokeDevice, type DevicePrincipal, type DeviceRegistration, type DeviceScope, type DevicePairingRequest, MainDeviceIdentityPublicSchema, type MainDeviceIdentityPublic } from '@foreman-code/contracts/device-identity'
-import { pairingProof, publicKeyFingerprint } from '@foreman-code/contracts-node/device-identity-node'
+import { pairingProof, publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
 import { commandInputHash, PostgresCommandCoordinator } from '../commands/postgres.js'
 import { requireAuthorization } from '../access/policy.js'
 import { DomainError } from '../errors.js'
@@ -18,7 +17,7 @@ import { sha256Hex } from '../../shared/hash.js'
 export { DeviceAccessError }
 const digest = (value: string) => sha256Hex(value)
 export type PairDeviceInput = DevicePairingRequest
-export { pairingProof } from '@foreman-code/contracts-node/device-identity-node'
+export { pairingProof } from '@foreman-code/contracts/device-identity-node'
 interface DeviceRow { record: DeviceRegistration; public_key: string; credential_expires_at: Date }
 export class PostgresDeviceAccessService {
   constructor(private readonly pool: pg.Pool, readonly mainId: string, private readonly onRevoked?: (deviceId: string, authorizationRevision: number) => void,private readonly setupOptions:()=>DeviceSetupOptions=()=>({endpoint:null,available:false,reason:'listener-unconfigured'})) {}
@@ -117,7 +116,7 @@ export class PostgresDeviceAccessService {
       if (row.consumed_request_id && row.consumed_request_id !== input.requestId) throw new DeviceAccessError('conflict')
       if (row.consumed_request_id && row.credential_expires_at.getTime() <= Date.now()) throw new DeviceAccessError('expired')
       if (!row.consumed_request_id && row.expires_at.getTime() <= Date.now()) throw new DeviceAccessError('expired')
-      const credential = digest(JSON.stringify([INSTALLATION_NAMES.protocol.workerCredential, input.grant, input.requestId]))
+      const credential = digest(JSON.stringify(['graphql-worker-credential-v1', input.grant, input.requestId]))
       const registration = { ...row.record, status: 'paired' as const }
       const expiresAt = row.consumed_request_id
         ? row.credential_expires_at.toISOString()
@@ -150,7 +149,7 @@ export class PostgresDeviceAccessService {
     const result = await this.pool.query<DeviceRow>('select record,public_key,credential_expires_at from device_registrations where credential_hash=$1', [digest(token)])
     const row = result.rows[0]
     if (!row) throw new DeviceAccessError('unauthorized')
-    const principal: DevicePrincipal = { audience: INSTALLATION_NAMES.protocol.workerAudience, mainId: row.record.mainId, deviceId: row.record.deviceId,
+    const principal: DevicePrincipal = { audience: 'graphql-worker', mainId: row.record.mainId, deviceId: row.record.deviceId,
       workerInstallationId: row.record.workerInstallationId, keyRevision: row.record.keyRevision,
       authorizationRevision: row.record.authorizationRevision, expiresAt: row.credential_expires_at.toISOString() }
     await this.revalidateDevice(principal, scope)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { appendNativeEvent } from '../src/modules/runs/nativeEvents.js'
 import { counts, createDatabase, event, nextSequence, withDatabaseFixture } from './native-event-allocation.test-support.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 describe('PostgreSQL native event allocation invariants', () => {
   const database = withDatabaseFixture(createDatabase)
@@ -9,18 +9,16 @@ describe('PostgreSQL native event allocation invariants', () => {
   it('keeps event, counter and Activity atomic in caller-owned and autocommit transactions', async () => {
     await database(async (pool) => {
       const client = await pool.connect()
-      const rollback = new Error('Rollback event fixture')
       try {
-        await expect(withTransaction({ client }, async transaction => {
-          await appendNativeEvent(transaction, event())
-          expect(await counts(pool)).toEqual({ events: 0, activity: 0 })
-          throw rollback
-        })).rejects.toBe(rollback)
+        await beginTransaction(client)
+        await appendNativeEvent(client, event())
+        expect(await counts(pool)).toEqual({ events: 0, activity: 0 })
+        await rollbackTransaction(client)
         expect(await nextSequence(pool)).toBe('0')
         // Exercise an autocommit Client, not just a Pool or an explicit transaction.
         await appendNativeEvent(client, event())
         expect(await counts(pool)).toEqual({ events: 1, activity: 1 })
-      } finally { client.release() }
+      } finally { await rollbackTransaction(client); client.release() }
       await pool.query("alter table run_activity add constraint reject_fixture_activity check (payload->>'nativeEventType' <> 'fixture.reject')")
       await expect(appendNativeEvent(pool, event(18, { type: 'fixture.reject' }))).rejects.toMatchObject({ code: '23514' })
       expect(await counts(pool)).toEqual({ events: 1, activity: 1 })

@@ -5,7 +5,7 @@ import { CloudHttp } from './cloudHttp.js'
 import type { HostCiPorts } from './runner.js'
 import type { CiContext } from './environment.js'
 import { circleCredentialError, circleProfileToken, configuredCircleToken } from './circleCredentials.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { invalidateProviderPoll } from './providerPoll.js'
 
 /** Internal contexts carry credentials through ports and HTTP, never through public readback. */

@@ -2,8 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { JobInputStageRequestSchema, JobInputDeliveryAckRequestSchema, JobInputDeliveryStatusRequestSchema } from '@foreman-code/contracts/job-inputs'
 import { VerifiedTransferReceiptSchema, type TransferIntent } from '@foreman-code/contracts/byte-transfer'
 import type { DeviceExtensionRegistration } from '../../devices/deviceApplicationChannel.js'
-import { createEndpointTransferClient, type ImmutableTransferSource } from '../../byte-transfer/index.js'
-import type { DeviceEndpoint } from '../../devices/index.js'
+import type { ImmutableTransferSource } from '../../byte-transfer/index.js'
 import { DomainError } from '../../errors.js'
 import type { CanonicalJobInputs } from './service.js'
 import { CanonicalJobInputRsyncSource } from './rsync.js'
@@ -13,16 +12,6 @@ export interface MainJobInputRsyncPorts {
   stage(intent: TransferIntent, source: ImmutableTransferSource, signal: AbortSignal): Promise<unknown>
   acknowledge(intent: TransferIntent, signal: AbortSignal): Promise<void>
 }
-/** Both carriers use the same immutable source and the Worker's canonical receiver. */
-export function jobInputTransferPorts(endpoint: Pick<DeviceEndpoint, 'captureRequest'>,
-  rsync?: MainJobInputRsyncPorts): MainJobInputRsyncPorts {
-  return rsync ?? {
-    stage: (intent, source, signal) => createEndpointTransferClient(endpoint, intent.deviceId).sender(source).send(intent, signal),
-    // Chunk staging has no external writer hold to release after detached delivery.
-    acknowledge: async () => {},
-  }
-}
-
 /** The original canonical admission and authenticated frame remain the authority.
  * Delivery status is read-only; it never recursively coordinates backend ACK. */
 export function createMainJobInputRsyncExtension(

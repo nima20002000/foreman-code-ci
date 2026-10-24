@@ -23,7 +23,7 @@ async function upgradeContinuations(pool: pg.Pool) {
   const current = (await pool.query<{ definition: string }>(`select pg_get_functiondef(p.oid) as definition
     from pg_proc p where p.pronamespace=current_schema()::regnamespace and p.prokind='f'`)).rows
   // The upgrade creates its functions plainly; their current definitions are restored afterwards.
-  for (const name of ['work_parent_request', 'assert_work_parent_input']) {
+  for (const [, name] of workParentRequestMigration.sql.matchAll(/create function (\w+)\(/g)) {
     await pool.query(`drop function ${name} cascade`)
   }
   await applyApplicationMigrations(pool)

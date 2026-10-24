@@ -4,7 +4,7 @@ import { CiGetOutputSchema, CiRunRecordSchema, type CiHostRun } from '@foreman-c
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { afterEach, expect, it, vi } from 'vitest'
-import { registerForemanMcp } from '../../src/mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
@@ -93,7 +93,7 @@ function fixture() {
   })
   const recordDenied = vi.fn(async () => undefined)
   const app = Fastify()
-  registerForemanMcp(app, { access, operator: { ci, commands: { recordDenied } } as unknown as OperatorServices })
+  registerGraphqlMcp(app, { access, operator: { ci, commands: { recordDenied } } as unknown as OperatorServices })
   const call = async (token = 'reader') => {
     const response = await app.inject({ method: 'POST', url: '/mcp',
       headers: { authorization: `Bearer ${token}`, accept: 'application/json, text/event-stream' },
