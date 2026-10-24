@@ -40,7 +40,6 @@ export function createWorkerBrowserRuntime(options) {
     readSelectedRelease = readInstalledRelease, readInstalled = readInstalledBrowserRuntime,
     loadModule = importHost, runtimeRoot = join(root, 'browser-runtime') } = options;
   let host = null, nativeModule = null, installed = null;
-  let startupChecked = false;
   let offlineLifecycle = null;
   let profileCheckpoint = null;
   let phase = 'unavailable', admissionStopped = false, closed = false, lastFailure = null;
@@ -144,14 +143,7 @@ export function createWorkerBrowserRuntime(options) {
   }
 
   return {
-    start: () => serialize(async () => {
-      if (!startupChecked) {
-        startupChecked = true;
-        const retained = await readBrowserRuntimeStatus(root);
-        if (retained?.state === 'failed' && retained.retryable === true) return retryInstallation();
-      }
-      return startHost();
-    }),
+    start: () => serialize(startHost),
     retry: () => serialize(retryInstallation),
     status,
     getHost: () => host,

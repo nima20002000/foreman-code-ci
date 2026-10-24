@@ -127,6 +127,9 @@ export class HostHarnessInstanceProfileChecks {
   async failure(value: HostHarnessOverride, client?: pg.PoolClient) {
     return (await this.proofs.latest(value.instanceId, value.revision, client))?.failure
   }
+  latestCheck(value: HostHarnessOverride, client?: pg.PoolClient) {
+    return this.proofs.latestCheck(value.instanceId, value.revision, client)
+  }
   checkAutomatically(value: HostHarnessOverride, installation: HarnessInstallationRecord): Promise<void> {
     const signal = AbortSignal.any([this.stopping.signal, AbortSignal.timeout(240_000)])
     return this.shareProfileCheck(value, () => this.withHostCheckSlot(value.target.hostRef, signal,

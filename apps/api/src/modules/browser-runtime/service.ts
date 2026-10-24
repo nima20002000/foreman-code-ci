@@ -1,5 +1,4 @@
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import type { BrowserSessionList } from '@foreman-code/contracts/browser-sessions'
 import { DomainError } from '../errors.js'
 import { browserInputHash } from '../browser-profiles/identity.js'
 import type { BrowserBroker } from './broker.js'
@@ -62,7 +61,7 @@ export class BrowserSessionService<Principal> {
     if (actor.kind === 'viewer') await this.claimViewer(principal, sessionId, actor.viewerId ?? '')
   }
 
-  async list(principal: Principal, input: BrowserSessionListInput = {}): Promise<BrowserSessionList> {
+  async list(principal: Principal, input: BrowserSessionListInput = {}) {
     if (input.subject) await this.authority.subject(principal, input.subject, false)
     if (input.setupForProfileId && input.computerId) await this.authority.setup(principal, input.setupForProfileId, input.computerId, false)
     const limit = Math.max(1, Math.min(100, input.limit ?? 100))

@@ -38,6 +38,12 @@ export function computerAvailabilityFailure(error: unknown): ComputerAvailabilit
     if (failure.code === 'SOURCE_DISK_CAPACITY') {
       return { reason: 'Workspace storage is full on this computer. Free space and retry.', pending: false }
     }
+    if (failure.code === 'HARNESS_RECOVERY_STORAGE_FULL') {
+      return { reason: 'Native harness storage is full on this computer. Free space in its configured managed storage and retry.', pending: false }
+    }
+    if (failure.code === 'extension-rejected') {
+      return { reason: 'The Worker rejected the harness profile check (extension-rejected). Check its logs and retry.', pending: false }
+    }
   }
   if (error instanceof Error && error.name === 'TimeoutError') {
     return { reason: connectionReasons.timeout!, pending: true }

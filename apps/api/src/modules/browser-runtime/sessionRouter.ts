@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import { BrowserSessionSchema, type BrowserRuntimeStatus } from '@foreman-code/contracts/browser-sessions'
+import { BrowserSessionSchema } from '@foreman-code/contracts/browser-sessions'
 import { DomainError } from '../errors.js'
 import { componentLogger } from '../diagnostics/index.js'
 import type { BrowserPairingAuthority, BrowserInstallationBinding } from '../browser-profiles/keys.js'
@@ -40,7 +40,6 @@ export function createBrowserSessionLocations(pool: pg.Pool): BrowserSessionLoca
 export interface BrowserSessionRouterOptions<Principal> {
   localComputerId: string; local: BrowserSessionService<Principal>; locations: BrowserSessionLocations
   pairing: BrowserPairingAuthority; transport: BrowserSessionTransport<Principal>; authority: BrowserSessionAuthority<Principal>
-  runtimeStatus(computerId: string): Promise<BrowserRuntimeStatus>
   computers(principal: Principal): Promise<readonly string[]>
   subjectComputer(principal: Principal, subject: AgentSubject): Promise<string>
   media(binding: BrowserInstallationBinding): BrowserMediaSource<Principal>
@@ -97,7 +96,6 @@ export function createBrowserSessionRouter<Principal>(options: BrowserSessionRou
     },
     async list(principal, input: BrowserSessionListInput = {}) {
       if (input.subject) await options.authority.subject(principal, input.subject, false)
-      if (input.setupForProfileId && input.computerId) await options.authority.setup(principal, input.setupForProfileId, input.computerId, false)
       const computers = input.computerId ? [input.computerId] : input.subject
         ? [await options.subjectComputer(principal, input.subject)] : [...await options.computers(principal)].sort()
       let current = 0, cursor: string | undefined
@@ -110,12 +108,7 @@ export function createBrowserSessionRouter<Principal>(options: BrowserSessionRou
       while (current < computers.length) {
         const computer = computers[current]!
         let page: Awaited<ReturnType<BrowserSessionPort<Principal>['list']>>
-        try {
-          const runtime = await options.runtimeStatus(computer)
-          // Admission can pause while a healthy host still owns live sessions.
-          page = runtime.ready || runtime.phase === 'ready' || runtime.phase === 'draining' ? await call(computer, 'list', principal, [{ ...input, computerId: computer, cursor }])
-            : { sessions: [], nextCursor: null, runtime }
-        } catch (error) {
+        try { page = await call(computer, 'list', principal, [{ ...input, computerId: computer, cursor }]) } catch (error) {
           if (input.computerId || input.subject || !(error instanceof DomainError) || error.code !== 'BROWSER_COMPUTER_OFFLINE') throw error
           componentLogger('lifecycle').warn({ err: error, computerId: computer, operation: 'list browser sessions' },
             'Offline computer omitted from browser session list')
@@ -123,7 +116,7 @@ export function createBrowserSessionRouter<Principal>(options: BrowserSessionRou
           continue
         }
         const next = page.nextCursor ? [computer, page.nextCursor] : computers[current + 1] ? [computers[current + 1], null] : null
-        return { sessions: page.sessions, ...(page.runtime ? { runtime: page.runtime } : {}), nextCursor: next ? Buffer.from(JSON.stringify(next)).toString('base64url') : null }
+        return { sessions: page.sessions, nextCursor: next ? Buffer.from(JSON.stringify(next)).toString('base64url') : null }
       }
       return { sessions: [], nextCursor: null }
     },
