@@ -22,9 +22,10 @@ import { repairFixture } from './nim2644State.cases'
 // Mounted Query/Zustand transport regression. It models two browser tabs with
 // separate Zustand stores/session snapshot IDs and shared protected localStorage.
 // It is not authenticated HTTP, PostgreSQL, native Run, or browser-provider evidence.
+const board = vi.hoisted(() => ({ activeRuns: 1, boardRunLive: false }))
 vi.mock('../../board-core/context', async (original) => ({
   ...await original<typeof import('../../board-core/context')>(),
-  useWorkflowBoard: () => ({ activeRuns: 1 }),
+  useWorkflowBoard: () => board,
 }))
 vi.mock('../../../shared/api/settingsExperience', () => ({ useLocalHumanAccessQuery: () => ({ data: {
   principal: { expiresAt: '2099-01-01T00:00:00Z', grants: [{ actions: ['runs:start'], scope: {} }] },
@@ -97,8 +98,9 @@ function stagedRead(request: GraphEditStageInputCurrent): GraphEditReadResultCur
   const retained = readEditOutbox(key)!
   const context = edit().context
   expect(retained.request).toEqual(request)
-  const pin = { workspaceId: request.workspaceId, workflowId: request.workflowId, runId: 'run-correction',
-    workflowVersionId: context.draft.baseWorkflowVersionId!, executionSemanticsVersion: 3 as const,
+  // This Run belongs to another workflow that pins the same saved Agent.
+  const pin = { workspaceId: request.workspaceId, workflowId: 'other-workflow', runId: 'run-correction',
+    workflowVersionId: 'other-version-1', executionSemanticsVersion: 3 as const,
     agentConfigurationVersionIds: { 'agent-0': 'configuration-agent-0' } }
   const intent = journalIntent(request, context, [pin])
   return GraphEditReadResultCurrentSchema.parse({ intent, canStop: true, affectedSetChanged: false,
@@ -114,6 +116,7 @@ function mount() {
 }
 
 beforeEach(() => {
+  board.boardRunLive = false
   useGraphDraftStore.getState().clearAllDrafts(); localStorage.clear(); sessionStorage.clear()
   sessionStorage.setItem(tabKey, 'B')
   vi.stubGlobal('navigator', { ...navigator, locks: { request: async (_name: string, work: (() => Promise<unknown>) | LockOptions, claim?: (lock: { name: string }) => unknown) => typeof work === 'function' ? work() : claim!({ name: _name }) } })
@@ -154,13 +157,24 @@ describe('NIM-2644 typed-board cross-tab stale revision fence', () => {
       return { ...value, intent: { ...value.intent!, state: 'waiting' } }
     })
 
-    const user = userEvent.setup(); mount()
+    const user = userEvent.setup(); const mounted = mount()
     await screen.findByRole('region', { name: 'Workflow authoring' })
     await waitFor(() => expect(nextDraftApi.editRead).toHaveBeenCalled())
     await waitFor(() => expect(clients[0]!.isFetching()).toBe(0))
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
     expect(edit().context.draft.revision).toBe(10)
     expect(nativeNode(edit().graph.nodes[0])?.initialPrompt).toBe('marker B')
+
+    // An own live Run locks the retained form without attempting Stage or Stop.
+    board.boardRunLive = true
+    mounted.rerender(<QueryClientProvider client={clients[0]!}><NextDraftEditor workspaceId="workspace" workflowId="workflow" /></QueryClientProvider>)
+    expect(saveButton()).toBeDisabled()
+    await user.click(saveButton())
+    expect(stage).not.toHaveBeenCalled()
+    expect(advance).not.toHaveBeenCalled()
+    board.boardRunLive = false
+    mounted.rerender(<QueryClientProvider client={clients[0]!}><NextDraftEditor workspaceId="workspace" workflowId="workflow" /></QueryClientProvider>)
+    expect(saveButton()).toBeEnabled()
 
     // A stale Stage rejects before any affected-set confirmation or Stop.
     await user.click(saveButton())

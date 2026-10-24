@@ -39,7 +39,7 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
     if (!node) return { chat: null, settings: null, info: null }
     if('jobDefinitionId' in node) {
       const details=<JobNodePanel workspaceId={graph.workspaceId} definitionId={node.jobDefinitionId} definitionRevision={node.jobDefinitionRevision} definitionVersionId={node.jobDefinitionVersionId} workflowExecution={pinned?.kind==='job'?pinned.workflowExecution:undefined}/>
-      return {chat:details,info:details,settings:pinned?details:<fieldset disabled={edit.busy||reloading||editIntent.locked}><p>Saved job revision {node.jobDefinitionRevision}</p><Button onClick={()=>{setOpenNode(undefined);change(value=>removeNode(value,node.id))}}>Remove job node</Button><NodeWorkflowFields graph={graph} node={node} context={context} agentEdits={edit.agentEdits} change={change}/></fieldset>}
+      return {chat:details,info:details,settings:pinned?details:<fieldset disabled={edit.busy||reloading||editIntent.locked||!!board?.boardRunLive}><p>Saved job revision {node.jobDefinitionRevision}</p><Button onClick={()=>{setOpenNode(undefined);change(value=>removeNode(value,node.id))}}>Remove job node</Button><NodeWorkflowFields graph={graph} node={node} context={context} agentEdits={edit.agentEdits} change={change}/></fieldset>}
     }
     const pinnedAgent = pinned?.kind !== 'job' ? pinned : undefined
     const agent = agents.find((item) => item.id === node.agentId)
@@ -77,7 +77,7 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
     return {
       chat,
       chatHasHeader: !unsavedChat,
-      settings: <fieldset className="board-popover-fields" disabled={edit.busy || reloading || editIntent.locked}>
+      settings: <fieldset className="board-popover-fields" disabled={edit.busy || reloading || editIntent.locked || !!board?.boardRunLive}>
         <BoardAgentSettings draftKey={draftKey} edit={edit} nodeId={node.id} close={closePanel} {...(saveWorkflow ? { saveWorkflow } : {})}
           mainFields={<NodeBrowserField graph={graph} node={graph.nodes.find((item) => item.id === node.id)!} change={update => {
             change(update)
@@ -96,7 +96,7 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
           { label: 'Starts workflow', value: graph.entryNodeId === node.id ? 'Yes' : 'No' },
           ...(agent ? agentSettingRows(agent) : []),
         ]} />
-        <fieldset className="board-popover-fields" disabled={edit.busy || reloading || editIntent.locked}>
+        <fieldset className="board-popover-fields" disabled={edit.busy || reloading || editIntent.locked || !!board?.boardRunLive}>
           <NodeConnections graph={graph} nodeId={node.id} change={change} report={report} />
         </fieldset>
         <details className="next-draft-details"><summary>Identifiers</summary>
