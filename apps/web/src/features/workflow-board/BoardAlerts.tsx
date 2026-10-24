@@ -18,7 +18,7 @@ export function BoardAlerts({ scope, hints, validation, error, pending, updateFa
   scope: string; hints: readonly AuthoringIssue[]; validation: NextDraftEdit['validation']; error?: Error; pending: boolean
   updateFailures?: readonly BoardUpdateFailure[]
   /** One-click fixes for alerts, by alert code. */
-  fixes?: Partial<Record<string, { label: string; run(): void }>>
+  fixes?: Partial<Record<string, { label: string; disabled?: boolean; run(): void }>>
   openIssue(issue: AuthoringIssue): void; openField(path: WorkflowSaveIssue['path']): void
 }) {
   const key = `board-alerts:${scope}`
@@ -59,7 +59,7 @@ export function BoardAlerts({ scope, hints, validation, error, pending, updateFa
       <ul className="board-alert-rows">{alerts.map(({ issue, tone, path, recovery }, index) => <li key={index} data-tone={tone}>
         <Icon name="warning" size={15} /><div><span className="n-sr-only">{tone === 'danger' ? 'Error: ' : 'Warning: '}</span>{issue.message}
           {recovery ? <Button size="sm" variant="ghost" disabled={pending || recovery.pending} aria-label={`Retry ${recovery.id === 'WORKSPACE_UPDATES_UNAVAILABLE' ? 'workspace' : 'draft'} updates`}
-            onClick={recovery.retry}>{recovery.pending ? 'Retrying…' : 'Retry'}</Button> : fixes[issue.code] ? <Button size="sm" variant="ghost" disabled={pending}
+            onClick={recovery.retry}>{recovery.pending ? 'Retrying…' : 'Retry'}</Button> : fixes[issue.code] ? <Button size="sm" variant="ghost" disabled={pending || fixes[issue.code]!.disabled}
             onClick={fixes[issue.code]!.run}>{fixes[issue.code]!.label}</Button> : issue.code !== 'SAVE_ERROR' && !(issue.code === 'ENTRY_REQUIRED' && issue.message.startsWith('Add an agent')) && (!path || ['approval', 'executionPolicy', 'entryNodeId'].includes(String(path[0]))) ? <Button size="sm" variant="ghost" disabled={pending} onClick={() => {
             setOpen(false)
             if (path && ['approval', 'executionPolicy', 'entryNodeId'].includes(String(path[0]))) openField(path)

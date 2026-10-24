@@ -46,8 +46,6 @@ export type WorkflowBoardSelection = {
   boardRunControls?: ReactNode
   /** Show a Run just started from this Board on the Board itself, before the Run list catches up. */
   showRunOnBoard?(runId: string): void
-  /** The Run whose states are painted on the draft's nodes (its saved version is the draft's own). */
-  paintedRunId?: string
 }
 
 /** DOM nodes the Board renders and portals content into. They change only when those nodes mount. */
