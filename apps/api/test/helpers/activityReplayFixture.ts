@@ -9,7 +9,7 @@ import { ManagementActionSchema, ManagedAgentDefaultsSchema, WorkspaceLocationSe
 import { ManualRunStartResultSchema, SavedRunDetailsSchema, WorkflowVersionCurrentSchema, makeCurrentWorkflowFixture, type CurrentFixtureForm } from '@foreman-code/contracts/current'
 import { LOCAL_RUNNER_ID } from '../../src/modules/workspaces/location.js'
 import { loadConfig } from '../../src/config.js'
-import { createCheckpointStore } from '../../src/infrastructure/checkpoints.js'
+import { createCheckpointStore } from '../../src/composition/checkpoints.js'
 import { applyApplicationMigrations } from '../../src/infrastructure/migrations.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { buildProductionApp } from '../../src/production.js'

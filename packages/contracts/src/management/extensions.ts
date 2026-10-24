@@ -5,7 +5,7 @@ import { DeviceProvisioningHostReferenceSchema } from "../deviceResources.js";
 import { WorkflowVersionCurrentSchema } from "../current/workflowSchemas.js";
 import {
   AgentSchema, AgentConfigurationVersionSchema,
-  HarnessConfigurationSchema, SupportedHarnessConfigurationSchema, HarnessQualificationSchema, ScopedMcpDetectionSchema,
+  RecordedHarnessConfigurationSchema, SupportedHarnessConfigurationSchema, HarnessQualificationSchema, ScopedMcpDetectionSchema,
   IdSchema, TimestampSchema, ApprovalHandlerSchema, MAX_SKILL_INSTRUCTIONS_CHARS,
 } from "../index.js";
 
@@ -67,7 +67,7 @@ export const HarnessMcpDetectionInputSchema = z.object({ ...Workspace, harness: 
 export const HarnessMcpDetectionResultSchema = ScopedMcpDetectionSchema;
 export const NativeConfigurationCheckInputSchema = z.object({ configuration: Configuration }).strict();
 export const NativeConfigurationCheckResultSchema = z.object({
-  configuration: HarnessConfigurationSchema, qualification: HarnessQualificationSchema, checkedAt: TimestampSchema,
+  configuration: RecordedHarnessConfigurationSchema, qualification: HarnessQualificationSchema, checkedAt: TimestampSchema,
 }).strict();
 
 export const WorkflowVersionListInputSchema = z.object({ ...Workflow, ...Page }).strict();

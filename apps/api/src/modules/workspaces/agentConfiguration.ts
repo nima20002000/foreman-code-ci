@@ -11,14 +11,14 @@ import {
 } from '@foreman-code/contracts'
 import type pg from 'pg'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
-import type { HarnessConfiguration } from '@foreman-code/contracts'
+import type { RecordedHarnessConfiguration } from '@foreman-code/contracts'
 
 import { DomainError } from '../errors.js'
 import { assertClaudeFullAccess } from '../harnesses/index.js'
 import { resolveAssignedSkills } from '../skills/catalog.js'
 import { composeInstructionText, instructionsTooLarge } from '../skills/instructions.js'
 import { sha256Hex } from '../../shared/hash.js'
-import { retiredHarnessError } from '../harnesses/index.js'
+import { retiredHarnessError } from '../harnesses/retiredHarness.js'
 
 export function configurationInput(
   workspaceId: string,
@@ -107,7 +107,7 @@ export async function saveAgentConfiguration(
   workspaceId: string,
   input: Agent,
   mustExist = false,
-  validateProfileSelection?: (selection: HarnessProfileSelection, configuration: HarnessConfiguration, client: pg.PoolClient) => Promise<void>,
+  validateProfileSelection?: (selection: HarnessProfileSelection, configuration: RecordedHarnessConfiguration, client: pg.PoolClient) => Promise<void>,
 ): Promise<Agent> {
   const parsed = AgentSchema.parse(input)
   await lockAgentConfigurations(client, [parsed.id])

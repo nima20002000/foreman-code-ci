@@ -7,7 +7,7 @@ import pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 
 import { buildApp } from '../src/app.js'
-import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
+import { createCheckpointStore } from '../src/composition/checkpoints.js'
 import { createDatabase } from '../src/infrastructure/database.js'
 
 const connectionString =

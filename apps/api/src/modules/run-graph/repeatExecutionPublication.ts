@@ -1,6 +1,6 @@
 import { repeatExecutionStateDigest } from './graphDigest.js'
 import { GraphSequenceSchema, canonicalGraphJson, type RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
-import type { RunOwnership } from '../runs/ownership.js'
+import type { RunOwnership } from '../runs/index.js'
 import { beforeGraphCommit, poisonGraphTransaction } from './connection.js'
 import { RunGraphError } from './errors.js'
 import { graphSourceDigest, type RunGraphPublication } from './publication.js'

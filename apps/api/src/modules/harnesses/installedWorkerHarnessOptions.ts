@@ -4,7 +4,7 @@ import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connec
 import type { HarnessOptionsDiscoveryRequest } from '@foreman-code/contracts/harness-registry'
 import { HarnessOptionsResultSchema, type HarnessOptions } from '@foreman-code/contracts/management'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import type { ProviderAccountResolver } from '../provider-accounts/service.js'
+import type { ProviderAccountResolver } from '../provider-accounts/index.js'
 import { codexAuthenticationIdentity } from './codexAuthenticationIdentity.js'
 import { systemPorts } from '../computers/accountProbe.js'
 import { DomainError } from '../errors.js'

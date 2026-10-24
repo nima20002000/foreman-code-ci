@@ -2,7 +2,7 @@ import type { RemoteOwnerControl } from '@foreman-code/contracts/remote-executio
 import { burstRead } from './burstRead.js'
 import type { ResultProtocol } from '@foreman-code/contracts'
 import { workflowPreparationExtension } from './preparationExtension.js'
-import type { ProviderAccountResolver, ResolvedProviderAccount } from '../../provider-accounts/service.js'
+import type { ProviderAccountResolver, ResolvedProviderAccount } from '../../provider-accounts/index.js'
 import { assertWorkerProviderAccountBinding } from '../../provider-accounts/index.js'
 import { managedProviderEnvironment, resolveRuntimeProviderAccount } from '../../harnesses/providerAccountRuntime.js'
 import { constants } from 'node:fs'
@@ -34,7 +34,7 @@ import { EXECUTION_AUTHORITY_EXTENSION } from '@foreman-code/contracts/execution
 import { WORKER_MCP_EXTENSION } from '@foreman-code/contracts/worker-mcp-relay'
 import { DomainError } from '../../errors.js'
 import { captureOriginalCodexSession } from '../../harnesses/originalCodexSession.js'
-import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart } from '../../harnesses/port.js'
+import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart } from '../../harnesses/index.js'
 import { HarnessInstanceRegistry, localHarnessDrivers } from '../../harnesses/instanceRegistry.js'
 import { HarnessInstallationRegistry } from '../../harnesses/installationRegistry.js'
 import { CodexAppServerSessionManager, safeEnvironment } from '../../harnesses/codexAppServer.js'
@@ -79,7 +79,7 @@ import { hasPositiveRemoteEntryClosure, remoteNonEntryClosureDigest } from '@for
 import { deviceRequestTimeoutMs, retryDeviceRequest } from '../../devices/deviceRequestRetry.js'
 import { hostEnvironment } from '../../../shared/process.js'
 import { deviceReconnectTimeoutMs, isDeviceLinkDrop, sameDeviceInstallation, waitForDeviceReconnect } from '../../devices/deviceReconnect.js'
-import { retiredHarnessError } from '../../harnesses/index.js'
+import { retiredHarnessError } from '../../harnesses/retiredHarness.js'
 
 function unavailableError(reason:string) {return new DomainError('WORKER_WORKFLOW_UNAVAILABLE','The original installed workflow authority is unavailable.',409,{reason})}
 function unavailable(reason:string):never {throw unavailableError(reason)}

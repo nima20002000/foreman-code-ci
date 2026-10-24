@@ -3,7 +3,7 @@ import {
   AcceptedRepeatStartV1Schema, canonicalGraphJson, RepeatGraphScopeCurrentSchema,
   type RepeatGraphScopeCurrent, type AcceptedRepeatStartV1,
 } from '@foreman-code/contracts/current'
-import type { RepeatStartPublication } from '../runs/repeatStartAdmission.js'
+import type { RepeatStartPublication } from '../runs/index.js'
 import { assertGraphTransaction, poisonGraphTransaction } from './connection.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { openRunGraphPublication, type RunGraphPublication } from './publication.js'
