@@ -6,59 +6,72 @@ import { apiClient } from '../../shared/api/client'
 import { CommandAttempt } from '../../shared/api/commandAttempt'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
 import { LoadMore } from '../../shared/ui/LoadMore'
-import type { WorkflowBatchArchiveInput } from '@foreman-code/contracts/management'
+import type { WorkflowBatchArchiveInput, WorkflowUpdateInput } from '@foreman-code/contracts/management'
 import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query'
 
 import {
-  queryKeys, useArchiveManagedWorkflowMutation, useWorkflowPages,
+  queryKeys, useWorkflowPages,
   useUpdateManagedWorkflowMutation,
 } from '../../shared/api/query'
 import {
-  ActionMenu, Button, ConfirmDialog, EmptyState, ErrorState, PageHeader, TextField,
+  ActionMenu, Alert, Button, ConfirmDialog, EmptyState, ErrorState, PageHeader, TextField,
 } from '../../shared/ui/nocturne'
 import { ResourceActionsMenu, ResourceCard } from '../../shared/ui/ResourceCard'
+import { useWorkflowRemoval } from './useWorkflowRemoval'
 import { NewWorkflowAction } from './NewWorkflowAction'
 import './workflows.css'
 import '../../shared/ui/resourceDirectory.css'
 
-function WorkflowCardActions({ name, onRename, onRemove }: {
-  name: string
-  onRename: (name: string) => void
-  onRemove: () => void
+function WorkflowCardActions({ workspaceId, workflowId, name, revision }: {
+  workspaceId: string; workflowId: string; name: string; revision: number
 }) {
+  const client = useQueryClient()
+  const update = useUpdateManagedWorkflowMutation()
+  const removal = useWorkflowRemoval({ workspaceId, workflowId, revision })
+  const attempt = useRef(new CommandAttempt<Omit<WorkflowUpdateInput, 'commandId'>>())
+  const original = useRef<Omit<WorkflowUpdateInput, 'commandId'> | undefined>(undefined)
+  const inFlight = useRef(false)
   const [open, setOpen] = useState(false)
   const [nextName, setNextName] = useState(name)
   const [nameError, setNameError] = useState<string>()
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const pending = update.isPending || removal.mutation.isPending
+  const uncertain = attempt.current.unresolved || removal.unresolved
+  useEffect(() => { if (!open) setNextName(name) }, [name, open])
 
-  useEffect(() => setNextName(name), [name])
-
+  const rename = async () => {
+    if (inFlight.current || removal.unresolved) return
+    const value = nextName.trim()
+    if (!value) { setNameError('Enter a workflow name.'); nameInputRef.current?.focus(); return }
+    inFlight.current = true
+    const generation = sessionGeneration()
+    try {
+      if (!attempt.current.unresolved) original.current = { workspaceId, workflowId, expectedRevision: revision, name: value }
+      await update.mutateAsync(attempt.current.input(original.current!))
+      assertSession(generation)
+      attempt.current.succeeded()
+      setOpen(false)
+      void client.invalidateQueries({ queryKey: queryKeys.managedWorkflows(workspaceId) })
+    } catch (error) { attempt.current.failed(error) }
+    finally { inFlight.current = false }
+  }
   return (
-    <ResourceActionsMenu name={name} open={open} onOpenChange={setOpen}>
-      <form className="resource-card-menu-rename" onSubmit={(event) => {
-        event.preventDefault()
-        const value = nextName.trim()
-        if (!value) {
-          setNameError('Enter a workflow name.')
-          nameInputRef.current?.focus()
-          return
-        }
-        onRename(value)
-        setOpen(false)
-      }}>
-        <TextField
-          ref={nameInputRef}
-          label="Name"
-          value={nextName}
-          error={nameError}
-          onChange={(event) => {
-            setNextName(event.target.value)
-            if (nameError) setNameError(undefined)
-          }}
-        />
-        <Button type="submit" disabled={nextName.trim() === name}>Rename</Button>
+    <ResourceActionsMenu name={name} open={open} onOpenChange={(next) => {
+      if (!pending && !uncertain) setOpen(next)
+    }}>
+      <form className="resource-card-menu-rename" onSubmit={(event) => { event.preventDefault(); void rename() }}>
+        <TextField ref={nameInputRef} label="Name" value={nextName} error={nameError} disabled={pending || uncertain}
+          onChange={(event) => { setNextName(event.target.value); setNameError(undefined) }} />
+        <Button type="submit" disabled={pending || removal.unresolved || !update.isError && nextName.trim() === name}>
+          {update.isPending ? 'Renaming…' : update.isError ? 'Retry rename' : 'Rename'}
+        </Button>
       </form>
-      <Button variant="danger" onClick={onRemove}>Remove workflow</Button>
+      {update.isError ? <Alert live tone="danger" title={update.error.message} /> : null}
+      {attempt.current.unresolved && !update.isPending ? <p role="status">The rename may have worked. Retry to check.</p> : null}
+      <Button variant="danger" disabled={pending || attempt.current.unresolved} onClick={() => void removal.remove()}>
+        {removal.mutation.isPending ? 'Removing…' : removal.mutation.isError ? `Retry removing ${name}` : 'Remove workflow'}
+      </Button>
+      {removal.mutation.isError ? <Alert live tone="danger" title={removal.mutation.error.message} /> : null}
     </ResourceActionsMenu>
   )
 }
@@ -70,8 +83,6 @@ export function WorkflowDirectory({ workspaceId, headingLevel = 1, hideHeading =
 function WorkflowDirectoryContent({ workspaceId, headingLevel, hideHeading }: { workspaceId: string; headingLevel: 1 | 2; hideHeading: boolean }) {
   const queryClient = useQueryClient()
   const managedQuery = useWorkflowPages(workspaceId, true, 'directory')
-  const updateWorkflow = useUpdateManagedWorkflowMutation()
-  const archiveWorkflow = useArchiveManagedWorkflowMutation()
   const [selectionStore] = useState(() => createResourceSelection())
   const selection = useStore(selectionStore)
   const count = Object.keys(selection.selected).length
@@ -158,22 +169,8 @@ function WorkflowDirectoryContent({ workspaceId, headingLevel, hideHeading }: { 
                   params={{ workspaceId }}
                   search={{ workflowId: workflow.id }}
                 />}
-                actions={<WorkflowCardActions
-                  name={workflow.name}
-                  onRename={(name) => {
-                    const item = managedById.get(workflow.id)
-                    if (!item) return
-                    updateWorkflow.mutate({ workspaceId, workflowId: workflow.id, expectedRevision: item.revision, commandId: crypto.randomUUID(), name }, {
-                      onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkflows(workspaceId) }),
-                    })
-                  }}
-                  onRemove={() => {
-                    const item = managedById.get(workflow.id)
-                    if (!item) return
-                    archiveWorkflow.mutate({ workspaceId, workflowId: workflow.id, expectedRevision: item.revision, commandId: crypto.randomUUID() }, {
-                      onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkflows(workspaceId) }),
-                    })
-                  }}
+                actions={<WorkflowCardActions workspaceId={workspaceId} workflowId={workflow.id}
+                  name={workflow.name} revision={managedById.get(workflow.id)!.revision}
                 />}>
                 <span className="workflow-row-status" data-state={managedById.get(workflow.id)?.currentVersionId ? 'saved' : 'draft'}>
                   {managedById.get(workflow.id)?.currentVersionId ? 'Saved' : 'Draft'}
@@ -201,8 +198,7 @@ function WorkflowDirectoryContent({ workspaceId, headingLevel, hideHeading }: { 
       <ConfirmDialog open={selection.confirming} onOpenChange={(open) => { if (!open) closeConfirmation() }}
         title={`Delete ${count} ${count === 1 ? 'workflow' : 'workflows'}?`}
         description="They leave this workspace. Saved versions and run history stay. Workflows with active runs can’t be deleted."
-        dismissalReason={attempt.current.unresolved ? 'Removal is unconfirmed. Retry checks the original removal before you can close this dialog.' : undefined}
-      pending={batch.isPending} confirmLabel={attempt.current.unresolved ? 'Retry' : 'Delete'}
+        pending={batch.isPending} confirmLabel={attempt.current.unresolved ? 'Retry' : 'Delete'}
         error={batch.isError ? batch.error.message : attempt.current.unresolved && !batch.isPending ? 'It may already be done. Retry to check.' : undefined}
         onConfirm={() => void deleteSelected()} />
     </section>
