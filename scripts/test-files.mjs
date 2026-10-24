@@ -8,7 +8,7 @@ const arguments_ = process.argv.slice(2)
 if (arguments_[0] === '--') arguments_.shift()
 const explicitMode = modes.includes(arguments_[0]) ? arguments_.shift() : undefined
 if (!arguments_.length) throw new Error('Pass explicit repository-relative test files.')
-const projects = ['apps/api', 'apps/ci', 'apps/web', 'packages/contracts', 'packages/contracts-node', 'scripts']
+const projects = ['apps/api', 'apps/ci', 'apps/web', 'packages/contracts', 'scripts']
 const selections = new Map()
 for (const file of arguments_) {
   const project = projects.find(folder => file.startsWith(`${folder}/`))
@@ -36,7 +36,7 @@ async function run(command, args, environment = process.env) {
   return code
 }
 
-for (const name of ['contracts', 'contracts-node', 'ci']) {
+for (const name of ['contracts', 'ci']) {
   if (await run('corepack', ['pnpm', '--filter', `@foreman-code/${name}`, 'build']) !== 0) {
     throw new Error(`Selected tests require the ${name} build.`)
   }

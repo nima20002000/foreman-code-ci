@@ -1,7 +1,6 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
-export const identityEpochKey = INSTALLATION_NAMES.browserStorage.identityEpoch
-export const identityChangedEvent = INSTALLATION_NAMES.browserStorage.identityChanged
-export const chatStoragePrefix = INSTALLATION_NAMES.browserStorage.chatPrefix
+export const identityEpochKey = 'graphql.identity-epoch'
+export const identityChangedEvent = 'graphql:identity-changed'
+export const chatStoragePrefix = 'graphql.chat:'
 let volatileEpoch: string | undefined
 
 function freshEpoch(): string {
@@ -22,7 +21,7 @@ export function protectedKey(kind: 'draft' | 'ui' | 'outbox', id = ''): string {
 export function rotateProtectedSession(): string {
   const epoch = freshEpoch()
   volatileEpoch = epoch
-  try { window.localStorage.setItem(identityEpochKey, epoch) } catch { /* ignore: Inaccessible storage cannot leak a saved draft. */ }
+  try { window.localStorage.setItem(identityEpochKey, epoch) } catch { /* Inaccessible storage cannot leak a saved draft. */ }
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(identityChangedEvent))
   return epoch
 }
@@ -38,7 +37,7 @@ export function parseChatPreferences(value: unknown): Partial<ChatPreferences> {
     ...(typeof data.selectedConversationId === 'string' ? { selectedConversationId: data.selectedConversationId } : {}) }
 }
 
-const instanceBindingKey = INSTALLATION_NAMES.browserStorage.chatBinding
+const instanceBindingKey = 'graphql.chat-instance-binding'
 let instanceReloadRequired = false
 /** Bind protected state before rendering it. True means the caller must reload
  * with children hidden: document-scoped stores still belong to the old epoch.

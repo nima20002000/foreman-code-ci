@@ -15,7 +15,7 @@ import type { AppInteractionService } from '../../src/modules/interactions/app.j
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import { DomainError } from '../../src/modules/errors.js'
 import { DeviceConnectionError } from '../../src/modules/devices/deviceWire.js'
-import { registerForemanMcp } from '../../src/mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../../src/mcp/unified/transport.js'
 import { CiRuntimeProvisioner } from '@foreman-code/ci/ciRuntimeProvisioner'
 import { CiRuntimeWorker } from '@foreman-code/ci/ciRuntimeWorker'
 import { buildComputerTarget } from '../../src/modules/settings/buildComputers.js'
@@ -337,7 +337,7 @@ export async function ciPreparationFixture(options: {
   } } as unknown as PostgresAccessService
   const interactions = { toolAccess: async () => ({ role: 'coder', tools: [] }), canRead: async () => false,
     canRespond: async () => false } as unknown as AppInteractionService
-  registerForemanMcp(app, { access, operator: services, interactions })
+  registerGraphqlMcp(app, { access, operator: services, interactions })
   const url = await app.listen({ port: 0, host: '127.0.0.1' })
   const call = async (name: string, input: unknown, token = 'operator') => {
     const response = await fetch(`${url}/mcp`, { method: 'POST',

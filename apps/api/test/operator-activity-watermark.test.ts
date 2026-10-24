@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 import { PostgresOperatorActivityRepository, type ActivityMutationFence } from '../src/modules/conversations/operatorActivityRepository.js'
-import type { OperatorActivityChange } from '../src/modules/harnesses/index.js'
+import type { OperatorActivityChange } from '../src/modules/conversations/operatorActivity.js'
 
 function fixture() {
   let scopeRevision = 0

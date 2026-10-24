@@ -8,7 +8,7 @@ import { ChatSendRequestSchema, ChatStopRequestSchema, type ChatDeliveryReceipt,
 import { server } from '../../../mocks/server'
 import { ApiError } from '../../../shared/api/client'
 import type { ConversationAttachments } from '../../attachments'
-import { useConversationDraftStore } from '../../chat-core'
+import { useConversationDraftStore } from '../conversationDraftStore'
 import { ExecutionChatPanel } from './ExecutionChatPanel'
 import type { ExecutionChatNotice, ExecutionChatSource, ExecutionChatTarget } from './executionChatSource'
 

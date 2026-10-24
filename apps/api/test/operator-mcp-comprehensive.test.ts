@@ -9,7 +9,7 @@ import { DeviceListResultSchema, DeviceRegistrationSchema, DevicePairingGrantRes
 import { ManagementActionSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { OperatorConversationStateSchema, CancelOperatorTurnResponseSchema, SessionControlStateSchema, unavailableSessionControls } from '@foreman-code/contracts'
 import { buildApp } from '../src/app.js'
-import { createForemanMcpServer } from '../src/mcp/unified/server.js'
+import { createGraphqlMcpServer } from '../src/mcp/unified/server.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { DomainError } from '../src/modules/errors.js'
@@ -201,7 +201,7 @@ describe('current device and Operator control MCP parity', () => {
   it('constructs the complete control composition once without settings', async () => {
     const f = await fixture({ settings: false })
     try {
-      const server = await createForemanMcpServer({ role: 'operator', principal: owner, operator: f.c.services })
+      const server = await createGraphqlMcpServer({ role: 'operator', principal: owner, operator: f.c.services })
       await server.close()
       const client = await f.connect('owner')
       const names = await operatorCatalogNames(client)

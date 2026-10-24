@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { expect, it, vi } from 'vitest'
 import { AgentChatStateSchema } from '@foreman-code/contracts/agent-chat'
-import { ActivityChangeEnvelopeV1Schema, SessionControlStateSchema, type HarnessConfiguration, type RecordedHarnessConfiguration } from '@foreman-code/contracts'
+import { ActivityChangeEnvelopeV1Schema, SessionControlStateSchema, type HarnessConfiguration } from '@foreman-code/contracts'
 import { AgentMutationResultSchema } from '@foreman-code/contracts/management'
 import { remoteAgentConversation } from './helpers/remoteAgentConversation.js'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
 import { assertAgentNewConversation } from './helpers/agentNewConversation.js'
 
-function changedSettings(configuration: RecordedHarnessConfiguration, field: 'model' | 'effort' | 'account',
+function changedSettings(configuration: HarnessConfiguration, field: 'model' | 'effort' | 'account',
   models: readonly string[]): HarnessConfiguration {
   if (configuration.harness === 'opencode') throw new Error('Supported chat harness required')
   if (field === 'model') {

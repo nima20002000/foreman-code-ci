@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import {
   RemoteExecutionSettingsSchema, RemoteExecutionEnvironmentVariableSchema,
   type RemoteExecutionSettings, type RemoteExecutionEnvironmentVariable, type WorkerExecutionSettings,
@@ -22,10 +21,10 @@ export function remoteExecutionStartupEnvironment(options: {
 }): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {}
   if (options.workerExecution?.managedBy === 'startup') {
-    environment[INSTALLATION_NAMES.environment.LAPTOP_EXECUTION_ENABLED] = options.workerExecution.enabled ? '1' : '0'
+    environment.FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED = options.workerExecution.enabled ? '1' : '0'
   }
   if (options.listener) {
-    environment[INSTALLATION_NAMES.environment.DEVICE_LISTENER_ENABLED] = '1'
+    environment.FOREMAN_CODE_DEVICE_LISTENER_ENABLED = '1'
     for (const key of Object.keys(listenerVariables) as Array<keyof typeof listenerVariables>) {
       const value = options.listener[key]
       if (value !== undefined) environment[listenerVariables[key]] = String(value)
@@ -43,14 +42,14 @@ function enabledOverride(value: string | undefined, fallback: boolean): boolean 
 export function resolveRemoteExecutionSettings(saved: RemoteExecutionSettings, rawEnvironment: NodeJS.ProcessEnv) {
   const environment = resolveProductEnvironment(rawEnvironment)
   const listener = { ...saved.listener }
-  listener.enabled = enabledOverride(environment[INSTALLATION_NAMES.environment.DEVICE_LISTENER_ENABLED], listener.enabled)
+  listener.enabled = enabledOverride(environment.FOREMAN_CODE_DEVICE_LISTENER_ENABLED, listener.enabled)
   for (const key of ['host', 'certificateFile', 'privateKeyFile', 'advertisedEndpoint', 'trustCertificateFile'] as const) {
     const override = environment[listenerVariables[key]]
     if (override !== undefined) listener[key] = override.trim() || null
   }
   if (environment.DEVICE_LISTENER_PORT !== undefined) listener.port = Number(environment.DEVICE_LISTENER_PORT)
   const effective = RemoteExecutionSettingsSchema.parse({
-    enabled: enabledOverride(environment[INSTALLATION_NAMES.environment.LAPTOP_EXECUTION_ENABLED], saved.enabled), listener,
+    enabled: enabledOverride(environment.FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED, saved.enabled), listener,
   })
   const environmentOverrides: RemoteExecutionEnvironmentVariable[] = RemoteExecutionEnvironmentVariableSchema.options
     .filter(key => environment[key] !== undefined)
@@ -59,7 +58,7 @@ export function resolveRemoteExecutionSettings(saved: RemoteExecutionSettings, r
 
 export function remoteExecutionListenerConfig(settings: RemoteExecutionSettings, apiPort: number) {
   const environment: NodeJS.ProcessEnv = {
-    [INSTALLATION_NAMES.environment.DEVICE_LISTENER_ENABLED]: settings.listener.enabled ? '1' : '0',
+    FOREMAN_CODE_DEVICE_LISTENER_ENABLED: settings.listener.enabled ? '1' : '0',
   }
   for (const key of Object.keys(listenerVariables) as Array<keyof typeof listenerVariables>) {
     const value = settings.listener[key]

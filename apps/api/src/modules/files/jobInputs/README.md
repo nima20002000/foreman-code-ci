@@ -8,13 +8,10 @@ SQL-only definition/Start validation, including empty inputs. It must run before
 source preparation. `local.prepare` implements the required executor input port.
 
 For devices, register `extension` on the actual W07 server and construct
-`createInstalledJobInputRsync` with the existing signed application channel, current
-binding, original operation journal and shared canonical receiver. The persisted
-admission precedes any byte staging. `job-inputs-v1` carries admission, authorization
-and detached-delivery ACK/status metadata. Ordinary delivery sends the immutable
-Main-issued `to-worker` intent through `ByteTransferPort` on `byte-transfer-v1`;
-selected rsync stages into the same receiver and quota journal. Both use the
-shared durable receiver and retain exact saved admissions across reconnects. No worker SQL or management
+`createWorkerJobInputPort` from `workerFactory.ts` with the existing signed application channel plus its
+actual current authenticated binding accessor. Main-owned intents and exact
+canonical ranges use namespace `job-inputs-v1`; the worker uses the existing
+ResumableByteTransferService for verified staging. No worker SQL or management
 principal is delivered. Current recipient dispatch/source/root, sender scope,
 source result binding, device credential and file expiry are checked again.
 
