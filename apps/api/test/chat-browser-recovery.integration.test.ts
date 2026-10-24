@@ -43,6 +43,7 @@ async function fixture() {
     const browser = createProductionBrowser({ pool: db.pool, stateDirectory: db.directory, binding: () => null,
       assertHostOwnership: unused, reportFailure: () => undefined,
       remote: () => ({ profiles: { endpoint: unused }, sessions: { invoke: unused }, ready: async () => true,
+        status: async computerId => ({ computerId, ready: true, phase: 'ready', reason: null }),
         media: () => { throw new Error('Unexpected browser media') }, prepare, release }) })
     browsers.push(browser)
     vi.spyOn(browser.authority, 'details').mockImplementation(async subject => ({ subject, active, computerId: deviceId,

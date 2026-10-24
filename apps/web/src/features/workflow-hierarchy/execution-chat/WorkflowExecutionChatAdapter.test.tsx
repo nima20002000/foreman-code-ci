@@ -140,7 +140,7 @@ it('requires an explicit attempt choice for a finished Run and keeps history swi
   fireEvent.click(await screen.findByRole('button', { name: 'Execution execution · Attempt 1' }))
   expect(await screen.findByText('Working on the task.')).toBeInTheDocument()
   expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"executionId":"execution"')
-  fireEvent.click(screen.getByRole('button', { name: 'Choose another execution' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Other attempts' }))
   expect(await screen.findByRole('button', { name: 'Execution check · Attempt 1' })).toBeInTheDocument()
 })
 
@@ -194,7 +194,7 @@ it('recovers a missing exact execution by explicitly clearing only its attempt p
   if (choice.kind !== 'selected') throw new Error('Expected selected fixture')
   wire.controls.resolution = { kind: 'selection_required', items: [{ target: choice.target, agent: choice.agent,
     workflowVersionId: choice.workflowVersionId, source: choice.source, state: choice.state }], revision: 1, nextCursor: null, hasMore: false }
-  fireEvent.click(screen.getByRole('button', { name: 'Choose another execution' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Other attempts' }))
   expect(await screen.findByRole('button', { name: 'Execution execution · Attempt 1' })).toBeInTheDocument()
   expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"runId":"run"')
   expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"workflowVersionId":"version"')
@@ -259,7 +259,7 @@ it('escapes a missing exact pin even when clearing it reveals no executions in t
         : { kind: 'outside_run', agent: fixture.node, workflowVersionId: 'version', reason: 'NO_LIVE_RUN' })
   }))
   mount({ runId: 'run', workflowVersionId: 'version', executionId: 'missing-execution' })
-  fireEvent.click(await screen.findByRole('button', { name: 'Choose another execution' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Other attempts' }))
   await screen.findByText(/This saved node has no available execution/)
   fireEvent.click(screen.getByRole('button', { name: 'Choose chat destination' }))
   fireEvent.click(screen.getByRole('button', { name: 'Current Agent' }))
@@ -284,4 +284,14 @@ it.each([true, false])('offers historical Runs when the Agent is unavailable in 
   expect(await screen.findByText('Working on the task.')).toBeVisible()
   expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"runId":"run"')
   expect(screen.getByLabelText('Chat selection')).not.toHaveTextContent('unavailable-version')
+})
+
+
+it('labels the attempt and separates its history control in plain words', async () => {
+  install()
+  mount({ runId: 'run', workflowVersionId: 'version', executionId: 'execution' })
+  await screen.findByText('Working on the task.')
+  expect(screen.getByTestId('agent-chat-scope')).toHaveTextContent('Attempt 1 · Other attempts')
+  fireEvent.click(screen.getByRole('button', { name: 'Other attempts' }))
+  expect(screen.getByLabelText('Chat selection')).not.toHaveTextContent('"executionId"')
 })
