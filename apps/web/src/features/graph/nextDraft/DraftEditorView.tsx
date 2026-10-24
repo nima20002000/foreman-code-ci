@@ -100,36 +100,6 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
         </div>
   </>
   const settingsPanels = <>
-      <aside className="board-side-panel" data-floating-window hidden={!repeatOpen} style={repeatOpen ? { zIndex: repeatZ } : { display: 'none' }} aria-label="Business repeats"
-        onPointerDownCapture={() => raiseFloating('board-repeat')} onFocusCapture={() => raiseFloating('board-repeat')}>
-        <header onPointerDown={dragByHeader}><h2>Business repeats</h2><IconButton variant="ghost" label="Close panel" onClick={() => openPanel(null)}><Icon name="close" size={16} /></IconButton></header>
-        <RepeatEditor graph={graph} change={change} disabled={edit.busy || reloading || editLocked || !!edit.pending || !!pendingStart} />
-      </aside>
-      {settingsOpen ? <aside ref={settingsPanel} className="board-side-panel board-settings-panel" data-floating-window aria-label={panelTitle || 'Board controls'} style={{ zIndex: settingsZ }}
-        onPointerDownCapture={() => raiseFloating('board-settings')} onFocusCapture={() => raiseFloating('board-settings')}>
-        <header onPointerDown={dragByHeader}><h2>{panelTitle}</h2><IconButton variant="ghost" label="Close panel" onClick={() => openPanel(null)}><Icon name="close" size={16} /></IconButton></header>
-        <fieldset disabled={edit.busy || reloading || editLocked}>
-          {panel === 'workflow' ? <WorkflowSettings draftKey={draftKey} edit={edit} change={change} report={report}
-            defaultMs={preflight.data?.capabilities.agentActiveTimeBudget.defaultMs}
-            locationReady={workspace.data?.locationValidation.status === 'ready'} locationMessage={locationMessage}
-            onChangeFolder={board?.openLocation} onReload={() => {
-              if (nextDraftDirty(edit)) setConfirm('reload'); else void reload()
-            }} /> : null}
-          {panel === 'workflow' ? <ConflictRecoveryPanel draftKey={draftKey} edit={edit}
-            pending={reloading || edit.busy || !!edit.pending || editLocked || starting}
-            report={report} /> : null}
-        </fieldset>
-      </aside> : null}
-  </>
-  return <section className="workflow-graph board-typed-editor" aria-label="Workflow authoring">
-    <div className="workflow-graph-canvas">
-      <DraftCanvas ref={canvas} draftKey={draftKey} graph={graph} agents={agents} kind="execution"
-        baseGraph={edit.context.savedDraft?.graph ?? edit.context.draft.graph}
-        semanticLocked={edit.busy || reloading || editLocked || starting || !!edit.pending || !!pendingStart}
-        change={change} geometry={geometry} pending={setGeometryPending} report={report} inspect={inspect}
-        removalDisabled={edit.busy || reloading || editLocked}
-        open={openNode} setOpen={setOpenNode} panels={panels} changedAgentIds={changedAgents} />
-      {board?.authoringToolbarHost ? createPortal(toolbar, board.authoringToolbarHost) : <header className="board-topbar">{toolbar}</header>}
       <BoardUndoNotice scope={undoScope} />
       <BoardAlerts scope={draftKey} hints={hints} validation={edit.validation} error={editIntent.mutation.error ?? undefined} updateFailures={updateFailures}
         fixes={{ CODEX_ASKS_FOR_APPROVAL: { label: 'Set these agents to never ask', disabled: editLocked, run: () => {
@@ -170,6 +140,36 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
           {errorText}{edit.error?.issues?.length ? <ul>{edit.error.issues.map((issue, i) => <li key={i}>{issue.message}</li>)}</ul> : null}
         </BoardNotice> : null}
       </div>
+      <aside className="board-side-panel" data-floating-window hidden={!repeatOpen} style={repeatOpen ? { zIndex: repeatZ } : { display: 'none' }} aria-label="Business repeats"
+        onPointerDownCapture={() => raiseFloating('board-repeat')} onFocusCapture={() => raiseFloating('board-repeat')}>
+        <header onPointerDown={dragByHeader}><h2>Business repeats</h2><IconButton variant="ghost" label="Close panel" onClick={() => openPanel(null)}><Icon name="close" size={16} /></IconButton></header>
+        <RepeatEditor graph={graph} change={change} disabled={edit.busy || reloading || editLocked || !!edit.pending || !!pendingStart} />
+      </aside>
+      {settingsOpen ? <aside ref={settingsPanel} className="board-side-panel board-settings-panel" data-floating-window aria-label={panelTitle || 'Board controls'} style={{ zIndex: settingsZ }}
+        onPointerDownCapture={() => raiseFloating('board-settings')} onFocusCapture={() => raiseFloating('board-settings')}>
+        <header onPointerDown={dragByHeader}><h2>{panelTitle}</h2><IconButton variant="ghost" label="Close panel" onClick={() => openPanel(null)}><Icon name="close" size={16} /></IconButton></header>
+        <fieldset disabled={edit.busy || reloading || editLocked}>
+          {panel === 'workflow' ? <WorkflowSettings draftKey={draftKey} edit={edit} change={change} report={report}
+            defaultMs={preflight.data?.capabilities.agentActiveTimeBudget.defaultMs}
+            locationReady={workspace.data?.locationValidation.status === 'ready'} locationMessage={locationMessage}
+            onChangeFolder={board?.openLocation} onReload={() => {
+              if (nextDraftDirty(edit)) setConfirm('reload'); else void reload()
+            }} /> : null}
+          {panel === 'workflow' ? <ConflictRecoveryPanel draftKey={draftKey} edit={edit}
+            pending={reloading || edit.busy || !!edit.pending || editLocked || starting}
+            report={report} /> : null}
+        </fieldset>
+      </aside> : null}
+  </>
+  return <section className="workflow-graph board-typed-editor" aria-label="Workflow authoring">
+    <div className="workflow-graph-canvas">
+      <DraftCanvas ref={canvas} draftKey={draftKey} graph={graph} agents={agents} kind="execution"
+        baseGraph={edit.context.savedDraft?.graph ?? edit.context.draft.graph}
+        semanticLocked={edit.busy || reloading || editLocked || starting || !!edit.pending || !!pendingStart}
+        change={change} geometry={geometry} pending={setGeometryPending} report={report} inspect={inspect}
+        removalDisabled={edit.busy || reloading || editLocked}
+        open={openNode} setOpen={setOpenNode} panels={panels} changedAgentIds={changedAgents} />
+      {board?.authoringToolbarHost ? createPortal(toolbar, board.authoringToolbarHost) : <header className="board-topbar">{toolbar}</header>}
       {board?.authoringPanelHost ? createPortal(settingsPanels, board.authoringPanelHost) : settingsPanels}
       <nav className="board-keyboard-list" aria-label="Agents and connections">
         {graph.nodes.map((node) => <Button size="sm" variant="ghost" key={node.id} onClick={() => openAgent(node.id)}>

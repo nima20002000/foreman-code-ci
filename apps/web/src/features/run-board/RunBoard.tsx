@@ -69,7 +69,7 @@ function RunBoardContents({ selection, snapshot, inspection, activitySnapshot }:
   const inspect = !board?.memoryOpen && !!inspection.nodeId && (!board || panel?.kind === 'agent' && panel.tab === 'details')
   const details = inspect ? <RunNodeInspector key={`inspector:${selection.generation.id}:${inspection.nodeId}`}
     selection={selection} snapshot={snapshot} nodeId={inspection.nodeId!} hierarchy={saved}
-    executionId={inspection.executionId} onInspect={inspection.inspect} closable={!board} /> : null
+    executionId={inspection.executionId} onInspect={inspection.inspect} repeat={!!definition?.repeat} closable={!board} /> : null
   const settings = panel?.kind === 'agent' && panel.tab === 'settings' && !board?.memoryOpen
     ? <SavedAgentSettings snapshot={snapshot} definition={definition} nodeId={panel.nodeId} /> : null
   // Inside the Board the caption sits in its floating toolbar, so the two never cover each other.

@@ -34,8 +34,8 @@ export function RunActivityPanel({ summaries, summariesReadAt = 0 }: {
   const { workspaceId, workflowId, run: selected, selectRun } = board
   const details = useRef<HTMLDetailsElement>(null)
   useEffect(() => {
-    if (board.inspection.runRelationshipId && details.current) details.current.open = true
-  }, [selected?.runId, board.inspection.runRelationshipId])
+    if ((board.inspection.runRelationshipId || board.inspection.runExchangeKey) && details.current) details.current.open = true
+  }, [selected?.runId, board.inspection.runRelationshipId, board.inspection.runExchangeKey])
   const client = useQueryClient()
   const request = useRef(0)
   const mounted = useRef({ workspaceId, workflowId })

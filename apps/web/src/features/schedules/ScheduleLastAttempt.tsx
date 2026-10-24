@@ -67,11 +67,13 @@ export function ScheduleLastAttempt({ scope, open, historyOpen, toggleHistory, .
     {historyOpen ? <section aria-label="Schedule attempt history">
       <h3>Attempt history</h3>
       {history.isPending ? <p role="status">Loading attempts…</p> : null}
-      {history.isError ? <p role="status">Couldn’t load attempt history. <Button size="sm" onClick={() => void history.refetch()}>Retry history</Button></p> : null}
+      {history.isError ? <p role="status">Couldn’t load attempt history. <Button size="sm" onClick={() => void history.refresh()}>Retry history</Button></p> : null}
       {!history.isPending && !history.isError && !attempts.length ? <p>No attempts yet.</p> : null}
       <ol>{attempts.map(item => <li key={item.id}><Attempt scope={scope} occurrence={item} {...actions} /></li>)}</ol>
       {history.hasNextPage && !history.isError ? <Button size="sm" variant="ghost" disabled={history.isFetching}
         onClick={() => void history.fetchNextPage()}>Older attempts</Button> : null}
+      <Button size="sm" variant="ghost" disabled={history.isFetching}
+        onClick={() => void history.refresh()}>Newest attempts</Button>
     </section> : null}
   </section>
 }

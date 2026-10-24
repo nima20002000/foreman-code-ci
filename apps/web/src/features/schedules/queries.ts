@@ -29,6 +29,8 @@ export const scheduleKeys = {
     ['workflow-schedule', generation, scope.workspaceId, scope.workflowId] as const,
   latestOccurrence: (scope: ScheduleGetInput, generation = sessionGeneration()) =>
     ['workflow-schedule-latest-occurrence', generation, scope.workspaceId, scope.workflowId] as const,
+  occurrenceHistory: (scope: ScheduleGetInput, generation = sessionGeneration()) =>
+    [...scheduleKeys.latestOccurrence(scope, generation), 'history'] as const,
   command: (scope: ScheduleGetInput, generation = sessionGeneration()) =>
     ['workflow-schedule-command', generation, scope.workspaceId, scope.workflowId] as const,
 }
@@ -49,8 +51,9 @@ export function useLatestScheduleOccurrence(scope: ScheduleGetInput, open: boole
 
 export function useScheduleOccurrenceHistory(scope: ScheduleGetInput, open: boolean) {
   const generation = sessionGeneration()
-  return useInfiniteQuery({
-    queryKey: [...scheduleKeys.latestOccurrence(scope, generation), 'history'],
+  const client = useQueryClient(), queryKey = scheduleKeys.occurrenceHistory(scope, generation)
+  const query = useInfiniteQuery({
+    queryKey,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ signal, pageParam }) => {
       assertSession(generation)
@@ -61,6 +64,10 @@ export function useScheduleOccurrenceHistory(scope: ScheduleGetInput, open: bool
     enabled: open, maxPages: 5, staleTime: Infinity,
     refetchOnWindowFocus: false, refetchOnReconnect: false,
   })
+  return { ...query, refresh: async () => {
+    await client.cancelQueries({ queryKey, exact: true })
+    await client.resetQueries({ queryKey, exact: true })
+  } }
 }
 
 // Same conservative distinction as shared/api/commandAttempt.ts. An HTML 4xx,

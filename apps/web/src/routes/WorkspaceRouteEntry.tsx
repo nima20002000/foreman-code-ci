@@ -2,7 +2,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } f
 import { Link, useBlocker, useLocation, useNavigate, useParams } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import type { CurrentWorkspaceDetails } from '@foreman-code/contracts/current'
-import { boardSearchForInspection, type WorkspaceBoardInspection, boardSearchForRun, staysOnWorkflowBoard, type RepeatGraphScopeCurrent, type WorkflowBoardLocation } from '@foreman-code/contracts/current'
+import { boardSearchForInspection, readRunInspectionKey, type WorkspaceBoardInspection, boardSearchForRun, staysOnWorkflowBoard, type RepeatGraphScopeCurrent, type WorkflowBoardLocation } from '@foreman-code/contracts/current'
 import { Button, EmptyState, ErrorState } from '../shared/ui/nocturne'
 import { PersistedWorkflowBoundary } from '../features/graph'
 import { WorkflowBoard } from '../features/workflow-board/WorkflowBoard'
@@ -104,6 +104,9 @@ function WorkspaceBoardRoute({ selection }: { selection: WorkflowBoardLocation }
     void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true, search: (previous) => {
       if (previous.selectedRunId && previous.selectedRunId !== scope.runId) return previous
       return { ...boardSearchForInspection(withoutRunsSelectorSearch(previous), workflowId, scope, inspection),
+        // Node Details and Activities share this selection; keep the panel's URL alias in step.
+        ...(previous.boardPanel === 'agent' && previous.boardAgentTab === 'details' && inspection.runNodeId === previous.boardNodeId
+          ? { boardExecutionId: readRunInspectionKey(inspection.runExchangeKey).executionId } : {}),
         selectedRunId: previous.selectedRunId }
     } })
   }, [workflowId, run, workspaceId, navigate])
