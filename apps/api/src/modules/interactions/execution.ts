@@ -1,3 +1,5 @@
+// Preserve harness initialization before the session collaborators, as before the split.
+import { ExecutionSessionAttachment } from './executionSessionAttachment.js'
 import type { ExecutionLimiter } from '../runs/limiter.js'
 import { RunExecutionCapacity } from './executionCapacity.js'
 import { NativeCredentialLedger } from './nativeCredentialLedger.js'
@@ -26,7 +28,6 @@ import type { ExecutionCredentialProvider } from '../harnesses/mcpDetection.js'
 import { type ClosedWorkflowSession, type WorkflowClosureStore } from './workflowClosure.js'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { type RepeatNativeObservationStore } from './repeatObservation.js'
-import { ExecutionSessionAttachment } from './executionSessionAttachment.js'
 import { ExecutionWorkflowObservation } from './executionWorkflowObservation.js'
 import { ExecutionWorkflowControls } from './executionWorkflowControls.js'
 import type { ApprovalExecutionDependencies, ApprovalExecutionObservation, ApprovalObservationInput, ExecutionSessionHost, OwnedNativeSession } from './executionSessionHost.js'

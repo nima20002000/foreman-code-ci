@@ -1,5 +1,5 @@
-import { isRestartCancellation } from './executionPredicates.js'
 import { assertActiveHarnessConfiguration, retiredHarnessError } from '../harnesses/index.js'
+import { isRestartCancellation } from './executionPredicates.js'
 import { inspectNativeResponse } from '../harnesses/responseAvailability.js'
 import type { InteractionActivityEvidence } from './activityProjection.js'
 import { setTimeout as delay } from 'node:timers/promises'

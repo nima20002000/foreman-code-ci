@@ -438,6 +438,10 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   Full lint `198fce37-a558-4cc7-8285-17342ec27425` and exact-base lint
   `9274e3e5-9905-47d3-a8e8-b4290c033e95` both stop at the existing import cycle and contracts unused variable.
   Exact-base affected unit comparison: `56fb16e9-a5f3-4e8a-8acd-684e0523ad24`.
+  That comparison exposed an initialization-order regression: approval execution/cancellation load on the base
+  but hit the pre-existing barrel cycle after extraction. The coordinator now imports attachment first,
+  and attachment imports the harness boundary first, preserving the original harness-first evaluation order.
+  Existing public coordinator tests provide the failing pre-fix CI evidence above; post-fix verification is pending.
 - [~] #14 "repeat" is the universal run engine despite AGENTS.md. `runs/workflowRunMode.ts` names the three modes
   (`graph`, `handoff`, `hierarchy`; only explicit repeat blocks declare repeat). `executeRepeatRuntime` now takes a
   `WorkflowGraphMode` (`handoffGraphMode` or `workflowGraphMode`) instead of branching on `work`/`repeat`, the native
