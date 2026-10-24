@@ -225,7 +225,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     const { router, unmount } = await mount(`${pinnedUrl('run-a')}&runNodeId=node-x`)
     const inspect = await screen.findByRole('button', { name: 'Inspect X before rename' }, { timeout: 5000 })
     expect(inspect).toBeEnabled()
-    // The linked node opens its saved details in the shared rail, which owns the selection afterwards.
+    // The linked node opens its saved details in the shared rail and retains the Activities filter.
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
     expect(await within(rail).findByRole('region', { name: 'Run node inspector: X before rename' })).toBeVisible()
     await within(rail).findByText('No execution recorded for this node yet.')
@@ -235,7 +235,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     expect(screen.getByRole('group', { name: 'Board controls' })).toBeVisible()
     expect(router.state.location.search).toMatchObject({ runId: 'run-a', workflowVersionId: 'version-a', executionSemanticsVersion: 3,
       boardPanel: 'agent', boardAgentTab: 'details', boardNodeId: 'node-x' })
-    expect(router.state.location.search).not.toHaveProperty('runNodeId')
+    expect(router.state.location.search.runNodeId).toBe('node-x')
     expect(reads[0]!.searchParams.get('workflowNodeId')).toBe('node-x')
     expect(reads[0]!.pathname).toBe(`/api/management/workspaces/${scope.workspaceId}/runs/run-a/executions`)
     const href = router.history.location.href
@@ -502,7 +502,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     await screen.findByRole('complementary', { name: 'Workflow side panel' })
     expect(router.state.location.search).toMatchObject({ runId: 'run-a', workflowVersionId: 'version-a',
       executionSemanticsVersion: 3, boardPanel: 'agent', boardAgentTab: 'details', boardNodeId: 'node-x', agentId: 'agent-researcher' })
-    expect(router.state.location.search).not.toHaveProperty('runNodeId')
+    expect(router.state.location.search.runNodeId).toBe('node-x')
     const hash = router.history.location.hash
     await choose('run-b')
     await screen.findByRole('button', { name: 'Inspect X in B' })

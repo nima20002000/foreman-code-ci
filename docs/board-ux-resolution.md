@@ -11,13 +11,13 @@ were added or changed. Graph and Overview retain the same Board and edit owner.
 
 - **BOARD-03: Fixed in 6cbc8a0568.** Historical toolbar Start names the current workflow and displays its saved version and new-input policy; the existing full retry remains pinned to the selected Run and its accepted input.
 
-- **BOARD-04: Fixed in 6cbc8a0568.** One persistent authoring toolbar and floating-settings host keep Run/Stop, Save, Undo, settings, Activities and the inbox available in Graph and Overview.
+- **BOARD-04: Fixed in dc66b04e5d.** Action errors, validation alerts, undo feedback and Start/Save recovery now use the existing visible authoring panel host alongside the persistent toolbar and settings in Graph and Overview.
 
 - **BOARD-05: Fixed in 6cbc8a0568.** Saved Settings renders the immutable node and pinned Agent configuration plus Edit current workflow, retaining the selected node without modifying Run facts.
 
 - **BOARD-06: Fixed in 6cbc8a0568.** The historical node inspector mounts independently of canvas visibility, retaining expanded exact results in Overview.
 
-- **BOARD-07: Rejected: combining live inspection and explicit history needs a product decision.** RunNodeInspector deliberately polls bounded node/CI reads; ExecutionInspector deliberately retains explicitly refreshed, bounded historical pages. Their refresh policies and evidence scopes are stated in the existing UI. One-board already restores live node inspection (395b74a35f); this task preserves both contracts rather than silently choosing one.
+- **BOARD-07: Fixed in 2754a1719c.** Accepted the review dispute. Node Details and Activities reuse repetition controls, exact accepted-value evidence and predecessor/result bindings, carry the same node/repetition/attempt through their URL selection, and offer direct transitions; live polling and explicit history refresh stay distinct.
 
 - **BOARD-08: Fixed in 94a85146f7.** Saved connections retain their immutable handoff-limit button and open relationship-filtered execution/binding evidence with existing Run handoff usage.
 
@@ -31,7 +31,7 @@ were added or changed. Graph and Overview retain the same Board and edit owner.
 
 - **BOARD-13: Fixed in 6cbc8a0568.** Historical floating-panel headings receive the selected snapshot node name, including nodes renamed or removed in the current workflow.
 
-- **BOARD-14: Fixed in 6cbc8a0568.** Schedule keeps its latest-attempt poll and adds an explicitly opened, cursor-paged attempt history with bounded pages and per-attempt outcomes.
+- **BOARD-14: Fixed in d15278a105.** Attempt history adds Newest attempts to cancel any in-flight read and reset to a fresh first page after eviction or new arrivals; retry uses the same reset. The latest-attempt poll and bounded history remain separate.
 
 - **BOARD-15: Fixed in 6cbc8a0568.** Workflow-related schedule rejections offer Review workflow through the existing dirty/pending guard, returning to current workflow settings.
 
@@ -73,3 +73,20 @@ exposed the remaining connection visibility defect: the correct relationship
 was selected inside a collapsed Run-details disclosure. `94a85146f7` reveals
 that existing disclosure on relationship selection without controlling later
 manual disclosure state. The unchanged route regression asserts visibility.
+
+## Review follow-up regression evidence
+
+The follow-up accepts the BOARD-07 dispute and repairs BOARD-04/NEW-01 and
+BOARD-14/NEW-02. The other thirteen dispositions are unchanged.
+
+Test-only commit `1fb9f998332faeb97922bc083b900153f3ab58d9` failed all six new
+rendered UI regressions in Foreman CI ticket `90f37ce9-97eb-4b73-9a74-a50716b68bb2`;
+the seventeen existing schedule tests passed. The earlier test-only commit
+`6fce7cae1f0f7061bf78c748899d2ea117cc1d1a` also failed six cases in
+`2b54fee8-0bcc-4377-822c-9d8618965bb5`; the second test commit corrects the Start
+message and field-label expectations before any product repair.
+
+The new tests cover visible Overview Start rejection and reload, Save validation
+and field/alert recovery, six-page schedule eviction and newest reset, newly
+arrived history with unsaved schedule edits, node repetition/binding inspection,
+and exact execution navigation between node Details and Activities.

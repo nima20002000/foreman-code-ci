@@ -26,8 +26,13 @@ it('shows a rejected Overview Start and reloads the saved draft without leaving 
   expect(start).toBeDisabled()
   const reload = screen.getByRole('button', { name: 'Reload saved draft', hidden: true })
   expect(reload).toBeVisible()
-  fixture.mock.controls.unsupportedStart = false
   await user.click(reload)
+  expect(await screen.findByText('The saved draft still points to the rejected version. Reload after a newer version is available.')).toBeVisible()
+  expect(start).toBeDisabled()
+  fixture.mock.controls.unsupportedStart = false
+  fixture.mock.install({ ...fixture.after.definition, name: 'Reloaded saved workflow' }, true)
+  await user.click(screen.getByRole('button', { name: 'Reload saved draft' }))
+  expect(await screen.findByRole('heading', { name: 'Reloaded saved workflow' })).toBeVisible()
   await waitFor(() => expect(screen.getByRole('button', { name: 'Start saved version' })).toBeEnabled())
   expect(router.state.location.search.boardView).toBe('overview')
   expect(screen.getAllByTestId('unified-workflow-board')).toHaveLength(1)
@@ -54,7 +59,8 @@ it('shows Overview Save validation, alerts and field recovery while retaining un
   await user.click(alerts)
   const dialog = await screen.findByRole('dialog', { name: 'Workflow alerts' })
   expect(within(dialog).getByText('Increase the execution limit.', { exact: false })).toBeVisible()
-  await user.click(within(dialog).getByRole('button', { name: 'Review setting' }))
+  const issue = within(dialog).getByText('Increase the execution limit.', { exact: false }).closest('li')!
+  await user.click(within(issue).getByRole('button', { name: 'Review setting' }))
   expect(screen.getByLabelText('Agent turns per run')).toHaveFocus()
   expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.name).toBe('Unsaved Overview edit')
 }, 15_000)

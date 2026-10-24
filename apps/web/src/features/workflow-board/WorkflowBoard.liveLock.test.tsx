@@ -110,7 +110,7 @@ describe('live Board edit lock', () => {
     // The saved version uses user approvals. An unsaved draft selects native handling;
     // an external Run still starts the exact saved version while that draft stays open.
     act(() => useGraphDraftStore.getState().changeNextDraft(f.key, graph => ({ ...graph, approval: { handler: 'native' } })))
-    await user.click(within(authoring()).getByRole('button', { name: /^Workflow alerts,/ }))
+    await user.click(screen.getByRole('button', { name: /^Workflow alerts,/ }))
     const alerts = await screen.findByRole('dialog', { name: 'Workflow alerts' })
     const repair = within(alerts).getByRole('button', { name: 'Set these agents to never ask' })
     expect(repair).toBeEnabled()
