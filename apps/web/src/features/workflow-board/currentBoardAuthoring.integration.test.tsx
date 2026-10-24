@@ -1084,7 +1084,11 @@ describe('latest Run inspection on the retained Board', () => {
       http.get(`${jobsRoot}/artifacts`, () => HttpResponse.json({ artifacts: [] })))
     await mounted.query.invalidateQueries()
     await waitFor(() => expect(canvasNode(job.id)).toHaveTextContent('Running'))
-    await user.click(within(canvasNode(job.id)).getByRole('button', { name: /Build, job/ }))
+    const jobButton = within(canvasNode(job.id)).getByRole('button', { name: /Build, job/ })
+    // D3 drag needs the browser window on pointer events; JSDOM defaults MouseEvent.view to null.
+    fireEvent.mouseDown(jobButton, { view: window, button: 0, buttons: 1 })
+    fireEvent.mouseUp(jobButton, { view: window, button: 0, buttons: 0 })
+    fireEvent.click(jobButton, { view: window })
     await user.click(await screen.findByRole('button', { name: 'Attempt 1 · job-node-execution' }))
     expect(await screen.findByRole('region', { name: 'Job logs' })).toBeVisible()
     expect(await screen.findByRole('region', { name: 'Job artifacts' })).toBeVisible()
