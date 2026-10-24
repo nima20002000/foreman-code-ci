@@ -7,6 +7,7 @@
   max-width: 100%;
 }
 .runs-selector-trigger { flex: 0 0 auto; gap: 4px; }
+.runs-selector-filter { margin: 8px 12px; }
 .runs-selector-selection-status { font-size: 12px; overflow-wrap: anywhere; }
 .runs-window .runs-selector-menu {
   position: static;

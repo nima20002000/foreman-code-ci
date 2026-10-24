@@ -77,6 +77,31 @@ afterEach(() => {
 })
 
 describe('Runs window and URL selection (real HTTP boundary + MSW)', () => {
+  it('filters loaded history by status, keeps older pages reachable and restores the filter from the URL', async () => {
+    server.use(http.get(listRoute, ({ request }) => HttpResponse.json(
+      new URL(request.url).searchParams.has('cursor') ? page([{ ...runC, status: 'failed' }]) : page([runA, runB], 'older'),
+    )))
+    const { router } = await mount()
+    await openMenu()
+    await screen.findByRole('menuitemradio', { name: /short-B/ })
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Run status' }), 'failed')
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ runStatus: 'failed' }))
+    expect(screen.queryByRole('menuitemradio', { name: /short-A/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitemradio', { name: /short-B/ })).toBeVisible()
+    expect(screen.getByRole('menuitemradio', { name: 'New run' })).toBeVisible()
+    await userEvent.click(screen.getByRole('menuitem', { name: /More/ }))
+    await waitFor(() => expect(screen.getAllByRole('menuitemradio')).toHaveLength(3))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Run status' }), 'canceled')
+    expect(await screen.findByText('No runs match this status in loaded history.')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Close Runs' }))
+    await openMenu()
+    expect(screen.getByRole('combobox', { name: 'Run status' })).toHaveValue('canceled')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Run status' }), '')
+    await waitFor(() => expect(screen.getAllByRole('menuitemradio')).toHaveLength(4))
+    await act(async () => { router.history.back() })
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Run status' })).toHaveValue('canceled'))
+  })
+
   it('lists New run first, preserves saved-run order, and disambiguates only the shared date', async () => {
     await mount()
     const menu = await openMenu()
