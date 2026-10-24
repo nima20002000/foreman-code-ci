@@ -61,6 +61,7 @@ export type SourceRootRecord = z.infer<typeof SourceRootRecordSchema>
 export const SourceRootBindResultSchema = z.object({ value: SourceRootRecordSchema, replayed: z.boolean() }).strict()
 export const PlainWorkspaceFolderSchema = z.object({ kind: z.literal('plain'), policy: WorkspaceRootPolicySchema }).strict()
 export const SourceRootSetupResultSchema = z.object({ value: z.union([SourceRootRecordSchema, PlainWorkspaceFolderSchema, z.object({ kind: z.literal('selection-required') }).strict()]), replayed: z.boolean() }).strict()
+export type SourceRootSetupResult = z.infer<typeof SourceRootSetupResultSchema>
 export const SourceRootGetInputSchema = z.object({ workspaceId: IdSchema, ...SourceRootReferenceSchema.shape }).strict()
 export const SourceMaterializationRecordSchema = z.object({ receipt: MaterializationReceiptSchema,
   rootPolicyId: IdSchema, rootPolicyRevision: z.string().regex(/^[1-9][0-9]*$/), operationId: IdSchema,

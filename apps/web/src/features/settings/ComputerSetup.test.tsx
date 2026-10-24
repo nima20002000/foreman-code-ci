@@ -87,7 +87,7 @@ beforeEach(() => {
     http.get('/api/management/workspaces/workspace-1/workflows/workflow-1/nodes/node-1/placement-choices', () => {
       reads++
       return HttpResponse.json({ ...scope, pending: false,
-        choices: setups.length ? [{ id: 'studio-choice', label: 'Studio · codex · /projects/shared/studio-project', placement, availability: 'ready', reason: null }] : [],
+        choices: setups.length ? [{ id: 'studio-choice', label: 'Studio · studio-project', placement, availability: 'ready', reason: null }] : [],
         unavailableComputers: setups.length ? [] : [{ hostRef: workerRoot.hostRef, name: 'Studio', reason }] })
     }),
   )
@@ -113,7 +113,7 @@ it.each([true, false])('sets up an unavailable Agent computer and refreshes plac
   expect(writes[0]).toMatchObject({ hostRef: workerRoot.hostRef, relativePath: 'studio-project', expectedLocationRevision: 1, expectedRootPolicyRevision: 0 })
   expect(setups).toEqual([{ workspaceId: scope.workspaceId, commandId: expect.any(String), accessMode: 'exclusive-write',
     selection: { hostRef: workerRoot.hostRef, rootPolicyId: expect.any(String), rootPolicyRevision: '1', locationRevision: '1' } }])
-  const ready = await screen.findByRole('option', { name: 'Studio' })
+  const ready = await screen.findByRole('option', { name: 'Studio · studio-project' })
   expect(reads).toBeGreaterThan(1)
   await user.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), ready)
   expect(screen.getByRole('combobox', { name: 'Computer' })).toHaveValue(ready.getAttribute('value'))

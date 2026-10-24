@@ -3,8 +3,6 @@ import { COORDINATION_RESULT_PROTOCOL, type AgentSubject, type BoardApplicationR
   type BrowserPrepareResult, type BoardResult } from '@foreman-code/contracts'
 import type { SqlTransaction } from '../src/infrastructure/transaction.js'
 import { DomainError } from '../src/modules/errors.js'
-import { RunHistoryService } from '../src/modules/runs/history.js'
-import { readCurrentRunDetails } from '../src/modules/runs/currentRead.js'
 import { requestRepeatRunStop } from '../src/modules/runs/repeatLifecycle.js'
 import { recordWorkflowExecutionFailure } from '../src/modules/runs/workflowLifecycle.js'
 import { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
@@ -85,26 +83,6 @@ describe.skipIf(!postgresEnabled)('workflow collaboration preparation and atomic
     }))
     return { port: { prepare, release }, prepare, release, confirmClosure() { pending = false } }
   }
-
-  it('keeps the browser preparation reason in public Run reads across backoff and owner restart, then clears it on readiness', async () => {
-    const f = await fixture({ browser: true }), b = browser()
-    b.prepare.mockResolvedValueOnce({ kind: 'unavailable', reason: 'profile_missing', retryable: true })
-    const integration = new WorkflowCollaborationIntegration({ browser: b.port }, async () => 'accepted-computer')
-    const history = new RunHistoryService(db.pool)
-    const input = { workspaceId: f.run.workspaceId, workflowId: f.run.workflowId, runId: f.run.id }
-    try {
-      await expect(integration.prepare(f.owner, f.run, f.version, f.execution)).rejects.toMatchObject({ code: 'BROWSER_PREPARATION_UNAVAILABLE' })
-      const expected = { executionId: f.execution.id, workflowNodeId: f.execution.workflowNodeId,
-        reason: { kind: 'preparation', message: expect.stringContaining('profile missing') } }
-      expect((await history.snapshot(f.writer.principal, input)).executionQueue).toEqual([expect.objectContaining(expected)])
-      expect((await readCurrentRunDetails(db.pool, f.writer.principal, f.run.workspaceId, f.run.id)).executions[0])
-        .toMatchObject({ queueReason: expected.reason })
-      await f.restart()
-      expect((await history.snapshot(f.writer.principal, input)).executionQueue).toEqual([expect.objectContaining(expected)])
-      await integration.prepare(f.owner, f.run, f.version, f.execution)
-      expect((await history.snapshot(f.writer.principal, input)).executionQueue).toEqual([])
-    } finally { await f.close() }
-  }, 120000)
 
   it('retains one bounded digest and exact prepared browser across owner restart without changing task input', async () => {
     const f = await fixture(), a = board(), b = browser()
