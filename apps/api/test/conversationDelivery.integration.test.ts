@@ -38,57 +38,40 @@ describe('common conversation delivery through authenticated public services', (
       : f.operator.changeSessionControls(selected.conversationId, request, f.owner)
   }
 
-  it('reads a cold candidate without creating rows and rolls back cold creation with an invalid sibling', async () => {
+  it('reads a cold candidate without creating rows and rejects an invalid target before native creation', async () => {
     const selected = await target('agent')
     if (selected.kind !== 'agent_conversation') throw new Error('Expected Agent target.')
     const manager = f.native(selected.conversationId)
     expect((await f.agent.read(f.owner, f.scope.workspaceId, f.query)).conversation).toBeNull()
     expect((await f.agent.read(f.owner, f.scope.workspaceId, f.query)).deliveryTarget).toEqual(selected)
     const invalid = { ...selected, conversationId: 'unadmitted-other-candidate', agent: { ...selected.agent, workflowNodeId: 'missing-node' } }
-    await expect(f.feature.service.post(f.owner, { ...f.scope, commandId: 'atomic-cold-post', body: '@Agent @Missing', cardIds: [],
-      mentions: [{ workflowNodeId: selected.agent.workflowNodeId, start: 0, end: 6 }, { workflowNodeId: 'missing-node', start: 7, end: 15 }],
-      deliveries: [{ workflowNodeId: selected.agent.workflowNodeId, target: selected, intent: 'auto' },
-        { workflowNodeId: 'missing-node', target: invalid, intent: 'auto' }] })).rejects.toBeDefined()
+    await expect(send(invalid, 'invalid-cold-input', 'Reject this input')).rejects.toBeDefined()
     expect((await f.agent.read(f.owner, f.scope.workspaceId, f.query)).conversation).toBeNull()
-    expect((await f.feature.service.read(f.owner, f.scope)).items).toEqual([])
     expect(manager.sessions).toBe(0)
-    const post = await f.feature.service.post(f.owner, { ...f.scope, commandId: 'valid-cold-post', body: '@Agent preserve this body', cardIds: [],
-      mentions: [{ workflowNodeId: selected.agent.workflowNodeId, start: 0, end: 6 }],
-      deliveries: [{ workflowNodeId: selected.agent.workflowNodeId, target: selected, intent: 'auto' }] })
+    const receipt = await send(selected, 'valid-cold-input', 'Preserve this body')
     await Promise.all([f.feature.router.drainPrepared(), f.feature.router.drainPrepared()])
-    await waitState(selected, post.receipts[0]!.id, 'completed')
+    await waitState(selected, receipt.id, 'completed')
     expect(manager.sessions).toBe(1)
     expect(manager.inputs).toHaveLength(1)
-    expect(manager.inputs[0]!.prompt).toContain(post.post.id)
-    expect(manager.inputs[0]!.prompt).toContain('workflow_chat_post')
-    expect((await f.feature.service.read(f.owner, f.scope, { commandId: 'valid-cold-post' })).items[0]!.body).toBe('@Agent preserve this body')
-    await f.feature.projector.projectCommittedFacts()
-    const linked = (await f.feature.service.read(f.owner, f.scope)).items.find(item => item.replyToPostId === post.post.id)
-    expect(linked).toMatchObject({ body: 'final answer' })
-    expect((await retained(selected, post.receipts[0]!.id)).replyPostId).toBe(linked!.id)
+    expect(manager.inputs[0]!.prompt).toContain('Preserve this body')
+    const state = await f.agent.readConversation(f.owner, f.scope.workspaceId, selected.conversationId)
+    expect(state.messages).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'assistant', content: 'final answer' })]))
   })
 
-  it('emits one committed Group queue cancellation and remains quiet for replay and already-canceled selection', async () => {
+  it('cancels one queued input idempotently without stopping the active native turn', async () => {
     const selected = await target('agent')
     if (selected.kind !== 'agent_conversation') throw new Error('Expected Agent target.')
     f.native(selected.conversationId).autoFinish = false
     const active = await send(selected, 'queue-cancel-active', 'Keep active')
     await waitState(selected, active.id, 'accepted')
-    const post = await f.feature.service.post(f.owner, { ...f.scope, commandId: 'queue-cancel-post', body: '@Agent queued question', cardIds: [],
-      mentions: [{ workflowNodeId: selected.agent.workflowNodeId, start: 0, end: 6 }],
-      deliveries: [{ workflowNodeId: selected.agent.workflowNodeId, target: selected, intent: 'next_turn' }] })
-    await f.feature.router.drainPrepared()
-    const events: unknown[] = []
-    const unsubscribe = f.feature.service.events.subscribe(f.scope.workflowId, event => events.push(event))
-    try {
-      await f.feature.service.cancel(f.owner, f.scope, post.receipts[0]!.id, 'one-group-cancel')
-      const count = events.length
-      expect(count).toBe(1)
-      await f.feature.service.cancel(f.owner, f.scope, post.receipts[0]!.id, 'one-group-cancel')
-      await f.feature.service.cancel(f.owner, f.scope, post.receipts[0]!.id, 'already-canceled-noop')
-      expect(events).toHaveLength(count)
-      expect(f.native(selected.conversationId).cancelCalls).toBe(0)
-    } finally { unsubscribe() }
+    const queued = await send(selected, 'queue-cancel-input', 'Queued question')
+    const request = { target: selected, commandId: 'one-queue-cancel', selection: { kind: 'one' as const, receiptId: queued.id } }
+    const canceled = await f.feature.router.cancel(f.owner, request)
+    expect(canceled.affectedReceiptIds).toEqual([queued.id])
+    expect((await f.feature.router.cancel(f.owner, request)).replayed).toBe(true)
+    expect((await retained(selected, queued.id)).state).toBe('canceled')
+    expect((await retained(selected, active.id)).state).toBe('accepted')
+    expect(f.native(selected.conversationId).cancelCalls).toBe(0)
   })
 
   it.each(['agent', 'operator'] as const)('%s adopts one cold Plan input, steers only its qualified same-mode native turn, and queues mode changes', async kind => {

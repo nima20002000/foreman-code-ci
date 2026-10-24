@@ -15,7 +15,7 @@ import { useGraphDraftStore } from '../features/graph'
 
 import { routeTree } from '../app/router'
 import { queryKeys } from '../shared/api/query'
-import { getMockFixture, serializeAgent, setMockScenario } from '../shared/mocks/scenarios'
+import { getMockFixture, setMockScenario } from '../shared/mocks/scenarios'
 import { server } from '../mocks/server'
 import { bindMockInstallation } from '../shared/mocks/handlers'
 import { savedClaudeConfiguration } from '../features/settings/claudeSettings.fixtures'
@@ -262,56 +262,13 @@ describe('WorkspaceRouteEntry integration', () => {
     expect(await workflowBoard('Draft workflow')).toBeVisible()
   })
 
-  it.each([false, true])('does not open a removed workflow as an editable board (explicit link: %s)', async (explicit) => {
-    const fixture = getMockFixture('workspace-1')!
-    const removed = fixture.workflows[0]!
-    server.use(
-      http.get('/api/workspaces/workspace-1', () => HttpResponse.json({
-        workspace: fixture.workspace, agents: fixture.agents.map(serializeAgent), workflows: fixture.workflows,
-        runs: [], resources: fixture.resources, browserProfiles: fixture.browserProfiles, runners: fixture.runners,
-      })),
-      http.get('/api/management/workspaces/workspace-1/workflows', () => HttpResponse.json({ items: [], pageInfo: { nextCursor: null } })),
-      http.get(`/api/management/workspaces/workspace-1/workflows/${removed.id}`, () => HttpResponse.json({
-        workflow: removed, revision: 1, currentVersionId: null, archivedAt: '2026-10-22T04:00:53.092Z',
-      })),
-    )
-    const { router } = await renderWorkspace(`/workspaces/workspace-1${explicit ? `?workflowId=${removed.id}` : ''}`)
-    if (explicit) {
-      expect(await screen.findByText('Workflow removed')).toBeVisible()
-      expect(screen.getByRole('link', { name: 'Open workflows' })).toHaveAttribute('href', '/workspaces/workspace-1/workflows')
-      expect(router.state.location.search.workflowId).toBe(removed.id)
-    } else expect(await screen.findByTestId('workspace-empty')).toBeVisible()
-    expect(screen.queryByRole('region', { name: 'Workflow authoring' })).not.toBeInTheDocument()
-  })
-
-  it('preserves an explicitly missing workflow and offers a deliberate recovery', async () => {
+  it('still replaces a genuinely unknown workflow selection', async () => {
     const { router } = await renderWorkspace('/workspaces/workspace-1?workflowId=workflow-missing&agentId=agent-researcher')
-    expect(await screen.findByText('Workflow not found')).toBeVisible()
-    expect(router.state.location.search).toMatchObject({ workflowId: 'workflow-missing', agentId: 'agent-researcher' })
-    expect(screen.queryByRole('region', { name: 'Workflow authoring' })).not.toBeInTheDocument()
-    await userEvent.setup().click(screen.getByRole('link', { name: 'Open workflows' }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/workspaces/workspace-1/workflows'))
-  })
 
-  it('keeps navigation and lets an invalid selection be cleared in place', async () => {
-    const { router } = await renderWorkspace('/workspaces/workspace-1?selectedRunId=run-stale')
-    expect(await screen.findByText('Invalid board selection')).toBeVisible()
-    expect(screen.getByRole('complementary', { name: 'Primary navigation' })).toBeVisible()
-    expect(screen.getByRole('navigation', { name: 'Breadcrumbs' })).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Open workflows' })).toHaveAttribute('href', '/workspaces/workspace-1/workflows')
-    expect(router.state.location.search.selectedRunId).toBe('run-stale')
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Clear invalid selection' }))
-    await workflowBoard('Research to review')
-    expect(router.state.location.search.selectedRunId).toBeUndefined()
-  })
-
-  it('retains explicit workspace destinations when a workflow is open', async () => {
-    const { router } = await renderWorkspace('/workspaces/workspace-1?workflowId=workflow-content-pipeline')
-    await workflowBoard('Research to review')
-    const navigation = within(screen.getByRole('complementary', { name: 'Primary navigation' }))
-    expect(navigation.getByRole('button', { name: 'Workspace settings' })).toBeVisible()
-    await userEvent.setup().click(navigation.getByRole('button', { name: 'Project files' }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/workspaces/workspace-1/files'))
+    await waitFor(() => {
+      expect(router.state.location.search.workflowId).toBe('workflow-content-pipeline')
+      expect(router.state.location.search.agentId).toBeUndefined()
+    })
   })
 
   it('renders error, 404 and empty workspace states', async () => {

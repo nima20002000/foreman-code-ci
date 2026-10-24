@@ -4,7 +4,7 @@ import { ChatDeliveryReceiptSchema, type ChatDeliveryReceipt } from '@foreman-co
 import { writeStoredCommand } from '../../../shared/api/commandOutbox'
 import { identityEpoch, protectedKey } from '../../../shared/api/protectedChatStorage'
 import { sessionIsSwitching } from '../../../shared/api/sessionBoundary'
-import { sameDeliveryTarget } from '../../workflow-chat'
+import { sameDeliveryTarget } from '../delivery/sameDeliveryTarget'
 import type { AgentChatCommand, AgentChatCommandResult } from './commandRecords'
 import { AGENT_CHAT_ACKNOWLEDGEMENT_LIMIT, agentChatCommandOrder, readAgentChatReadbacks, retireAgentChatAcknowledgements, writeAgentChatReadbacks } from './commandRecords'
 

@@ -18,9 +18,6 @@ export const COLLABORATION_AGENT_TOOLS = {
   browser_state_read: { label: 'Read page state', description: 'Observe an owned tab through its control lease.', roles, readOnly: true },
   browser_screenshot: { label: 'Read screenshot', description: 'Observe a bounded screenshot of an owned tab.', roles, readOnly: true },
   browser_action: { label: 'Act on page', description: 'Perform a typed page action through the session ownership and control checks.', roles, readOnly: false },
-  workflow_chat_read: { label: 'Read group chat', description: 'Read bounded posts in this workflow’s channel.', roles: [...roles, 'operator'], readOnly: true },
-  workflow_chat_post: { label: 'Post to group chat', description: 'Publish a scoped agent post without resolving user mentions.', roles: [...roles, 'operator'], readOnly: false },
-  workflow_chat_deliveries_read: { label: 'Read chat deliveries', description: 'Read scoped delivery receipt state.', roles: [...roles, 'operator'], readOnly: true },
 } as const;
 
 export type CollaborationAgentTool = keyof typeof COLLABORATION_AGENT_TOOLS;

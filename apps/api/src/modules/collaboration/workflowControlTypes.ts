@@ -58,7 +58,6 @@ export interface WorkflowChatAdmission {
   id: string
   principalId: string
   appliedIntent: 'steer' | 'next_turn' | 'interrupt_and_send'
-  channelContext?: string
 }
 
 /** Implemented by the existing coordinator, not by the durable command service.

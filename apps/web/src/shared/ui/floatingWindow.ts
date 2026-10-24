@@ -1,6 +1,6 @@
 import type { PointerEvent as ReactPointerEvent } from 'react'
 /**
- * Board/workspace button contract: a button (Inbox, Group chat, Activities, node chat, Browser) opens a small,
+ * Board/workspace button contract: a button (Inbox, Activities, node chat, Browser) opens a small,
  * non-modal floating window beside the button or node that opened it, never on top of the content it relates to.
  * The user can move and resize it. Exception: the Memory board opens as a dialog because its board editor needs the room.
  */
