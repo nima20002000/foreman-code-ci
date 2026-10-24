@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AgentSubject, BrowserSession } from '@foreman-code/contracts'
 import { BrowserSidebar, type BrowserSidebarStatus, type BrowserSidebarTab, tabLabel } from '../features/agent-browser'
 import { useBrowserSidebar, useBrowserSidebarTabs } from '../features/workflow-board'
 import { useWorkflowBoard } from '../features/board-core'
 import { useManagedWorkflowQuery } from '../shared/api/query'
+import { Select } from '../shared/ui/nocturne'
 import { errorMessage } from '../shared/errorMessage'
 import { browserSessionClient } from './browserRecovery'
 import { browserAuthBoundary, useBrowserComputers } from './browserComputerFacts'
@@ -61,6 +63,7 @@ function useBrowserActivity(sessions: readonly BrowserSession[]) {
 export function WorkflowBrowserSidebar({ workspaceId, workflowId, runId, workflowVersionId }: WorkflowBrowserSidebarProps) {
   const sidebar = useBrowserSidebar(workspaceId, workflowId)
   const board = useWorkflowBoard()
+  const location = useLocation(), navigate = useNavigate()
   const workflow = useManagedWorkflowQuery(workspaceId, workflowId)
   const listed = useLiveBrowserSessions()
   const opened = useBrowserSidebarTabs(state => state.opened[sidebar.scope])
@@ -82,8 +85,9 @@ export function WorkflowBrowserSidebar({ workspaceId, workflowId, runId, workflo
   }, [sessions])
   const seen = useRef(new Set<string>())
   for (const nodeId of byNode.keys()) seen.current.add(nodeId)
-  const primaries = useMemo(() => [...byNode.values()].map(group => group[0]!), [byNode])
-  const activity = useBrowserActivity(primaries)
+  const preferred = (group: BrowserSession[]) => group.find(session => session.id === location.search.browserSessionId)
+    ?? group.find(session => runId ? runOf(session.subject!) === runId : session.subject?.kind === 'conversation') ?? group[0]
+  const activity = useBrowserActivity(sessions)
   // A browser that starts shows up as a tab and stays (as Ended) after it closes, until the person closes the tab.
   useEffect(() => {
     for (const nodeId of byNode.keys()) {
@@ -97,22 +101,32 @@ export function WorkflowBrowserSidebar({ workspaceId, workflowId, runId, workflo
   }
   const ids = [...new Set([...opened ?? [], ...sidebar.selected && !opened?.includes(sidebar.selected) && !closed?.includes(sidebar.selected) ? [sidebar.selected] : []])]
   const tabs: BrowserSidebarTab[] = ids.map(nodeId => {
-    const primary = byNode.get(nodeId)?.[0]
+    const primary = preferred(byNode.get(nodeId) ?? [])
     const state = primary ? activity.get(primary.id) : undefined
     return { id: nodeId, name: nodeName(nodeId), status: state?.status ?? (primary ? 'idle' : seen.current.has(nodeId) ? 'ended' : 'not_started'), ...(state?.page ? { page: state.page } : {}) }
   })
   const selectedId = sidebar.selected && ids.includes(sidebar.selected) ? sidebar.selected : ids[0]
-  const primary = selectedId ? byNode.get(selectedId)?.[0] : undefined
+  const choices = selectedId ? byNode.get(selectedId) ?? [] : []
+  const primary = preferred(choices)
+  const hidden = [...byNode.keys()].filter(nodeId => closed?.includes(nodeId))
   const notice = listed.error ? <p className="browser-sidebar-notice" role="alert">{errorMessage(listed.error, 'Agent browsers could not be read.')}</p>
     : listed.data?.unreachable.length ? <p className="browser-sidebar-notice">{listed.data.unreachable.join(', ')} could not be reached; its browsers are not shown.</p>
       : null
-  return <BrowserSidebar tabs={tabs} selectedId={selectedId} notice={notice}
-    emptyText={runId ? 'No agent browsers are active in this run.' : 'No agent browsers are active in this workflow.'}
+  return <BrowserSidebar tabs={tabs} selectedId={selectedId} notice={<>{notice}{hidden.length ? <section aria-label="Reopen browsers">
+      {hidden.map(nodeId => <button key={nodeId} type="button" onClick={() => sidebar.open(nodeId)}>Reopen {nodeName(nodeId)} browser</button>)}
+    </section> : null}</>}
+    emptyText={hidden.length ? 'Active browsers are hidden. Reopen an Agent browser above.' : runId ? 'No agent browsers are active in this run.' : 'No agent browsers are active in this workflow.'}
     onSelect={sidebar.select} onClose={sidebar.close}
     onCloseTab={nodeId => {
       const index = ids.indexOf(nodeId)
       sidebar.closeTab(nodeId, ids[index + 1] ?? ids[index - 1])
     }}>
+    {choices.length ? <Select label="Browser context" value={primary?.id}
+      onChange={event => { const browserSessionId = event.currentTarget.value
+        void navigate({ to: location.pathname, replace: true, search: previous => ({ ...previous, browserSessionId, browserTabId: undefined }) })
+      }} options={choices.map(session => ({ value: session.id, label: `${session.subject?.kind === 'execution'
+        ? `Run ${session.subject.execution.runId} · attempt ${session.subject.execution.attempt}`
+        : session.subject?.kind === 'coordinator_consultation' ? `Run ${session.subject.binding.runId} · consultation` : 'Agent chat'} · ${session.id}` }))} /> : null}
     {selectedId ? <SidebarBrowser key={`${selectedId}:${primary?.id ?? ''}`} workspaceId={workspaceId} workflowId={workflowId}
       nodeId={selectedId} session={primary} runId={runId} workflowVersionId={workflowVersionId}
       onOpenSettings={() => board?.selectSidePanel?.({ kind: 'agent', nodeId: selectedId, tab: 'settings' })} /> : null}

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { LogicalWorkRefSchema } from '../agentIdentity.js'
 import {
   ExecutionResultSchema, HarnessExecutionStateSchema, RunExecutionStateSchema, RunOutcomeSchema,
   RunInputSchema, RunStopCauseSchema, TimestampSchema,
@@ -61,6 +62,8 @@ export const RunInspectionRunSchema = CurrentRunScopeSchema.extend({
 }).strict()
 export const RunExecutionSummarySchema = extendGraphExecutionIdentitySchema({
   state: HarnessExecutionStateSchema,
+  /** Exact business obligation for Memory linking; interval checks have none. */
+  logicalWork: LogicalWorkRefSchema.optional(),
   continuedFromExecutionId: GraphIdSchema.optional(),
   failure: ExecutionResultSchema.shape.error,
   createdAt: TimestampSchema, startedAt: TimestampSchema.optional(), finishedAt: TimestampSchema.optional(),

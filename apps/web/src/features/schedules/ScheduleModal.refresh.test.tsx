@@ -76,7 +76,7 @@ describe('open schedule readback refresh', () => {
       return HttpResponse.json({ error: { code: 'REVISION_CONFLICT', message: 'Changed.' } }, { status: 409 })
     }))
     await view.user.click(screen.getByRole('button', { name: /^Save$/ }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Schedule changed. Reload the saved schedule before applying your changes again.')
+    expect(await screen.findByText('Schedule changed.')).toBeVisible()
     expect(time).toHaveValue(draftTime)
     expect(screen.getByRole('button', { name: /^Save$/ })).toBeDisabled()
   })

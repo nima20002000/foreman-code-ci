@@ -76,7 +76,7 @@ function ScopedWorkflowFilesButton({ workspaceId, workflowId, readOnly = false, 
           event.preventDefault(); event.stopPropagation(); close()
         }
       }}>
-      <header className="workflow-files-heading"><strong>Files</strong>
+      <header className="workflow-files-heading"><strong>Current reference files</strong>
         <div className="workflow-files-actions">
           {!readOnly && <IconButton size="sm" variant="ghost" label="Add file"
             disabled={files.upload.isPending} onClick={() => picker.current?.click()}><Icon name="plus" size={16} /></IconButton>}
