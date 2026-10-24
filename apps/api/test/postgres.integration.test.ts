@@ -7,7 +7,8 @@ import pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 
 import { buildApp } from '../src/app.js'
-import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
+import { createCheckpointStore } from '../src/composition/checkpoints.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { createDatabase } from '../src/infrastructure/database.js'
 
 const connectionString =
@@ -109,40 +110,34 @@ describe('PostgreSQL infrastructure', () => {
     const database = createDatabase({ ...options, connectionString })
     const checkpoints = createCheckpointStore(connectionString, schema, options)
     const app = buildApp({ readiness: { database, checkpoints }, readinessTimeoutMs: 100 })
-    const blocker = await admin.connect()
-    let locked = false
     try {
       await createFixtureSchema(admin, schema)
       await checkpoints.setup()
       await Promise.all([database.ping(), checkpoints.ping()])
       expect((await app.inject('/health/ready')).statusCode).toBe(200)
-      await blocker.query('begin')
-      locked = true
-      await blocker.query(`lock table "${schema}".checkpoints in access exclusive mode`)
-      for (let round = 0; round < 3; round += 1) {
-        const started = Date.now()
-        const responses = await Promise.all(Array.from({ length: 8 }, () => app.inject('/health/ready')))
-        expect(Date.now() - started).toBeLessThan(1500)
-        expect(responses.every((response) => response.statusCode === 503)).toBe(true)
-        expect(responses[0]?.json().checks).toEqual({ database: 'ok', checkpoints: 'unavailable' })
-        // The 5s statement timeout is deliberately much longer than the HTTP
-        // deadline: this proves abort destroys the actual blocked connection.
-        await vi.waitFor(async () => {
-          const active = await admin.query<{ count: number }>(`
-            select count(*)::int as count from pg_stat_activity
-            where application_name = 'graphql-checkpoints' and state = 'active' and query like $1
-          `, [`%${schema}%`])
-          expect(active.rows[0]?.count).toBe(0)
-        }, { timeout: 1500 })
-      }
-      await blocker.query('commit')
-      locked = false
+      await withTransaction(admin, async blocker => {
+        await blocker.query(`lock table "${schema}".checkpoints in access exclusive mode`)
+        for (let round = 0; round < 3; round += 1) {
+          const started = Date.now()
+          const responses = await Promise.all(Array.from({ length: 8 }, () => app.inject('/health/ready')))
+          expect(Date.now() - started).toBeLessThan(1500)
+          expect(responses.every((response) => response.statusCode === 503)).toBe(true)
+          expect(responses[0]?.json().checks).toEqual({ database: 'ok', checkpoints: 'unavailable' })
+          // The 5s statement timeout is deliberately much longer than the HTTP
+          // deadline: this proves abort destroys the actual blocked connection.
+          await vi.waitFor(async () => {
+            const active = await admin.query<{ count: number }>(`
+              select count(*)::int as count from pg_stat_activity
+              where application_name = 'graphql-checkpoints' and state = 'active' and query like $1
+            `, [`%${schema}%`])
+            expect(active.rows[0]?.count).toBe(0)
+          }, { timeout: 1500 })
+        }
+      })
       await vi.waitFor(async () => {
         expect((await app.inject('/health/ready')).statusCode).toBe(200)
       }, { timeout: 2000 })
     } finally {
-      if (locked) await blocker.query('rollback')
-      blocker.release()
       await app.close()
       await Promise.all([checkpoints.close(), database.close()])
       await dropFixtureSchema(admin, schema)

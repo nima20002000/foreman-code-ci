@@ -4,7 +4,7 @@ import { HarnessCatalogEntrySchema, type ManagementPrincipal } from '@foreman-co
 import { ExecutionReadinessService } from '../src/modules/harnesses/executionReadiness.js'
 import { logger } from '../src/modules/diagnostics/logger.js'
 import Fastify from 'fastify'
-import { registerGraphqlMcp, type GraphqlMcpServices } from '../src/mcp/unified/transport.js'
+import { registerForemanMcp, type ForemanMcpServices } from '../src/mcp/unified/transport.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { HarnessCatalogService } from '../src/modules/harnesses/catalog.js'
 import type { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -36,8 +36,8 @@ describe('harness catalog status reads', () => {
     const recordDenied = vi.fn(async () => undefined)
     const services = { access: { authenticate: async (token: string) => token === 'reader' ? principal
       : { ...principal, id: 'denied-reader', grants: [] } },
-      operator: { harnesses: catalog, commands: { recordDenied } } } as unknown as GraphqlMcpServices
-    registerGraphqlMcp(app, services)
+      operator: { harnesses: catalog, commands: { recordDenied } } } as unknown as ForemanMcpServices
+    registerForemanMcp(app, services)
     const call = async (token: string) => {
       const response = await app.inject({ method: 'POST', url: '/mcp',
         headers: { authorization: `Bearer ${token}`, accept: 'application/json, text/event-stream' },

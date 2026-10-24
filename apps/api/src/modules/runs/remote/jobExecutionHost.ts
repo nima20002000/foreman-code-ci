@@ -9,7 +9,7 @@ import { RemoteJobExecutionRpcRequestRecordSchema, type RemoteJobDispatchIntent,
 import { JobOutputCollectionError } from '../../jobs/executorOutputs.js'
 import { executeJob, executeVerificationJob, jobSupervisorIdentity, type JobExecutorPorts,
   type JobExecutorResult, type JobSupervisor, type VerificationExecution, type VerificationJobExecutorPorts } from '../../jobs/executor.js'
-import type { PodmanJobSupervisor } from '../../jobs/executorPodman.js'
+import type { PodmanJobSupervisor } from '../../jobs/index.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
 import { jobContainerNonEntryObserved } from '../../jobs/executorJournal.js'
 import { logIgnoredError } from '../../diagnostics/index.js'

@@ -1,5 +1,5 @@
 import type { RunSubagent } from '@foreman-code/contracts/subagents'
-import { completedNativeAssistantMessage, nativeAssistantText } from '../conversations/operatorText.js'
+import { completedNativeAssistantMessage, nativeAssistantText } from '../harnesses/index.js'
 import { createClaudeEventNormalizer } from '../harnesses/claudeSdk/normalization.js'
 import { describe, expect, it } from 'vitest'
 import { isChildCandidate, normalizeSubagentEvent, sanitizeSubagentValue } from './normalization.js'

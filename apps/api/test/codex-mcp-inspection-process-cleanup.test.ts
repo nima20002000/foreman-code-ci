@@ -34,7 +34,7 @@ if (phase === selected) {
   process.exit(1)
 } else {
   process.stdout.write(JSON.stringify({ name: phase, enabled: true, transport: { type: 'streamable_http',
-    url: 'http://127.0.0.1:3040/mcp', bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } }))
+    url: 'http://127.0.0.1:3040/mcp', bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } }))
 }
 `
   await writeFile(binary, script)

@@ -125,6 +125,7 @@
   },
   "dependencies": {
     "@foreman-code/contracts": "workspace:*",
+    "@foreman-code/contracts-node": "workspace:*",
     "fastify": "5.12.7",
     "yaml": "2.9.0",
     "zod": "4.6.3"

@@ -1,11 +1,10 @@
-import { raiseFloating, useFloatingZ } from '../../../shared/ui/floatingStack'
 import { InfoHint } from '../../../shared/ui/InfoHint'
-import { memo, useId, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import './inspection.css'
 import '../dock/boardDock.css'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Handle, NodeResizer, Position, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
-import { ciActivityFromRecord, type CiRunJob, type CiTestStatus } from '@foreman-code/contracts'
+import type { CiRunJob, CiTestStatus } from '@foreman-code/contracts'
 import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { Alert, Badge, Button, EmptyState, Icon, IconButton, Spinner, Tabs, type Tone } from '../../../shared/ui/nocturne'
 import { PulseFlight, type EdgePulse } from '../../graph/SignalEdgeShape'
@@ -69,26 +68,12 @@ const label = (value: string) => value[0]!.toUpperCase() + value.slice(1)
 
 type Tab = 'jobs' | 'tests' | 'log' | 'workflow-jobs'
 /** The CI server's jobs for this Run; a job opens its test results and log tail. */
-export function CiServerDialog({ open, onOpenChange, scope, workflow, jobs: listedJobs, names, truncated, error, loading, ticketId, onRefresh, readError }: {
+export function CiServerDialog({ open, onOpenChange, scope, workflow, jobs, names, truncated, error, loading, ticketId }: {
   open: boolean; onOpenChange(open: boolean): void; scope?: RepeatGraphScopeCurrent | undefined; jobs: readonly CiRunJob[]
   workflow?: { workspaceId: string; workflowId: string } | undefined
   names: ReadonlyMap<string, string>; truncated: boolean; error: boolean; loading: boolean
   ticketId?: string | undefined
-  onRefresh?(): void
-  readError?: unknown
 }) {
-  const stackId = useId()
-  const zIndex = useFloatingZ(stackId, open)
-  const cache = useQueryClient()
-  const cancel = useMutation({ mutationFn: runCiApi.cancel, onSuccess: () => {
-    if (scope) void cache.invalidateQueries({ queryKey: [...runInspectionQueryKey(scope), 'ci-jobs'] })
-    onRefresh?.()
-  } })
-  const jobs = listedJobs.map(job => cancel.data?.run.id === job.ticketId && !cancel.data.detached
-    ? { ...job, ci: ciActivityFromRecord(cancel.data.run), message: cancel.data.run.message } : job)
-  const cancelJob = (job: CiRunJob) => {
-    if (scope) cancel.mutate({ workspaceId: scope.workspaceId, ticketId: job.ticketId, commandId: crypto.randomUUID() })
-  }
   const [tab, setTab] = useState<Tab>('jobs')
   const [selectedId, setSelectedId] = useState<string>()
   // Kept here so the status filter survives a visit to another tab.
@@ -143,8 +128,7 @@ export function CiServerDialog({ open, onOpenChange, scope, workflow, jobs: list
     event.preventDefault()
   }
   if (!open) return null
-  return <aside ref={panelRef} tabIndex={-1} className="ci-server-window" aria-label="CI server" style={{ zIndex }}
-    onPointerDownCapture={() => raiseFloating(stackId)} onFocusCapture={() => raiseFloating(stackId)}>
+  return <aside ref={panelRef} tabIndex={-1} className="ci-server-window" aria-label="CI server">
     <header onPointerDown={drag}>
       <h2><Icon name="server" size={14} />CI server</h2>
       <InfoHint label="CI server">{scope
@@ -153,17 +137,10 @@ export function CiServerDialog({ open, onOpenChange, scope, workflow, jobs: list
       <IconButton label="Close CI server" variant="ghost" onClick={() => onOpenChange(false)}><Icon name="close" size={16} /></IconButton>
     </header>
     <div className="ci-server-window-body">{error ? <Alert tone="warning" title="CI jobs could not be read.">
-      {isApiAccessError(readError) ? 'CI access is unavailable for this workspace.'
-        : jobs.length ? 'The list shows the last jobs read. Try reading them again.' : 'Try reading the jobs again when the connection is available.'}
-      {onRefresh ? <Button size="sm" onClick={onRefresh}>Retry CI jobs</Button> : null}</Alert> : null}
-    {cancel.error ? <Alert tone="warning" title="CI cancellation failed.">{cancel.error.message}</Alert> : null}
-    {cancel.data?.detached ? <p role="status">You left this shared CI request. It continues for {cancel.data.detached.remainingRequesters} other requesters.</p> : null}
-    {cancel.data?.run.cancellation && ['queued', 'starting', 'running'].includes(cancel.data.run.state) ? <p role="status">Cancellation requested; waiting for the executor.</p> : null}
-    {selected && tab !== 'jobs' && isActiveCiJob(selected) ? <Button size="sm" disabled={cancel.isPending}
-      onClick={() => cancelJob(selected)}>Cancel CI job</Button> : null}
+      {jobs.length ? 'The list shows the last jobs read.' : 'Reading CI needs the CI read grants for this workspace.'}</Alert> : null}
     <Tabs label="CI server" value={tab} onValueChange={(value) => setTab(value as Tab)} keepMounted={false} items={[
       { value: 'jobs', label: 'Jobs', badge: jobs.length, content: loading ? <Spinner label="Loading CI jobs" />
-        : <CiJobsTable jobs={jobs} agent={agent} selectedId={selected?.ticketId} truncated={truncated} onShow={show} run={Boolean(scope)} onCancel={scope ? cancelJob : undefined} cancelPending={cancel.isPending} /> },
+        : <CiJobsTable jobs={jobs} agent={agent} selectedId={selected?.ticketId} truncated={truncated} onShow={show} run={Boolean(scope)} /> },
       { value: 'tests', label: 'Tests', disabled: !selected || !scope,
         content: selected && scope ? <CiJobTests scope={scope} job={selected} agent={agent(selected)}
         statuses={statuses} onStatusesChange={setStatuses} /> : null },
@@ -174,13 +151,13 @@ export function CiServerDialog({ open, onOpenChange, scope, workflow, jobs: list
   </aside>
 }
 
-export function CiJobsTable({ jobs, agent, selectedId, truncated, onShow, run, onCancel, cancelPending }: { jobs: readonly CiRunJob[]; agent(job: CiRunJob): string
-  selectedId?: string | undefined; truncated: boolean; onShow(job: CiRunJob): void; run: boolean; onCancel?(job: CiRunJob): void; cancelPending?: boolean }) {
+export function CiJobsTable({ jobs, agent, selectedId, truncated, onShow, run }: { jobs: readonly CiRunJob[]; agent(job: CiRunJob): string
+  selectedId?: string | undefined; truncated: boolean; onShow(job: CiRunJob): void; run: boolean }) {
   if (!jobs.length) return <EmptyState icon="terminal" title={run ? 'No CI jobs in this Run yet' : 'No Run selected'}
     description={run ? undefined : 'Start or select a Run.'} />
   return <div className="n-table-scroll" role="region" aria-label="CI jobs" tabIndex={0}>
     <table className="n-table ci-jobs-table"><thead><tr>
-      {['Job', 'Scope', 'Placement', 'State', 'Agent', 'Started', 'Duration'].map((name) => <th key={name} scope="col">{name}</th>)}{onCancel ? <th scope="col">Actions</th> : null}
+      {['Job', 'Scope', 'Placement', 'State', 'Agent', 'Started', 'Duration'].map((name) => <th key={name} scope="col">{name}</th>)}
     </tr></thead><tbody>{jobs.map((job) => <tr key={job.ticketId} aria-selected={job.ticketId === selectedId}>
       <td><button type="button" className="ci-job-open" onClick={() => onShow(job)}
         aria-label={`Show tests of ${ciJobLabel(job.ci)} requested by ${agent(job)}`}>{ciJobLabel(job.ci)}</button></td>
@@ -196,7 +173,6 @@ export function CiJobsTable({ jobs, agent, selectedId, truncated, onShow, run, o
       <td>{job.ci.startedAt ? <time dateTime={job.ci.startedAt}>{formatClock(job.ci.startedAt)}</time>
         : <>Queued <time dateTime={job.ci.queuedAt}>{formatClock(job.ci.queuedAt)}</time></>}</td>
       <td>{ciJobDuration(job) === null ? '—' : formatDuration(ciJobDuration(job)!)}</td>
-      {onCancel ? <td>{isActiveCiJob(job) ? <Button size="sm" disabled={cancelPending} onClick={() => onCancel(job)}>Cancel CI job</Button> : null}</td> : null}
     </tr>)}</tbody></table>
     {truncated ? <p className="ci-server-note">Showing the newest 500 jobs.</p> : null}
   </div>
@@ -285,10 +261,9 @@ function CiJobLog({ scope, job }: { scope: RepeatGraphScopeCurrent; job: CiRunJo
     {!started ? <p className="ci-server-note">The job has not started; its log appears once a computer takes it.</p>
       : query.isPending ? <Spinner label="Loading log" />
       : (denied || query.isError) && !log ? <Alert tone="warning" title="The log is unavailable right now.">
-        {denied ? 'CI log access is unavailable for this workspace.' : 'The computer that ran this job may be offline.'}
-        <Button size="sm" onClick={() => void query.refetch()}>Retry log</Button></Alert>
+        The computer that ran this job may be offline.</Alert>
       : <pre className="ci-log" tabIndex={0} aria-label="Log tail">{log?.text || 'The log is empty.'}</pre>}
     {query.isError && log ? <Alert tone="warning" title="The log could not be refreshed.">
-      Showing the last log read.<Button size="sm" onClick={() => void query.refetch()}>Retry log</Button></Alert> : null}
+      Showing the last log read.</Alert> : null}
   </div>
 }

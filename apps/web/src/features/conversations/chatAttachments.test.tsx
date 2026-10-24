@@ -32,10 +32,8 @@ import { clearRevisionedFormPersistence } from '../settings'
 import { AgentChatPanel } from '../graph'
 import { installChatSource } from './agentChat/testSupport'
 import { agentChatStateKey } from './agentChat/useAgentChat'
-import { useConversationDraftStore } from './conversationDraftStore'
-import { ChatAttachmentBoundary } from './ChatAttachmentBoundary'
+import { useConversationDraftStore, ChatAttachmentBoundary, messageAttachmentRefs } from '../chat-core'
 import { ConversationComposer } from './ConversationComposer'
-import { messageAttachmentRefs } from './chatAttachmentAttempt'
 
 // Only unrelated settings popovers and the live wire are replaced. The real composers,
 // transcripts, uploads (including XHR), outbox and JSON clients run through MSW.
