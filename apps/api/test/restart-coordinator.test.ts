@@ -1,13 +1,10 @@
 import assert from 'node:assert/strict'
-import { afterEach, describe, it, vi } from 'vitest'
+import { describe, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema, DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
-import { ExecutionCancellation } from '../src/modules/interactions/executionCancellation.js'
 import { readWorkflowClosure } from '../src/modules/interactions/workflowClosure.js'
 import { currentRestartUnit } from './helpers/currentRestartUnit.js'
 import { recoveryDatabase, recoveryExecution } from './helpers/recoveryExecution.testSupport.js'
-
-afterEach(() => vi.restoreAllMocks())
 
 type CoordinatorArgs = ConstructorParameters<typeof ApprovalExecutionCoordinator>
 
@@ -51,7 +48,7 @@ function fixture(options: Parameters<typeof recoveryDatabase>[0] = {}) {
       assert.equal(id, db.state.execution.id); assert.equal(db.state.active, false); calls.push('close-processes'); return true
     } })
   // The SQL double cannot run real attempt settlement; record the per-attempt decision instead.
-  vi.spyOn(ExecutionCancellation.prototype, 'abandonAttempt').mockImplementation(async (_owner, execution, failure) => {
+  vi.spyOn(coordinator.cancellation, 'abandonAttempt').mockImplementation(async (_owner, execution, failure) => {
     calls.push(`abandon:${execution.id}:${failure.outcome === 'failed' ? failure.error?.code : failure.outcome}`)
   })
   return { ...db, calls, runs, snapshot, coordinator, recovery }

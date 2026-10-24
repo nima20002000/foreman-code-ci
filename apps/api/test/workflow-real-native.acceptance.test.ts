@@ -17,7 +17,7 @@ import { CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema,
   makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { createDatabase } from '../src/infrastructure/database.js'
-import { createCheckpointStore } from '../src/composition/checkpoints.js'
+import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
 import { loadConfig } from '../src/config.js'
 import { buildProductionApp } from '../src/production.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'

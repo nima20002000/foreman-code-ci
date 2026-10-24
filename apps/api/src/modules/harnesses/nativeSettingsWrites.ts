@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { realpath } from 'node:fs/promises'
 import { dirname, basename, join, resolve } from 'node:path'
 import type pg from 'pg'
@@ -6,7 +5,7 @@ import { DomainError } from '../errors.js'
 
 // Retain the existing MCP-wide lock as well as canonical file identity.
 // This deliberately serializes different harness homes rather than risking lost shared-file writes.
-export const NATIVE_SETTINGS_LOCK = INSTALLATION_NAMES.protocol.harnessSettingsLock
+export const NATIVE_SETTINGS_LOCK = 'graphql:harness-mcp-settings'
 export async function assertNoUnresolvedPluginWrites(client: pg.PoolClient): Promise<void> {
   const result = await client.query("select 1 from management_command_receipts where operation='codex.plugin.change' and result->>'status'='uncertain' limit 1")
   if (result.rowCount) throw new DomainError('CODEX_PLUGIN_RECONCILIATION_REQUIRED', 'An earlier plugin write is unresolved. Reconcile it in Codex Plugins before another native settings change.', 409)

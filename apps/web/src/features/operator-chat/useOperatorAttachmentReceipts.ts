@@ -5,7 +5,7 @@ import type { MessageAttachmentRef } from '@foreman-code/contracts/files'
 import { ApiError, sendOperatorMessage } from '../../shared/api/client'
 import { chatStoragePrefix, identityEpoch } from '../../shared/api/protectedChatStorage'
 import { sessionGeneration, sessionIsSwitching, SessionChangedError } from '../../shared/api/sessionBoundary'
-import { containsAttachmentRefs, messageAttachmentRefs, sameAttachmentRefs, type ChatAttachmentAttempt } from '../chat-core'
+import { containsAttachmentRefs, messageAttachmentRefs, sameAttachmentRefs, type ChatAttachmentAttempt } from '../conversations/chatAttachmentAttempt'
 import { readPendingOperatorMessage } from './operatorOutbox'
 import { confirmedOperatorDelivery } from './operatorDeliveryReceipt'
 

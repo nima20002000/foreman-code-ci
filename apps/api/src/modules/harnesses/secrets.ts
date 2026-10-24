@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { appMcpDirectory } from '@foreman-code/contracts/product-environment-node'
@@ -8,13 +7,13 @@ import { hostEnvironment } from '../../shared/process.js'
 
 export function isDatabaseCredentialVariable(key: string): boolean {
   return key === 'DATABASE_URL' || key.endsWith('_DATABASE_URL') || key === 'PGPASSWORD'
-    || key === INSTALLATION_NAMES.environment.PRODUCTION_DB_PASSWORD || key === INSTALLATION_NAMES.privateEnvironment.productDatabasePassword
+    || key === 'GRAPHQL_PRODUCTION_DB_PASSWORD' || key === 'FOREMAN_CODE_PRODUCTION_DB_PASSWORD'
 }
 
 export function isControllerEnvironmentVariable(key: string): boolean {
   return key === 'NODE_OPTIONS' || key.startsWith('OPERATOR_')
     || /^(?:GRAPHQL|FOREMAN_CODE)_(?:OPERATOR|APP|TEST)_/.test(key)
-    || (APP_MCP_TOKEN_NAMES as readonly string[]).includes(key) || key === INSTALLATION_NAMES.privateEnvironment.productMcpToken
+    || (APP_MCP_TOKEN_NAMES as readonly string[]).includes(key)
     || key.endsWith('DATABASE_URL') || isDatabaseCredentialVariable(key)
 }
 
@@ -27,12 +26,12 @@ export function inheritedAgentEnvironment(source: NodeJS.ProcessEnv = hostEnviro
   return environment
 }
 
-/** Deliver the admitted token with its frozen installation name and bridge location. */
+/** Deliver the admitted token in both native spellings together with its bridge location. */
 export function appMcpTokenEnvironment(source: NodeJS.ProcessEnv, runtimeEnvironment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const token = readProductEnvironment(source, 'MCP_TOKEN')
   if (token === undefined) return source
-  return { ...source, [INSTALLATION_NAMES.environment.MCP_TOKEN]: token,
-    [INSTALLATION_NAMES.environment.APP_MCP_DIRECTORY]: appMcpDirectory(runtimeEnvironment) }
+  return { ...source, FOREMAN_CODE_MCP_TOKEN: token, GRAPHQL_MCP_TOKEN: token,
+    FOREMAN_CODE_APP_MCP_DIRECTORY: appMcpDirectory(runtimeEnvironment) }
 }
 
 /** Keep a native CLI's helper lookups on the same installation as its executable. */

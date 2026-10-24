@@ -18,6 +18,8 @@ describe.skipIf(!postgresEnabled)('PostgreSQL authenticated Run inspection: wait
       const page = RunExecutionsPageSchema.parse(await parity(f, r.client, r.token, RUN_INSPECTION_TOOLS.executions, args))
       const waiting = page.items.find((item) => !item.acceptedResultAvailable)!
       expect(waiting).toBeDefined()
+      expect(waiting.logicalWork).toMatchObject({ kind: 'slot', runId: f.f.run.id, workflowVersionId: f.f.version.id })
+      expect(waiting.logicalWork?.kind === 'slot' && waiting.logicalWork.slotId).toEqual(expect.any(String))
       const detail = RunExecutionDetailSchema.parse(await parity(f, r.client, r.token, RUN_INSPECTION_TOOLS.execution,
         { ...args, executionId: waiting.executionId }))
       expect(detail.acceptedResult).toEqual({ status: 'not_accepted' })

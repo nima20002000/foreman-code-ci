@@ -4,7 +4,7 @@ import { createPublicKey, randomUUID, sign, verify } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
 import type pg from 'pg'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
-import { publicKeyFingerprint } from '@foreman-code/contracts-node/device-identity-node'
+import { publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { JobCancellationProposalInputSchema, JobCancellationRecoveryGetSchema, JobCancellationRecoveryReadSchema,
   JobCancellationRecoveryApproveSchema,

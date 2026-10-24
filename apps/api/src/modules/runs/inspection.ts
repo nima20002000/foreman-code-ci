@@ -62,7 +62,7 @@ type StoredInspectionExecution = StoredRepeatExecution & { executorKind: 'agent'
 function executionIdentity(stored: StoredInspectionExecution) {
   return stored.executorKind === 'job' ? stored.identity : repeatExecutionIdentity(stored.execution)
 }
-function summaryOf(stored: StoredInspectionExecution): RunExecutionSummary {
+function summaryOf(stored: StoredInspectionExecution, scope: RepeatScope): RunExecutionSummary {
   const { execution, ref, accepted } = stored
   if (stored.executorKind === 'job') {
     const job = stored.execution
@@ -75,7 +75,9 @@ function summaryOf(stored: StoredInspectionExecution): RunExecutionSummary {
   const tickIndex = repeatTickIndex(stored.input)
   return RunExecutionSummarySchema.parse({ ...repeatExecutionIdentity(stored.execution), state: stored.execution.state,
     ...(stored.execution.sessionContinuation ? { continuedFromExecutionId: stored.execution.sessionContinuation.previousExecutionId } : {}),
-    ...(tickIndex === undefined ? {} : { tickIndex }),
+    ...(tickIndex === undefined ? { logicalWork: stored.workActivationId
+      ? { kind: 'activation', runId: execution.runId, workflowVersionId: scope.workflowVersionId, activationId: stored.workActivationId }
+      : { kind: 'slot', runId: execution.runId, workflowVersionId: scope.workflowVersionId, slotId: stored.slotId } } : { tickIndex }),
     ...(stored.execution.result?.error ? { failure: stored.execution.result.error } : {}),
     createdAt: execution.createdAt, ...(execution.startedAt === undefined ? {} : { startedAt: execution.startedAt }),
     ...(execution.finishedAt === undefined ? {} : { finishedAt: execution.finishedAt }),
@@ -153,7 +155,10 @@ export function inspectionExecutionRowSummary(row: ExecutionRow, snapshot: Accep
       ? summary.finishedAt !== undefined && ['succeeded', 'failed', 'canceled'].includes(row.reported_outcome ?? '')
       : summary.finishedAt === undefined && row.reported_outcome === null)
     && (!row.accepted || (summary.state === 'completed' && row.reported_outcome === 'succeeded')))
-  return { ...summary, ...(occurrence ? { occurrence } : {}) }
+  return { ...summary, ...(occurrence ? { occurrence } : {}),
+    ...(summary.kind !== 'job' && tickIndex === null ? { logicalWork: activationId
+      ? { kind: 'activation' as const, runId: scope.runId, workflowVersionId: scope.workflowVersionId, activationId }
+      : { kind: 'slot' as const, runId: scope.runId, workflowVersionId: scope.workflowVersionId, slotId } } : {}) }
 }
 
 /** ONE read-only service for management HTTP and authenticated Operator MCP.
@@ -334,7 +339,7 @@ export class RunInspectionService {
       const stored = await this.execution(sql, snapshot, input.executionId)
       const accepted = await this.acceptedResult(sql, snapshot, stored)
       evidence(stored.accepted === (accepted !== undefined))
-      return bounded(RunExecutionDetailSchema.parse({ run: runSummary(snapshot), execution: summaryOf(stored),
+      return bounded(RunExecutionDetailSchema.parse({ run: runSummary(snapshot), execution: summaryOf(stored, scopeOf(snapshot)),
         acceptedInput: { digest: stored.inputDigest, value: stored.input },
         acceptedResult: accepted === undefined ? { status: 'not_accepted' }
           : { status: 'accepted', digest: repeatDigest(accepted, RUN_INSPECTION_LIMITS.resultBytes), value: accepted },

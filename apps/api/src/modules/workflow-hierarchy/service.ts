@@ -10,7 +10,7 @@ import { readLiveManagementPrincipal } from '../access/index.js'
 import { requireAuthorization } from '../access/index.js'
 import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
-import type { WorkflowManagementService } from '../workflows/index.js'
+import type { WorkflowManagementService } from '../workflows/management.js'
 import { IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion, readPinnedAgentConfigurations,
   type ImmutableWorkflowVersionRow, type ImmutableAgentConfigurationRow } from '../workflows/immutableRead.js'
 import { updateWorkflowHierarchy } from './update.js'

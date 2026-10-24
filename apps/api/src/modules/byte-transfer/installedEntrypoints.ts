@@ -8,8 +8,8 @@ import { authenticatedTransferAuthority, transferContextForBinding, type Accepte
 import { ResumableByteTransferService } from './service.js'
 import type { InstalledMainRsyncProviders, InstalledRsyncProviders } from './productionComposition.js'
 import type { RsyncWriterOwnership } from './rsyncWriterOwnership.js'
-import type { DeviceEndpoint } from '../devices/index.js'
-import type { PostgresTrustedConnectionSetup } from '../devices/index.js'
+import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
+import type { PostgresTrustedConnectionSetup } from '../devices/trustedConnectionSetup.js'
 import { DomainError } from '../errors.js'
 
 const unavailable = (reason: string): never => { throw new DomainError('RSYNC_COMPOSITION_UNAVAILABLE', reason, 409) }

@@ -20,7 +20,9 @@
   cursor: grab;
 }
 .board-kanban-bar:active { cursor: grabbing; }
-.board-kanban-bar h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 0.9rem; flex: 1 1 auto; }
+.board-kanban-bar h2 { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: 0; font-size: 0.9rem; flex: 1 1 auto; }
+.board-kanban-bar h2 span { display: flex; align-items: center; gap: 6px; }
+.board-kanban-bar h2 small { font-size: 0.7rem; font-weight: 400; color: var(--text-muted); }
 .board-kanban-error { color: var(--danger); font-size: 0.8rem; }
 .board-kanban-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px; cursor: default; }
 .board-kanban-columns { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; height: 100%; }

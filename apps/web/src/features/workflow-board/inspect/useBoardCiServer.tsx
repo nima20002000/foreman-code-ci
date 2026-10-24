@@ -1,3 +1,4 @@
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
 import type { CiRunJob } from '@foreman-code/contracts'
 import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
@@ -7,14 +8,22 @@ import { useCiPlacement } from '../dock/boardObjects'
 
 /** The draft and saved-Run Boards show the same presentation-only CI server as live inspection.
  * Without a Run scope it is idle; with one, its jobs come from the caller's CI read. */
-export function useBoardCiServer({ nodes, names, workflow, scope, jobs, truncated = false, error = false, loading = false, keepPlace = false }: {
+export function useBoardCiServer({ nodes, names, workflow, scope, jobs, truncated = false, error = false, loading = false, keepPlace = false, readError, onRefresh }: {
   nodes: Parameters<typeof ciServerFlowNode>[0]; names: ReadonlyMap<string, string>
   /** Keep the server where it first appears, so adding or removing Agents never moves it (the editable Board). */
   keepPlace?: boolean
   workflow: { workspaceId: string; workflowId: string }; scope?: RepeatGraphScopeCurrent; jobs?: readonly CiRunJob[] | undefined
-  truncated?: boolean; error?: boolean; loading?: boolean
+  truncated?: boolean; error?: boolean; loading?: boolean; readError?: unknown; onRefresh?(): void
 }) {
+  const location = useLocation(), navigate = useNavigate()
+  const ticketId = scope && scope.runId === (location.search.selectedRunId ?? location.search.runId) ? location.search.boardCiTicketId : undefined
   const [open, setOpen] = useState(false)
+  useEffect(() => { if (ticketId) setOpen(true) }, [ticketId])
+  const changeOpen = (next: boolean) => {
+    setOpen(next)
+    if (!next && ticketId) void navigate({ to: location.pathname, replace: true,
+      search: previous => ({ ...previous, boardCiTicketId: undefined }) })
+  }
   const summary = useMemo(() => !scope || jobs ? ciServerSummary(jobs ?? []) : {
     ...ciServerSummary([]), state: 'unavailable' as const, label: error ? 'CI unavailable' : 'Loading CI',
   }, [scope, jobs, error])
@@ -24,7 +33,7 @@ export function useBoardCiServer({ nodes, names, workflow, scope, jobs, truncate
     [nodes, summary, position, size, closed, close])
   const moved = place.moved, autoSpot = !position && node ? node.position : undefined
   useEffect(() => { if (keepPlace && autoSpot) moved(autoSpot) }, [keepPlace, autoSpot, moved])
-  const dialog = <CiServerDialog open={open} onOpenChange={setOpen} scope={scope} workflow={workflow} jobs={jobs ?? []} names={names}
-    truncated={truncated} error={error} loading={loading} />
+  const dialog = <CiServerDialog open={open} onOpenChange={changeOpen} ticketId={ticketId} scope={scope} workflow={workflow} jobs={jobs ?? []} names={names}
+    truncated={truncated} error={error} loading={loading} readError={readError} onRefresh={onRefresh} />
   return { node, dialog, summary, place }
 }
