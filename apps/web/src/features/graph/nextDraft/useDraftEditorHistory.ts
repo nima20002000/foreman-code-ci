@@ -66,7 +66,7 @@ export function useDraftEditorHistory({ draftKey, undoScope, board, editIntent, 
       if (key !== 'z' && key !== 'y') return
       // An open dialog owns the keyboard; Undo must not change the Board behind it.
       if (modalOpen()) return
-      if (saveBusy || starting || editIntent.locked || board?.run) return
+      if (saveBusy || starting || editIntent.locked || board?.run || board?.boardRunLive) return
       event.preventDefault()
       historyAction(key === 'y' || event.shiftKey ? 'redo' : 'undo')
     }

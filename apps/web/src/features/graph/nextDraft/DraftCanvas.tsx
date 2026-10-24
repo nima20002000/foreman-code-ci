@@ -264,6 +264,8 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
     if (result.finished) flush()
   }
   const connectNodes = (first: string, second: string) => {
+    // Locked while a save or Start settles and while the Board's latest Run is live.
+    if (semanticLocked) return
     const roles = new Map(graph.nodes.map(node => [node.id, node.kind === 'job' ? undefined
       : agents.find(agent => agent.id === node.agentId)?.productRole]))
     // Without a Master yet, a line between an Orchestrator and a Worker still runs from the Orchestrator down.
@@ -308,7 +310,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   const context = { draftKey, inspect, open: board?.selectSidePanel ? shown : open, setOpen: setPanel, openChat, selectNode, beginResize, resize, finishResize, changedAgentIds }
   return <CanvasContext.Provider value={context}>
     <div ref={responsive.containerRef} {...proximity} className={`next-draft-canvas board-draft-canvas${connecting ? ' is-connecting' : ''}`} aria-label="Editable workflow graph">
-      <ReactFlow<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | KanbanActivityFlowEdge> nodes={flowNodes}
+      <ReactFlow<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | KanbanActivityFlowEdge> nodes={flowNodes} nodesConnectable={!semanticLocked}
         edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
         onNodesChange={onNodesChange} onNodeDragStop={(_event, node) => {
           if (node.id === KANBAN_NODE_ID) kanban.moved(node.position)

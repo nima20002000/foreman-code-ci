@@ -77,7 +77,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
             {edit.pending ? <Button disabled={saveBusy || starting} onClick={requestSave}>Retry save</Button> : null}
             {editIntent.locked && !finishingSave ? <Button disabled={saveBusy || starting || !!editIntent.storageError || stopBlocked} onClick={requestSave}>
               {affectedRuns.length ? 'Stop affected Runs and save' : 'Reconcile Save'}</Button>
-              : <IconButton label="Save workflow" disabled={saveBusy || starting || !!editIntent.storageError} onClick={requestSave}><Save aria-hidden="true" size={16} /></IconButton>}
+              : <IconButton label="Save workflow" disabled={saveBusy || starting || !!editIntent.storageError || !!board?.boardRunLive} onClick={requestSave}><Save aria-hidden="true" size={16} /></IconButton>}
             </> : null}
           </Toolbar> : null}
         {board?.navigationControls}
@@ -100,7 +100,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
           {board ? <IconButton label="Activities" onClick={board.openRuns}><Icon name="history" size={16} /></IconButton> : null}
           {board ? <KanbanButton workspaceId={graph.workspaceId} workflowId={graph.id} /> : null}
           {board?.boardRunControls}
-          {board?.runActionHost ? createPortal(runAction, board.runActionHost) : board?.boardRunControls ? null : runAction}
+          {board?.runActionHost ? createPortal(runAction, board.runActionHost) : board?.boardRunControls && !pendingStart ? null : runAction}
         </Toolbar>
         </div>
       </header>
