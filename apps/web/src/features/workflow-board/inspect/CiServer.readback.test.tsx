@@ -16,7 +16,7 @@ function Readback() {
   const query = useQuery({ queryKey: ['ci-readback'],
     queryFn: ({ signal }) => runCiApi.list(scope, { signal }), refetchInterval: 1500 })
   return <CiServerDialog open onOpenChange={() => {}} scope={scope} jobs={query.data?.jobs ?? []}
-    names={new Map()} truncated={false} error={query.isError} loading={query.isPending} readError={query.error} onRefresh={() => void query.refetch()} />
+    names={new Map()} truncated={false} error={query.isError} loading={query.isPending} />
 }
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -108,31 +108,6 @@ it('follows pending cancellation through ticket readback until executor cleanup 
   expect(screen.queryByRole('button', { name: 'Cancel CI job' })).not.toBeInTheDocument()
 })
 
-it.each(['canceled', 'running'] as const)('reconciles cancellation returned as %s with later confirmed ticket state', async returnedState => {
-  let canceled = false
-  const canceledTickets: string[] = []
-  server.use(
-    http.get('*/api/management/workspaces/:workspaceId/ci', () => HttpResponse.json({ runId: scope.runId,
-      jobs: [{ ...ciResultJob, ci: { ...ciResultJob.ci, state: canceled ? 'canceled' : 'running' } }], truncated: false })),
-    http.delete('*/api/management/workspaces/:workspaceId/ci/:ticketId', ({ params }) => {
-      canceledTickets.push(String(params.ticketId)); canceled = true
-      return HttpResponse.json({ run: { ...ciResultJob.ci, workspaceId: scope.workspaceId,
-        repository: 'owner/repo', commit: 'a'.repeat(40), scope: 'affected', files: [], state: returnedState,
-        dispatchAttempts: 0, noSupersede: false, message: null,
-        initiator: { principalId: 'operator', executionId: null }, queuedAt: ciResultJob.ci.queuedAt } })
-    }),
-    http.get('*/api/management/workspaces/:workspaceId/ci/:ticketId', () => HttpResponse.json({ run: {
-      ...ciResultJob.ci, workspaceId: scope.workspaceId, repository: 'owner/repo', commit: 'a'.repeat(40),
-      state: 'canceled', message: null, initiator: { principalId: 'operator', executionId: null },
-    } })),
-  )
-  mount()
-  fireEvent.click(await screen.findByRole('button', { name: 'Cancel CI job' }))
-  expect(await screen.findByText('Canceled')).toBeVisible()
-  expect(canceledTickets).toEqual([ciResultJob.ticketId])
-  expect(screen.queryByRole('button', { name: 'Cancel CI job' })).not.toBeInTheDocument()
-})
-
 
 it('retries an unavailable completed-job log through the visible selected ticket control', async () => {
   let reads = 0
@@ -150,17 +125,4 @@ it('retries an unavailable completed-job log through the visible selected ticket
   fireEvent.click(screen.getByRole('button', { name: 'Retry log' }))
   expect(await screen.findByText('Recovered job log')).toHaveTextContent('Recovered job log')
   expect(reads).toBe(2)
-})
-
-it('retries a failed settled jobs read from the CI window without blaming access', async () => {
-  let failed = true
-  server.use(http.get('*/api/management/workspaces/:workspaceId/ci', () => failed
-    ? HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Connection interrupted.' } }, { status: 503 })
-    : HttpResponse.json({ runId: scope.runId, jobs: [ciResultJob], truncated: false })))
-  mount()
-  await screen.findByText('CI jobs could not be read.')
-  expect(screen.queryByText(/needs the CI read grants/)).not.toBeInTheDocument()
-  failed = false
-  fireEvent.click(screen.getByRole('button', { name: 'Retry CI jobs' }))
-  expect(await screen.findByRole('button', { name: /Show tests of/ })).toBeVisible()
 })

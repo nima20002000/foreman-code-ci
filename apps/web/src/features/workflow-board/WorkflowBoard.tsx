@@ -134,7 +134,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   // hidden editor, or fabricate missing version/semantics pins.
   const value = useMemo<WorkflowBoardSelection>(() => ({ workspaceId, workflowId, selectRun: chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent,
     sidePanel: side.panel, selectedPanelNodeId: side.agentSelection?.nodeId, selectSidePanel: selectPanel, memoryOpen: side.memoryOpen,
-    openMemoryCard: (cardId?: string) => setMemoryOpen(true, cardId),
+    openMemoryCard: (cardId: string) => setMemoryOpen(true, cardId),
     canvasVisible: side.view === 'graph', teamNodeId: side.teamNodeId, selectTeam: side.selectTeam,
     openLocation: () => setLocationOpen(true), openRuns: () => setRunsOpen(true), activeRuns, liveRunId, authoringActive: current,
     navigationControls: current && side.view === 'graph' ? <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /> : undefined,
@@ -190,7 +190,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         {directionChat.isError && directionChat.variables.token === getSelectionToken() ? <p role="alert">{directionChat.error.message}</p> : null}
         <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection}
           runsLabel={current && side.view === 'overview' ? 'Choose run' : undefined} />
-        {(current || detailsScope && !runUnreadable) ? <IconButton label="Activities" onClick={() => setRunsOpen(true)}><Icon name="history" size={16} /></IconButton> : null}
+        {detailsScope && !runUnreadable ? <IconButton label="Activities" onClick={() => setRunsOpen(true)}><Icon name="history" size={16} /></IconButton> : null}
         {runControlsScope ?
           <SelectedRunControls key={boardSelection.identity.runId} visible={!side.memoryOpen}
             scope={runControlsScope} runActionRef={setRunActionHost} /> : null}
@@ -215,6 +215,9 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
       <RunBoardSlot selection={boardSelection} shown={shownBoard}>
         <div className="workflow-board-authoring" onClickCapture={authoringEvent} onKeyDownCapture={authoringEvent} onSubmitCapture={authoringEvent}>
           {children}
+          <ActivitiesPopover open={current && runsOpen} onClose={() => setRunsOpen(false)} findAnchor={findActivitiesButton}>
+            {current ? <RunActivityPanel summaries={summaries} summariesReadAt={summariesReadAt} /> : null}
+          </ActivitiesPopover>
           {current && locationOpen ? <WorkspaceExecutionLocationSettings workspaceId={workspaceId} presentation="dialog"
             open onOpenChange={setLocationOpen} onSaved={() => setLocationOpen(false)} /> : null}
         </div>
@@ -236,11 +239,11 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
           onCard={collaborationSlots?.reportCard} />}
       </section> : null}
       </div>
-      <BoardSelectionContext.Provider value={detailsValue}>
-        <ActivitiesPopover open={(current || Boolean(detailsScope)) && runsOpen} onClose={() => setRunsOpen(false)} findAnchor={findActivitiesButton}>
+      {detailsScope ? <BoardSelectionContext.Provider value={detailsValue}>
+        <ActivitiesPopover open={runsOpen} onClose={() => setRunsOpen(false)} findAnchor={findActivitiesButton}>
           <RunActivityPanel summaries={summaries} summariesReadAt={summariesReadAt} />
         </ActivitiesPopover>
-      </BoardSelectionContext.Provider>
+      </BoardSelectionContext.Provider> : null}
       <WorkflowSidePanel scope={side.scope} workspaceId={workspaceId} workflowId={workflowId}
         workflowVersionId={legacyRun?.workflowVersionId ?? (picked?.kind === 'available' ? picked.workflowVersionId : undefined)}
         opener={side.opener} runId={legacyRun?.runId ?? pickedRunId} selection={side.panel} agentSelection={side.agentSelection} onSelect={selectPanel} bodyRef={setSidePanelHost} headerSlotRef={setPanelHeaderSlot} footerSlotRef={setPanelFooterSlot}

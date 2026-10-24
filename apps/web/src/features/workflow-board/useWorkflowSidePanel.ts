@@ -128,11 +128,13 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
         runNodeId: undefined, runRelationshipId: undefined, runExchangeKey: undefined,
       }) })
   }, [navigate, workspaceId, workflowId, selectExecution, releaseBrowser])
-  const selectChatRun = useCallback((target: { runId: string; workflowVersionId: string }) => {
+  const selectChatRun = useCallback((target: { runId: string; workflowVersionId?: string } | undefined) => {
     releaseBrowser()
     void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true,
       search: previous => previous.workflowId && previous.workflowId !== workflowId ? previous : ({ ...previous, workflowId,
-        selectedRunId: undefined, runId: target.runId, workflowVersionId: target.workflowVersionId, executionSemanticsVersion: 3,
+        selectedRunId: target && !target.workflowVersionId ? target.runId : undefined,
+        runId: target?.workflowVersionId ? target.runId : undefined, workflowVersionId: target?.workflowVersionId,
+        executionSemanticsVersion: target?.workflowVersionId ? 3 : undefined,
         boardExecutionId: undefined, boardWaitingActivationId: undefined,
         runNodeId: undefined, runRelationshipId: undefined, runExchangeKey: undefined,
       }) })

@@ -5,6 +5,7 @@ import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { OperatorHistoryActions } from './OperatorHistoryActions'
 import { isNarrowOperatorChat, useOperatorChatStore } from './operatorChatStore'
 import { operatorNavigationStatus } from './operatorChatStatus'
+import { useConversationDraftStore } from '../conversations'
 import { detailKey } from './operatorChatShared'
 import { useManualRefetch } from '../../shared/api/useManualRefetch'
 import { isApiRestartError } from '../../shared/api/client'
@@ -27,6 +28,9 @@ export function OperatorChatHistory({ historyOpen, historyId, historyRef, histor
   remove: ReturnType<typeof useOperatorConversationMutations>['remove']
 }) {
   const select = useOperatorChatStore((state) => state.select)
+  const draftIds = useOperatorChatStore(state => state.draftConversationIds)
+  const drafts = useConversationDraftStore(state => state.drafts)
+  const unsent = accessDenied ? [] : draftIds.filter(id => drafts[id]?.trim() && !entries.some(item => item.conversationId === id))
   const retry = useManualRefetch(list.refetch)
   const older = useManualRefetch(loadOlderChats)
   return <aside aria-hidden={!historyOpen} inert={!historyOpen} ref={historyRef} id={historyId} aria-label="Operator conversation history"
@@ -40,8 +44,13 @@ export function OperatorChatHistory({ historyOpen, historyId, historyRef, histor
       <span>{list.data ? 'History could not refresh.' : 'History could not load.'}</span>
       <Button size="sm" variant="ghost" disabled={retry.pending} loading={retry.pending} onClick={() => void retry.refetch()}>Retry</Button>
     </div> : null}
-    {list.isSuccess && entries.length === 0 ? <EmptyState icon="history" title="No conversations yet. Start a new chat." /> : null}
-    <nav aria-label="Conversations">{entries.map((item) => <div className="operator-chat-row" key={item.conversationId}>
+    {list.isSuccess && entries.length === 0 && unsent.length === 0 ? <EmptyState icon="history" title="No conversations yet. Start a new chat." /> : null}
+    <nav aria-label="Conversations">{unsent.map(id => <div className="operator-chat-row" key={id}>
+      <Button variant="ghost" className="operator-chat-row-select" aria-current={id === selectedId ? 'page' : undefined}
+        onClick={() => { select(id); if (isNarrowOperatorChat()) historyTriggerRef.current?.focus() }}>
+        <span className="operator-chat-title-clip"><span>Draft: {drafts[id]?.trim()}</span></span>
+      </Button>
+    </div>)}{entries.map((item) => <div className="operator-chat-row" key={item.conversationId}>
       <Button variant="ghost" className="operator-chat-row-select" aria-current={item.conversationId === selectedId ? 'page' : undefined}
         onClick={() => { select(item.conversationId); if (isNarrowOperatorChat()) historyTriggerRef.current?.focus() }}
         title={`${item.title ?? 'Conversation'} · ${operatorNavigationStatus(item)}`}>
