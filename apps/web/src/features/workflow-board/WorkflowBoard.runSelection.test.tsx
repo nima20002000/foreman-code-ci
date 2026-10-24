@@ -155,8 +155,10 @@ it.each(['Zoom In', 'Zoom Out'])('preserves a saved Run viewport adjusted with %
   const node = await screen.findByRole('group', { name: 'Removed Coder, saved agent, read only' })
   await waitFor(() => expect(renderedNodeBounds(node).left).toBeGreaterThan(320))
   const viewport = node.closest<HTMLElement>('.react-flow__viewport')!
+  const initialZoom = Number(/scale\(([-\d.]+)\)/.exec(viewport.style.transform)![1])
   await userEvent.click(screen.getByRole('button', { name: action }))
-  const expectedZoom = action === 'Zoom In' ? 1.2 : 1 / 1.2
+  const expectedZoom = action === 'Zoom In' ? Math.min(1.6, initialZoom * 1.2) : Math.max(0.1, initialZoom / 1.2)
+  expect(expectedZoom).not.toBe(initialZoom)
   await waitFor(() => {
     const zoom = Number(/scale\(([-\d.]+)\)/.exec(viewport.style.transform)![1])
     expect(zoom).toBeCloseTo(expectedZoom, 5)

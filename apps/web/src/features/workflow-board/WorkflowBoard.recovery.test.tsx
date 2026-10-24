@@ -110,15 +110,10 @@ function recover(f: Fixture, runId: string, state: 'running' | 'interrupted') {
   current.state.run = { ...current.state.run, executionState: state, outcome: 'pending', cleanupPending: false }
   current.asOfSequence = String(BigInt(current.asOfSequence) + 1n)
 }
-async function showActions(user: ReturnType<typeof userEvent.setup>, runId: string) {
-  await user.click(screen.getByRole('button', { name: 'Runs' }))
-  const menu = await screen.findByRole('menu', { name: 'Runs' })
-  const option = await waitFor(() => {
-    const button = within(menu).getAllByRole('menuitemradio').find(item => item.getAttribute('data-run-id') === runId)
-    expect(button).toBeDefined()
-    return button!
-  })
-  await user.click(option)
+async function showActions(mounted: Awaited<ReturnType<typeof mount>>, user: ReturnType<typeof userEvent.setup>, run: Awaited<ReturnType<typeof start>>) {
+  // The painted Run's menu row keeps the draft Board; its explicit saved URL opens historical actions.
+  await act(async () => { await mounted.router.navigate({ to: '/workspaces/$workspaceId', params: { workspaceId: run.workspaceId },
+    search: { workflowId: run.workflowId, selectedRunId: run.id } }) })
   await screen.findByRole('region', { name: 'Selected Run board' })
   await user.click(screen.getByRole('button', { name: 'Activities' }))
   await screen.findByRole('region', { name: 'Selected Run actions' })
@@ -140,7 +135,7 @@ describe.each(forms)('%s Board recovery', (form) => {
   it.each(['running', 'interrupted'] as const)('%s recovery keeps Stop available, blocks full retry, and reconnects without sending work', async (state) => {
     const f = fixture(form), user = userEvent.setup(), mounted = await mount(f)
     const run = await start(f, user); recover(f, run.id, state)
-    await mounted.query.invalidateQueries(); await showActions(user, run.id)
+    await mounted.query.invalidateQueries(); await showActions(mounted, user, run)
     const saved = structuredClone(f.mock.versions.get(run.workflowVersionId)), priorWrites = writes(f)
     const selection = { ...mounted.router.state.location.search }
     expect(action('Review new full Run')).toBeDisabled()
@@ -172,7 +167,7 @@ describe.each(forms)('%s Board recovery', (form) => {
   it('withdraws stale action authority during an uncertain recovery read and restores it only by authenticated refresh', async () => {
     const f = fixture(form), user = userEvent.setup(), mounted = await mount(f)
     const run = await start(f, user); recover(f, run.id, 'running')
-    await mounted.query.invalidateQueries(); await showActions(user, run.id)
+    await mounted.query.invalidateQueries(); await showActions(mounted, user, run)
     const before = writes(f), body = structuredClone(f.mock.runs.get(run.id)), current = structuredClone(f.mock.currents.get(run.id))
     let unavailable = true
     server.use(http.get(`*/api/management/workspaces/${f.mock.workspaceId}/runs/${run.id}/executions`, ({ request }) => {
@@ -201,7 +196,7 @@ describe.each(forms)('%s Board recovery', (form) => {
   it('does not confuse a terminal Run or Stop receipt with cleanup settlement', async () => {
     const f = fixture(form), user = userEvent.setup(), mounted = await mount(f)
     const run = await start(f, user); f.mock.settle(run.id, true)
-    await mounted.query.invalidateQueries(); await showActions(user, run.id)
+    await mounted.query.invalidateQueries(); await showActions(mounted, user, run)
     const scope = f.mock.currents.get(run.id)!.scope
     expect(action('Review new full Run')).toBeDisabled()
     expect(actionRegion()).toHaveTextContent('Cleanup pending.')
