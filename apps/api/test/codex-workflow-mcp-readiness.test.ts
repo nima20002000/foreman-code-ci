@@ -155,7 +155,7 @@ describe('workflow Codex MCP readiness', () => {
   it.each(['foreman-code', 'graphql'])('checks the live %s session before submitting a turn', async name => {
     await json('mcp.json', { name, enabled: true, required: true,
       transport: { type: 'stdio', command: process.execPath, args: [appLauncherPath()],
-        env_vars: ['GRAPHQL_MCP_TOKEN'] } })
+        env_vars: ['FOREMAN_CODE_MCP_TOKEN'] } })
     await json('mcp-status.json', { data: [ready(name)], nextCursor: null })
     const session = await manager.createSession(source)
     await collect(manager.startTurn(session, { prompt: 'complete', clientCorrelationId: 'ready' }))

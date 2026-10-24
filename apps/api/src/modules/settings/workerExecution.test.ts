@@ -49,10 +49,10 @@ describe('Worker execution deployment setting', () => {
   it('parses only explicit deployment flag values', () => {
     const environment = { DATABASE_URL: 'postgresql://example:example@127.0.0.1/test' }
     expect(loadConfig(environment).workerExecution).toEqual({ enabled: false, managedBy: 'settings' })
-    expect(loadConfig({ ...environment, GRAPHQL_LAPTOP_EXECUTION_ENABLED: '0' }).workerExecution)
+    expect(loadConfig({ ...environment, FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: '0' }).workerExecution)
       .toEqual({ enabled: false, managedBy: 'startup' })
-    expect(loadConfig({ ...environment, GRAPHQL_LAPTOP_EXECUTION_ENABLED: '1' }).workerExecution?.enabled).toBe(true)
-    expect(() => loadConfig({ ...environment, GRAPHQL_LAPTOP_EXECUTION_ENABLED: 'true' })).toThrow()
+    expect(loadConfig({ ...environment, FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: '1' }).workerExecution?.enabled).toBe(true)
+    expect(() => loadConfig({ ...environment, FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: 'true' })).toThrow()
   })
 
   it('blocks Worker Job preparation before source work and preserves Main preparation', async () => {

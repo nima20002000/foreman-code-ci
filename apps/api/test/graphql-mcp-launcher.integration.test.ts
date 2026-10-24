@@ -62,7 +62,7 @@ it('routes the frozen credential for simultaneous instances and changed ports th
   const connect = async (token: string) => {
     const client = new Client({ name: 'launcher-integration', version: '1' })
     cleanup.push(() => client.close())
-    const environment = { GRAPHQL_MCP_TOKEN: token }
+    const environment = { FOREMAN_CODE_MCP_TOKEN: token }
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [launcher],
       env: environment, stderr: 'pipe' }))
     return client

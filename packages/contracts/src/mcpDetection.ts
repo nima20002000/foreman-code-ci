@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import { APP_MCP_TOKEN_NAMES } from './product.js';
+import { INSTALLATION_NAMES } from './installationNames.mjs';
 
 /** Credential mechanism evidence only; resolved credentials never cross this boundary. */
 export const McpCredentialArrangementSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('environment_variable'),
-    environmentVariable: z.enum(APP_MCP_TOKEN_NAMES),
+    environmentVariable: z.enum([...APP_MCP_TOKEN_NAMES, INSTALLATION_NAMES.environment.MCP_TOKEN]),
   }).strict(),
   z.object({ kind: z.literal('scoped_http_header') }).strict(),
   z.object({ kind: z.literal('unknown') }).strict(),

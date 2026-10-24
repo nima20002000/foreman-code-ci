@@ -5,6 +5,7 @@ import { McpDetectionSchema } from './index.js';
 
 describe('MCP credential arrangement', () => {
   it.each([
+    { kind: 'environment_variable', environmentVariable: 'FOREMAN_CODE_MCP_TOKEN' },
     { kind: 'environment_variable', environmentVariable: 'GRAPHQL_MCP_TOKEN' },
     { kind: 'scoped_http_header' },
     { kind: 'unknown' },

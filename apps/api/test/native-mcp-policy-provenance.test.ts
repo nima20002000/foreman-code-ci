@@ -7,8 +7,8 @@ import { NativeMcpNotSubmittedError, withNativeMcpDelivery } from '../src/module
 
 const endpoint = 'http://127.0.0.1:3000/mcp'
 function snapshot(harness: NativeMcpSnapshot['harness'], name = 'graphql', url = endpoint): NativeMcpSnapshot {
-  const entry = harness === 'codex' ? { url, enabled: true, bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' }
-    : { type: 'remote', url, enabled: true, oauth: false, headers: { Authorization: 'Bearer {env:GRAPHQL_MCP_TOKEN}' } }
+  const entry = harness === 'codex' ? { url, enabled: true, bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' }
+    : { type: 'remote', url, enabled: true, oauth: false, headers: { Authorization: 'Bearer {env:FOREMAN_CODE_MCP_TOKEN}' } }
   return { harness, revision: fingerprint(entry), user: { [name]: entry }, effective: { [name]: structuredClone(entry) },
     userConfig: {}, version: '1', file: '/private/native-config', }
 }
@@ -58,8 +58,8 @@ describe('PR18 native MCP policy and provenance', () => {
   })
   it.each(['codex'] as const)('refuses protected Linear removal through both %s paths', (harness) => {
     const current = snapshot(harness, 'linear', LINEAR_MCP_ENDPOINT)
-    const entry = harness === 'codex' ? { url: LINEAR_MCP_ENDPOINT, bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' }
-      : { type: 'remote', url: LINEAR_MCP_ENDPOINT, oauth: false, headers: { Authorization: 'Bearer {env:GRAPHQL_MCP_TOKEN}' } }
+    const entry = harness === 'codex' ? { url: LINEAR_MCP_ENDPOINT, bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' }
+      : { type: 'remote', url: LINEAR_MCP_ENDPOINT, oauth: false, headers: { Authorization: 'Bearer {env:FOREMAN_CODE_MCP_TOKEN}' } }
     current.user.linear = entry; current.effective.linear = entry
     expect(publicMcpList(current).servers[0]?.protected).toBe(true)
     expect(managedStatus(current, 'linear', endpoint)).not.toBe('installed')

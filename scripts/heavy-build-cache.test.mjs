@@ -25,7 +25,7 @@ function fixture(t) {
   writeFileSync(join(root, '.gitignore'), 'node_modules/\n.logs/\ndist/\n')
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
     !key.startsWith('GIT_') && !/^(?:GRAPHQL|FOREMAN_CODE)_HEAVY_/.test(key)))
-  Object.assign(env, { GRAPHQL_HEAVY_BASE_TMPDIR: parent, GIT_CONFIG_GLOBAL: '/dev/null',
+  Object.assign(env, { FOREMAN_CODE_HEAVY_BASE_TMPDIR: parent, GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_CONFIG_NOSYSTEM: '1', FOREMAN_CODE_VERIFICATION_ROOT: '' })
   delete env.CI_HOST_RUNNER
   delete env.FOREMAN_CODE_CI_CONTRACTS_CACHE

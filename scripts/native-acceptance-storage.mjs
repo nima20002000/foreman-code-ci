@@ -63,7 +63,7 @@ export async function withNativeAcceptanceStorage(source, execute) {
     FOREMAN_CODE_NATIVE_SOURCE_APP_MCP_DIRECTORY: sourceMcpDirectory,
     [INSTALLATION_NAMES.environment.APP_MCP_DIRECTORY]: join(root, 'app-mcp'),
   }
-  delete environment[INSTALLATION_NAMES.privateEnvironment.productAppMcpDirectory]
+  delete environment[INSTALLATION_NAMES.privateEnvironment.unusedAppMcpDirectory]
   try {
     for (const name of ['CODEX_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'TMPDIR']) {
       await mkdir(environment[name], { recursive: true, mode: 0o700 })

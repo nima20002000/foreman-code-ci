@@ -1,4 +1,4 @@
-import { APP_MCP_TOKEN } from '../harnesses/appMcpLauncher.js'
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { WORKER_MCP_EXTENSION, decodeWorkerMcpResult, encodeWorkerMcpRequest, WorkerConversationMcpRequestSchema, WorkerConversationMcpAuthorizationSchema,
   WorkerMcpRelayResponseSchema } from '@foreman-code/contracts/worker-mcp-relay'
 import type { DeviceApplicationResult } from '@foreman-code/contracts/device-application'
@@ -29,7 +29,7 @@ export async function prepareWorkerConversationMcp(input: {
   input.signal.throwIfAborted()
   const lease = WorkerConversationMcpAuthorizationSchema.parse(decodeWorkerMcpResult(authorized))
   return { expiresAt: lease.expiresAt, environment: { agentId: owner.kind === 'operator' ? owner.operatorId : owner.agentId,
-    variables: { [APP_MCP_TOKEN]: input.token } },
+    variables: { [INSTALLATION_NAMES.environment.MCP_TOKEN]: input.token } },
     async request(body: unknown, protocolVersion?: string, signal = input.signal) {
       signal.throwIfAborted()
       const payload = WorkerConversationMcpRequestSchema.parse({ ...fields, operation: 'conversation-mcp.request',

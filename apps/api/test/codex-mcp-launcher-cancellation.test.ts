@@ -34,8 +34,8 @@ it('cancels a managed launcher lock wait before submitting a native configuratio
     if (method === 'config/read') return { layers: [{ name: { type: 'user', file }, version: '1', config: {} }] }
     throw new Error('Unexpected native write')
   })
-  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
-  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', dirname(fixture.launcher))
+  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', undefined)
+  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', dirname(fixture.launcher))
   try {
     const adapter = new CodexMcpConnections('/recorded/codex', dirname(file))
     const snapshot = await adapter.read(controller.signal)

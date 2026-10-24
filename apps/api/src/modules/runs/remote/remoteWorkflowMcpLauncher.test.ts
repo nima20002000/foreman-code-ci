@@ -20,7 +20,7 @@ it('blocks the remote Codex session when its launcher route cannot be registered
   const parent = join(root, 'occupied')
   const contents = 'occupied launcher directory'
   await writeFile(parent, contents)
-  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', parent)
+  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', parent)
   const onSessionStart = vi.fn(async () => {})
   const request = vi.fn(async () => { throw new Error('Unregistered session cannot call MCP') })
   await expect(runningInstalledFixture('generation', { mcp: {
@@ -35,7 +35,7 @@ it('registers the native launcher route before remote Codex startup and renews i
   const root = await directory()
   const launcher = join(root, 'launcher.mjs')
   await installManagedLauncher(new URL('../../../../../../scripts/foreman-mcp.mjs', import.meta.url), launcher)
-  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', root)
+  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', root)
   const principal: ManagementPrincipal = { id: 'original-principal', name: 'Worker', audience: 'worker',
     agentId: 'agent', expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(), revokedAt: null,
     grants: [{ actions: ['interactions:read'], scope: {

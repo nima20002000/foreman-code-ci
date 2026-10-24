@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { loadConfig } from '../src/config.js'
 import { NativeRollout } from '../src/modules/harnesses/nativeRollout.js'
 
-const environment = { NODE_ENV: 'production', GRAPHQL_LOCAL_PRODUCTION: '1', HOST: '127.0.0.1',
+const environment = { NODE_ENV: 'production', FOREMAN_CODE_LOCAL_PRODUCTION: '1', HOST: '127.0.0.1',
   DATABASE_URL: 'postgresql://owner:password@127.0.0.1:55440/graphql_production' }
 
 it('defaults Agent active time to six hours', () => {
@@ -19,7 +19,7 @@ it('validates supported production operator overrides and retains their effectiv
   }
 })
 
-it.each(['GRAPHQL_'])('keeps local production restrictions with %s settings', prefix => {
+it.each(['FOREMAN_CODE_'])('keeps local production restrictions with %s settings', prefix => {
   const local = { NODE_ENV: 'production', HOST: '127.0.0.1', DATABASE_URL: environment.DATABASE_URL,
     [`${prefix}LOCAL_PRODUCTION`]: '1' }
   expect(loadConfig(local).host).toBe('127.0.0.1')
@@ -34,10 +34,10 @@ it.each(['GRAPHQL_'])('keeps local production restrictions with %s settings', pr
 })
 
 it('keeps the saved production opt-in authoritative without a product-name alias', () => {
-  const local = { ...environment, FOREMAN_CODE_LOCAL_PRODUCTION: '0' }
+  const local = { ...environment, GRAPHQL_LOCAL_PRODUCTION: '0' }
   expect(loadConfig(local).host).toBe('127.0.0.1')
   expect(new NativeRollout(local).enabled('codex')).toBe(true)
-  const disabled = { ...local, GRAPHQL_LOCAL_PRODUCTION: '0', FOREMAN_CODE_LOCAL_PRODUCTION: '1' }
+  const disabled = { ...local, FOREMAN_CODE_LOCAL_PRODUCTION: '0', GRAPHQL_LOCAL_PRODUCTION: '1' }
   expect(new NativeRollout(disabled).enabled('codex')).toBe(false)
-  expect(() => loadConfig({ ...local, GRAPHQL_LOCAL_PRODUCTION: '1 ' })).toThrow()
+  expect(() => loadConfig({ ...local, FOREMAN_CODE_LOCAL_PRODUCTION: '1 ' })).toThrow()
 })

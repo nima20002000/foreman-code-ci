@@ -165,7 +165,7 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
     const seam = "const agent = process.env.TEST_AGENT_ID || 'agent-a'"
     assert.equal(binary.split(seam).length, 2)
     await writeFile(f.binary, binary.replace(seam,
-      `log({ af02CredentialKeys: Object.keys(process.env).filter((key) => /^(?:GRAPHQL|FOREMAN_CODE).*(?:TOKEN|CREDENTIAL)/.test(key) && key !== 'GRAPHQL_HEAVY_JOB_TOKEN' && key !== 'GRAPHQL_HEAVY_JOB_TOKEN') })\n${seam}`))
+      `log({ af02CredentialKeys: Object.keys(process.env).filter((key) => /^(?:GRAPHQL|FOREMAN_CODE).*(?:TOKEN|CREDENTIAL)/.test(key) && key !== 'FOREMAN_CODE_HEAVY_JOB_TOKEN' && key !== 'FOREMAN_CODE_HEAVY_JOB_TOKEN') })\n${seam}`))
     const reservation = createServer()
     await new Promise<void>((resolve, reject) => {
       reservation.once('error', reject)
@@ -262,8 +262,8 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
   }
 
   it('keeps the production managed launcher process warm while replacing and revoking each turn credential', async () => {
-    vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', join(runtimeHome, 'app-mcp'))
-    vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
+    vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', join(runtimeHome, 'app-mcp'))
+    vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', undefined)
     await installAppLauncher()
     await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'foreman-code', enabled: true, required: true,
       transport: { type: 'stdio', command: process.execPath, args: [appLauncherPath()],
@@ -346,7 +346,7 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
 
   it('revokes each text turn credential before a following turn receives fresh management authority', async () => {
     await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'graphql', enabled: true, required: true,
-      transport: { type: 'streamable_http', url: managementEndpoint, bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } }))
+      transport: { type: 'streamable_http', url: managementEndpoint, bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } }))
     const current = await operators.ensure()
     await operators.update(input(f.directory).request.configuration.harness, current.operator.currentConfigurationVersionId)
     const conversation = await chat.create(owner)
@@ -385,7 +385,7 @@ describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 product
       await writeFile(join(f.directory, 'version.json'), JSON.stringify(version))
       // Exercise the real text-mode setup/credential path, not a mocked authority.
       await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'graphql', enabled: true, required: true,
-        transport: { type: 'streamable_http', url: managementEndpoint, bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } }))
+        transport: { type: 'streamable_http', url: managementEndpoint, bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } }))
       const current = await operators.ensure()
       const native = input(f.directory).request.configuration.harness
       assert(native.harness === 'codex')

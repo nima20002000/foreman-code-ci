@@ -177,7 +177,7 @@ describe('Codex original placed inspection directory', () => {
             stderr: `Error: No MCP server named '${args[2]}' found.`, exitCode: 1, exitSignal: null }
           assert.deepEqual(args, ['mcp', 'get', serverName, '--json'])
           return { stdout: JSON.stringify({ enabled: true, transport: { type: 'streamable_http',
-            url: 'http://127.0.0.1:3000/mcp', bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } }),
+            url: 'http://127.0.0.1:3000/mcp', bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } }),
           stderr: '', exitCode: 0, exitSignal: null }
         }
         const manager = new CodexAppServerSessionManager('/nonexistent-recorded-codex', undefined, undefined,
