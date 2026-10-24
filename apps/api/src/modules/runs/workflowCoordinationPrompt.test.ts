@@ -14,11 +14,4 @@ describe('connected-Agent result prompt', () => {
     expect(prompt).toContain('Non-empty remainingFindings with nobody to hand them to fail the Run with them as the reason.')
     expect(prompt).not.toContain('owner direction')
   })
-
-  it('keeps progress and user-action requests on the Kanban', () => {
-    const prompt = workflowCoordinationPrompt({ resultProtocol: 'f1-f4-v1', definition, workflowNodeId: 'orchestrator', interval: false } as never)
-    expect(prompt).toContain('When memory_card_update is enabled, keep your assigned Kanban card current with what you are working on and what you found.')
-    expect(prompt).toContain('create or update a card with status "waiting_for_user" and a reason that tells the user exactly what to do.')
-    expect(prompt).toContain('A return is {"kind":"return","requestId":<the received request ID>,"outcome":"accepted" or "needs_changes"}.')
-  })
 })

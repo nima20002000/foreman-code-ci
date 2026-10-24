@@ -9,6 +9,7 @@ import type { CollaborationFieldSlots } from '../board-core'
 import type { WorkflowExecutionChatSlotSelection } from '../workflow-hierarchy'
 
 export interface WorkflowCollaborationSlots extends CollaborationFieldSlots {
+  groupChat?(scope: { workspaceId: string; workflowId: string; runId?: string }): ReactNode
   /** URL-owned selection. F3 resolves it through the canonical delivery target service. */
   executionChat?(selection: WorkflowExecutionChatSlotSelection): ReactNode
   browser?(selection: Extract<BoardSidePanel, { kind: 'browser' }> & {
@@ -73,6 +74,7 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
   const [host, setHost] = useState<HTMLDivElement | null>(null)
   const attach = useCallback((element: HTMLDivElement | null) => { setHost(element); bodyRef(element) }, [bodyRef])
   useSidePanelScroll(host, JSON.stringify([scope, runId, selection]), modalOpen)
+  const groupChat = selection.kind === 'group_chat'
   const active = selection.kind !== 'none'
   // Open next to the node that opened it; keep the user's position while it stays open.
   useLayoutEffect(() => {
@@ -164,7 +166,9 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
     const openedFrom = opener.current
     return () => { if (openedFrom?.isConnected) openedFrom.focus() }
   }, [active, opener])
-  const content = modalOpen ? null : selection.kind === 'browser'
+  const content = modalOpen ? null : groupChat
+    ? slots?.groupChat?.({ workspaceId, workflowId, ...(runId ? { runId } : {}) }) ?? <p role="status">Group chat is not available yet.</p>
+    : selection.kind === 'browser'
       ? slots?.browser?.({ ...selection, workspaceId, workflowId, ...(runId ? { runId } : {}),
         ...(workflowVersionId ? { workflowVersionId } : {}) }) ?? <p role="status">Browser is not available yet. No browser session has been started.</p>
       : selection.kind === 'agent' && selection.tab === 'chat'
@@ -176,7 +180,7 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
           ?? (selection.executionId || selection.waitingActivationId ? <p role="status">Chat for this selected execution is not available yet. Your execution selection is kept.</p> : null)
         : null
   const agentName = agentSelection ? workflow.data?.workflow.nodes.find(node => node.id === agentSelection.nodeId) : undefined
-  const title = selection.kind === 'browser' ? 'Browser'
+  const title = groupChat ? 'Group chat' : selection.kind === 'browser' ? 'Browser'
     : agentName ? agentName.name ?? agentName.label ?? 'Agent' : 'Agent'
   return <aside ref={panelRef} tabIndex={-1} className="workflow-floating-panel" aria-label="Workflow side panel"
     hidden={!active || modalOpen} inert={!active || modalOpen}>
@@ -184,13 +188,13 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
     <header onPointerDown={drag}>
       <h2>{title}</h2>
       <div className="workflow-panel-header-slot" ref={headerSlotRef} onPointerDown={event => event.stopPropagation()} />
-      <IconButton label="Back to Board" variant="ghost" onClick={() => onSelect({ kind: 'none' })}><Icon name="close" size={16} /></IconButton>
+      <IconButton label={groupChat ? 'Close group chat' : 'Back to Board'} variant="ghost" onClick={() => onSelect({ kind: 'none' })}><Icon name="close" size={16} /></IconButton>
     </header>
-    {!agentSelection ? <p className="workflow-panel-hint">Select an agent on the Board to see its chat and settings.</p> : null}
+    {!groupChat && !agentSelection ? <p className="workflow-panel-hint">Select an agent on the Board to see its chat and settings.</p> : null}
     {(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const).map(edge =>
       <span key={edge} className="workflow-panel-resize" data-edge={edge} aria-hidden="true" onPointerDown={resize} />)}
     <div className="workflow-floating-panel-body" ref={attach}>{modalOpen ? null : content}</div>
-    <footer className="workflow-panel-footer">
+    {groupChat ? null : <footer className="workflow-panel-footer">
       <div className="workflow-panel-footer-slot" ref={footerSlotRef} />
       <nav className="workflow-panel-tabs" aria-label="Workflow panel view">
         {tabs.map(([tab, label]) => <Button key={tab} size="sm" variant="ghost" disabled={!agentSelection}
@@ -199,6 +203,6 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
         <IconButton label="Browser" size="sm" variant="ghost" aria-pressed={selection.kind === 'browser'} onClick={() => onSelect({ kind: 'browser' })}>
           <Icon name="globe" size={15} /></IconButton>
       </nav>
-    </footer>
+    </footer>}
   </aside>
 }

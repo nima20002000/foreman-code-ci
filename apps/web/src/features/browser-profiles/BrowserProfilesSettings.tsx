@@ -19,7 +19,6 @@ export interface BrowserProfilesSettingsProps {
   visible: boolean
   authBoundary: string
   computers: readonly BrowserComputerLabel[]
-  visibleComputerId?: string | undefined
   currentComputerId: string
   port: BrowserProfilesPort
   sessionPort: BrowserUiPort
@@ -34,7 +33,7 @@ export function BrowserProfilesSettings(props: BrowserProfilesSettingsProps) {
   return <VisibleBrowserProfiles key={props.authBoundary} {...props} />
 }
 
-function VisibleBrowserProfiles({ authBoundary, computers, visibleComputerId, currentComputerId, port, sessionPort, files, onOpenSetup, computerAction }: BrowserProfilesSettingsProps) {
+function VisibleBrowserProfiles({ authBoundary, computers, currentComputerId, port, sessionPort, files, onOpenSetup, computerAction }: BrowserProfilesSettingsProps) {
   const queryClient = useQueryClient()
   const [denied, setDenied] = useState(false)
   const catalog = useBrowserProfiles(port, authBoundary, !denied)
@@ -70,12 +69,7 @@ function VisibleBrowserProfiles({ authBoundary, computers, visibleComputerId, cu
   const profileNames = new Map(catalog.data?.profiles.map(profile => [profile.id, profile.name]) ?? [])
   const accessDenied = denied || browserAccessDenied(catalog.error)
   return <section className="browser-profiles-settings" aria-label="Browser profiles">
-    {accessDenied ? <div className="browser-profile-note"><p role="alert">Browser profiles are unavailable right now.</p>
-      <Button size="sm" disabled={catalog.isFetching} onClick={() => {
-        void catalog.refetch().then(result => {
-          if (active.current && result.isSuccess) { mutation.reset(); setDenied(false) }
-        })
-      }}>Recheck access</Button></div> : <>
+    {accessDenied ? <p role="alert" className="browser-profile-note">Browser profiles are unavailable right now.</p> : <>
       <div className="browser-profile-toolbar">
         <Button variant="primary" disabled={busy || !catalog.data} onClick={() => openEditor({ profile: null, computerId: currentComputerId })}>Add profile</Button>
         <Button variant="ghost" disabled={busy || !catalog.data?.profiles.length} onClick={() => sync()}>Sync profiles to all computers</Button>
@@ -85,7 +79,7 @@ function VisibleBrowserProfiles({ authBoundary, computers, visibleComputerId, cu
       {notice ? <p role="status" className="browser-profile-note">{notice}</p> : null}
       {mutation.error && !editor ? <div role="alert" className="browser-profile-note">{browserErrorMessage(mutation.error)} No new operation is confirmed.
         <Button size="sm" disabled={mutation.isPending} onClick={retry}>Check original request</Button></div> : null}
-      {catalog.data ? <div className="browser-profile-computers">{computers.filter(computer => !visibleComputerId || computer.id === visibleComputerId).map(computer => <section key={computer.id}
+      {catalog.data ? <div className="browser-profile-computers">{computers.map(computer => <section key={computer.id}
         aria-label={`Browser profiles on ${computer.name}`} className="browser-profile-computer">
         <header className="browser-profile-computer-heading">
           <div><h3><span className="browser-profile-dot" data-online={computer.online} aria-hidden="true" />{computer.name}</h3>

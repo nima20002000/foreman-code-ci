@@ -10,7 +10,7 @@ import { chatDeliveryClient, type DeliveryReadback } from './client'
 import { deliveryAction, type DeliveryPresentation } from './deliveryAction'
 import { useChatControl } from './useChatControl'
 import { acceptDeliveryReadback } from './deliveryReadback'
-import { sameDeliveryTarget } from './sameDeliveryTarget'
+import { sameDeliveryTarget } from '../../workflow-chat/draft'
 
 const subscribeOnline = (change: () => void) => {
   window.addEventListener('online', change); window.addEventListener('offline', change)

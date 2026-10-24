@@ -11,8 +11,8 @@ import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   AgentHarnessSchema, CodexSessionCompatibilitySchema, agentTemplateForRole, legacyEffortForHarness,
-  validateHarnessWorkflowCompatibility, withAdvancedDefaults, activeGraphqlTools, activeGraphqlToolOverride,
-  type Agent, type ApprovalHandler, type AssignedSkill, type GraphqlToolOverride, type RecordedGraphqlToolOverride, type HarnessDefaults, type WorkflowExecutionPolicy,
+  validateHarnessWorkflowCompatibility, withAdvancedDefaults,
+  type Agent, type ApprovalHandler, type AssignedSkill, type GraphqlToolOverride, type HarnessDefaults, type WorkflowExecutionPolicy,
 } from '@foreman-code/contracts'
 
 import { Alert, Button, Icon, IconButton, Select, Textarea, TextField } from '../../shared/ui/nocturne'
@@ -45,7 +45,7 @@ export type AgentSettingsSave = {
 export type AgentSettingsNode = {
   initialPrompt?: string
   /** This node's change to the Agent's default Foreman Code MCP tools. */
-  graphqlTools?: RecordedGraphqlToolOverride
+  graphqlTools?: GraphqlToolOverride
   placement?: SavedNodePlacement
   worktree?: AgentWorktreeSettings
   executionPolicy?: WorkflowExecutionPolicy
@@ -226,9 +226,9 @@ function useAgentSettingsForm({ agent, creationDefaults, node = {}, workflow = {
       onSave({ agent: { ...agent, name: name.trim(), harness: nextConfiguration.harness, model: nextConfiguration.model,
         effort: legacyEffortForHarness(nextConfiguration), fastMode: nextConfiguration.harness === 'codex' ? nextConfiguration.serviceTier === 'priority' : undefined,
         harnessConfiguration: nextConfiguration,
-        graphqlTools: graphqlTools.defaults ? activeGraphqlTools(graphqlTools.defaults) : undefined,
+        ...(graphqlTools.defaults ? { graphqlTools: graphqlTools.defaults } : {}),
         prompt: instructions.trim() ? { system: instructions.trim() } : {}, assignedSkills: skills,
-      }, initialPrompt: prompt.trim() || undefined, executionPolicy, nodeGraphqlTools: activeGraphqlToolOverride(graphqlTools.override), placement, worktree })
+      }, initialPrompt: prompt.trim() || undefined, executionPolicy, nodeGraphqlTools: graphqlTools.override, placement, worktree })
       return true
     } catch (failure) {
       initialSnapshot.current = previousSnapshot

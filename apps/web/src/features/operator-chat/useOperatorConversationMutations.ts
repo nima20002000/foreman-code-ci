@@ -33,6 +33,7 @@ export function useOperatorConversationMutations({ acceptState, invalidate, dele
       const previous = queryClient.getQueryData<OperatorConversationState>(detailKey(input.id))?.revision
         ?? queryClient.getQueryData<Summaries>(listKey)?.conversations.find(item => item.conversationId === input.id)?.revision ?? 0
       deletedRevisions.current.set(input.id, result.revision ?? previous + 1)
+      useOperatorChatStore.getState().forgetDraft(input.id)
       await queryClient.cancelQueries({ queryKey: listKey })
       await queryClient.cancelQueries({ queryKey: detailKey(input.id) })
       queryClient.setQueryData<Summaries>(listKey, (current) => current && ({ ...current, conversations: current.conversations.filter((item) => item.conversationId !== input.id) }))

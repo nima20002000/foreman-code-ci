@@ -1,22 +1,33 @@
+import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
+import { errorMessage } from '../../shared/errorMessage'
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
+  useRef,
+  useState,
   type ReactNode,
 } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { SidebarNavigationButton } from '../../shared/ui/SidebarNavigationButton'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown,
   PanelsTopLeft,
   Workflow,
 } from 'lucide-react'
+import { WorkspaceFolderPicker } from '../settings'
 import { LoadMore } from '../../shared/ui/LoadMore'
 import type { ComponentProps } from 'react'
 import type { Workspace } from '@foreman-code/contracts'
+import type { WorkspaceCreateInput } from '@foreman-code/contracts/management'
+import { CommandAttempt } from '../../shared/api/commandAttempt'
+import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
 
-import { useManagedWorkspaceQuery, usePrefetchBoard } from '../../shared/api/query'
-import { Button, Icon, IconButton } from '../../shared/ui/nocturne'
-import { NewWorkspaceControl } from './NewWorkspaceControl'
+import { queryKeys, useCreateManagedWorkspaceMutation, useManagedWorkspaceQuery, usePrefetchBoard } from '../../shared/api/query'
+import { Button, Dialog, Icon, IconButton, TextField } from '../../shared/ui/nocturne'
+import { useWorkspaceCreationDefaultsQuery } from '../../shared/api/settingsExperience'
 import { usePresence } from '../../shared/ui/usePresence'
 import { WorkflowNavigation } from '../workflows'
 import { useNavigationUiStore } from './navigationUiStore'
@@ -58,9 +69,7 @@ export interface WorkspaceNavigationProps {
    * projection from the workspace query is the only entry.
    */
   workspaces?: readonly WorkspaceNavigationEntry[]
-  workspacePagination?: ComponentProps<typeof LoadMore>['query'] & {
-    isPending?: boolean; isError?: boolean; refetch?: () => unknown
-  }
+  workspacePagination?: ComponentProps<typeof LoadMore>['query'] | undefined
   navigationCollapsed?: boolean
   /** The workspace directory is selected instead of a specific workspace. */
   workspaceOverviewActive?: boolean
@@ -76,6 +85,159 @@ const workspaceSections: readonly WorkspaceSection[] = [
 ]
 
 const workspaceSectionItems = [{ id: 'workflows', label: 'Workflows' }]
+
+/** The always-visible, server-backed create entry point for the workspace list. */
+function NewWorkspaceControl() {
+  const [creating, setCreating] = useState(false)
+  const [name, setName] = useState('')
+  const [parentPath, setParentPath] = useState('')
+  const touched = useRef({ name: false, parentPath: false, defaultsApplied: false })
+  const defaults = useWorkspaceCreationDefaultsQuery(creating)
+  const [nameError, setNameError] = useState<string>()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const createManagedWorkspace = useCreateManagedWorkspaceMutation()
+  const inFlight = useRef(false)
+  const attempt = useRef(new CommandAttempt<Omit<WorkspaceCreateInput, 'commandId'>>())
+  const uncertain = attempt.current.unresolved && !createManagedWorkspace.isPending
+
+  const closeCreateDialog = useCallback(() => {
+    if (inFlight.current || attempt.current.unresolved) return
+    setCreating(false)
+    setName('')
+    setParentPath('')
+    touched.current = { name: false, parentPath: false, defaultsApplied: false }
+    setNameError(undefined)
+    window.setTimeout(() => triggerRef.current?.focus(), 0)
+  }, [])
+
+  useEffect(() => {
+    if (!creating || touched.current.defaultsApplied || attempt.current.unresolved) return
+    const template = defaults.data
+    if (!template) return
+    touched.current.defaultsApplied = true
+    if (!touched.current.name) setName(template.suggestedName)
+    if (!touched.current.parentPath) setParentPath(template.parentPath ?? '')
+  }, [creating, defaults.data])
+
+  useEffect(() => {
+    if (creating && name && !touched.current.name && document.activeElement === nameInputRef.current) {
+      nameInputRef.current?.select()
+    }
+  }, [creating, name])
+
+
+  const createNewWorkspace = async () => {
+    if (inFlight.current || (defaults.isPending && !attempt.current.unresolved)) return
+    const trimmedName = name.trim()
+    if (!trimmedName) { setNameError('Enter a workspace name.'); nameInputRef.current?.focus(); return }
+    if (!parentPath) { setNameError('Choose a location for the project folder.'); return }
+    inFlight.current = true
+    const generation = sessionGeneration()
+    setNameError(undefined)
+    try {
+      const workspace = (await createManagedWorkspace.mutateAsync(
+        attempt.current.input({ ...(touched.current.name ? { name: trimmedName } : {}), parentPath }),
+      )).value.workspace
+      assertSession(generation)
+      attempt.current.succeeded()
+      void queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspaces })
+        .catch(() => { /* ignore: the workspace was created; the list refreshes on its next query. */ })
+      inFlight.current = false
+      closeCreateDialog()
+      void navigate({ to: '/workspaces/$workspaceId/settings', params: { workspaceId: workspace.id } })
+    } catch (error) {
+      attempt.current.failed(error)
+      if (sessionGeneration() === generation) setNameError(errorMessage(error, 'The workspace could not be created.'))
+    } finally { inFlight.current = false }
+  }
+
+  useUnsavedChanges({
+    scope: 'surface', label: 'New workspace',
+    dirty: creating && (touched.current.name || touched.current.parentPath),
+    busy: createManagedWorkspace.isPending,
+    uncertain,
+    saveDisabled: !name.trim() || !parentPath.trim() || (defaults.isPending && !uncertain),
+    error: nameError,
+    save: createNewWorkspace,
+    discard: closeCreateDialog,
+  })
+
+  return (
+    <>
+      <Button
+        ref={triggerRef}
+        variant="ghost"
+        className="workspace-navigation-add"
+        aria-label="New workspace"
+        title="New workspace"
+        aria-haspopup="dialog"
+        aria-expanded={creating}
+        leading={<Icon name="plus" size={15} />}
+        onClick={() => setCreating(true)}
+      >
+        <span className="nav-item-label">New workspace</span>
+      </Button>
+
+      <Dialog
+        open={creating}
+        onOpenChange={(open) => { if (!open) closeCreateDialog() }}
+        title="New workspace"
+        closeLabel="Close new workspace"
+        busy={createManagedWorkspace.isPending}
+        initialFocusRef={nameInputRef}
+        size="sm"
+        footer={<>
+          <Button onClick={closeCreateDialog}>Cancel</Button>
+          <Button
+            variant="primary"
+            onClick={() => void createNewWorkspace()}
+            disabled={createManagedWorkspace.isPending || (defaults.isPending && !uncertain)}
+          >
+            Create workspace
+          </Button>
+        </>}
+      >
+        <div className="n-stack">
+          <TextField
+            ref={nameInputRef}
+            id="new-workspace-name"
+            label="Name"
+            disabled={createManagedWorkspace.isPending || uncertain}
+            value={name}
+            onFocus={(event) => { if (!touched.current.name) event.currentTarget.select() }}
+            onChange={(event) => {
+              touched.current.name = true
+              setName(event.target.value)
+              if (nameError) setNameError(undefined)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                void createNewWorkspace()
+              }
+            }}
+            aria-invalid={nameError ? true : undefined}
+            aria-describedby={nameError ? 'new-workspace-name-error' : undefined}
+          />
+          <WorkspaceFolderPicker value={parentPath} label="Location" disabled={createManagedWorkspace.isPending || uncertain} onSelect={(path) => {
+            touched.current.parentPath = true; setParentPath(path)
+          }} />
+          {defaults.isPending ? <p role="status" className="n-field-hint">Loading the default location…</p> : null}
+          {defaults.isError ? <p role="status" className="n-field-hint">Couldn’t load the default location. <Button size="sm" variant="ghost" onClick={() => void defaults.refetch()}>Try again</Button></p> : null}
+          {nameError ? (
+            <p id="new-workspace-name-error" className="workspace-create-error" role="alert">
+              {nameError}
+            </p>
+          ) : null}
+          {uncertain ? <p role="status" className="n-field-hint">The last attempt may have worked. Create again to check; it won’t make a duplicate.</p> : null}
+        </div>
+      </Dialog>
+    </>
+  )
+}
 
 interface WorkspaceTreeItemProps {
   entry: WorkspaceNavigationEntry
@@ -226,19 +388,6 @@ function WorkspaceTreeItem({
               </li>
             )
           })}
-          {(['files', 'settings'] as const).map((section) => <li key={section}>
-            <SidebarNavigationButton
-              to={section === 'files' ? '/workspaces/$workspaceId/files' : '/workspaces/$workspaceId/settings'}
-              params={{ workspaceId: entry.id }} search={{}}
-              activeOptions={{ exact: true }} activeProps={{ className: 'nav-item-active', 'aria-current': 'page' }}
-              className="nav-item" aria-label={section === 'settings' ? 'Workspace settings' : 'Project files'}
-              title={section === 'settings' ? 'Workspace settings' : 'Project files'}>
-              <span className="nav-item-primary">
-                <Icon name={section === 'files' ? 'folder' : 'settings'} className="nav-item-icon" size={16} />
-                <span className="nav-item-label">{section === 'files' ? 'Project files' : 'Settings'}</span>
-              </span>
-            </SidebarNavigationButton>
-          </li>)}
         </ul>
       ) : null}
     </li>
@@ -370,11 +519,6 @@ export function WorkspaceNavigation({
                   />
                 )
               })}
-              {workspacePagination?.isPending ? <li role="status">Loading workspaces…</li> : null}
-              {workspacePagination?.isError && !workspacePagination.isFetchNextPageError ? <li role="alert">
-                Workspaces unavailable
-                <Button size="sm" onClick={() => void workspacePagination.refetch?.()}>Retry workspaces</Button>
-              </li> : null}
               {workspacePagination ? <li><LoadMore label="workspaces" query={workspacePagination} /></li> : null}
               <li>
                 <NewWorkspaceControl />

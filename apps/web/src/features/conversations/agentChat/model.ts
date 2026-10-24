@@ -9,6 +9,10 @@ import type { AgentChatContext, AgentChatIntent, AgentChatState, AgentChatTurn }
 export function agentChatContextKey(context: AgentChatContext): string {
   return JSON.stringify(['agent-chat', context.workspaceId, context.workflowId, context.workflowNodeId, context.agentId, context.runId ?? null])
 }
+export function agentChatDraftKey(context: AgentChatContext, executionId?: string): string {
+  const key = agentChatContextKey(context)
+  return executionId ? JSON.stringify([key, executionId]) : key
+}
 export function sameAgentChatContext(a: AgentChatContext, b: AgentChatContext): boolean {
   return agentChatContextKey(a) === agentChatContextKey(b)
 }

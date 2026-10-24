@@ -45,7 +45,7 @@ describe('conversation Agent scoped tools through authenticated paired relay and
       agent: { workspaceId: row.workspace_id, workflowId: row.workflow_id, workflowNodeId: row.workflow_node_id,
         agentId: row.agent_id, configurationVersionId: configuration.id, productRole: 'coder', displayName: 'Exact Agent' } }
     let enabled = true, foreignSubject = false, current = worker.connection
-    const forwarded = vi.fn(async () => ({ statusCode: 200, contentType: 'application/json' as const, body: '{"tools":["memory_board_get"]}' }))
+    const forwarded = vi.fn(async () => ({ statusCode: 200, contentType: 'application/json' as const, body: '{"tools":["workflow_chat_read"]}' }))
     const scoped: WorkerConversationAgentMcp = { authorize: async request => {
       if (!enabled || request.token !== 'agent-scoped-token') throw new DomainError('FORBIDDEN', 'The saved node tool is disabled or its credential is unavailable.', 403)
       return { subject: foreignSubject ? { ...subject, conversationId: 'another-conversation' } : subject,

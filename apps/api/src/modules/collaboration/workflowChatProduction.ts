@@ -1,4 +1,5 @@
 import type pg from 'pg'
+import { workflowChatNativeContext } from '../workflow-chat/index.js'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema, type ChatSendRequest,
   type HarnessExecution } from '@foreman-code/contracts'
 import { WorkActivationInputSchema } from '@foreman-code/contracts/current'
@@ -67,7 +68,8 @@ async function prepareWorkflowChatPrompt(context: WorkflowChatLockedTarget, requ
 export async function validateWorkflowChatAdmission(context: WorkflowChatLockedTarget, request: ChatSendRequest,
   admission: WorkflowChatAdmission): Promise<{ nativePrompt: string }> {
   const prepared = await prepareWorkflowChatPrompt(context, request, admission)
-  const nativePrompt = prepared.nativePrompt
+  const channelContext = admission.channelContext ?? await workflowChatNativeContext(context.sql, request)
+  const nativePrompt = channelContext ? `${prepared.nativePrompt}\n\n${channelContext}` : prepared.nativePrompt
   const { source } = prepared
   if (Buffer.byteLength(nativePrompt, 'utf8') > MAX_HARNESS_PROMPT_BYTES) throw new DomainError(
     'HARNESS_INPUT_TOO_LARGE', 'The complete native prompt exceeds the input limit.', 413)

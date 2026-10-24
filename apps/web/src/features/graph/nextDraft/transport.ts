@@ -1,5 +1,5 @@
 import { AgentMutationResultSchema, StagedAgentSchema, type GraphValidationResultSchema, type AgentCreateInputSchema, type AgentUpdateInput } from '@foreman-code/contracts/management'
-import { activeGraphqlTools, SupportedHarnessConfigurationSchema, type Agent } from '@foreman-code/contracts'
+import { SupportedHarnessConfigurationSchema, type Agent } from '@foreman-code/contracts'
 import {
   GraphEditReadResultCurrentSchema, GraphEditReadInputCurrentSchema, GraphEditStageInputCurrentSchema, GraphEditAdvanceInputCurrentSchema, GraphEditDiscardInputCurrentSchema,
   type GraphEditReadInputCurrent, type GraphEditStageInputCurrent, type GraphEditAdvanceInputCurrent, type GraphEditDiscardInputCurrent, type GraphEditReadResultCurrent,
@@ -11,7 +11,7 @@ import {
 } from '@foreman-code/contracts/current'
 import { apiClient, ApiError, type ApiClient, type RequestOptions } from '../../../shared/api/client'
 import type { z } from 'zod'
-import { type DraftRequest, type NextDraftContext, coalesceAgentEdits, activeWorkflowGraph } from '../../board-core'
+import { type DraftRequest, type NextDraftContext, coalesceAgentEdits } from '../../board-core'
 
 export type CurrentDraft = z.infer<typeof GraphDraftCurrentSchema>
 export type AuthoringContext = NextDraftContext
@@ -129,7 +129,7 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
         configuration: SupportedHarnessConfigurationSchema.parse(agent.harnessConfiguration),
         ...(agent.harnessProfileSelection ? { harnessProfileSelection: agent.harnessProfileSelection } : {}),
         prompt: agent.prompt ?? {}, assignedSkills: agent.assignedSkills ?? [],
-        ...(agent.graphqlTools ? { graphqlTools: activeGraphqlTools(agent.graphqlTools) } : {}), ...(agent.nativeTools ? { nativeTools: agent.nativeTools } : {}),
+        ...(agent.graphqlTools ? { graphqlTools: agent.graphqlTools } : {}), ...(agent.nativeTools ? { nativeTools: agent.nativeTools } : {}),
         ...(agent.description ? { description: agent.description } : {}), ...(agent.role ? { role: agent.role } : {}),
       } satisfies Omit<z.input<typeof AgentCreateInputSchema>, 'workspaceId'> })
       return { agent: result.value.agent, metadataRevision: result.value.metadataRevision }
@@ -198,16 +198,15 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
         opened.set(key(request.workspaceId, request.workflowId), { ...entry, draft })
         return { draft, agents }
       }
-      const graph = activeWorkflowGraph(base.graph)
-      const pins = await expectedPins(request.workspaceId, graph)
+      const pins = await expectedPins(request.workspaceId, base.graph)
       const result = await client.request(route(CURRENT_WORKFLOW_ROUTES.saved, request.workspaceId, request.workflowId),
         CurrentWorkflowSaveResultSchema, { method: 'PUT', body: {
           commandId: request.commandId, executionSemanticsVersion: 3, expectedRevision: entry.savedRevision,
           expectedWorkflowVersionId: base.baseWorkflowVersionId, expectedAgentConfigurationVersionIds: pins.expectedAgentConfigurationVersionIds,
-          graph } })
+          graph: base.graph } })
       const saved = result.value
       if (saved.workspaceId !== request.workspaceId || saved.workflowId !== request.workflowId
-        || !sameAuthoredWorkflow(saved.presentation ?? saved.version.definition, graph)) {
+        || !sameAuthoredWorkflow(saved.presentation ?? saved.version.definition, base.graph)) {
         throw new ApiError({ code: 'INVALID_RESPONSE', message: 'The publication acknowledgement is missing its immutable version pin.' })
       }
       // Published drafts carry the saved workflow revision, the pin later
@@ -225,7 +224,7 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
         await client.request(route(CURRENT_WORKFLOW_ROUTES.validate, workspaceId, workflowId), CurrentWorkflowValidationSchema, { method: 'POST', body: {
           executionSemanticsVersion: 3, expectedRevision: entry.savedRevision, expectedWorkflowVersionId: entry.draft.baseWorkflowVersionId,
           expectedAgentConfigurationVersionIds: pins.expectedAgentConfigurationVersionIds,
-          graph: activeWorkflowGraph(entry.draft.graph) } })
+          graph: entry.draft.graph } })
         return { valid: true, issues: [] }
       } catch (error) {
         if (!ApiError.is(error) || (error.status ?? 0) >= 500 || !error.status) throw error

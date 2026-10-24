@@ -7,7 +7,7 @@ import {
   createRoute,
   createRouter,
 } from '@tanstack/react-router'
-import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { UrlSearchSelectionSchema } from '@foreman-code/contracts'
@@ -206,7 +206,7 @@ describe('WorkflowNavigation', () => {
 })
 
 
-it('confirms removal of an unpublished workflow before changing navigation', async () => {
+it('marks an unpublished workflow and removes it in one click without another dialog', async () => {
   const user = userEvent.setup()
   const { router } = renderNavigation()
   await user.click(await screen.findByRole('button', { name: 'New workflow' }))
@@ -215,9 +215,6 @@ it('confirms removal of an unpublished workflow before changing navigation', asy
   expect(await screen.findByRole('button', { name: /^Temporary draft/ })).toBeVisible()
   screen.getByRole('button', { name: 'Remove Temporary draft' }).focus()
   await user.keyboard('{Enter}')
-  const confirmation = await screen.findByRole('alertdialog', { name: 'Remove Temporary draft?' })
-  expect(screen.getByRole('button', { name: /^Temporary draft/ })).toBeVisible()
-  await user.click(within(confirmation).getByRole('button', { name: 'Remove workflow' }))
   await waitFor(() => expect(screen.queryByRole('button', { name: /^Temporary draft/ })).not.toBeInTheDocument())
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(router.state.location.search.workflowId).toBeUndefined()
@@ -236,12 +233,11 @@ it.each([500, 503, 'restart'] as const)('keeps an HTTP %s removal failure visibl
   const remove = await screen.findByRole('button', { name: 'Remove Research to review' })
   remove.focus()
   await user.keyboard('{Enter}')
-  await user.click(await screen.findByRole('button', { name: 'Remove workflow' }))
   expect(await screen.findByRole('alert')).toHaveTextContent(message)
   expect(screen.getByRole('button', { name: 'Research to review' })).toBeVisible()
-  screen.getByRole('button', { name: 'Retry removal' }).focus()
+  screen.getByRole('button', { name: 'Retry removing Research to review' }).focus()
   await user.keyboard('{Enter}')
   await waitFor(() => expect(requests).toHaveLength(2))
   expect(requests[1]).toEqual(requests[0])
-  expect(screen.getByRole('alertdialog')).toBeVisible()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })

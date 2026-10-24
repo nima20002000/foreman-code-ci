@@ -12,8 +12,7 @@ import { ExecutionSemanticsVersionSchema as CurrentExecutionSemanticsSchema } fr
 export { ExecutionSemanticsVersionSchema as CurrentExecutionSemanticsSchema } from './workflowShape.js'
 
 import { CurrentWorkflowDefinitionBaseSchema, WorkHandoffPolicyV1Schema, type RepeatPlanV1 } from './workflowShape.js'
-export { CurrentAgentWorkflowNodeSchema, CurrentWorkflowNodeSchema, CurrentWorkflowRelationshipSchema, CurrentWorkflowDefinitionBaseSchema,
-  AuthoringCurrentWorkflowNodeSchema, AuthoringWorkflowDefinitionCurrentSchema } from './workflowShape.js'
+export { CurrentAgentWorkflowNodeSchema, CurrentWorkflowNodeSchema, CurrentWorkflowRelationshipSchema, CurrentWorkflowDefinitionBaseSchema } from './workflowShape.js'
 
 /** Extracted current topology/lifecycle rules. No old WorkflowVersion validator,
  * validation projection, complexity-selected semantics or legacy dispatch. */

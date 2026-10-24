@@ -106,19 +106,13 @@ function WorkflowNavigationContent({ workspaceId, activeWorkflowId }: WorkflowNa
     .map(item => [item.workflow.id, item])).values()]
   const activeMissing = Boolean(activeWorkflowId && !workflows.some((item) => item.workflow.id === activeWorkflowId))
   const activeQuery = useManagedWorkflowQuery(workspaceId, activeWorkflowId ?? '', activeMissing)
-  // Once a deep-link shortcut is shown, pagination must not move or replace its row.
-  const shortcut = useRef<{ workflowId?: string; pinned: boolean }>({ workflowId: activeWorkflowId, pinned: false })
-  if (shortcut.current.workflowId !== activeWorkflowId) shortcut.current = { workflowId: activeWorkflowId, pinned: false }
-  if (managedQuery.data && activeMissing && activeQuery.data && !activeQuery.data.archivedAt) shortcut.current.pinned = true
-  const shortcutItem = workflows.find(item => item.workflow.id === activeWorkflowId) ?? activeQuery.data
-  const selected = shortcut.current.pinned && shortcutItem && !shortcutItem.archivedAt ? shortcutItem : undefined
-  const reorderableWorkflows = workflows.filter(item => item.workflow.id !== selected?.workflow.id)
+  const selected = activeMissing && activeQuery.data && !activeQuery.data.archivedAt ? activeQuery.data : undefined
   const orderRevision = managedQuery.data?.pages[0]?.orderRevision ?? 0
   const order = useWorkflowReorder(workspaceId, orderRevision)
   const reorderDisabled = order.mutation.isPending || order.unresolved || !managedQuery.data
     || Boolean(managedQuery.data?.pages.some(page => page.orderRevision !== orderRevision))
   const reorder = useReorderableNavigation(`workspace:${workspaceId}:workflows`,
-    reorderableWorkflows.map(item => ({ id: item.workflow.id, label: item.workflow.name })),
+    workflows.map(item => ({ id: item.workflow.id, label: item.workflow.name })),
     { onReorder: order.save, disabled: reorderDisabled, revision: orderRevision })
   const byId = new Map(workflows.map(item => [item.workflow.id, item]))
   const hasWorkflows = workflows.length > 0
@@ -167,7 +161,7 @@ function WorkflowNavigationContent({ workspaceId, activeWorkflowId }: WorkflowNa
               running={running.has(workflow.id)}
               reorder={reorder}
               index={index}
-              count={reorder.orderedIds.length}
+              count={workflows.length}
               reorderDisabled={reorderDisabled}
             />
           })}
@@ -176,20 +170,27 @@ function WorkflowNavigationContent({ workspaceId, activeWorkflowId }: WorkflowNa
         <p className="workflow-navigation-state" role="status">
           Loading workflows…
         </p>
-      ) : managedQuery.isError ? null : (
-        <p className="workflow-navigation-state" data-testid="workflow-navigation-empty">
-          No workflows yet
-        </p>
-      )}
-
-      {managedQuery.isError && !managedQuery.isFetchNextPageError ? (
+      ) : managedQuery.isError ? (
         <p
           className="workflow-navigation-state workflow-navigation-state-error"
           data-testid="workflow-navigation-error"
           role="alert"
         >
           Workflows unavailable
-          <Button size="sm" onClick={() => void managedQuery.refetch()}>Retry workflows</Button>
+        </p>
+      ) : (
+        <p className="workflow-navigation-state" data-testid="workflow-navigation-empty">
+          No workflows yet
+        </p>
+      )}
+
+      {hasWorkflows && managedQuery.isError ? (
+        <p
+          className="workflow-navigation-state workflow-navigation-state-error"
+          data-testid="workflow-navigation-error"
+          role="alert"
+        >
+          Workflows unavailable
         </p>
       ) : null}
 

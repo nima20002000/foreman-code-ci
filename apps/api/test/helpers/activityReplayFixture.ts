@@ -74,7 +74,7 @@ async function freePort() {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   return address.port
 }
-export async function setup(options: { operatorSandbox?: 'read-only' | 'workspace-write'; form?: CurrentFixtureForm; handoffs?: boolean; approvalPolicy?: 'on-request' } = {}) {
+export async function setup(options: { operatorSandbox?: 'read-only' | 'workspace-write'; form?: CurrentFixtureForm; handoffs?: boolean; approvalPolicy?: 'on-request'; chatTools?: boolean } = {}) {
   const db = await migratedDatabase(); closes.push(db.close)
   const directory = await privateFixtureDirectory('activity-replay-workspace-')
   closes.push(() => removeFixtureDirectory(directory))
@@ -95,6 +95,7 @@ export async function setup(options: { operatorSandbox?: 'read-only' | 'workspac
   if (options.handoffs) seed.version = agentWorkflowVersion(WorkflowVersionCurrentSchema.parse({ ...seed.version,
     definition: { ...seed.version.definition, handoffs: { contractVersion: 1 } } }))
   seed.configurations = seed.configurations.map((configuration) => AgentConfigurationVersionSchema.parse({ ...configuration,
+    ...(options.chatTools ? { graphqlTools: ['workflow_chat_read', 'workflow_chat_post'] } : {}),
     harness: { harness: 'codex', model: 'test-model', reasoningEffort: 'low', sandbox: 'read-only', serviceTier: 'standard',
       ...(options.approvalPolicy ? { advanced: { ...DEFAULT_CODEX_ADVANCED_CONFIGURATION, approvalPolicy: options.approvalPolicy } } : {}),
     } }))

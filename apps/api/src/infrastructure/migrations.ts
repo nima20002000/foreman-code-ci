@@ -1,4 +1,3 @@
-import { removeGroupChatMigration } from './removeGroupChatMigration.js'
 import {
   agentCiActivityMigration,
   ciActivityRequesterLookupMigration,
@@ -1063,7 +1062,6 @@ export const migrations = [
   workReplyRequestMigration,
   ciActivityEventsMigration,
   ciActivityConsumerMigration,
-  removeGroupChatMigration,
 ] as const
 
 /**

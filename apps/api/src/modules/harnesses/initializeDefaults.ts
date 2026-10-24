@@ -2,7 +2,7 @@ import { asRecord } from '../../shared/records.js'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
-import { activeAgentDefaults, DEFAULT_AGENT_DEFAULTS, DEFAULT_HARNESS_DEFAULTS, HarnessDefaultsSchema, operatorHarnessDefaults,
+import { AgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS, DEFAULT_HARNESS_DEFAULTS, HarnessDefaultsSchema, operatorHarnessDefaults,
   type HarnessDefaults, type AgentHarness } from '@foreman-code/contracts'
 import { UnavailableHarnessDefaultsSchema, type HarnessOptions } from '@foreman-code/contracts/management'
 import { withTransaction } from '../../infrastructure/transaction.js'
@@ -129,7 +129,7 @@ export async function initializeNativeDefaults(input: {
       agents[role] = { ...template, ...saved, harness: nativeModelDefaults({ ...base, ...configuration } as typeof base, available.get(harness)!) } as never
       changed = true
     }
-    if (changed) await save('agent-defaults-v1', activeAgentDefaults(agents), true)
+    if (changed) await save('agent-defaults-v1', AgentDefaultsSchema.parse(agents), true)
     return defaults
   }), { signal: input.signal })
 }

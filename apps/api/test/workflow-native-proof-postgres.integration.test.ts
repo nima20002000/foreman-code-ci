@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import type { ManagementGrant } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture, CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema, RunStartCurrentInputSchema, WorkflowVersionCurrentSchema,
-  type AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, CurrentWorkflowSaveResultSchema, RunStartCurrentInputSchema, WorkflowVersionCurrentSchema,
+  type AcceptedWorkflowRunCurrent, type CurrentWorkflowSaveInput } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -73,11 +73,11 @@ describe.skipIf(!postgresEnabled)('ENG04 native proof accepted v3 PostgreSQL gua
     apps.push(app); await app.ready()
     const revision = Number((await db.pool.query<{ revision: string }>(
       'select revision::text from workflows where id=$1', [f.scope.workflowId])).rows[0]!.revision)
-    const save = CurrentWorkflowSaveInputSchema.parse({ workspaceId: f.scope.workspaceId, workflowId: f.scope.workflowId,
+    const save: CurrentWorkflowSaveInput = { workspaceId: f.scope.workspaceId, workflowId: f.scope.workflowId,
       commandId: randomUUID(), expectedRevision: revision, expectedWorkflowVersionId: f.version.id, executionSemanticsVersion: 3,
       expectedAgentConfigurationVersionIds: f.version.agentConfigurationVersionIds,
       graph: { ...f.version.definition, repeat: { contractVersion: 1, blocks: [{ id: 'repair', nodeIds: [entry.id, exit.id], entryNodeId: entry.id,
-        exitNodeId: exit.id, maxOccurrences: 2, repeatOutcome: 'issues', earlyExitOutcome: 'pass', limitExit: { kind: 'branch_end' } }] } } })
+        exitNodeId: exit.id, maxOccurrences: 2, repeatOutcome: 'issues', earlyExitOutcome: 'pass', limitExit: { kind: 'branch_end' } }] } } }
     const url = `/api/management/workspaces/${save.workspaceId}/workflows/${save.workflowId}/definition`
     const headers = (token: string) => ({ host: 'localhost', authorization: `Bearer ${token}` })
     const response = await app.inject({ method: 'PUT', url, headers: headers(writer.token), payload: save })

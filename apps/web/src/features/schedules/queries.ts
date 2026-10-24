@@ -154,7 +154,7 @@ export function useScheduleCommand(scope: ScheduleGetInput) {
   return {
     submit: owner.submit, retry: () => owner.retry(),
     pending: state?.status === 'pending', unconfirmed,
-    conflict: !unconfirmed && state?.status === 'error' && ApiError.is(state.error) && state.error.code === 'REVISION_CONFLICT',
+    conflict: !unconfirmed && state?.status === 'error' && ApiError.is(state.error) && state.error.status === 409,
     error: state?.status === 'error' ? state.error : undefined,
     command: state?.variables,
   }
