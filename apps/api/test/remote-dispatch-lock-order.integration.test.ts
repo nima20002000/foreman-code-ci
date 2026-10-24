@@ -8,7 +8,7 @@ import { AgentSourceAttemptAuthority } from '../src/modules/sources/agentSourceA
 import { readReconciledDispatchIntent } from '../src/modules/runs/remote/persistence.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 
 describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock ordering', () => {
   let database: Awaited<ReturnType<typeof migratedDatabase>>
@@ -48,33 +48,30 @@ describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock or
     const credentials = await database.pool.connect()
     let pending: Promise<unknown> | undefined
     try {
-      for (const sql of [reader, credentials]) {
-        await beginTransaction(sql)
-        await sql.query(`set local search_path to ${schema}`)
-        await sql.query("set local lock_timeout='2s'")
-      }
-      const readerPid = (await reader.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
-      await credentials.query('select id from runs where id=$1 for update', [intent.runId])
-      pending = (async () => {
-        const value = await readReconciledDispatchIntent(reader, intent.operationId, true)
-        await reader.query('select id from runs where id=$1 for share', [intent.runId])
-        return value
-      })()
-      void pending.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined) // Joined below before either connection is released.
-      const waiting = await readUntil(async () => {
-        return (await database.pool.query<{ waiting: boolean }>(
-          'select cardinality(pg_blocking_pids($1))>0 as waiting', [readerPid],
-        )).rows[0]!.waiting
-      }, value => value, { timeoutMs: 1000, description: 'the PostgreSQL lock wait' })
-      expect(waiting).toBe(true)
-      expect(await readReconciledDispatchIntent(credentials, intent.operationId, true)).toEqual(intent)
-      await commitTransaction(credentials)
-      expect(await pending).toEqual(intent)
-      await commitTransaction(reader)
+      await withTransaction({ client: reader }, async readerTransaction => {
+        await readerTransaction.query(`set local search_path to ${schema}`)
+        await readerTransaction.query("set local lock_timeout='2s'")
+        const readerPid = (await readerTransaction.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
+        await withTransaction({ client: credentials }, async credentialTransaction => {
+          await credentialTransaction.query(`set local search_path to ${schema}`)
+          await credentialTransaction.query("set local lock_timeout='2s'")
+          await credentialTransaction.query('select id from runs where id=$1 for update', [intent.runId])
+          pending = (async () => {
+            const value = await readReconciledDispatchIntent(readerTransaction, intent.operationId, true)
+            await readerTransaction.query('select id from runs where id=$1 for share', [intent.runId])
+            return value
+          })()
+          void pending.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
+          const waiting = await readUntil(async () => (await database.pool.query<{ waiting: boolean }>(
+            'select cardinality(pg_blocking_pids($1))>0 as waiting', [readerPid],
+          )).rows[0]!.waiting, value => value, { timeoutMs: 1000, description: 'the PostgreSQL lock wait' })
+          expect(waiting).toBe(true)
+          expect(await readReconciledDispatchIntent(credentialTransaction, intent.operationId, true)).toEqual(intent)
+        })
+        expect(await pending).toEqual(intent)
+      })
     } finally {
-      await rollbackTransaction(credentials)
       await pending?.catch(() => /* ignore: cleanup; the test body already awaited or asserted this outcome */ undefined)
-      await rollbackTransaction(reader)
       reader.release()
       credentials.release()
     }
@@ -100,33 +97,31 @@ describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock or
     const credentials = await database.pool.connect()
     let pending: Promise<void> | undefined
     try {
-      for (const sql of [reader, credentials]) {
-        await beginTransaction(sql)
-        await sql.query(`set local search_path to ${schema}`)
-        await sql.query("set local lock_timeout='2s'")
-      }
-      const readerPid = (await reader.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
-      await credentials.query('select id from runs where id=$1 for update', [intent.runId])
-      pending = authority.authorize(reader, { id: 'operator', name: 'Operator', audience: 'operator',
-        grants: [], expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null }, {
-        workspaceId: 'workspace', root, operationId: intent.operationId,
-        attempt: { executionId: 'unallocated-execution', attemptId: intent.attemptId,
-          placementHash: 'e'.repeat(64), keyRevision: null, authorizationRevision: null },
+      await withTransaction({ client: reader }, async readerTransaction => {
+        await readerTransaction.query(`set local search_path to ${schema}`)
+        await readerTransaction.query("set local lock_timeout='2s'")
+        const readerPid = (await readerTransaction.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
+        await withTransaction({ client: credentials }, async credentialTransaction => {
+          await credentialTransaction.query(`set local search_path to ${schema}`)
+          await credentialTransaction.query("set local lock_timeout='2s'")
+          await credentialTransaction.query('select id from runs where id=$1 for update', [intent.runId])
+          pending = authority.authorize(readerTransaction, { id: 'operator', name: 'Operator', audience: 'operator',
+          grants: [], expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null }, {
+          workspaceId: 'workspace', root, operationId: intent.operationId,
+          attempt: { executionId: 'unallocated-execution', attemptId: intent.attemptId,
+            placementHash: 'e'.repeat(64), keyRevision: null, authorizationRevision: null },
+        })
+          void pending.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
+          const waiting = await readUntil(async () => (await database.pool.query<{ waiting: boolean }>(
+            'select cardinality(pg_blocking_pids($1))>0 as waiting', [readerPid],
+          )).rows[0]!.waiting, value => value, { timeoutMs: 1000, description: 'the PostgreSQL lock wait' })
+          expect(waiting).toBe(true)
+          await credentialTransaction.query('select id from harness_executions where id=$1 for update', ['unallocated-execution'])
+        })
+        await expect(pending).rejects.toMatchObject({ code: 'AGENT_SOURCE_ALLOCATION_MISSING' })
       })
-      void pending.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined) // Joined before either transaction is released.
-      const waiting = await readUntil(async () => {
-        return (await database.pool.query<{ waiting: boolean }>(
-          'select cardinality(pg_blocking_pids($1))>0 as waiting', [readerPid],
-        )).rows[0]!.waiting
-      }, value => value, { timeoutMs: 1000, description: 'the PostgreSQL lock wait' })
-      expect(waiting).toBe(true)
-      await credentials.query('select id from harness_executions where id=$1 for update', ['unallocated-execution'])
-      await commitTransaction(credentials)
-      await expect(pending).rejects.toMatchObject({ code: 'AGENT_SOURCE_ALLOCATION_MISSING' })
     } finally {
-      await rollbackTransaction(credentials)
       await pending?.catch(() => /* ignore: cleanup; the test body already awaited or asserted this outcome */ undefined)
-      await rollbackTransaction(reader)
       reader.release()
       credentials.release()
     }

@@ -15,7 +15,7 @@ It imports the exact shared domain schemas and `MemoryBoardPort` named in
   identity. Enforce existing scoped actions, enabled tools and read-only harness
   restrictions for every `AgentSubject` kind. Never convert an agent to Operator
   or invent a Run/conversation. Existing configurations without F1 tools remain None.
-- `scope` and `node` must validate saved ownership and visibility.
+- `scope`, `node` and `sourcePost` must validate saved ownership and visibility.
   `work` and `currentWork` resolve the authoritative logical business work and
   its current execution. `lifecycle` verifies the actual saved agent/work identity.
   The engine must verify continuation lineage and hold its authoritative

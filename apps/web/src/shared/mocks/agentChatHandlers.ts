@@ -6,7 +6,7 @@ import {
   type AgentChatExecutionActivityPage, type AgentChatTurn,
 } from '@foreman-code/contracts/agent-chat'
 import type { ManagementAction } from '@foreman-code/contracts/management'
-import { agentChatContextKey } from '../../features/conversations/agentChat/model'
+import { agentChatContextKey } from '../../features/chat-core'
 
 const at = '2026-09-27T12:00:00.000Z'
 const root = '/api/workspaces/:workspaceId/agent-chat'

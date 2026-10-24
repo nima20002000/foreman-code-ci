@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import { isDeepStrictEqual } from 'node:util'
-import type { HarnessConfiguration } from '@foreman-code/contracts'
+import type { RecordedHarnessConfiguration } from '@foreman-code/contracts'
 import { HarnessProfileSelectionSchema, type HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 import { RETIRED_OPENCODE_MESSAGE, withAdvancedDefaults } from '@foreman-code/contracts'
 import { HostHarnessOverrideListInputSchema, HostHarnessOverrideSaveSchema, type HostHarnessOverride, type HostHarnessOverrideListInput, type HostHarnessOverrideSave, type HostHarnessInstanceCheckInput } from '@foreman-code/contracts/harness-registry'
@@ -20,8 +20,8 @@ import { retiredHarnessError } from '../retiredHarness.js'
 export type { HostHarnessOverrideAuthority }
 /** Account resolution port, implemented by ProviderAccountConfigurationService. */
 export interface HarnessAccountConfigurationResolver {
-  resolve(configuration: HarnessConfiguration, selection?: HarnessProfileSelection,
-    options?: { sql: SqlQuery }): Promise<HarnessConfiguration>
+  resolve(configuration: RecordedHarnessConfiguration, selection?: HarnessProfileSelection,
+    options?: { sql: SqlQuery }): Promise<RecordedHarnessConfiguration>
 }
 export interface HostHarnessOverrideEvidence {
   /** Resolver must match current driver/protocol/suite and authorized connection generations. */
@@ -38,7 +38,7 @@ export class HostHarnessOverrideService {
     private readonly authority: HostHarnessOverrideAuthority,
     private readonly evidence: (value: HostHarnessOverride, client?: pg.PoolClient) => Promise<HostHarnessOverrideEvidence | null>,
     private readonly profileChecks?: HostHarnessInstanceProfileChecks,
-    private readonly configurationTarget?: (configuration: HarnessConfiguration) => HostHarnessOverride['target'],
+    private readonly configurationTarget?: (configuration: RecordedHarnessConfiguration) => HostHarnessOverride['target'],
     private readonly accountConfigurations?: HarnessAccountConfigurationResolver,
     private readonly startProfileCheck?: (value: HostHarnessOverride) => Promise<void>,
   ) {}
@@ -109,7 +109,7 @@ export class HostHarnessOverrideService {
     })
   }
   /** Called inside the existing management command transaction before publishing a selected profile. */
-  async validateSelection(principal: ManagementPrincipal, raw: HarnessProfileSelection, configuration: HarnessConfiguration, client: pg.PoolClient): Promise<void> {
+  async validateSelection(principal: ManagementPrincipal, raw: HarnessProfileSelection, configuration: RecordedHarnessConfiguration, client: pg.PoolClient): Promise<void> {
     requireAuthorization(principal, 'harnesses:read')
     const selection = HarnessProfileSelectionSchema.parse(raw)
     await this.authority.authorize(principal, 'harnesses:read', selection.target.hostRef, selection.target.applicationInstallationId, client)
@@ -134,7 +134,7 @@ export class HostHarnessOverrideService {
   }
   /** New local Claude choices may reuse an exact qualified saved profile.
    * No changed model/effort/access setting can borrow another profile's proof. */
-  async selectionForConfiguration(principal: ManagementPrincipal, configuration: HarnessConfiguration, client: pg.PoolClient): Promise<HarnessProfileSelection | undefined> {
+  async selectionForConfiguration(principal: ManagementPrincipal, configuration: RecordedHarnessConfiguration, client: pg.PoolClient): Promise<HarnessProfileSelection | undefined> {
     requireAuthorization(principal, 'harnesses:read')
     const installation = (await client.query<{ id: string }>('select id::text as id from application_installation')).rows[0]
     if (!installation) return undefined
@@ -153,7 +153,7 @@ export class HostHarnessOverrideService {
   }
   /** First Operator Claude setup shares the saved-profile operation, authority,
    * idempotent receipts and native producer used by computer settings/MCP. */
-  async prepareOperatorConfiguration(principal: ManagementPrincipal, source: 'http' | 'mcp', configuration: HarnessConfiguration,
+  async prepareOperatorConfiguration(principal: ManagementPrincipal, source: 'http' | 'mcp', configuration: RecordedHarnessConfiguration,
     commandId: string): Promise<HarnessProfileSelection | undefined> {
     if (configuration.harness !== 'claude' || !this.configurationTarget || !this.profileChecks) return undefined
     requireAuthorization(principal, 'harnesses:read'); requireAuthorization(principal, 'harnesses:update')

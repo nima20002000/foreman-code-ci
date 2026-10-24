@@ -88,13 +88,13 @@ export function createMemoryTestPort(initial: { cards?: MemoryCard[]; notes?: Me
       const receipt: MemoryReceipt = { commandId: command.commandId ?? crypto.randomUUID(), outcome: command.kind.endsWith('create') ? 'created' : 'updated',
         bindings: [], claims: [], boardRevision: ++board.revision }
       if (command.kind === 'card_create') {
-        receipt.card = memoryTestCard({ ...command.card, id: crypto.randomUUID(), revision: board.revision })
+        receipt.card = memoryTestCard({ ...command.card, id: crypto.randomUUID(), sourcePostId: command.sourcePostId, revision: board.revision })
         cards.set(receipt.card.id, receipt.card)
       } else if (command.kind === 'card_update') {
         receipt.card = MemoryCardSchema.parse({ ...cards.get(command.cardId), ...command.patch, revision: board.revision })
         cards.set(receipt.card.id, receipt.card)
       } else if (command.kind === 'note_create') {
-        receipt.note = memoryTestNote({ id: crypto.randomUUID(), text: command.text, rank: command.rank ?? notes.size, revision: board.revision })
+        receipt.note = memoryTestNote({ id: crypto.randomUUID(), text: command.text, rank: command.rank ?? notes.size, sourcePostId: command.sourcePostId, revision: board.revision })
         notes.set(receipt.note.id, receipt.note)
       } else {
         receipt.note = MemoryNoteSchema.parse({ ...notes.get(command.noteId), ...(command.kind === 'note_update' ? command.patch : { archived: command.archived }), revision: board.revision })

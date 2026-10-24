@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { INSTALLATION_NAMES } from '../../packages/contracts/src/installationNames.mjs'
 import { diagnosticWarning } from '../diagnostic-warning.mjs'
 import { spawn, execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -203,8 +204,8 @@ async function main() {
   state = resources.directory
   cleanupOwners.push({ resource: resources, id: registerTestResourceCleanup(resources,
     { kind: 'local-acceptance', stateDirectory: state }) })
-  if (process.env.FOREMAN_CODE_TEST_ROOT) {
-    const parent = { directory: process.env.FOREMAN_CODE_TEST_ROOT, token: process.env.FOREMAN_CODE_TEST_OWNER }
+  if (process.env[INSTALLATION_NAMES.environment.TEST_ROOT]) {
+    const parent = { directory: process.env[INSTALLATION_NAMES.environment.TEST_ROOT], token: process.env[INSTALLATION_NAMES.environment.TEST_OWNER] }
     cleanupOwners.push({ resource: parent, id: registerTestResourceCleanup(parent,
       { kind: 'local-acceptance', stateDirectory: state }) })
   }
@@ -213,7 +214,7 @@ async function main() {
   resources = await createTestDatabase(admin, resources)
   const isolated = testEnvironment(process.env, resources)
   safeEnv = { ...environment(isolated), NODE_OPTIONS: isolated.NODE_OPTIONS,
-    FOREMAN_CODE_API_ENV_FILE: isolated.FOREMAN_CODE_API_ENV_FILE }
+    [INSTALLATION_NAMES.environment.API_ENV_FILE]: isolated[INSTALLATION_NAMES.environment.API_ENV_FILE] }
   toolEnv = {
     ...Object.fromEntries(Object.entries(safeEnv).filter(([key]) => !key.endsWith('_API_KEY'))),
     ...verificationToolEnvironment(isolated),
@@ -221,8 +222,8 @@ async function main() {
     pnpm_config_verify_deps_before_run: 'error',
     // pnpm's default virtual-store setting depends on the install's CI context.
     ...(isolated.CI !== undefined ? { CI: isolated.CI } : {}),
-    ...(isolated.FOREMAN_CODE_HEAVY_JOB_COMMON ? { FOREMAN_CODE_HEAVY_JOB_COMMON: isolated.FOREMAN_CODE_HEAVY_JOB_COMMON } : {}),
-    ...(isolated.FOREMAN_CODE_HEAVY_JOB_TOKEN ? { FOREMAN_CODE_HEAVY_JOB_TOKEN: isolated.FOREMAN_CODE_HEAVY_JOB_TOKEN } : {}),
+    ...(isolated[INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON] ? { [INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON]: isolated[INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON] } : {}),
+    ...(isolated[INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN] ? { [INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN]: isolated[INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN] } : {}),
   }
   stage = 'port reservation check'
   await freePort(opts.apiPort); await freePort(opts.webPort)
@@ -231,6 +232,7 @@ async function main() {
   if (head !== BASE) console.log('ENG07 checkout differs from the documented base; record its commit separately before accepting results.')
   stage = 'contracts build (run corepack pnpm install beforehand)'
   await command('corepack', ['pnpm', '--filter', '@foreman-code/contracts', 'build'])
+  await command('corepack', ['pnpm', '--filter', '@foreman-code/contracts-node', 'build'])
   await command('corepack', ['pnpm', '--filter', '@foreman-code/ci', 'build'])
   interrupted()
   process.umask(0o077)
@@ -247,7 +249,7 @@ async function main() {
   const appEnv = { ...safeEnv, NODE_ENV: 'development', HOST: '127.0.0.1', PORT: String(opts.apiPort),
     DATABASE_URL: resources.databaseUrl, DATABASE_QUERY_TIMEOUT_MS: '60000',
     LANGGRAPH_CHECKPOINT_SCHEMA: 'eng07_checkpoints', HARNESS_WORKSPACE_ROOT: join(state, 'runtime'),
-    FOREMAN_CODE_BROWSER_ORIGIN: webUrl,
+    [INSTALLATION_NAMES.environment.BROWSER_ORIGIN]: webUrl,
     ENG07_DATABASE: database,
     ENG07_STATE: state, ENG07_OWNER: owner, ENG07_WEB_PORT: String(opts.webPort),
     ...(opts.codexModel ? { ENG07_CODEX_MODEL: opts.codexModel } : {}), TMPDIR: join(state, 'tmp') }

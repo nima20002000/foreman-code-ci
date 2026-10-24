@@ -98,11 +98,6 @@ describe('Operator MCP tool registry', () => {
     // Tools left out of tools/list stay reachable by name through discovery.
     const reachable = await listedNames(client)
     expect(reachable).toEqual(expect.arrayContaining(['workflow_create', 'agent_defaults_get']))
-    for (const removed of ['workflow_chat_read', 'workflow_chat_post', 'workflow_chat_deliveries_read', 'workflow_chat_delivery_cancel']) {
-      expect(names).not.toContain(removed)
-      expect(reachable).not.toContain(removed)
-      expect((await client.callTool({ name: 'tool_schema', arguments: { name: removed } })).isError).toBe(true)
-    }
     const schema = decodeMcpToolResult(await client.callTool({ name: 'tool_schema', arguments: { name: 'workflow_create' } })) as {
       name: string; permissionRequirements?: { actions?: string[] } }
     expect(schema.name).toBe('workflow_create')

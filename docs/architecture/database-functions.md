@@ -398,10 +398,11 @@ Error codes that a current SQL function raises (`raise exception 'CODE'`) and Ty
 SQL that only uses a code as data (a default written into a record) is not listed: it duplicates no rule.
 
 Decision (#25): the SQL function is the canonical home of each rule, because a trigger holds for every writer.
-The TypeScript check stays as a typed pre-check, so the caller gets a stable 409 code and the transaction is not
-aborted; it must not grow beyond the SQL rule, and the two must agree when either changes. Removing a pre-check
-needs one mapping from the raised code to a `DomainError` (none exists yet) and the database tests. Add a new rule
-in SQL, and add a TypeScript pre-check only when a caller needs the code.
+`infrastructure/databaseErrors.ts` maps the 25 known raised codes to safe 409 `DomainError`s at the owning
+`withTransaction` boundary and command-session failure boundary, after rollback/recovery and compensation.
+Unknown errors keep their identity; joined work leaves mapping to its owner. The write path no longer revalidates
+its computed repeat decision and successor; SQL validates those at COMMIT. TypeScript retains parsing, computation,
+read-side evidence checks and recoverable in-transaction pre-checks. Matching a code alone does not make a check redundant.
 
 | Code | SQL functions | TypeScript |
 |---|---|---|

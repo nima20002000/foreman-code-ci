@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { McpServer } from '@modelcontextprotocol/server'
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
@@ -61,7 +62,7 @@ export function registerDistributedArtifactRoutes(app: FastifyInstance,
   })
   app.post('/mcp/artifact-inputs', { bodyLimit: 16 * 1024,
     onRequest: async (request) => { await auth.consumer(request) } }, async (request, reply) => {
-    const server = new McpServer({ name: 'graphql-artifact-inputs', version: '1.0.0' }, { instructions:
+    const server = new McpServer({ name: INSTALLATION_NAMES.mcp.artifactInputs, version: '1.0.0' }, { instructions:
       'Accepted revision-pinned artifact inputs only. Hashes and edge IDs confer no authority. No reference editing or delegation creation.' })
     actions.registerInputTool(server, request)
     const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
@@ -72,7 +73,7 @@ export function registerDistributedArtifactRoutes(app: FastifyInstance,
   })
   app.post('/mcp/artifact-publications', { bodyLimit: 16 * 1024,
     onRequest: async (request) => { await auth.producer(request) } }, async (request, reply) => {
-    const server = new McpServer({ name: 'graphql-artifact-publications', version: '1.0.0' }, { instructions:
+    const server = new McpServer({ name: INSTALLATION_NAMES.mcp.artifactPublications, version: '1.0.0' }, { instructions:
       'Publish verified artifact transfers owned by this accepted sender. Accepted sandbox mutation permission remains required; source packages use a separate class.' })
     actions.registerPublicationTool(server, request)
     const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })

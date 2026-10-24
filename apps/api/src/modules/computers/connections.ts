@@ -1,3 +1,5 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
+import { harnessMaintenanceCapabilities } from '../../shared/harnessPolicy.js'
 import type { ComputerAccounts } from '@foreman-code/contracts/computer-accounts'
 import type { ComputerConnections } from '@foreman-code/contracts/computer-maintenance'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
@@ -7,7 +9,7 @@ import { logIgnoredError } from '../diagnostics/index.js'
 import { fingerprint, managedStatus } from '../harnesses/nativeMcpCommon.js'
 
 type Harness = 'codex' | 'claude'
-type Preset = NonNullable<HarnessMcpList['presets']>['graphql'] | null
+type Preset = NonNullable<HarnessMcpList['presets']>[typeof INSTALLATION_NAMES.mcp.server] | null
 interface AccountsReader { read(target: DeviceProvisioningTarget, refresh: boolean): Promise<ComputerAccounts | null> }
 interface McpReader {
   list(principal: ManagementPrincipal, harness: Harness, hostRef: DeviceProvisioningTarget['hostRef']): Promise<Pick<HarnessMcpList, 'presets'>>
@@ -28,10 +30,10 @@ export function computerConnectionsReader(accounts: AccountsReader, mcp: McpRead
     const key = `${target.applicationInstallationId}:${target.authorizationRevision ?? 0}:${harness}`
     const cached = cache.get(key)
     if (cached && now() - cached.at < CACHE_MS) return cached.value
-    const read: Promise<Preset> = harness === 'claude' && target.hostRef.kind === 'main' && mcp.readMainClaudeServers
+    const read: Promise<Preset> = harnessMaintenanceCapabilities(harness).mcp.read === 'user_config' && target.hostRef.kind === 'main' && mcp.readMainClaudeServers
       ? mcp.readMainClaudeServers().then(servers => managedStatus({ harness: 'claude', user: servers, effective: servers,
-        revision: fingerprint(servers), userConfig: {}, version: '', file: '' }, 'graphql'))
-      : mcp.list(principal, harness, target.hostRef).then(list => list.presets?.graphql ?? null)
+        revision: fingerprint(servers), userConfig: {}, version: '', file: '' }, INSTALLATION_NAMES.mcp.server))
+      : mcp.list(principal, harness, target.hostRef).then(list => list.presets?.[INSTALLATION_NAMES.mcp.server] ?? null)
     const value = read.catch(error => {
       logIgnoredError('lifecycle', 'read harness MCP state', error, { host: target.hostRef, harness })
       if (cache.get(key)?.value === value) cache.delete(key)

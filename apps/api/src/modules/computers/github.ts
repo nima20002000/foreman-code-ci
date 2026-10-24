@@ -8,7 +8,7 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
-import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
+import type { DeviceEndpoint } from '../devices/index.js'
 import { GitHubLoginRunner } from './githubLogin.js'
 import { assertComputerTarget } from './target.js'
 

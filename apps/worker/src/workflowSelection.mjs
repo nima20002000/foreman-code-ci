@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { execFile } from 'node:child_process';
 import { constants } from 'node:fs';
 import { access, readFile, realpath, unlink } from 'node:fs/promises';
@@ -139,7 +140,7 @@ async function upgradeClaudeSdk(claude, environment, release, signal) {
 
 /** A launcher from one of this Worker's own releases follows the running release; an explicit one stays. */
 function currentLauncher(configuration, release) {
-  const launcher = join(release, 'artifacts/graphql-mcp.mjs');
+  const launcher = join(release, INSTALLATION_NAMES.artifacts.mcpLauncher);
   const releases = `${dirname(release)}/`;
   return configuration.appMcpLauncher.startsWith(releases) ? { ...configuration, appMcpLauncher: launcher } : configuration;
 }
@@ -219,7 +220,7 @@ export async function refreshWorkflowSelection({ stateDirectory, release = relea
       }
       return null;
     }
-    const appMcpLauncher = join(release, 'artifacts/graphql-mcp.mjs');
+    const appMcpLauncher = join(release, INSTALLATION_NAMES.artifacts.mcpLauncher);
     if (await realpath(appMcpLauncher) !== appMcpLauncher) throw new WorkerError('workflow_launcher_retargeted');
     const configuration = InstalledWorkflowConfigurationSchema.parse({ schemaVersion: 1, appMcpLauncher,
       ...(codex ?? {}), ...(claude ? { claude } : {}) });

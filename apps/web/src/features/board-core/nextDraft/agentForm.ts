@@ -1,11 +1,12 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { z } from 'zod'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
-import { AssignedSkillSchema, RecordedGraphqlToolDefaultsSchema, RecordedGraphqlToolOverrideSchema, HarnessConfigurationSchema, withBrowserToolDefaults } from '@foreman-code/contracts'
+import { AssignedSkillSchema, ForemanToolDefaultsSchema, ForemanToolOverrideSchema, RecordedHarnessConfigurationSchema, withBrowserToolDefaults } from '@foreman-code/contracts'
 import { sameWorkflowValue, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 
 // Raw form state is browser-only, including unfinished JSON. Publication still
 // uses the shared Agent and harness validation through Save agent settings.
-const HarnessFormSchema = z.object({ configuration: HarnessConfigurationSchema,
+const HarnessFormSchema = z.object({ configuration: RecordedHarnessConfigurationSchema,
   shellEnvironmentText: z.string(), mcpText: z.string() }).strict()
 export const AgentFormSchema = z.object({ base: z.string().refine((value) => { try { JSON.parse(value); return true } catch { return false } }), name: z.string(), prompt: z.string(),
   /** Persistent Agent instructions and ordered skill references; absent in forms saved before Skills v1. */
@@ -14,7 +15,7 @@ export const AgentFormSchema = z.object({ base: z.string().refine((value) => { t
   instructions: z.string().optional(), skills: z.array(AssignedSkillSchema).optional(),
   editor: HarnessFormSchema.extend({ drafts: z.object({ codex: HarnessFormSchema.optional(),
     claude: HarnessFormSchema.optional() }).strict().optional() }),
-  graphqlTools: z.object({ defaults: RecordedGraphqlToolDefaultsSchema.optional(), override: RecordedGraphqlToolOverrideSchema.optional() }).strict().optional(),
+  [INSTALLATION_NAMES.fields.agentTools]: z.object({ defaults: ForemanToolDefaultsSchema.optional(), override: ForemanToolOverrideSchema.optional() }).strict().optional(),
 }).strict()
 export type AgentForm = z.infer<typeof AgentFormSchema>
 
@@ -25,10 +26,10 @@ export function rebaseAgentFormTools<T extends { graph: WorkflowDefinitionCurren
   const form = current.agentForms?.[nodeId]
   const node = current.graph.nodes.find(item => item.id === nodeId)
   if (!form || !node || node.kind === 'job') return current
-  const { nodeGraphqlTools, ...base } = JSON.parse(form.base) as Record<string, unknown>
-  if (sameWorkflowValue(nodeGraphqlTools, node.graphqlTools)) return current
-  const override = withBrowserToolDefaults({ browser: node.browser, graphqlTools: form.graphqlTools?.override }).graphqlTools
+  const { [INSTALLATION_NAMES.fields.nodeTools]: nodeForemanTools, ...base } = JSON.parse(form.base) as Record<string, unknown>
+  if (sameWorkflowValue(nodeForemanTools, node[INSTALLATION_NAMES.fields.agentTools])) return current
+  const override = withBrowserToolDefaults({ browser: node.browser, [INSTALLATION_NAMES.fields.agentTools]: form[INSTALLATION_NAMES.fields.agentTools]?.override })[INSTALLATION_NAMES.fields.agentTools]
   return { ...current, agentForms: { ...current.agentForms, [nodeId]: { ...form,
-    base: JSON.stringify({ ...base, ...(node.graphqlTools ? { nodeGraphqlTools: node.graphqlTools } : {}) }),
-    graphqlTools: { ...form.graphqlTools, ...(override ? { override } : {}) } } } }
+    base: JSON.stringify({ ...base, ...(node[INSTALLATION_NAMES.fields.agentTools] ? { [INSTALLATION_NAMES.fields.nodeTools]: node[INSTALLATION_NAMES.fields.agentTools] } : {}) }),
+    [INSTALLATION_NAMES.fields.agentTools]: { ...form[INSTALLATION_NAMES.fields.agentTools], ...(override ? { override } : {}) } } } }
 }
