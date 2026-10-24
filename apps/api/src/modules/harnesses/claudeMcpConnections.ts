@@ -8,8 +8,6 @@ import { backupNativeUserFile, readNativeUserFile, resolveNativeUserFile, syncNa
 import { applyMcpEdits, fingerprint, mcpEdits, record, type NativeMcpAdapter, type NativeMcpSnapshot } from './nativeMcpCommon.js'
 import { DomainError } from '../errors.js'
 
-const tokenReference = '${' + APP_MCP_TOKEN + '}'
-
 /** Claude's user file retains login metadata and all unrelated native MCP connections. */
 export class ClaudeMcpConnections implements NativeMcpAdapter {
   constructor(private readonly file: string) {}
@@ -29,7 +27,7 @@ export class ClaudeMcpConnections implements NativeMcpAdapter {
     const user = Object.fromEntries(Object.entries(raw).map(([name, value]) => {
       const entry = record(value)
       const env = record(entry.env)
-      if (env[APP_MCP_TOKEN] !== tokenReference || Object.keys(env).length !== 1) return [name, entry]
+      if (env[APP_MCP_TOKEN] !== '${FOREMAN_CODE_MCP_TOKEN}' || Object.keys(env).length !== 1) return [name, entry]
       const settings = { ...entry }
       delete settings.env
       delete settings.type
@@ -46,7 +44,7 @@ export class ClaudeMcpConnections implements NativeMcpAdapter {
       if (!edit.value || !Array.isArray(edit.value.env_vars)) return edit
       const entry = { ...edit.value }
       delete entry.env_vars
-      return { ...edit, value: { ...entry, type: 'stdio', env: { [APP_MCP_TOKEN]: tokenReference } } }
+      return { ...edit, value: { ...entry, type: 'stdio', env: { [APP_MCP_TOKEN]: '${FOREMAN_CODE_MCP_TOKEN}' } } }
     })
     const source = record(JSON.parse(await readNativeUserFile(this.file, { whenMissing: '{}' })))
     const updated = { ...source, mcpServers: applyMcpEdits(record(source.mcpServers), native) }

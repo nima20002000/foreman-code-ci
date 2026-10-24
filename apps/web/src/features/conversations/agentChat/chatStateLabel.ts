@@ -1,5 +1,5 @@
 import type { AgentChatState } from '@foreman-code/contracts/agent-chat'
-import { chatBusy } from '../../chat-core'
+import { chatBusy } from './model'
 
 export function agentChatStateLabel(state?: AgentChatState, runLabel?: string): string {
   if (!state) return 'Starting'

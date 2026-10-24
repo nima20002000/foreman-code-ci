@@ -2,7 +2,6 @@ import pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { describe, expect, it, vi } from 'vitest'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
 
 const principal: ManagementPrincipal = {
   id: 'operator', name: 'Operator', audience: 'operator', grants: [],
@@ -30,20 +29,6 @@ function fixture(options: { commitError?: Error; rollbackError?: Error } = {}) {
 }
 
 describe('command rollback compensation', () => {
-  it.each(['work', 'commit'])('maps a raised rule during %s after rollback and compensation', async phase => {
-    const cause = new pg.DatabaseError('REPEAT_SCOPE_CONFLICT', 0, 'error')
-    cause.code = 'P0001'
-    const f = fixture(phase === 'commit' ? { commitError: cause } : {})
-    const afterRollback = vi.fn(async () => { expect(f.rolledBack()).toBe(true) })
-    const failure = await f.coordinator.execute({ ...f.command, afterRollback,
-      perform: async () => { if (phase === 'work') throw cause; return 'saved' },
-    }).catch((error: unknown) => error)
-    expect(failure).toBeInstanceOf(DomainError)
-    expect(failure).toMatchObject({ code: 'REPEAT_SCOPE_CONFLICT', status: 409, cause })
-    expect(afterRollback).toHaveBeenCalledOnce()
-    expect(f.release).toHaveBeenCalledWith(undefined)
-  })
-
   it('compensates only after confirming rollback and preserves the command error', async () => {
     const f = fixture()
     const error = new Error('Receipt could not be written')

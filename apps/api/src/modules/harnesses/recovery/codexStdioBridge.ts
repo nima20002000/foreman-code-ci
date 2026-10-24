@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 /** Runs inside the authenticated native guardian, alongside its cgroup boundary. */
 export const CODEX_STDIO_BRIDGE_SOURCE = `
 function codexStdioBridge(native, environment, released, observerLost) {
@@ -14,7 +13,7 @@ function codexStdioBridge(native, environment, released, observerLost) {
   const variables={}
   process.stdin.setEncoding('utf8')
   native.stdout.setEncoding('utf8')
-  for(const name of ${JSON.stringify([INSTALLATION_NAMES.environment.MCP_TOKEN])}) {
+  for(const name of ['FOREMAN_CODE_MCP_TOKEN','GRAPHQL_MCP_TOKEN']) {
     if(environment[name])variables[name]=environment[name]
   }
   function forgetRequest(id) {

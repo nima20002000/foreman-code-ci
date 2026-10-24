@@ -10,7 +10,7 @@ import { RootBindingSchema, type RootBinding, type SourceProjectQuotaSlot }
   from '@foreman-code/contracts/source-materialization'
 import { DomainError } from '../errors.js'
 import { MAX_VERIFICATION_CONFIGURATION_BYTES, type InstalledRuntimeConfigurationLocation }
-  from '@foreman-code/contracts-node/installed-runtime-node'
+  from '@foreman-code/contracts/installed-runtime-node'
 import { findRetainedRuntimeConfiguration } from './retainedRuntimeConfiguration.js'
 import { sha256Hex } from '../../shared/hash.js'
 

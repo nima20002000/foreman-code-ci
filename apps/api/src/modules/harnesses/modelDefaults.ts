@@ -1,4 +1,4 @@
-import { AgentEffortSchema, ClaudeEffortSchema, type RecordedHarnessConfiguration } from '@foreman-code/contracts'
+import { AgentEffortSchema, ClaudeEffortSchema, type HarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessOptions } from '@foreman-code/contracts/management'
 import { DomainError } from '../errors.js'
 import { retiredHarnessError } from './retiredHarness.js'
@@ -16,7 +16,7 @@ export function latestNativeModel(options: HarnessOptions): HarnessOptions['mode
   throw new DomainError('HARNESS_MODEL_DEFAULT_UNAVAILABLE', 'The native catalog supplies no release date or default model preference.', 409)
 }
 
-export function nativeModelDefaults<T extends RecordedHarnessConfiguration>(configuration: T, options: HarnessOptions): T {
+export function nativeModelDefaults<T extends HarnessConfiguration>(configuration: T, options: HarnessOptions): T {
   if (configuration.harness === 'opencode') throw retiredHarnessError()
   if (configuration.harness !== options.harness) throw new DomainError('HARNESS_CONFIGURATION_MISMATCH', 'The model catalog belongs to another harness.', 409)
   const model = latestNativeModel(options)

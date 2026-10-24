@@ -1,7 +1,7 @@
 import { generateKeyPairSync, randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { afterEach, expect, it, vi } from 'vitest'
-import { publicKeyFingerprint } from '@foreman-code/contracts-node/device-identity-node'
+import { publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
 import { DeviceConnectionSupervisor } from './connectionSupervisor.js'
 import { DeviceEndpoint } from './deviceEndpoint.js'
 import { adaptDeviceSocket } from './deviceWire.js'

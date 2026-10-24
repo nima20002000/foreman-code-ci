@@ -1,6 +1,6 @@
 import type { ExecutionResult } from '@foreman-code/contracts'
 import type { TransactionSql } from '../../infrastructure/transaction.js'
-import type { AgentConversationRow, PostgresAgentChatRepository } from '../conversations/index.js'
+import type { AgentConversationRow, PostgresAgentChatRepository } from '../conversations/agentChatRepository.js'
 import type { PostgresChatDeliveryRepository } from './deliveryRepository.js'
 import type { CommittedReplySource, CommittedWorkflowChatFact, WorkflowChatProjector } from './projection.js'
 

@@ -27,7 +27,7 @@ export function RemoveWorkflowButton({ workspaceId, workflowId, name, revision, 
     inFlight.current = true
     const generation = sessionGeneration()
     try {
-      if (!attempt.current.unresolved) original.current = { workspaceId, workflowId, expectedRevision: renderTrigger ? baseRevision : revision }
+      if (!attempt.current.unresolved) original.current = { workspaceId, workflowId, expectedRevision: baseRevision }
       const result = await mutation.mutateAsync(attempt.current.input(original.current!))
       assertSession(generation)
       attempt.current.succeeded()
@@ -46,17 +46,19 @@ export function RemoveWorkflowButton({ workspaceId, workflowId, name, revision, 
     } catch (error) { attempt.current.failed(error) }
     finally { inFlight.current = false }
   }
+  const show = () => { if (!mutation.isPending && !attempt.current.unresolved) { setBaseRevision(revision); mutation.reset(); setOpen(true) } }
   return <>
-    {renderTrigger ? renderTrigger(() => { if (!mutation.isPending && !attempt.current.unresolved) { setBaseRevision(revision); mutation.reset(); setOpen(true) } }) : <IconButton label={mutation.isError ? `Retry removing ${name}` : `Remove ${name}`} variant="ghost" size="sm"
-      className="workflow-navigation-remove" disabled={mutation.isPending} onClick={() => void remove()}>
+    {renderTrigger ? renderTrigger(show) : <IconButton label={`Remove ${name}`} variant="ghost" size="sm"
+      className="workflow-navigation-remove" disabled={mutation.isPending} onClick={show}>
       <Icon name="trash" size={14} />
     </IconButton>}
-    {renderTrigger ? <ConfirmDialog open={open} title={`Remove ${name}?`}
+    <ConfirmDialog open={open} title={`Remove ${name}?`}
       description="It leaves this workspace. Run history stays. A workflow with active runs can’t be removed."
+      dismissalReason={attempt.current.unresolved ? 'Removal is unconfirmed. Retry checks the original removal before you can close this dialog.' : undefined}
       pending={mutation.isPending} confirmLabel={attempt.current.unresolved ? 'Retry removal' : 'Remove workflow'}
       error={mutation.isError ? mutation.error.message : attempt.current.unresolved && !mutation.isPending
         ? 'It may already be removed. Retry to check.' : undefined}
       onOpenChange={(next) => { if (!next && !mutation.isPending && !attempt.current.unresolved) { setOpen(false); mutation.reset() } }}
-      onConfirm={() => void remove()} /> : mutation.isError ? <p className="workflow-navigation-remove-error" role="alert">{mutation.error.message}</p> : null}
+      onConfirm={() => void remove()} />
   </>
 }

@@ -1,10 +1,10 @@
 import { spawn } from 'node:child_process'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { afterEach, expect, it } from 'vitest'
-import { registerAppRoute, installManagedLauncher } from '../src/modules/harnesses/appMcpLauncher.js'
+import { registerAppRoute } from '../src/modules/harnesses/appMcpLauncher.js'
 
 const cleanup: Array<() => Promise<unknown> | unknown> = []
 afterEach(async () => { while (cleanup.length) await cleanup.pop()!() })
@@ -15,11 +15,11 @@ async function callThroughLauncher(renewalFailure?: string) {
   const directory = await mkdtemp(join(cache, 'graphql-expired-route-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const launcher = join(directory, 'graphql-mcp.mjs')
-  await installManagedLauncher(new URL('../../../scripts/foreman-mcp.mjs', import.meta.url), launcher)
+  await copyFile(new URL('../../../scripts/graphql-mcp.mjs', import.meta.url), launcher)
   const token = `expired-route-${Math.random().toString(36).slice(2)}`
   await registerAppRoute(token, 'http://127.0.0.1:9/mcp', new Date(Date.now() - 1_000).toISOString(), launcher,
     renewalFailure ? { renewalFailure } : {})
-  const environment = Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== 'GRAPHQL_MCP_TOKEN'))
+  const environment = Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== 'FOREMAN_CODE_MCP_TOKEN'))
   const child = spawn(process.execPath, [launcher], { env: { ...environment, GRAPHQL_MCP_TOKEN: token }, stdio: 'pipe' })
   cleanup.push(() => { child.kill() })
   const reply = new Promise<{ error: { message: string; data: { kind: string } } }>(resolve => {
