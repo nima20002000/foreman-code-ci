@@ -169,6 +169,8 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
   }
   return <div className="agent-conversation" data-testid="agent-conversation" data-chat-key={chat.draftKey}>
     {header}
+    {conversation?.previousConversationId ? <AgentConversationHistory workspaceId={context.workspaceId}
+      conversationId={conversation.previousConversationId} name={name} /> : null}
     <ProviderAccountProblem binding={conversation?.providerAccountBinding} />
     <AgentChatStatus>{attention ? <><Tooltip content={attention}><span tabIndex={0}>{attention}</span></Tooltip><Tooltip content="Read the latest conversation status">
       <IconButton size="sm" variant="ghost" label="Refresh chat" disabled={chat.query.isFetching && !chat.query.isRefetching} onClick={chat.refresh}>
@@ -180,10 +182,7 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
       resendReason={nextReason} controlResendReason={controlReason}
       onRefresh={chat.refresh} refreshing={chat.query.isFetching} onCancel={chat.cancelQueued} onRespond={chat.respond} onDenied={chat.revoke} onReceipt={chat.confirmDelivery}
       onSendAgain={(content, pins, mode) => setSendAgain({ content, attachments: pins, draftKey: chat.draftKey,
-        sessionMode: parseSessionCommand(content).kind === 'plan-task' ? 'plan' : mode })}>
-      {conversation?.previousConversationId ? <AgentConversationHistory workspaceId={context.workspaceId}
-        conversationId={conversation.previousConversationId} name={name} /> : null}
-    </AgentChatTranscript>
+        sessionMode: parseSessionCommand(content).kind === 'plan-task' ? 'plan' : mode })} />
       : <ConversationViewport revision="loading">{() => <RetainedAgentCommands commands={chat.commands} onDenied={chat.revoke} onReceipt={chat.confirmDelivery}
         draftKey={chat.draftKey} refresh={chat.refresh} pending={chat.query.isPending} />}</ConversationViewport>}
     {state ? <div className="agent-chat-composer-controls" role="group" aria-label="Chat actions" {...drop.dropTargetProps}>
