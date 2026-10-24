@@ -1,8 +1,9 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { RemoteOwnerControl } from '@foreman-code/contracts/remote-execution'
 import { burstRead } from './burstRead.js'
 import type { ResultProtocol } from '@foreman-code/contracts'
 import { workflowPreparationExtension } from './preparationExtension.js'
-import type { ProviderAccountResolver, ResolvedProviderAccount } from '../../provider-accounts/service.js'
+import type { ProviderAccountResolver, ResolvedProviderAccount } from '../../provider-accounts/index.js'
 import { assertWorkerProviderAccountBinding } from '../../provider-accounts/index.js'
 import { managedProviderEnvironment, resolveRuntimeProviderAccount } from '../../harnesses/providerAccountRuntime.js'
 import { constants } from 'node:fs'
@@ -34,7 +35,7 @@ import { EXECUTION_AUTHORITY_EXTENSION } from '@foreman-code/contracts/execution
 import { WORKER_MCP_EXTENSION } from '@foreman-code/contracts/worker-mcp-relay'
 import { DomainError } from '../../errors.js'
 import { captureOriginalCodexSession } from '../../harnesses/originalCodexSession.js'
-import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart } from '../../harnesses/port.js'
+import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart } from '../../harnesses/index.js'
 import { HarnessInstanceRegistry, localHarnessDrivers } from '../../harnesses/instanceRegistry.js'
 import { HarnessInstallationRegistry } from '../../harnesses/installationRegistry.js'
 import { CodexAppServerSessionManager, safeEnvironment } from '../../harnesses/codexAppServer.js'
@@ -79,7 +80,7 @@ import { hasPositiveRemoteEntryClosure, remoteNonEntryClosureDigest } from '@for
 import { deviceRequestTimeoutMs, retryDeviceRequest } from '../../devices/deviceRequestRetry.js'
 import { hostEnvironment } from '../../../shared/process.js'
 import { deviceReconnectTimeoutMs, isDeviceLinkDrop, sameDeviceInstallation, waitForDeviceReconnect } from '../../devices/deviceReconnect.js'
-import { retiredHarnessError } from '../../../shared/harnessPolicy.js'
+import { retiredHarnessError } from '../../harnesses/retiredHarness.js'
 
 function unavailableError(reason:string) {return new DomainError('WORKER_WORKFLOW_UNAVAILABLE','The original installed workflow authority is unavailable.',409,{reason})}
 function unavailable(reason:string):never {throw unavailableError(reason)}
@@ -203,7 +204,7 @@ export async function attestInstalledWorkflowRuntimeLeaf(input:{sources:SourceOp
     const proof=RuntimeLeafAttestationSchema.parse({executionId:intent.executionId,attemptId:intent.attemptId,
       operationId:intent.operationId,bindingHash:executionPlacement.bindingHash,canonicalRuntimeDirectory:request.runtimeDirectory,
       directoryIdentityHash:digest(filesystem),materializationId:record.receipt.materializationId,materializationDigest:executionPlacement.workingTree.materializationDigest})
-    const marker=anchored(directory,'.graphql-workflow-runtime.json')
+    const marker=anchored(directory,INSTALLATION_NAMES.paths.workflowRuntime)
     let created:Awaited<ReturnType<typeof open>>|undefined
     try {created=await open(marker,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600)}
     catch(error){if(!(error&&typeof error==='object'&&'code' in error&&error.code==='EEXIST'))throw error}

@@ -28,7 +28,7 @@ test('production snapshots reuse unchanged web output and rebuild changed or mis
   await writeFile(join(repository, '.gitignore'), 'node_modules/\ndist/\n.logs/\n')
   const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
     !key.startsWith('GIT_') && !/^(?:GRAPHQL|FOREMAN_CODE)_HEAVY_/.test(key)))
-  Object.assign(environment, { FOREMAN_CODE_HEAVY_BASE_TMPDIR: parent, FOREMAN_CODE_VERIFICATION_ROOT: '',
+  Object.assign(environment, { GRAPHQL_HEAVY_BASE_TMPDIR: parent, FOREMAN_CODE_VERIFICATION_ROOT: '',
     GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' })
   delete environment.CI_HOST_RUNNER
   const git = args => execute('git', args, { cwd: repository, env: environment })
@@ -51,7 +51,7 @@ fs.appendFileSync(${JSON.stringify(join(directory, 'builds'))}, 'built\\n');
   environment.PATH = `${bin}:${environment.PATH}`
   const builds = async () => (await readFile(join(directory, 'builds'), 'utf8')).trim().split('\n').length
   const build = () => withProductionSourceSnapshot(repository, join(directory, 'build'), async ({ source }) => {
-    for (const tool of ['typescript', 'vite', '@vitejs/plugin-react', '@tailwindcss/vite']) {
+    for (const tool of ['typescript', 'vite', '@vitejs/plugin-react']) {
       const module = join(source, 'apps/web/node_modules', tool)
       await mkdir(module, { recursive: true })
       await writeFile(join(module, 'index.js'), 'module.exports = {}')

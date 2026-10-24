@@ -21,7 +21,6 @@ export async function fixture(options: { root?: TestRoot } = {}): Promise<Fixtur
   const source = await readFile(new URL('./codex-app-server.cjs', import.meta.url), 'utf8')
   await writeFile(binary, `#!${process.execPath}\n${source}`)
   await chmod(binary, 0o755)
-  await writeFile(join(directory, 'schema.json'), await readFile(new URL('./codex-protocol.schemas.json', import.meta.url)))
   return { directory, binary }
 }
 export function input(directory: string, agentId = 'agent-a'): WorkflowNativeSessionStart {

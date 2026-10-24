@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -25,13 +25,15 @@ it.each([
   try {
     await mkdir(join(origin, 'apps/api/test'), { recursive: true })
     await mkdir(join(origin, 'scripts'))
-    await copyFile(new URL('../../../scripts/ci-suite.sh', import.meta.url), join(origin, 'scripts/ci-suite.sh'))
+    await writeFile(join(origin, 'scripts/ci-suite.sh'),
+      await readFile(new URL('../../../scripts/ci-suite.sh', import.meta.url), 'utf8'))
     for (const file of ['ci-files.mjs', 'ci-affected-run.mjs', 'ci-test-results.mjs']) {
-      await copyFile(new URL(`../../../scripts/${file}`, import.meta.url), join(origin, 'scripts', file))
+      await writeFile(join(origin, 'scripts', file),
+        await readFile(new URL(`../../../scripts/${file}`, import.meta.url), 'utf8'))
     }
     await mkdir(join(origin, 'packages/ci-protocol/src'), { recursive: true })
-    await copyFile(new URL('../../../packages/ci-protocol/src/testResults.mjs', import.meta.url),
-      join(origin, 'packages/ci-protocol/src/testResults.mjs'))
+    await writeFile(join(origin, 'packages/ci-protocol/src/testResults.mjs'),
+      await readFile(new URL('../../../packages/ci-protocol/src/testResults.mjs', import.meta.url), 'utf8'))
     await mkdir(bin)
     await writeFile(join(origin, 'package.json'), JSON.stringify({ scripts: { 'test:integration': 'fixture' } }))
     await writeFile(join(origin, 'pnpm-lock.yaml'), '')

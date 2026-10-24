@@ -1,5 +1,5 @@
 import { readConversationCredential } from './conversationCredentials.js'
-import { assertWave25WorkerBinding } from '../interactions/current/credentialAuthority.js'
+import { assertCurrentWorkerBinding } from '../interactions/current/credentialAuthority.js'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import { AcceptedWorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -85,7 +85,7 @@ export async function requireActiveWorkerBinding(client: pg.ClientBase | pg.Pool
        and ${WORKER_BINDING_ELIGIBLE}`, [principalId],
   )
   if (active.rowCount !== 1) throw new DomainError('AUTH_REVOKED', 'The credential is no longer active.', 401)
-  await assertWave25WorkerBinding(client, principalId)
+  await assertCurrentWorkerBinding(client, principalId)
 }
 
 /** Shared parents fence Stop/closure while concurrent worker validations can proceed. */

@@ -6,7 +6,7 @@ import { it } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import type { NativeDeliveryOutcome, NativeResponseDeliveryEvidence } from '../src/modules/interactions/delivery.js'
-import { Wave25InteractionRepository } from '../src/modules/interactions/current/repository.js'
+import { CurrentInteractionRepository } from '../src/modules/interactions/current/repository.js'
 import { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
 import { nativeLanes } from './helpers/memorySessionCoordination.js'
 
@@ -134,10 +134,10 @@ function deliveryService(attachError?: Error, graphError?: Error) {
   const outcomes: NativeDeliveryOutcome[] = []
   const graphErrors: Array<string | undefined> = []
   const noSql = () => { throw new Error('Unscripted SQL in persistence service unit fixture') }
-  const repository = new Wave25InteractionRepository({ query: noSql, connect: noSql } as unknown as pg.Pool)
+  const repository = new CurrentInteractionRepository({ query: noSql, connect: noSql } as unknown as pg.Pool)
   Object.assign(repository, {
     get: async () => structuredClone(current),
-    decide: async (input: Parameters<Wave25InteractionRepository['decide']>[0]) => {
+    decide: async (input: Parameters<CurrentInteractionRepository['decide']>[0]) => {
       assert.equal(input.principal, principal); assert.equal(input.id, current.id)
       assert.equal(input.expectedRevision, current.revision)
       assert.deepEqual(input.nativeResponse, { optionId: response.optionId, semantic: 'approve_once' })

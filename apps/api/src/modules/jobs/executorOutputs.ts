@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { constants } from 'node:fs'
 import { mkdir, open, rename, type FileHandle } from 'node:fs/promises'
 import { dirname, basename } from 'node:path'
@@ -124,7 +125,7 @@ export function verificationRepositoryContext(input: {
     target: spec.target, profile: spec.profile, resources: spec.verification.resources,
     parameters: spec.verification.parameters })
   const codex = measured.fingerprint.tools.find(tool => tool.kind === 'codex')
-  if (spec.verification.suite === 'unit' && (!codex || codex.executable !== '/opt/graphql-ci/tools/codex')) {
+  if (spec.verification.suite === 'unit' && (!codex || codex.executable !== INSTALLATION_NAMES.paths.ciCodex)) {
     throw new Error('Unit verification requires its qualified image Codex schema binary.')
   }
   return { identity, privateGit, requiredPortions: input.requiredPortions,

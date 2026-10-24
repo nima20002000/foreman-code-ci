@@ -1,6 +1,5 @@
 import { defineConfig } from 'vitest/config'
 import { env } from 'node:process'
-import { fileURLToPath, URL } from 'node:url'
 
 const configuredWorkers = env.FOREMAN_CODE_VERIFICATION_UNIT_WORKERS
 const maxWorkers = configuredWorkers === undefined ? 4 : Number(configuredWorkers)
@@ -9,10 +8,6 @@ if (!Number.isSafeInteger(maxWorkers) || maxWorkers < 1 || maxWorkers > 256) {
 }
 
 export default defineConfig({
-  resolve: { alias: [
-    { find: '@foreman-code/api/worker/byte-transfer', replacement: fileURLToPath(new URL('./src/worker/byteTransfer.ts', import.meta.url)) },
-    { find: /^@foreman-code\/api\/worker\/(.+)$/, replacement: `${fileURLToPath(new URL('./src/worker/', import.meta.url))}$1.ts` },
-  ] },
   test: {
     ...(env.CI_PROGRESS_FILE ? { runner: '../../packages/contracts/ci-test-runner.mjs', reporters: ['default', '../../scripts/ci-progress-reporter.mjs'] } : {}),
     globalSetup: ['../../scripts/vitest-heavy-setup.mjs', '../../scripts/vitest-test-resources.mjs'],

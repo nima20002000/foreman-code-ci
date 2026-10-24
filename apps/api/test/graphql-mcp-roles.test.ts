@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AppInteractionService } from '../src/modules/interactions/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { createGraphqlMcpServer, roleDeniedToolCall } from '../src/mcp/unified/server.js'
+import { createForemanMcpServer, roleDeniedToolCall } from '../src/mcp/unified/server.js'
 import type { McpRole } from '../src/mcp/unified/roles.js'
 import { operatorCatalogNames } from './support/operatorCatalog.js'
 
@@ -28,7 +28,7 @@ const context = (role: McpRole, tools?: string[]) => ({ role, principal: role ==
   references: workerToolServices({} as pg.Pool, services.commands).references,
   operator: services, interactions: interactions(role === 'master' || role === 'orchestrator'), ...(tools ? { tools } : {}) })
 async function connect(role: McpRole, tools?: string[], requestBody?: unknown) {
-  const server = await createGraphqlMcpServer(context(role, tools), requestBody)
+  const server = await createForemanMcpServer(context(role, tools), requestBody)
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)
   const client = new Client({ name: `graphql-${role}`, version: '1' }); clients.push(client)

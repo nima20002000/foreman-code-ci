@@ -41,7 +41,7 @@ vi.mock('../src/modules/devices/deviceCarrier.ts', async importOriginal => {
   }) }
 })
 
-const identityPath = new URL('../../../packages/contracts/src/deviceIdentityNode.ts', import.meta.url).href
+const identityPath = new URL('../../../packages/contracts-node/src/deviceIdentityNode.ts', import.meta.url).href
 const { loadOrCreateWorkerIdentity, persistWorkerPairing } = await import(identityPath)
 const factoryPath = new URL('../../worker/src/workerFactory.mjs', import.meta.url).href
 const { startConfiguredWorker } = await import(factoryPath)
