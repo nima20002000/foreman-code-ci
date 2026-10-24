@@ -43,7 +43,7 @@ async function main() {
     { readMainRsyncEntrypoint },
   ] = await Promise.all([
     import('./infrastructure/database.js'),
-    import('./composition/checkpoints.js'),
+    import('./infrastructure/checkpoints.js'),
     import('./production.js'),
     import('./modules/harnesses/qualification/suites/codex.js'),
     import('./modules/byte-transfer/installedEntrypoints.js'),

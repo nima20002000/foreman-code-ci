@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts-node/server-kit'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { BuildComputerPrepareGetInputSchema, BuildComputerPrepareInputSchema, BuildComputerPrepareStatusSchema,
@@ -9,7 +9,7 @@ import type { JobDefinitionSpecRecord } from '@foreman-code/contracts/job-verifi
 import { matchesRuntimePolicy, type JobVerificationProfile } from '@foreman-code/contracts/job-verification-runtime'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { CiServerPorts, ComputerAccountsEndpoint, JobRuntimeProfiles, JobSql, MainCiContext, PostgresCommandCoordinator, PostgresSourceService } from './environment.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { buildComputerTarget } from './buildComputers.js'
 import { CI_PREPARATION_ACTIONS } from './authority.js'
 import { CiPreparationRecordSchema, PostgresCiPreparationRepository,

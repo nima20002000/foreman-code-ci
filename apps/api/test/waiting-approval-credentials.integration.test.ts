@@ -3,7 +3,7 @@ import { expect, it, vi } from 'vitest'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { approvalResponse } from './helpers/approvalFaults.js'
 import { renewOwnedLeases } from '../src/modules/leases/ownerLeases.js'
-import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE, WORKER_CREDENTIAL_RENEWAL_WINDOW_MS } from '../src/modules/access/workerCredentials.js'
 
 it('issues and renews against database time despite API clock offsets and jumps', async () => {
@@ -15,7 +15,7 @@ it('issues and renews against database time despite API clock offsets and jumps'
     await f.engine.start(f.f.run.id)
     const [pending] = (await f.pending()).filter(item => item.status === 'pending')
     if (!pending?.executionId) throw new Error('Expected a pending requester')
-    const service = new CurrentWorkerCredentialService(f.db.pool, f.access, 60_000)
+    const service = new Wave25WorkerCredentialService(f.db.pool, f.access, 60_000)
     const clock = vi.spyOn(Date, 'now').mockImplementation(() => wallNow() - 120_000)
     now = clock
     const credential = await service.issueForExecution(pending.executionId)

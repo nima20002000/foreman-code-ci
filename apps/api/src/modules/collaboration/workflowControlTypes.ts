@@ -5,7 +5,7 @@ import type {
 } from '@foreman-code/contracts'
 import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import type { RepeatRuntimeRun } from '../runs/index.js'
+import type { RepeatRuntimeRun } from '../runs/repeatPostgres.js'
 import type { Principal } from './ports.js'
 
 export type WorkflowChatTarget = Extract<DeliveryTarget,

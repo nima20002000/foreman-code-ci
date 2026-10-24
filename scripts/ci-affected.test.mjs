@@ -7,7 +7,6 @@ import { after, before, test } from 'node:test'
 import { affectedSnapshot, selectAffectedFiles } from './ci-affected.mjs'
 import { affectedCommands } from './ci-affected-run.mjs'
 import { selectByIndexes } from './ci-files.mjs'
-import { executedRepositoryFiles } from './integration-coverage.mjs'
 import { snapshot } from './ci-remote.mjs'
 
 const inheritedProgressFile = process.env.CI_PROGRESS_FILE
@@ -143,7 +142,6 @@ for (const progress of ['', 'parent-progress.jsonl']) {
     const calls = result.stdout.trim().split('\n').map(line => JSON.parse(line))
     assert.deepEqual(calls, [
       ['pnpm', '--filter', '@foreman-code/contracts', 'build'],
-      ['pnpm', '--filter', '@foreman-code/contracts-node', 'build'],
       ['pnpm', '--filter', '@foreman-code/ci', 'build'],
       ['pnpm', '--dir', 'apps/web', 'exec', 'vitest', 'run', 'src/view.test.tsx'],
     ])
@@ -178,26 +176,4 @@ test('selects the snapshot tree against origin/main without reading later workin
   assert.equal(affectedSnapshot(merge, 'unit', root).scope, 'full')
   git('update-ref', '-d', 'refs/remotes/origin/main')
   assert.equal(affectedSnapshot(commit, 'unit', root).scope, 'full')
-})
-
-
-test('tracks Node contracts consumers and selects the extracted package tests', () => {
-  const runtime = 'packages/contracts-node/src/serverKit.ts'
-  const runtimeTest = 'packages/contracts-node/src/serverKit.test.ts'
-  const graph = new Map([[runtime, 'export const value = 1'],
-    [runtimeTest, "import { value } from './serverKit.js'"],
-    [source, "import { value } from '@foreman-code/contracts-node/server-kit'"],
-    [unit, "import './feature.js'"]])
-  const result = selectAffectedFiles({ suite: 'unit', changedFiles: [runtime], sources: graph,
-    exports: { '@foreman-code/contracts-node': { './server-kit': { import: './dist/serverKit.js' } } } })
-  assert.deepEqual(result.files, [unit, runtimeTest])
-  assert.deepEqual(affectedCommands('unit', [runtimeTest]), [
-    ['corepack', 'pnpm', '--dir', 'packages/contracts-node', 'exec', 'vitest', 'run', 'src/serverKit.test.ts'],
-  ])
-})
-
-test('maps executed Node contracts output back to source for coverage selection', () => {
-  const file = 'packages/contracts-node/src/serverKit.ts'
-  assert.deepEqual(executedRepositoryFiles([{ url: 'file:///repository/packages/contracts-node/dist/serverKit.js',
-    functions: [{ ranges: [{ count: 1 }] }] }], '/repository', new Set([file])), [file])
 })

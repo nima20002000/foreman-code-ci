@@ -25,7 +25,7 @@ async function fixture(t) {
   };
   execFileSync('git', ['clone', '--quiet', '--shared', repository, root], { env: environment });
   for (const path of ['node_modules', 'apps/worker/node_modules', 'apps/api/node_modules', 'apps/ci/node_modules',
-    'packages/contracts/node_modules', 'packages/contracts-node/node_modules']) {
+    'packages/contracts/node_modules']) {
     await symlink(join(repository, path), join(root, path));
   }
   const write = async (path, source) => {
@@ -41,7 +41,7 @@ async function fixture(t) {
     return spawnSync(process.execPath, [join(root, 'scripts/build-worker-artifact.mjs'),
       targetFile, join(directory, 'release')], {
       cwd: root, encoding: 'utf8', timeout: 120_000,
-      env: { ...environment, GRAPHQL_WORKER_BUILD_COMMIT: commit, },
+      env: { ...environment, FOREMAN_CODE_WORKER_BUILD_COMMIT: commit, GRAPHQL_WORKER_BUILD_COMMIT: commit },
     });
   };
   return { root, directory, write, build };
@@ -53,13 +53,11 @@ test('Worker artifacts bundle new transitive API helpers without registering mod
     "export const value = 'bundled from the import graph';\n");
   await f.write('apps/api/src/modules/worker-build-fixture/helper.ts',
     "import { value } from './value.js';\nexport const importedHelper = () => value;\n");
-  await appendFile(join(f.root, 'apps/api/src/worker/harnesses.ts'),
-    "\nexport { importedHelper } from '../modules/worker-build-fixture/helper.js';\n"
-      + "export { configurationWithNodeSkills } from '../modules/skills/nodeSkills.js';\n"
-      + "export { agentInstructionBundle } from '../modules/skills/instructions.js';\n");
   await appendFile(join(f.root, 'apps/worker/src/workerFactory.mjs'),
-    "\nexport { importedHelper, configurationWithNodeSkills, agentInstructionBundle } from '@foreman-code/api/worker/harnesses';\n"
-      + "export { HostCiRunner } from '@foreman-code/api/worker/ci';\n"
+    "\nexport { importedHelper } from '../../api/src/modules/worker-build-fixture/helper.ts';\n"
+      + "export { HostCiRunner } from '../../api/src/modules/ci/runner.ts';\n"
+      + "export { configurationWithNodeSkills } from '../../api/src/modules/skills/nodeSkills.ts';\n"
+      + "export { agentInstructionBundle } from '../../api/src/modules/skills/instructions.ts';\n"
       + "export { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current';\n");
   const result = f.build();
   assert.ifError(result.error);

@@ -23,13 +23,13 @@ export async function configureNativeWorkflowMcp(input: {
   const authentication = process.env.FOREMAN_CODE_TEST_CODEX_AUTH_FILE
   if (!authentication) throw new Error('Native workflow fixtures require explicit test Codex authentication')
   const invocation = { directory: process.env.FOREMAN_CODE_TEST_ROOT!, token: process.env.FOREMAN_CODE_TEST_OWNER! }
-  const previous = process.env.GRAPHQL_APP_MCP_DIRECTORY
+  const previous = process.env.FOREMAN_CODE_APP_MCP_DIRECTORY
   const previousCodexHome = process.env.CODEX_HOME
   // Codex's release build refuses helper aliases beneath TMPDIR.
   const codexHomeDirectory = await privateFixtureDirectory('native-cli-codex-')
   const restore = async () => {
-    if (previous === undefined) delete process.env.GRAPHQL_APP_MCP_DIRECTORY
-    else process.env.GRAPHQL_APP_MCP_DIRECTORY = previous
+    if (previous === undefined) delete process.env.FOREMAN_CODE_APP_MCP_DIRECTORY
+    else process.env.FOREMAN_CODE_APP_MCP_DIRECTORY = previous
     if (previousCodexHome === undefined) delete process.env.CODEX_HOME
     else process.env.CODEX_HOME = previousCodexHome
     await removeFixtureDirectory(codexHomeDirectory)
@@ -37,7 +37,7 @@ export async function configureNativeWorkflowMcp(input: {
   try {
     // Inspect copied configuration against its original managed-launcher location.
     const sourceLauncher = process.env.FOREMAN_CODE_NATIVE_SOURCE_APP_MCP_DIRECTORY
-    if (sourceLauncher !== undefined) process.env.GRAPHQL_APP_MCP_DIRECTORY = sourceLauncher
+    if (sourceLauncher !== undefined) process.env.FOREMAN_CODE_APP_MCP_DIRECTORY = sourceLauncher
     const codex = await new CodexMcpConnections(input.codexBinary, input.projectDirectory)
       .read(AbortSignal.timeout(30_000))
     const codexName = appMcpServerName(codex.effective, input.appServerName)
@@ -48,7 +48,7 @@ export async function configureNativeWorkflowMcp(input: {
     // Reuse only the selected provider login; unrelated native configuration stays outside the fixture.
     referenceTestAuthenticationFile(invocation, authentication, join(codexHomeDirectory, 'auth.json'))
     process.env.CODEX_HOME = codexHomeDirectory
-    process.env.GRAPHQL_APP_MCP_DIRECTORY = ownedTestPath(join(input.runtimeDirectory, 'mcp'))
+    process.env.FOREMAN_CODE_APP_MCP_DIRECTORY = ownedTestPath(join(input.runtimeDirectory, 'mcp'))
     await installAppLauncher()
     await writeFile(join(codexHomeDirectory, 'config.toml'), [
       `[mcp_servers.${codexName}]`,

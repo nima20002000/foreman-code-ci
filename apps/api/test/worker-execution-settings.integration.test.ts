@@ -20,8 +20,8 @@ const resources: Array<() => Promise<void>> = []
 const retiredHttpPath = '/api/management/settings/worker-execution'
 const startupCases = [
   { label: 'absent', environment: {}, enabled: false },
-  { label: 'zero', environment: { GRAPHQL_LAPTOP_EXECUTION_ENABLED: '0' }, enabled: false },
-  { label: 'one', environment: { GRAPHQL_LAPTOP_EXECUTION_ENABLED: '1' }, enabled: true },
+  { label: 'zero', environment: { FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: '0' }, enabled: false },
+  { label: 'one', environment: { FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: '1' }, enabled: true },
 ]
 
 beforeAll(async () => {
@@ -85,7 +85,7 @@ it.each(startupCases)(
     const { app, access, issue, connect } = await settingsApp(environment)
     const grants: ManagementGrant[] = [{ actions: ['settings:read', 'capabilities:read'], scope: {} }]
     const reader = await issue('Settings reader', grants)
-    const expected = { enabled, managedBy: environment.GRAPHQL_LAPTOP_EXECUTION_ENABLED === undefined ? 'settings' : 'startup' }
+    const expected = { enabled, managedBy: environment.FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED === undefined ? 'settings' : 'startup' }
     // The web app shows this on the Main computer card from build status; the HTTP read is retired.
     expect((await app.inject({ method: 'GET', url: retiredHttpPath, headers: { authorization: `Bearer ${reader.token}` } })).statusCode).toBe(404)
 
@@ -117,7 +117,7 @@ it.each(startupCases)(
   async ({ environment, enabled }) => {
     const { app, issue, connect } = await settingsApp(environment)
     const reader = await issue('Settings reader', [{ actions: ['settings:read'], scope: {} }])
-    const expected = { enabled, managedBy: environment.GRAPHQL_LAPTOP_EXECUTION_ENABLED === undefined ? 'settings' : 'startup' }
+    const expected = { enabled, managedBy: environment.FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED === undefined ? 'settings' : 'startup' }
     for (const method of ['POST', 'PATCH'] as const) {
       const response = await app.inject({
         method,
@@ -150,7 +150,7 @@ it.each(startupCases)(
 it.each(['0', '1'])(
   'denies missing MCP credentials, unrelated grants and workspace-scoped grants with startup status %s',
   async (enabled) => {
-    const { app, issue, connect } = await settingsApp({ GRAPHQL_LAPTOP_EXECUTION_ENABLED: enabled })
+    const { app, issue, connect } = await settingsApp({ FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: enabled })
     const anonymousMcp = await app.inject({
       method: 'POST',
       url: '/mcp',
@@ -242,7 +242,7 @@ it('persists remote settings through authenticated MCP with denied writes, revis
 }, 30_000)
 
 it.each(['0', '1'])('keeps explicit execution override %s visible while persisting the Operator save', async enabled => {
-  const f = await settingsApp({ GRAPHQL_LAPTOP_EXECUTION_ENABLED: enabled })
+  const f = await settingsApp({ FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: enabled })
   const owner = await f.issue('Override settings owner', [{ actions: ['settings:read', 'settings:update'], scope: {} }])
   const client = await f.connect(owner.token)
   const value = { ...DEFAULT_REMOTE_EXECUTION_SETTINGS, enabled: enabled !== '1' }
@@ -253,7 +253,7 @@ it.each(['0', '1'])('keeps explicit execution override %s visible while persisti
     name: 'remote_execution_settings_get', arguments: {},
   })))
   expect(readback).toMatchObject({ value, revision: 1, effective: { enabled: enabled === '1' },
-    environmentOverrides: ['GRAPHQL_LAPTOP_EXECUTION_ENABLED'] })
+    environmentOverrides: ['FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED'] })
   expect(f.workerExecution.read(owner.principal)).toEqual({ enabled: enabled === '1', managedBy: 'startup' })
 })
 

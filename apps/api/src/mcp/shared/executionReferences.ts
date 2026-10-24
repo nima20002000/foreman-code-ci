@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server'
-import { FOREMAN_AGENT_TOOLS } from '@foreman-code/contracts'
+import { GRAPHQL_AGENT_TOOLS } from '@foreman-code/contracts'
 import { AgentReferenceListInputSchema, AgentReferenceManifestSchema,
   AgentFileReadInputSchema, AgentFileReadResultSchema } from '@foreman-code/contracts/files'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -15,11 +15,11 @@ export function registerExecutionReferenceTools(server: McpServer, principal: Ma
   }
   const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   server.registerTool('files.references_list', {
-    description: FOREMAN_AGENT_TOOLS['files.references_list'].description,
+    description: GRAPHQL_AGENT_TOOLS['files.references_list'].description,
     inputSchema: AgentReferenceListInputSchema, outputSchema: AgentReferenceManifestSchema, annotations,
   }, input => invoke(() => references.list(input)))
   server.registerTool('files.reference_read', {
-    description: FOREMAN_AGENT_TOOLS['files.reference_read'].description,
+    description: GRAPHQL_AGENT_TOOLS['files.reference_read'].description,
     inputSchema: AgentFileReadInputSchema, outputSchema: AgentFileReadResultSchema, annotations,
   }, input => invoke(() => references.read(input)))
 }

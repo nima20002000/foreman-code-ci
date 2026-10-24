@@ -166,6 +166,10 @@ it('honors persisted MCP build participation and priority while retaining assign
         const pending = await writer.callTool({ name: 'ci_cancel', arguments: input })
         expect(pending.isError).toBe(true)
         expect(decodeMcpToolResult(pending)).toMatchObject({ error: { code: 'CI_CANCEL_PENDING' } })
+        // Exercise the retry-before-acknowledgement ordering instead of relying on MCP response timing.
+        await ci!.dispatch()
+        await ci!.drain()
+        expect((await get(input.ticketId)).run.state).toBe('running')
         cancelAcknowledgements.add(input.ticketId)
       }
       // Cancel every partition before waiting for the whole group to settle.
@@ -200,7 +204,8 @@ it('honors persisted MCP build participation and priority while retaining assign
     expect((await db.pool.query('select count(*)::int as count from ci_runs')).rows[0]!.count).toBe(0)
 
     outdated.add(devices[1]!.registration.deviceId)
-    vi.useFakeTimers({ toFake: ['Date'] })
+    // Cache-expiry jumps must still let cancellation backoff and bounded reads elapse.
+    vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true })
     vi.setSystemTime(Date.now() + 5001)
     const incompatible = (await list()).computers.find(computer => computer.hostRef.deviceId === devices[1]!.registration.deviceId)
     expect(incompatible).toMatchObject({ ready: false, reasons: [expect.stringMatching(/CI start protocol.*update/i)] })
