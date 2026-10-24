@@ -5,7 +5,6 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, readlink, readdir } from 'node
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
-import { workerPackageAliases, workerPackages } from '../../../scripts/worker-snapshot-policy.mjs';
 import { persistentFixtureRoot } from './fixtureStorage.mjs';
 import { spawnSync } from 'node:child_process';
 import { setTimeout as wait } from 'node:timers/promises';
@@ -30,13 +29,15 @@ let createWorkerRuntimeDrain;
 before(async () => {
   bundleDirectory = await mkdtemp(join(persistentFixtureRoot, 'worker-update-module-'));
   const output = join(bundleDirectory, 'drain.mjs');
-  const repository = fileURLToPath(new URL('../../../', import.meta.url));
-  const manifests = Object.fromEntries(await Promise.all(Object.entries(workerPackages).map(async ([name, directory]) =>
-    [name, JSON.parse(await readFile(join(repository, directory, 'package.json'))).exports])));
-  const alias = Object.fromEntries(Object.entries(workerPackageAliases(manifests))
-    .map(([name, path]) => [name, join(repository, path)]));
+  const domains = new URL('../../../apps/api/src/modules/devices/installedWorkerDomains.ts', import.meta.url);
+  const contracts = JSON.parse(await readFile(new URL('../../../packages/contracts/package.json', import.meta.url)));
+  const alias = Object.fromEntries(Object.entries(contracts.exports).map(([name, entry]) => [
+    name === '.' ? '@foreman-code/contracts' : `@foreman-code/contracts${name.slice(1)}`,
+    fileURLToPath(new URL(`../../../packages/contracts/${entry.import.replace('./dist/', 'src/').replace(/\.js$/, '.ts')}`,
+      import.meta.url)),
+  ]));
   await build({ stdin: {
-    contents: "export { createWorkerRuntimeDrain } from '@foreman-code/api/worker/devices';",
+    contents: `export { createWorkerRuntimeDrain } from ${JSON.stringify(fileURLToPath(domains))};`,
     resolveDir: fileURLToPath(new URL('../../../', import.meta.url)),
   }, outfile: output, bundle: true, platform: 'node', format: 'esm', target: 'node22', external: ['sharp'], alias,
   banner: { js: "import { createRequire as testCreateRequire } from 'node:module'; const require = testCreateRequire(import.meta.url);" } });
@@ -110,7 +111,7 @@ async function fixture(t, targetVersion = '1.1.0') {
     previousDirectory: (await readInstalledRelease({ root, facts, expected })).directory,
     unitPath: join(base, '.config/systemd/user/graphql-worker.service') };
   await mkdir(join(launch.unitPath, '..'), { recursive: true, mode: 0o700 });
-  const template = await readFile(new URL('../artifacts/foreman-worker.service.in', import.meta.url), 'utf8');
+  const template = await readFile(new URL('../artifacts/graphql-worker.service.in', import.meta.url), 'utf8');
   await writeFile(launch.unitPath, renderUserService(template, { node: process.execPath, app: root,
     state: stateDirectory, home: base, path: '/usr/bin:/bin',
     entrypoint: join(launch.previousDirectory, 'src/cli.mjs') }), { mode: 0o600 });

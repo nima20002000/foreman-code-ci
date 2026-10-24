@@ -1,7 +1,6 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { browserAgentTools, chatToolOverride } from '../collaboration/index.js'
-import { isReadOnlyHarnessConfiguration, AgentConfigurationVersionSchema, AgentSubjectSchema, canonicalJson, effectiveForemanTools,
-  COLLABORATION_AGENT_TOOLS, type ForemanAgentTool } from '@foreman-code/contracts'
+import { isReadOnlyHarnessConfiguration, AgentConfigurationVersionSchema, AgentSubjectSchema, canonicalJson, effectiveGraphqlTools,
+  COLLABORATION_AGENT_TOOLS, type GraphqlAgentTool } from '@foreman-code/contracts'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { AgentConversationRow } from '../conversations/agentChatRepository.js'
@@ -9,17 +8,12 @@ import { conversationFeatureContext, type ConversationFeatureContext } from '../
 import { DomainError } from '../errors.js'
 import { readLiveManagementPrincipal } from './liveManagementPrincipal.js'
 
-const groupTools = new Set<ForemanAgentTool>([
-  'workflow_chat_read', 'workflow_chat_post',
-])
-export function conversationChatTools(context: ConversationFeatureContext): ForemanAgentTool[] {
-  // A draft chat has no saved workflow yet, so no Group chat; its browser is the chat's own and works anyway.
+export function conversationChatTools(context: ConversationFeatureContext): GraphqlAgentTool[] {
   const configuration = context.configuration
   const readOnly = isReadOnlyHarnessConfiguration(configuration.harness)
-  const implemented = [...context.workflowVersionId === null ? [] : groupTools,
-    ...(context.node.browser?.enabled ? browserAgentTools : [])]
-  return effectiveForemanTools(context.subject.agent.productRole, configuration[INSTALLATION_NAMES.fields.agentTools],
-    chatToolOverride(context.node[INSTALLATION_NAMES.fields.agentTools], context.node.browser), false, implemented)
+  const implemented = context.node.browser?.enabled ? browserAgentTools : []
+  return effectiveGraphqlTools(context.subject.agent.productRole, configuration.graphqlTools,
+    chatToolOverride(context.node.graphqlTools, context.node.browser), false, implemented)
     .filter(tool => implemented.includes(tool) && (!readOnly || COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly))
 }
 

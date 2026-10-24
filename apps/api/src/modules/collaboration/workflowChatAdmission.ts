@@ -60,7 +60,7 @@ function appliedIntent(context: WorkflowChatLockedTarget, request: ChatSendReque
 }
 
 export async function qualifyWorkflowChatSendLocked(context: WorkflowChatLockedTarget, request: ChatSendRequest,
-  identity: { id: string; principalId: string; channelContext?: string }, owner: WorkflowChatOwnerPort) {
+  identity: { id: string; principalId: string }, owner: WorkflowChatOwnerPort) {
   await assertSendable(context, request)
   const applied = appliedIntent(context, request)
   const prepared = await owner.validateAdmission(context, request, { ...identity, appliedIntent: applied })
@@ -77,7 +77,6 @@ export async function admitWorkflowChatSendLocked(context: WorkflowChatLockedTar
   const receipt = ChatDeliveryReceiptSchema.parse({ id: identity.id, commandId: identity.commandId,
     target: context.target, requestedIntent: request.intent, appliedIntent: applied,
     state: applied === 'next_turn' ? 'queued' : 'submitting',
-    ...(request.sourcePostId ? { postId: request.sourcePostId } : {}),
     createdAt: identity.now, updatedAt: identity.now })
   await insertControlCommand(context, { ...identity, digest: controlDigest({ kind: 'delivery', request }),
     request, kind: 'delivery', operation, receipt, nativePrompt: prepared.nativePrompt })

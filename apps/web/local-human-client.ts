@@ -1,4 +1,4 @@
-import { localHumanProxyRequest } from '@foreman-code/contracts-node/local-client-node'
+import { localHumanProxyRequest } from '@foreman-code/contracts/local-client-node'
 import type { Plugin } from 'vite'
 
 export function localHumanProxy(): Plugin {

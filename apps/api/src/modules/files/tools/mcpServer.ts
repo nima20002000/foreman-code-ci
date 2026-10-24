@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { McpServer } from '@modelcontextprotocol/server'
 import { ZodError } from 'zod'
 import {
@@ -38,7 +37,7 @@ export async function createFileMcpServer(service: FileMcpService, token: string
     catch (error) { if (!(error instanceof DomainError) || error.status !== 403) throw error }
   }
   const allowed = (name: FileToolOperation) => enabled.has(name)
-  const server = new McpServer({ name: INSTALLATION_NAMES.mcp.files, version: '1.0.0' }, { instructions:
+  const server = new McpServer({ name: 'graphql-files', version: '1.0.0' }, { instructions:
     `File-only tools for this authenticated native turn. No workflow Foreman Code tools, worker authority, or Operator credentials. `
     + `Scope/destination fields are assertions, not selectors; use ${JSON.stringify(caller.context.scope)}. `
     + 'Permanent references are read-only. Writes require the accepted harness to permit mutation. Publish only completed runner artifact handles.' })

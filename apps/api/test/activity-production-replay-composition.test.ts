@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest'
 import { loadConfig } from '../src/config.js'
 import { createDatabase } from '../src/infrastructure/database.js'
-import { createCheckpointStore } from '../src/composition/checkpoints.js'
+import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
 import { buildProductionApp } from '../src/production.js'
 import { ActivityProductionReplay } from './helpers/activityProductionReplay.js'
-import { DEFAULT_HARNESS_DEFAULTS, RecordedHarnessConfigurationSchema } from '@foreman-code/contracts'
+import { DEFAULT_HARNESS_DEFAULTS, HarnessConfigurationSchema } from '@foreman-code/contracts'
 import { ProductionHarnessRegistry } from '../src/modules/harnesses/productionRegistry.js'
 import { HostHarnessProfileEvidenceRepository } from '../src/modules/harnesses/instanceSettings/profileRepository.js'
 import { NativeHarnessFactories } from '../src/modules/harnesses/runtimeFactory.js'
@@ -64,7 +64,7 @@ for (const sandbox of ['read-only', 'workspace-write'] as const) it(`qualifies r
   }, infrastructure)
   try {
     await registry.initialize('00000000-0000-4000-8000-000000000001')
-    const configuration = RecordedHarnessConfigurationSchema.parse({ harness: 'codex', model: 'test-model',
+    const configuration = HarnessConfigurationSchema.parse({ harness: 'codex', model: 'test-model',
       reasoningEffort: 'low', sandbox, serviceTier: 'standard' })
     expect(await factories.qualifyConfiguration(configuration, '/recorded-workspace')).toMatchObject({ harness: 'codex', ready: true, authenticated: true })
     await expect(factories.qualifyConfiguration({ ...configuration, model: 'unrecorded-model' }, '/recorded-workspace'))

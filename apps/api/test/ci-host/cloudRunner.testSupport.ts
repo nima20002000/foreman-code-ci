@@ -21,8 +21,7 @@ export async function cloudSuiteRunner(checkout: string, command: string[], prov
   // Install runtime modules without changing the miniature repository's tracked file inventory.
   for (const file of ['scripts/ci-suite.sh', 'scripts/ci-files.mjs', 'scripts/ci-selection.mjs',
     'scripts/ci-affected.mjs', 'scripts/ci-affected-run.mjs', 'scripts/ci-test-results.mjs',
-    'scripts/worker-snapshot-policy.mjs', 'packages/verification-runner/runtime-files.mjs',
-    'packages/ci-protocol/src/testResults.mjs',
+    'scripts/worker-snapshot-policy.mjs', 'packages/ci-protocol/src/testResults.mjs',
     'packages/contracts/src/ciPartition.mjs', 'packages/contracts/src/ciCoverage.mjs',
     'packages/contracts/src/integrationScheduling.mjs', 'packages/contracts/src/ciImportGraph.mjs']) {
     await mkdir(dirname(join(checkout, file)), { recursive: true })

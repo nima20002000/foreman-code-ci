@@ -6,7 +6,7 @@ import {
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { readLiveManagementPrincipal } from '../access/index.js'
 import { requireAuthorization } from '../access/index.js'
-import { assertCurrentWorkerBinding } from '../interactions/index.js'
+import { assertWave25WorkerBinding } from '../interactions/index.js'
 import { DomainError } from '../errors.js'
 import { redactBugReportText } from './redaction.js'
 
@@ -44,7 +44,7 @@ export async function liveBugReportPrincipal(
     || row.revoked_at || row.expires_at.getTime() <= Date.now()) {
     throw new DomainError('AUTH_REVOKED', 'The reporting Agent is no longer active.', 403)
   }
-  await assertCurrentWorkerBinding(sql, snapshot.id)
+  await assertWave25WorkerBinding(sql, snapshot.id)
   return ManagementPrincipalSchema.parse({
     id: row.id,
     name: row.name,

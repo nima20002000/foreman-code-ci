@@ -32,7 +32,7 @@ export interface OperatorServices {
   circleAccounts?: import('../../modules/ci/types.js').CircleAccountsManagementService
   bugReports?: import('../../modules/bug-reports/service.js').BugReportService
   providerAccounts?: import('../../modules/provider-accounts/service.js').ProviderAccountsService
-  ci?: import('../../modules/ci/types.js').CiServiceClient
+  ci?: import('../../modules/ci/types.js').HostCiService
   remoteExecution?: import('../../modules/settings/remoteExecution.js').RemoteExecutionSettingsService
   workerExecution?: import('../../modules/settings/workerExecution.js').WorkerExecutionPolicy
   jobs?: import('../../modules/jobs/service.js').JobService
@@ -65,7 +65,6 @@ export interface OperatorServices {
   operatorChat?: Pick<OperatorChatService,
     'readSessionControls' | 'changeSessionControls' | 'setup' | 'create' | 'list' | 'get' | 'history' | 'activityPage'
     | 'send' | 'handoffHistory' | 'cancel' | 'respond' | 'setDeleted'>
-  workflowChat?: import('../../modules/workflow-chat/service.js').WorkflowChatService
   chatDelivery?: import('../../modules/workflow-chat/delivery.js').ChatDeliveryRouter
   agentChat?: AgentChatService
   fileRetention?: FileRetentionService

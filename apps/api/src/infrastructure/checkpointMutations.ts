@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import { LangGraphPostgresSaver, WRITES_IDX_MAP, type SerializerProtocol } from './langgraph.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { retryDatabaseTimeout } from './databaseRetry.js'
 import { withTransaction } from './transaction.js'
 

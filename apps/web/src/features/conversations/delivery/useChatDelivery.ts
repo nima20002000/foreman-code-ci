@@ -7,10 +7,10 @@ import { isApiAccessError } from '../../../shared/api/accessError'
 import { identityEpoch, protectedKey } from '../../../shared/api/protectedChatStorage'
 import { assertSession, sessionGeneration } from '../../../shared/api/sessionBoundary'
 import { chatDeliveryClient, type DeliveryReadback } from './client'
-import { deliveryAction, type DeliveryPresentation } from '../../chat-core'
+import { deliveryAction, type DeliveryPresentation } from './deliveryAction'
 import { useChatControl } from './useChatControl'
 import { acceptDeliveryReadback } from './deliveryReadback'
-import { sameDeliveryTarget } from '../../workflow-chat/draft'
+import { sameDeliveryTarget } from './sameDeliveryTarget'
 
 const subscribeOnline = (change: () => void) => {
   window.addEventListener('online', change); window.addEventListener('offline', change)

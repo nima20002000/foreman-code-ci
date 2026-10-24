@@ -7,7 +7,7 @@
   "exports": {
     "./agent-identity": { "types": "./dist/agentIdentity.d.ts", "import": "./dist/agentIdentity.js" },
     "./memory-boards": { "types": "./dist/memoryBoards.d.ts", "import": "./dist/memoryBoards.js" },
-    "./workflow-chat": { "types": "./dist/workflowChat.d.ts", "import": "./dist/workflowChat.js" },
+    "./engine-chat": { "types": "./dist/engineChat.d.ts", "import": "./dist/engineChat.js" },
     "./chat-delivery": { "types": "./dist/chatDelivery.d.ts", "import": "./dist/chatDelivery.js" },
     "./browser-profiles": { "types": "./dist/browserProfiles.d.ts", "import": "./dist/browserProfiles.js" },
     "./browser-sessions": { "types": "./dist/browserSessions.d.ts", "import": "./dist/browserSessions.js" },
@@ -18,6 +18,7 @@
     "./schema-primitives": { "types": "./dist/schemaPrimitives.d.ts", "import": "./dist/schemaPrimitives.js" },
     "./collaboration-tools": { "types": "./dist/collaborationTools.d.ts", "import": "./dist/collaborationTools.js" },
     "./failure": { "types": "./dist/failure.d.ts", "import": "./dist/failure.js" },
+    "./server-kit": { "types": "./dist/serverKit.d.ts", "import": "./dist/serverKit.js" },
     "./worker-update": { "types": "./dist/workerUpdate.d.ts", "import": "./dist/workerUpdate.js" },
     "./worker-artifact-content-node": { "types": "./dist/workerArtifactContentNode.d.mts", "import": "./dist/workerArtifactContentNode.mjs" },
     "./managed-mcp-channel": { "types": "./dist/managedMcpChannel.d.ts", "import": "./dist/managedMcpChannel.js" },
@@ -26,7 +27,10 @@
     "./workspace-git": { "types": "./dist/workspaceGit.d.ts", "import": "./dist/workspaceGit.js" },
     "./provider-accounts": { "types": "./dist/providerAccounts.d.ts", "import": "./dist/providerAccounts.js" },
     "./operator-mcp": { "types": "./dist/operatorMcp.d.ts", "import": "./dist/operatorMcp.js" },
-    "./installation-names": { "types": "./dist/installationNames.d.mts", "import": "./dist/installationNames.mjs" },
+    "./local-client-node": {
+      "types": "./dist/localClientNode.d.ts",
+      "import": "./dist/localClientNode.js"
+    },
     "./product": { "types": "./dist/product.d.ts", "import": "./dist/product.js" },
     "./product-environment": { "types": "./dist/productEnvironment.d.mts", "import": "./dist/productEnvironment.mjs" },
     "./product-environment-node": { "types": "./dist/productEnvironmentNode.d.mts", "import": "./dist/productEnvironmentNode.mjs" },
@@ -92,6 +96,10 @@
     "./device-identity": {
       "types": "./dist/deviceIdentity.d.ts",
       "import": "./dist/deviceIdentity.js"
+    },
+    "./device-identity-node": {
+      "types": "./dist/deviceIdentityNode.d.ts",
+      "import": "./dist/deviceIdentityNode.js"
     },
     "./activity": {
       "types": "./dist/activity.d.ts",
@@ -253,6 +261,14 @@
       "types": "./dist/deviceSetup.d.ts",
       "import": "./dist/deviceSetup.js"
     },
+    "./device-setup-node": {
+      "types": "./dist/deviceSetupNode.d.ts",
+      "import": "./dist/deviceSetupNode.js"
+    },
+    "./device-tls-node": {
+      "types": "./dist/deviceTlsNode.d.ts",
+      "import": "./dist/deviceTlsNode.js"
+    },
     "./execution-authority": {
       "types": "./dist/executionAuthority.d.ts",
       "import": "./dist/executionAuthority.js"
@@ -296,6 +312,10 @@
     "./job-verification-runtime": {
       "types": "./dist/jobVerificationRuntime.d.ts",
       "import": "./dist/jobVerificationRuntime.js"
+    },
+    "./installed-runtime-node": {
+      "types": "./dist/installedRuntimeNode.d.ts",
+      "import": "./dist/installedRuntimeNode.js"
     },
     "./job-verification-gate": {
       "types": "./dist/jobVerificationGate.d.ts",
