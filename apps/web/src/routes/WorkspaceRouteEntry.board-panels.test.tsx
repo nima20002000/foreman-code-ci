@@ -262,6 +262,18 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     expect(writes).toEqual([])
   })
 
+  it('opens saved connection evidence from its immutable handoff limit', async () => {
+    const { router } = await mount(runsUrl('run-a', scope))
+    const connection = await screen.findByRole('button', { name: 'Maximum work handoffs per Run: 3. Inspect saved connection.' })
+    expect(connection).toHaveTextContent('3')
+    await userEvent.click(connection)
+    const inspector = await screen.findByRole('region', { name: 'Exact execution inputs and results' })
+    expect(await within(inspector).findByText('edge-xy', { selector: 'code' })).toBeVisible()
+    expect(router.state.location.search.runRelationshipId).toBe('edge-xy')
+    expect(router.state.location.search.selectedRunId).toBe('run-a')
+    expect(writes).toEqual([])
+  })
+
   it.each([0, 1_100])('opens saved Agent rail tabs and toolbar Activities at 320px with %s ms context reads', async contextDelay => {
     if (contextDelay) server.use(http.get('/api/management/workspaces/:workspaceId/agents', async () => {
       await delay(contextDelay)
