@@ -262,6 +262,25 @@ describe('WorkspaceRouteEntry integration', () => {
     expect(await workflowBoard('Draft workflow')).toBeVisible()
   })
 
+  it.each([false, true])('does not open a removed workflow as an editable board (explicit link: %s)', async (explicit) => {
+    const fixture = getMockFixture('workspace-1')!
+    const removed = fixture.workflows[0]!
+    server.use(
+      http.get('/api/workspaces/workspace-1', () => HttpResponse.json(fixture)),
+      http.get('/api/management/workspaces/workspace-1/workflows', () => HttpResponse.json({ items: [], pageInfo: { nextCursor: null } })),
+      http.get(`/api/management/workspaces/workspace-1/workflows/${removed.id}`, () => HttpResponse.json({
+        workflow: removed, revision: 1, currentVersionId: null, archivedAt: '2026-10-22T04:00:53.092Z',
+      })),
+    )
+    const { router } = await renderWorkspace(`/workspaces/workspace-1${explicit ? `?workflowId=${removed.id}` : ''}`)
+    if (explicit) {
+      expect(await screen.findByText('Workflow removed')).toBeVisible()
+      expect(screen.getByRole('link', { name: 'Open workflows' })).toHaveAttribute('href', '/workspaces/workspace-1/workflows')
+      expect(router.state.location.search.workflowId).toBe(removed.id)
+    } else expect(await screen.findByTestId('workspace-empty')).toBeVisible()
+    expect(screen.queryByRole('region', { name: 'Workflow authoring' })).not.toBeInTheDocument()
+  })
+
   it('still replaces a genuinely unknown workflow selection', async () => {
     const { router } = await renderWorkspace('/workspaces/workspace-1?workflowId=workflow-missing&agentId=agent-researcher')
 
