@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readPublicNodeProjection } from '../src/modules/run-graph/publicProjection.js'
+import { readPublicProjectionLocked } from '../src/modules/run-graph/compactSnapshot.js'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
@@ -9,7 +10,7 @@ import { postgresEnabled } from './helpers/database.js'
 const historySize = 4000
 
 describe.skipIf(!postgresEnabled)('current Board execution selection', () => {
-  it('selects the latest occurrence, activation and retry while excluding interval ticks within a read deadline', async () => {
+  it.each(['node', 'compact'] as const)('selects the latest occurrence, activation and retry while excluding interval ticks within a read deadline (%s)', async reader => {
     const db = await migratedDatabase()
     try {
       const f = await seedWorkflowFixture(db.pool, db.directory)
@@ -38,7 +39,11 @@ describe.skipIf(!postgresEnabled)('current Board execution selection', () => {
         }
         await sql.query('set local jit=off')
         await sql.query("set local statement_timeout='1s'")
-        const selected = async () => (await readPublicNodeProjection(sql, f.scope, [node.id]))[0]!.state
+        const selected = async () => {
+          const nodes = reader === 'node' ? await readPublicNodeProjection(sql, f.scope, [node.id])
+            : (await readPublicProjectionLocked(sql, f.scope, f.version)).nodes
+          return nodes.find(item => item.state.workflowNodeId === node.id)!.state
+        }
         expect(await selected()).toMatchObject({ lifecycle: 'queued', execution: { executionId: `history-${historySize}` } })
         await sql.query(`insert into harness_executions(id,run_id,workflow_node_id,attempt,record)
           select 'retry',run_id,workflow_node_id,2,record from harness_executions where id=$1`, [`history-${historySize}`])
