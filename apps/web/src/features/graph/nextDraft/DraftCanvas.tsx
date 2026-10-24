@@ -9,7 +9,7 @@ import { createGraphTopologyProjector } from '../topology'
 import {
   GRAPH_NODE_DEFAULT_SIZE, createGraphGeometryAdapter, type GraphGeometryChange, agentNodeFacts, edgeBend,
   relationshipLines, useFloatingCurve, type GraphNode, type AgentGraphNode, type JobGraphNode, nodeTitle,
-  putRelationship, removeRelationship, setWorkConnectionLimit, useBoardSelection,
+  putRelationship, removeRelationship, setWorkConnectionLimit, useBoardSelection, RunLiveNodes, RunLivePulses,
 } from '../../board-core'
 import { CircularNodeResizer } from '../CircularNodeResizer'
 import { useGraphDraftStore } from '../store'
@@ -55,13 +55,15 @@ const DraftAgent = memo(function DraftAgent({ id, data, selected, width, height 
   const { draftKey, inspect, open, setOpen, openChat, selectNode, beginResize, resize, finishResize, changedAgentIds } = useContext(CanvasContext)
   const entry = useGraphDraftStore((state) => state.nextDrafts[draftKey]?.graph.entryNodeId === id)
   const presentation = useGraphPresentationStore()
-  const run = { label: changedAgentIds?.includes(data.agent.id) ? 'Settings changed' : 'Draft', state: 'idle' as const }
+  // A Run of this saved workflow shows its live (or last) state on the same nodes.
+  const live = useContext(RunLiveNodes)?.get(id)
+  const run = live ?? { label: changedAgentIds?.includes(data.agent.id) ? 'Settings changed' : 'Draft', state: 'idle' as const }
   const facts = agentNodeFacts(data.agent)
   const meta = data.intervalSeconds ? [{ label: 'Loop', value: intervalLabel(data.intervalSeconds) }, ...facts.meta].slice(0, 2) : facts.meta
   const panel = open?.nodeId === id ? open.panel : undefined
   const select = () => inspect(() => { presentation.getState().setFocusedNodeId(id); presentation.getState().setFocusedEdgeId(undefined) })
   return <AgentNodeView name={data.label} harness={facts.harness} harnessLabel={facts.harnessLabel} model={facts.model}
-    icon={facts.icon} statusLabel={run.label} state={run.state} meta={meta} entry={entry} selected={selected} openPanel={panel}
+    icon={facts.icon} statusLabel={run.label} state={run.state} transition={live?.transition} transitionKey={live?.transitionKey} meta={meta} entry={entry} selected={selected} openPanel={panel}
     ariaLabel={`${data.label}, ${facts.roleLabel}${entry ? ', starts the workflow' : ''}, ${facts.harnessLabel}, ${run.label}`}
     onSelect={(event) => { event.stopPropagation(); if (selectNode) selectNode(id); else select() }}
     onAction={(next) => inspect(() => {
@@ -86,13 +88,14 @@ const TypedEdge = memo(function TypedEdge({ id, source, target, data, selected }
   const [editing, setEditing] = useState(false)
   const [focused, setFocused] = useState(false)
   const visible = hovered || focused || selected
+  const pulses = useContext(RunLivePulses).get(id)
   if (!curve) return null
   const limit = data?.maxWorkHandoffsPerRun
   return <g onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}
     onFocus={() => setFocused(true)} onBlur={event => {
       if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) setFocused(false)
     }}>
-    <SignalEdgeShape id={id} curve={curve} kind={data?.kind} />
+    <SignalEdgeShape id={id} curve={curve} kind={data?.kind} pulses={pulses} />
     {visible ? <rect className="board-edge-hover-bridge" x={curve.mid.x - 18} y={curve.mid.y - 36}
       width={36} height={48} /> : null}
     <foreignObject data-visible={visible} className="board-edge-remove nodrag nopan" x={curve.mid.x - 18} y={curve.mid.y - 36} width={36} height={36}>

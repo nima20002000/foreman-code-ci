@@ -136,7 +136,10 @@ export function useDraftStartMutation({ draftKey, edit, editIntent, core, startS
       void queryClient.invalidateQueries({ queryKey: boardRunListKey(graph.workspaceId, graph.id) })
       if (!alive.current || useGraphDraftStore.getState().nextDrafts[draftKey]?.instanceId !== current.instanceId) return
       if (acknowledgement !== 'superseded' && latestBoard.current?.getSelectionToken?.() === selectionToken) {
-        latestBoard.current?.selectRun(scopeForBoardRun(result.run))
+        // One Board: the new Run shows on these nodes; the Board stays where it is.
+        const board = latestBoard.current
+        if (board?.showRunOnBoard) board.showRunOnBoard(result.run.id)
+        else board?.selectRun(scopeForBoardRun(result.run))
       }
       setMessage('Start acknowledged for the exact saved version. Run status is read separately.')
     } catch (error) {
@@ -176,7 +179,9 @@ export function useDraftStartMutation({ draftKey, edit, editIntent, core, startS
         || useGraphDraftStore.getState().nextDrafts[draftKey]?.instanceId !== instanceId) return
       if (result.status === 'accepted') {
         if (latestBoard.current?.getSelectionToken?.() === selectionToken) {
-          latestBoard.current?.selectRun(scopeForBoardRun(result.run))
+          const board = latestBoard.current
+          if (board?.showRunOnBoard) board.showRunOnBoard(result.run.id)
+          else board?.selectRun(scopeForBoardRun(result.run))
         }
         setMessage('The earlier Run was accepted.')
       } else {

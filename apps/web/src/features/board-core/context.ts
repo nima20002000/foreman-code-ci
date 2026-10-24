@@ -40,6 +40,12 @@ export type WorkflowBoardSelection = {
   activeRuns: number
   /** The newest active Run of this workflow, if any. */
   liveRunId?: string
+  /** The draft Board shows its latest Run on the same nodes; while that Run is live, editing is locked. */
+  boardRunLive?: boolean
+  /** The latest Run's Stop control, mounted where the draft's Run action sits. */
+  boardRunControls?: ReactNode
+  /** Show a Run just started from this Board on the Board itself, before the Run list catches up. */
+  showRunOnBoard?(runId: string): void
 }
 
 /** DOM nodes the Board renders and portals content into. They change only when those nodes mount. */

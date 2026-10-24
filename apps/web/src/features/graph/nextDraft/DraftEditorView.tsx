@@ -40,23 +40,25 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
   const finishingSave = editIntent.mutation.isPending && !affectedRuns.length
   const repeatOpen = panel === 'repeat', settingsOpen = !!panel && panel !== 'repeat'
   const repeatZ = useFloatingZ('board-repeat', repeatOpen), settingsZ = useFloatingZ('board-settings', settingsOpen)
+  // While the Board's latest Run is live the workflow is not edited; its agents still open for chat and details.
+  const editLocked = editIntent.locked || !!board?.boardRunLive
   const runAction = <Button size={board?.runActionHost ? 'sm' : undefined} variant="primary" leading={<Icon name="play" size={14} />} aria-label={pendingStart ? 'Reconcile Start' : needsSave ? 'Save and run' : 'Start saved version'}
     title={startReason} disabled={startDisabled} loading={starting} onClick={() => void (pendingStart ? start() : prepare(() => needsSave ? startMutation.mutateAsync({ saveFirst: true }) : start())).catch(report)}>{pendingStart ? 'Confirm start' : needsSave ? 'Save and run' : 'Run'}</Button>
   return <section className="workflow-graph board-typed-editor" aria-label="Workflow authoring">
     <div className="workflow-graph-canvas">
       <DraftCanvas ref={canvas} draftKey={draftKey} graph={graph} agents={agents} kind="execution"
         baseGraph={edit.context.savedDraft?.graph ?? edit.context.draft.graph}
-        semanticLocked={edit.busy || reloading || editIntent.locked || starting || !!edit.pending || !!pendingStart}
+        semanticLocked={edit.busy || reloading || editLocked || starting || !!edit.pending || !!pendingStart}
         change={change} geometry={geometry} pending={setGeometryPending} report={report} inspect={inspect}
-        removalDisabled={edit.busy || reloading || editIntent.locked}
+        removalDisabled={edit.busy || reloading || editLocked}
         open={openNode} setOpen={setOpenNode} panels={panels} changedAgentIds={changedAgents} />
       <header className="board-topbar">
         <div className="board-title">
-          <WorkflowName ref={workflowName} name={graph.name} disabled={saveBusy || starting || editIntent.locked}
+          <WorkflowName ref={workflowName} name={graph.name} disabled={saveBusy || starting || editLocked}
             onRename={(name) => change((current) => ({ ...current, name }))} />
           <WorkflowWorktreeField workspaceId={graph.workspaceId} value={graph.defaultWorktree}
             savedValue={(edit.context.savedDraft ?? edit.context.draft).graph.defaultWorktree}
-            disabled={edit.busy || reloading || editIntent.locked || starting || !!edit.pending || !!pendingStart}
+            disabled={edit.busy || reloading || editLocked || starting || !!edit.pending || !!pendingStart}
             onChange={defaultWorktree => change(current => {
               const updated = { ...current }
               if (defaultWorktree) updated.defaultWorktree = defaultWorktree
@@ -66,9 +68,9 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
         </div>
         <div className="board-control-cluster">
           {needsSave || edit.pending || editIntent.locked || canUndo || canRedo ? <Toolbar label="Draft actions">
-            {canUndo ? <IconButton label="Undo" variant="ghost" disabled={saveBusy || starting || editIntent.locked || historyPending || scheduleWrite.pending}
+            {canUndo ? <IconButton label="Undo" variant="ghost" disabled={saveBusy || starting || editLocked || historyPending || scheduleWrite.pending}
               onClick={() => historyAction('undo')}><Undo2 aria-hidden="true" size={16} /></IconButton> : null}
-            {canRedo ? <IconButton label="Redo" variant="ghost" disabled={saveBusy || starting || editIntent.locked || historyPending || scheduleWrite.pending}
+            {canRedo ? <IconButton label="Redo" variant="ghost" disabled={saveBusy || starting || editLocked || historyPending || scheduleWrite.pending}
               onClick={() => historyAction('redo')}><Redo2 aria-hidden="true" size={16} /></IconButton> : null}
             {dirty ? <IconButton label="Discard changes" variant="ghost" disabled={saveBusy || starting} onClick={() => setConfirm('discard')}><Icon name="close" size={22} /></IconButton> : null}
             {needsSave || edit.pending || editIntent.locked ? <>
@@ -82,14 +84,14 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
         <Toolbar label="Workflow controls">
           <RemoveWorkflowButton workspaceId={graph.workspaceId} workflowId={graph.id} name={graph.name}
             revision={managedWorkflow.data?.revision ?? context.draft.publishedRevision}
-            renderTrigger={(remove) => <ActionMenu label="Workflow actions" icon="gear" width={220} disabled={saveBusy || starting || editIntent.locked} items={[
+            renderTrigger={(remove) => <ActionMenu label="Workflow actions" icon="gear" width={220} disabled={saveBusy || starting || editLocked} items={[
               { id: 'rename', label: 'Rename', onSelect: () => workflowName.current?.begin() },
               { id: 'remove', label: 'Remove workflow', icon: 'trash', danger: true, disabled: !managedWorkflow.isSuccess || dirty,
                 description: dirty ? 'Save or discard draft changes first.' : undefined,
                 onSelect: () => void prepare(remove) },
             ]} />} />
           <AddBoardAgentMenu draftKey={draftKey} edit={edit} report={report}
-            disabled={edit.busy || reloading || editIntent.locked || starting || !!edit.pending || !!pendingStart} />
+            disabled={edit.busy || reloading || editLocked || starting || !!edit.pending || !!pendingStart} />
           <IconButton label="Workflow settings" onClick={() => openPanel('workflow')}><Icon name="settings" size={16} /></IconButton>
           <Button variant="secondary" className="n-icon-button workflow-approval-inbox" aria-label={`Open human approval inbox${pendingApprovals ? `, ${pendingApprovals} pending` : ''}`}
             title="Approval inbox" onClick={event => useApprovalInboxStore.getState().openInbox({ workspaceId: graph.workspaceId, workflowId: graph.id }, event.currentTarget.getBoundingClientRect())}><Inbox aria-hidden="true" size={16} />
@@ -97,7 +99,8 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
           {!graph.handoffs ? <Button size="sm" variant="ghost" onClick={() => openPanel('repeat')}>Repeats</Button> : null}
           {board ? <IconButton label="Activities" onClick={board.openRuns}><Icon name="history" size={16} /></IconButton> : null}
           {board ? <KanbanButton workspaceId={graph.workspaceId} workflowId={graph.id} /> : null}
-          {board?.runActionHost ? createPortal(runAction, board.runActionHost) : runAction}
+          {board?.boardRunControls}
+          {board?.runActionHost ? createPortal(runAction, board.runActionHost) : board?.boardRunControls ? null : runAction}
         </Toolbar>
         </div>
       </header>
@@ -143,12 +146,12 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
       <aside className="board-side-panel" data-floating-window hidden={!repeatOpen} style={repeatOpen ? { zIndex: repeatZ } : { display: 'none' }} aria-label="Business repeats"
         onPointerDownCapture={() => raiseFloating('board-repeat')} onFocusCapture={() => raiseFloating('board-repeat')}>
         <header onPointerDown={dragByHeader}><h2>Business repeats</h2><IconButton variant="ghost" label="Close panel" onClick={() => openPanel(null)}><Icon name="close" size={16} /></IconButton></header>
-        <RepeatEditor graph={graph} change={change} disabled={edit.busy || reloading || editIntent.locked || !!edit.pending || !!pendingStart} />
+        <RepeatEditor graph={graph} change={change} disabled={edit.busy || reloading || editLocked || !!edit.pending || !!pendingStart} />
       </aside>
       {settingsOpen ? <aside ref={settingsPanel} className="board-side-panel board-settings-panel" data-floating-window aria-label={panelTitle || 'Board controls'} style={{ zIndex: settingsZ }}
         onPointerDownCapture={() => raiseFloating('board-settings')} onFocusCapture={() => raiseFloating('board-settings')}>
         <header onPointerDown={dragByHeader}><h2>{panelTitle}</h2><IconButton variant="ghost" label="Close panel" onClick={() => openPanel(null)}><Icon name="close" size={16} /></IconButton></header>
-        <fieldset disabled={edit.busy || reloading || editIntent.locked}>
+        <fieldset disabled={edit.busy || reloading || editLocked}>
           {panel === 'workflow' ? <WorkflowSettings draftKey={draftKey} edit={edit} change={change} report={report}
             defaultMs={preflight.data?.capabilities.agentActiveTimeBudget.defaultMs}
             locationReady={workspace.data?.locationValidation.status === 'ready'} locationMessage={locationMessage}
@@ -156,7 +159,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
               if (nextDraftDirty(edit)) setConfirm('reload'); else void reload()
             }} /> : null}
           {panel === 'workflow' ? <ConflictRecoveryPanel draftKey={draftKey} edit={edit}
-            pending={reloading || edit.busy || !!edit.pending || editIntent.locked || starting}
+            pending={reloading || edit.busy || !!edit.pending || editLocked || starting}
             report={report} /> : null}
         </fieldset>
       </aside> : null}
@@ -164,7 +167,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
         {graph.nodes.map((node) => <Button size="sm" variant="ghost" key={node.id} onClick={() => openAgent(node.id)}>
           {graph.entryNodeId === node.id ? 'Entry · ' : ''}{nodeTitle(graph, node.id)}</Button>)}
         {graph.edges.map((edge) => <Button size="sm" variant="ghost" key={edge.id}
-          disabled={edit.busy || reloading || editIntent.locked}
+          disabled={edit.busy || reloading || editLocked}
           onClick={() => change((value) => removeRelationship(value, edge.id))}>
           Remove {kindName(edge.kind)} · {nodeTitle(graph, edge.source)} → {nodeTitle(graph, edge.target)}</Button>)}
       </nav>
@@ -178,7 +181,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
     <ConfirmDialog open={confirm === 'reload'} onOpenChange={(open) => { if (!open) setConfirm(undefined) }} title="Inspect the latest saved workflow?"
       description="Your unsaved draft is kept separately for comparison. A fresh editor opens the latest saved workflow."
       confirmLabel="Inspect latest" onConfirm={() => { setConfirm(undefined); void inspectLatest() }} />
-    <RemoveHierarchyNodeDialog draftKey={draftKey} edit={edit} pending={reloading || saveBusy || starting || editIntent.locked}
+    <RemoveHierarchyNodeDialog draftKey={draftKey} edit={edit} pending={reloading || saveBusy || starting || editLocked}
       report={report} />
   </section>
 }

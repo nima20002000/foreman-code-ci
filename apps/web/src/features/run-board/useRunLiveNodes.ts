@@ -1,9 +1,8 @@
-import { createContext, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CiActivity } from '@foreman-code/contracts'
 import type { RunBoardEdgeSnapshot } from '@foreman-code/contracts/run-snapshots'
 import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
-import type { AgentNodeState, AgentNodeTransition } from '../../shared/ui/nocturne'
-import { relationshipLines } from '../board-core'
+import { relationshipLines, RunLiveNodes, RunLivePulses, type RunLiveNodeView } from '../board-core'
 import type { EdgePulse } from '../graph'
 import { useInteractionsQuery } from '../../shared/api/query'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
@@ -13,11 +12,8 @@ import {
 } from '../workflow-board'
 import { ciNodePresentation } from './ciPresentation'
 
-export type RunLiveNodeView = { state: AgentNodeState; label: string; transition?: AgentNodeTransition; transitionKey?: number }
-/** Live node words beside the saved Board's immutable node data, so a poll never rebuilds React Flow's nodes. */
-export const RunLiveNodes = createContext<ReadonlyMap<string, RunLiveNodeView> | undefined>(undefined)
-/** Pulses crossing each drawn line while Agents hand work to each other, the same lights the draft Board's Run shows. */
-export const RunLivePulses = createContext<ReadonlyMap<string, readonly EdgePulse[]>>(new Map())
+export { RunLiveNodes, RunLivePulses }
+export type { RunLiveNodeView }
 
 /** Each node's turn, queue, CI and pending-decision state from the Run's canonical current cut.
  * Reads only while the Board is shown; a denied or failed read leaves the saved presentation. */

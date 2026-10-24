@@ -8,7 +8,7 @@ import type { ExecutionRef, WorkflowRunSummary } from '@foreman-code/contracts'
 import type { BoardSidePanel, RepeatGraphScopeCurrent, WorkspaceBoardInspection } from '@foreman-code/contracts/current'
 import { Alert, Button, Icon, IconButton } from '../../shared/ui/nocturne'
 import { WorkspaceExecutionLocationSettings } from '../settings'
-import { RunBoardSlot, useRunBoardShown } from '../run-board'
+import { BoardRunOverlay, RunBoardSlot, useRunBoardShown } from '../run-board'
 import { useRunSummaries, useSelectedRun, useSelectedRunSnapshot, isRunAccessError } from '../runs-selector'
 import { BoardNavigationControls } from './BoardNavigationControls'
 import {
@@ -122,23 +122,28 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   // The newest live Run. Opening the Board while it runs shows it at once; a Run that starts later while the owner
   // edits only lights the Running control, so the editor is never pulled away.
   const liveRunId = [...candidates].sort((a, b) => (a.startedAt ?? '').localeCompare(b.startedAt ?? '')).at(-1)?.id
-  const followOnOpen = useRef(true)
-  const selectLiveRun = navigationSelection.selectRun
-  useEffect(() => {
-    if (!current) followOnOpen.current = false
-    if (!followOnOpen.current || !listed.isSuccess) return
-    followOnOpen.current = false
-    if (liveRunId) void selectLiveRun(liveRunId)
-  }, [current, listed.isSuccess, liveRunId, selectLiveRun])
+  // One Board: the draft shows its latest Run on the same nodes (live, then its final states). Only an explicitly
+  // chosen older Run opens the saved Run view. A Run started here shows at once, before the Run list catches up.
+  const [startedRunId, setStartedRunId] = useState<string>()
+  const newest = listed.items[0]
+  const startedListed = startedRunId ? listed.items.find(item => item.runId === startedRunId) : undefined
+  const startedLive = !!startedRunId && (!startedListed || ['queued', 'running', 'waiting', 'interrupted'].includes(startedListed.status))
+  const boardRunId = current ? liveRunId ?? (startedLive ? startedRunId : newest?.runId) : undefined
+  const boardRunLive = !!boardRunId && (boardRunId === liveRunId || (boardRunId === startedRunId && startedLive))
+  const boardRun = useMemo(() => boardRunId ? { workspaceId, workflowId, runId: boardRunId, live: boardRunLive } : undefined,
+    [workspaceId, workflowId, boardRunId, boardRunLive])
+  const boardRunControls = boardRunId ? <SelectedRunControls key={boardRunId} visible={!side.memoryOpen}
+    scope={{ workspaceId, workflowId, runId: boardRunId }} runActionRef={setRunActionHost} /> : undefined
   // History is rendered only by RunBoardSlot. Do not feed legacy Run pins to the
   // hidden editor, or fabricate missing version/semantics pins.
   const value = useMemo<WorkflowBoardSelection>(() => ({ workspaceId, workflowId, selectRun: chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent,
     sidePanel: side.panel, selectedPanelNodeId: side.agentSelection?.nodeId, selectSidePanel: selectPanel, memoryOpen: side.memoryOpen,
     openMemoryCard: (cardId?: string) => setMemoryOpen(true, cardId),
     canvasVisible: side.view === 'graph', teamNodeId: side.teamNodeId, selectTeam: side.selectTeam,
-    openLocation: () => setLocationOpen(true), openRuns: () => setRunsOpen(true), activeRuns, liveRunId, authoringActive: current,
+    openLocation: () => setLocationOpen(true), openRuns: () => setRunsOpen(true), activeRuns, liveRunId, authoringActive: current && !boardRunLive,
+    boardRunLive, boardRunControls, showRunOnBoard: setStartedRunId,
     navigationControls: current && side.view === 'graph' ? <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /> : undefined,
-  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam])
+  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, boardRunLive, boardRunControls, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam])
   const hosts = useMemo(() => ({ sidePanelHost, runCaptionHost, runActionHost }), [sidePanelHost, runCaptionHost, runActionHost])
   const authoring = useMemo<WorkflowBoardAuthoring>(() => ({ registerAuthoringActions,
     // A shown Run moves agents exactly as the draft Board does (owner rule: one Board, the same rules).
@@ -213,11 +218,13 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
       {boardToolbar}
       <div className="workflow-collaboration-canvas" hidden={side.view !== 'graph'} inert={side.view !== 'graph'}>
       <RunBoardSlot selection={boardSelection} shown={shownBoard}>
+        <BoardRunOverlay run={boardRun} visible={current && side.view === 'graph' && !side.memoryOpen}>
         <div className="workflow-board-authoring" onClickCapture={authoringEvent} onKeyDownCapture={authoringEvent} onSubmitCapture={authoringEvent}>
           {children}
           {current && locationOpen ? <WorkspaceExecutionLocationSettings workspaceId={workspaceId} presentation="dialog"
             open onOpenChange={setLocationOpen} onSaved={() => setLocationOpen(false)} /> : null}
         </div>
+        </BoardRunOverlay>
       </RunBoardSlot>
       </div>
       {side.view === 'overview' ? <section className="workflow-overview-slot" aria-label="Workflow Overview"
