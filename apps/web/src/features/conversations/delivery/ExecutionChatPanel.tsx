@@ -1,7 +1,7 @@
 import '../agentChat/agentChat.css'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { parseSessionCommand, type ChatDeliveryIntent, type ChatDeliveryReceipt, type EngineChatReadback, type SessionMode } from '@foreman-code/contracts'
+import { executionQueueReasonLabel, parseSessionCommand, type ChatDeliveryIntent, type ChatDeliveryReceipt, type EngineChatReadback, type SessionMode } from '@foreman-code/contracts'
 import { Alert, Button, LoadingState } from '../../../shared/ui/nocturne'
 import { identityEpoch } from '../../../shared/api/protectedChatStorage'
 import { isApiAccessError } from '../../../shared/api/accessError'
@@ -118,6 +118,7 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
   return <section className="agent-conversation" aria-label="Selected execution chat">
     {/* The Board's chat tab already names the Run attempt above this panel. */}
     <header className="agent-chat-identity"><h2>{props.name}</h2></header>
+    {state?.queueReason ? <p role="status">{executionQueueReasonLabel(state.queueReason)}</p> : null}
     {delivery.query.isPending ? <LoadingState label="Loading selected execution…" rows={2} /> : null}
     {delivery.query.isError ? <p role="alert">Could not refresh this execution. <Button onClick={delivery.refresh}>Retry</Button></p> : null}
     <ConversationViewport storageKey={draftKey} revision={JSON.stringify([visible?.revision, visible?.messages, retained.items.length])}>{onBrowse => <>

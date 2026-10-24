@@ -326,7 +326,7 @@ export class BrowserProfileSyncCoordinator {
         return
       }
       await record(error instanceof DomainError && error.status < 500 ? 'failed' : 'offline',
-        'The snapshot was not confirmed applied. Retry reconciles this same immutable snapshot.')
+        error instanceof DomainError ? error.message : 'The snapshot was not confirmed applied. Retry reconciles this same immutable snapshot.')
     }
   }
 }

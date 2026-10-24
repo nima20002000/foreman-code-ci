@@ -16,3 +16,5 @@ export type { ConversationNativeAccess } from './conversationNativeAccess.js'
 export type { WorkflowChatLockedTarget } from './workflowControlTypes.js'
 export type { WorkflowCollaborationIntegration } from './workflowIntegration.js'
 export { type prepareOperatorChatInput } from './chatInputPreparation.js'
+
+export { readBrowserPreparationQueue } from './browserPreparationQueue.js'

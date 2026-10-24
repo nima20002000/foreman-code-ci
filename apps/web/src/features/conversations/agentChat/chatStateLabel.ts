@@ -2,6 +2,7 @@ import type { AgentChatState } from '@foreman-code/contracts/agent-chat'
 import { chatBusy } from '../../chat-core'
 
 export function agentChatStateLabel(state?: AgentChatState, runLabel?: string): string {
+  if (runLabel?.startsWith('Waiting for the browser profile')) return runLabel
   if (!state) return 'Starting'
   if (state.sessionState === 'creating') return 'Starting'
   if (state.sessionState === 'uncertain') return 'Working'

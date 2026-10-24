@@ -64,7 +64,7 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
     const chat = unsavedChat ? <EmptyState icon="chat" title="Save this Agent and workflow to chat"
       description="Save the Agent settings and workflow changes, then reopen chat. Workflow alerts list any missing setup." />
       : <AgentChatPanel name={pinned?.name ?? nodeTitle(graph, node.id)} activity={run.activity} running={run.state === 'running'}
-      role={pinnedAgent?.role ?? (agent?.productRole === 'master' ? 'Master' : agent?.productRole === 'orchestrator' ? 'Orchestrator' : 'Worker')} runLabel={pinnedAgent?.runLabel ?? run.label} onClose={() => inspect(closePanel)}
+      role={pinnedAgent?.role ?? (agent?.productRole === 'master' ? 'Master' : agent?.productRole === 'orchestrator' ? 'Orchestrator' : 'Worker')} runLabel={liveNodes?.get(node.id)?.label ?? pinnedAgent?.runLabel ?? run.label} onClose={() => inspect(closePanel)}
       context={{ workspaceId: graph.workspaceId, workflowId: graph.id, workflowNodeId: node.id, agentId: node.agentId,
         ...(board?.run ? { runId: board.run.runId } : {}) }}
       onNewConversation={() => {

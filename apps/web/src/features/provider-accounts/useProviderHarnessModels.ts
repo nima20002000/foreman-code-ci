@@ -10,7 +10,7 @@ export function useProviderHarnessModels(harness: RecordedHarnessConfiguration['
   const scope = useProviderAccountScope({ ...(harness !== 'opencode' ? { provider: harness } : {}),
     ...(hostRef ? { hostRef } : {}) })
   const access = useProviderAccountAccess(scope.target)
-  const accounts = useProviderAccounts(harness !== 'opencode' && access.target?.connected === true && access.target.canRead, scope)
+  const accounts = useProviderAccounts(harness !== 'opencode' && access.target?.canRead === true, scope)
   const denied = useProtectedAccessError(accounts)
   const account = !denied && !accounts.isError ? accounts.data?.accounts.find(value =>
     (accountId ? value.id === accountId : harness === 'codex' && value.isDefault) && !value.removedAt) : undefined
@@ -22,13 +22,10 @@ export function useProviderHarnessModels(harness: RecordedHarnessConfiguration['
   const scoped = useProviderAccountModels(accountAvailable ? modelBinding : undefined,
     account?.observation?.generation, account?.observation?.sequence)
   const modelDenial = useProtectedAccessError(scoped)
-  // Worker native options use the harness channel, independently of account-slot discovery.
-  const workerNativeProfile = !accountId && hostRef?.kind === 'device' && access.discovery.isSuccess
-    && !denied && (!access.target || access.target.canRead && !access.target.connected)
   const localProfile = !accountId && !account && scope.target && access.target?.connected
     && accounts.isSuccess && !denied && !accounts.isError
-  const native = useNativeHarnessOptions(harness, Boolean(localProfile || workerNativeProfile), scope.target?.hostRef ?? hostRef)
-  if (localProfile || workerNativeProfile) return native
+  const native = useNativeHarnessOptions(harness, Boolean(localProfile), scope.target?.hostRef)
+  if (localProfile) return native
   const unsupported = access.discovery.isSuccess && (!access.target?.canRead
     || !scope.target || accounts.isSuccess && (!account?.binding || !accountAvailable))
   const error = denied ?? modelDenial ?? access.discovery.error ?? accounts.error ?? scoped.error

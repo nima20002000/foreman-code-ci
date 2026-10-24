@@ -1,3 +1,4 @@
+import { ExecutionQueueReasonSchema } from './executionQueue.js';
 import { z } from 'zod';
 import { ExecutionRefSchema, CoordinatorConsultationBindingSchema, AgentSubjectSchema, sameExecution, sameAgentNode } from './agentIdentity.js';
 import { DeliveryTargetSchema, ChatDeliveryReceiptSchema } from './chatDelivery.js';
@@ -20,6 +21,7 @@ export const EngineChatMessageSchema =
 export const EngineChatReadbackSchema = z.object({
   target: DeliveryTargetSchema,
   state: z.enum(['queued','starting','active','waiting_children','settling','idle']),
+  queueReason: ExecutionQueueReasonSchema.optional(),
   capabilities: z.object({ steer: z.enum(['native_expected_turn','unavailable']),
     queue: z.boolean(), interruptAndSend: z.boolean() }).strict(),
   /** Current native owner observation, independent of retained transcript messages. */

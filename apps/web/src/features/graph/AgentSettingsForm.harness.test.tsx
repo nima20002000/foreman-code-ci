@@ -3,13 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { server } from '../../mocks/server'
 import { queryKeys } from '../../shared/api/query'
 import { defaultAgentForHarness } from '../agents'
 import { savedClaudeConfiguration } from '../settings/claudeSettings.fixtures'
-import { accountTargetInfo, workerAccountTarget, observedAt } from '../provider-accounts/providerAccounts.fixtures'
-import { savedPlacementFixture } from '../node-placement/fixtures'
 import { AgentSettingsForm } from './AgentSettingsForm'
 
 const clients: QueryClient[] = []
@@ -19,8 +17,7 @@ afterEach(() => {
 })
 
 function setup(defaults: HarnessDefaults, discoveryError: { code: string; message: string } | null = null,
-  harness: 'claude' | 'codex' = 'claude', saved: NonNullable<HarnessDefaults['claude']> = savedClaudeConfiguration,
-  node?: Parameters<typeof AgentSettingsForm>[0]['node']) {
+  harness: 'claude' | 'codex' = 'claude', saved: NonNullable<HarnessDefaults['claude']> = savedClaudeConfiguration) {
   const catalog = Object.values(defaults).map(configuration => ({
     harness: configuration.harness, defaults: configuration, defaultsRevision: 1, capability: null,
     discoveryError: configuration.harness === 'claude' ? discoveryError : null,
@@ -33,7 +30,7 @@ function setup(defaults: HarnessDefaults, discoveryError: { code: string; messag
   const agent = defaultAgentForHarness(harness, 'saved-agent', 'Main coordinator', configuration)
   const onSave = vi.fn()
   const view = render(<QueryClientProvider client={client}>
-    <AgentSettingsForm agent={agent} node={node} onClose={() => undefined} onSave={onSave} />
+    <AgentSettingsForm agent={agent} onClose={() => undefined} onSave={onSave} />
   </QueryClientProvider>)
   return { client, onSave, agent, user: userEvent.setup(), view }
 }
@@ -131,33 +128,4 @@ it('restores the saved Claude draft after switching away even without a global C
   await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
   expect(onSave.mock.calls[0]![0].agent).toMatchObject({ harness: 'claude',
     harnessConfiguration: { ...savedClaudeConfiguration, configDirectory: '/edited/profile' } })
-})
-
-it('loads the Worker native Codex models when its account channel is unavailable', async () => {
-  const scrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView')
-  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
-  onTestFinished(() => {
-    if (scrollIntoView) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', scrollIntoView)
-    else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
-  })
-  const nativeRead = vi.fn(({ request }: { request: Request }) => {
-    expect(JSON.parse(new URL(request.url).searchParams.get('hostRef')!)).toEqual(workerAccountTarget.hostRef)
-    return HttpResponse.json({ harness: 'codex', providerVersion: 'worker-cli', authenticated: true,
-      models: [{ id: 'worker-codex', name: 'Worker Codex', reasoningEfforts: ['medium', 'high'],
-        variants: [], serviceTiers: ['standard', 'priority'] }],
-      nativeAgents: [], settings: [], restrictions: [], checkedAt: observedAt })
-  })
-  server.use(
-    http.get('/api/provider-accounts/targets', () => HttpResponse.json({ targets: [accountTargetInfo(),
-      { ...accountTargetInfo(workerAccountTarget), connected: false, providers: [] }] })),
-    http.get('/api/management/harnesses/codex/options', nativeRead),
-  )
-  const { onSave, user } = setup(DEFAULT_HARNESS_DEFAULTS, null, 'codex', savedClaudeConfiguration,
-    { placement: { ...savedPlacementFixture, hostRef: workerAccountTarget.hostRef } })
-  await waitFor(() => expect(nativeRead).toHaveBeenCalledOnce())
-  await user.click(screen.getByRole('combobox', { name: 'Model' }))
-  await user.click(await screen.findByRole('option', { name: 'Worker Codex' }))
-  expect(screen.queryByText(/Model list unavailable/)).not.toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
-  expect(onSave.mock.calls[0]![0].agent.harnessConfiguration.model).toBe('worker-codex')
 })
