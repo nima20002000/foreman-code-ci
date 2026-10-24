@@ -189,10 +189,6 @@ describe('WorkspaceRouteEntry integration', () => {
   })
 
   it('opens an unselected reloaded Claude Agent settings panel while cross-computer choices are unavailable', async () => {
-    const st = { style: 0, calls: 0, callers: new Map<string, [number, number]>() }
-    const realStyle = window.getComputedStyle.bind(window)
-    vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) => { const t = performance.now(); try { return realStyle(el, pseudo) } finally { const d = performance.now() - t; st.style += d; st.calls++; const k = (new Error().stack ?? '').split('\n').slice(2).filter((f) => !f.includes('tinyspy') && !f.includes('@vitest')).slice(0, 4).map((f) => f.replace(/^.*\//, '').slice(0, 60)).join(' < '); const c = st.callers.get(k) ?? [0, 0]; st.callers.set(k, [c[0] + d, c[1] + 1]) } })
-    let t0 = performance.now(); const mark = (l: string) => { console.log(`TIMING ${l} ${Math.round(performance.now() - t0)}ms style ${Math.round(st.style)}ms/${st.calls} ${JSON.stringify([...st.callers].sort((x, y) => y[1][0] - x[1][0]).slice(0, 3).map(([k, v]) => [Math.round(v[0]), v[1], k]))}`); st.style = 0; st.calls = 0; st.callers.clear(); t0 = performance.now() }
     // Apply the canvas CSS so userEvent checks the same pointer access as the browser.
     render(<style>{canvasStyles}</style>)
     const fixture = getMockFixture('workspace-1')!
@@ -212,48 +208,35 @@ describe('WorkspaceRouteEntry integration', () => {
     const first = await renderWorkspace(entry)
     const user = userEvent.setup()
     await workflowBoard('Research to review')
-    mark('first-board')
     await user.click(within(screen.getByRole('banner', { name: 'Board toolbar' })).getByRole('button', { name: 'Research to review' }))
     const name = screen.getByRole('textbox', { name: 'Workflow name' })
     await user.clear(name)
     await user.paste('Activities persisted workflow')
     await user.keyboard('{Enter}')
-    mark('renamed')
     // Query Save inside the Board toolbar: a whole-screen ByRole name scan on every poll costs seconds under load.
     const toolbar = () => within(screen.getByRole('banner', { name: 'Board toolbar' }))
     await user.click(toolbar().getByRole('button', { name: 'Save workflow' }))
-    mark('save-click')
     await waitFor(() => expect(toolbar().queryByRole('button', { name: 'Save workflow' })).not.toBeInTheDocument())
-    mark('saved')
     first.unmount()
     first.queryClient.clear()
     act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
     await renderWorkspace(entry)
     const board = await workflowBoard('Activities persisted workflow')
-    mark('second-board')
     const node = await within(board).findByRole('button', { name: /^Main coordinator,/ })
-    mark('node')
     const title = 'Main coordinator'
     expect(node).toHaveAccessibleName(/Claude/)
     expect(node).toHaveAttribute('aria-pressed', 'false')
-    mark('node-asserts')
-    // Find the always-rendered rim actions before hovering: hover changes the DOM, and a cold ByRole
-    // visibility walk up the deep canvas then costs seconds under load. The click still checks hover-gated pointer access.
-    const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
-    const openSettings = within(actions).getByRole('button', { name: `Open ${title} settings` })
-    mark('actions-query')
     await user.hover(node)
-    mark('hover')
-    await user.click(openSettings)
-    mark('click-open')
+    // Each ByRole query in the deep canvas walks every ancestor through jsdom's uncached getComputedStyle
+    // (about 0.5 s alone, several seconds under load); find the group by its label and keep ByRole for the button.
+    const actions = within(screen.getByLabelText('Editable workflow graph')).getByLabelText(`${title} actions`)
+    expect(actions).toHaveAttribute('role', 'group')
+    await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
-    mark('rail')
     expect(rail).toBeVisible()
     await user.click(within(rail).getByText('More settings'))
-    mark('more-settings')
     expect(within(rail).getByRole('textbox', { name: 'Name' })).toHaveValue(agent.name)
     expect(await within(rail).findByText('Computers can’t be checked right now. Try again shortly.', {}, { timeout: 8000 })).toBeVisible()
-    mark('note')
   }, 15_000)
 
   it('opens the accepted new workflow while workspace details still serve the old list', async () => {
