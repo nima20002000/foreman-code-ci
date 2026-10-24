@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
+import { HostHarnessProfileEvidenceSchema } from '@foreman-code/contracts/harness-registry'
 import { NodePlacementChoicesResultSchema } from '@foreman-code/contracts/placement-readback'
 import { SourceListResultSchema, SourceRootListResultSchema } from '@foreman-code/contracts/source-admission'
 import { expect, it, vi } from 'vitest'
@@ -21,7 +22,11 @@ it('repairs released source choices through authenticated HTTP and MCP with pers
         nodeId: saved.version.definition.nodes[0]!.id,
         agentConfigurationVersionId: f.base.f.configurations[0]!.id }
       const pool = f.base.db.pool
-      const profileEvidence = vi.fn(async () => ({ qualified: true }))
+      const profileEvidence = vi.fn(async () => {
+        const row = (await pool.query<{ record: unknown }>(
+          'select record from harness_instance_profile_evidence limit 1')).rows[0]!
+        return HostHarnessProfileEvidenceSchema.parse(row.record)
+      })
       const discovery = new ProductionPlacementChoiceDiscovery(pool, () => ({
         roots: f.placement.policies, sources: f.placement.sources,
         profiles: new HarnessInstanceSettingsRepository(pool),
