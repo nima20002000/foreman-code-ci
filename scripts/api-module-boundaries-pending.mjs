@@ -691,7 +691,6 @@ export const internalImports = new Set([
   'subagents>harnesses/port.ts',
   'subagents>runs/nativeEvents.ts',
   'workflow-chat>conversations/agentChat.ts',
-  'workflow-chat>conversations/agentChatRepository.ts',
   'workflow-chat>conversations/conversationDelivery.test-support.ts',
   'workflow-chat>conversations/nativeChatInput.ts',
   'workflow-chat>conversations/operatorChat.ts',

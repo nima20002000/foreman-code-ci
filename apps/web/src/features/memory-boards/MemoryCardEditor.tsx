@@ -60,7 +60,6 @@ export function MemoryCardEditor({ boardId, draft, nodes, disabled, pending, onC
       error={problem?.field === 'reason' ? problem.message : undefined}
       onChange={(event) => change({ reason: event.currentTarget.value || null })} />
     <MemoryWorkPicker draft={draft} nodes={nodes} disabled={disabled} onChange={onChange} />
-    {draft.sourcePostId && <p className="n-field-hint">This card will keep its source message link.</p>}
     <div className="n-actions">
       <Button type="submit" variant="primary" disabled={disabled} loading={pending} loadingLabel="Saving…">{draft.original ? 'Save changes' : 'Create card'}</Button>
       <Button onClick={onCancel} disabled={pending}>Back to Memory board</Button>

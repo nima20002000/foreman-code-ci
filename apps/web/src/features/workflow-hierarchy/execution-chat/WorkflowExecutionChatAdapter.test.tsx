@@ -7,7 +7,6 @@ import { http, HttpResponse } from 'msw'
 import { collaborationContractFixtures, WorkflowExecutionChatTargetSchema, type WorkflowExecutionChatResolution,
   type WorkflowExecutionChatTarget } from '@foreman-code/contracts'
 import { server } from '../../../mocks/server'
-import { BoardAuthoringContext } from '../../board-core'
 import { createWorkflowExecutionChatSlot } from './createWorkflowExecutionChatSlot'
 import { executionChatScopeKey } from './client'
 import type { WorkflowExecutionChatSlotSelection, WorkflowExecutionChatViewProps,
@@ -33,7 +32,7 @@ function ExecutionChat({ client, resolved, queryKey }: WorkflowExecutionChatView
   </section>
 }
 function OutsideRunChat({ resolved }: WorkflowOutsideRunChatViewProps) {
-  return <section aria-label="Outside run conversation">Outside run · {resolved.workflowVersionId} · {resolved.agent.agentId}</section>
+  return <section aria-label="Outside run conversation">Outside run · {resolved.workflowVersionId}</section>
 }
 const slot = createWorkflowExecutionChatSlot({ ExecutionChat, OutsideRunChat })
 
@@ -59,7 +58,7 @@ function install(initial = selected()) {
   }))
   return { controls, resolutions, reads }
 }
-function mount(initial: Partial<WorkflowExecutionChatSlotSelection> = {}, currentAgentId?: string) {
+function mount(initial: Partial<WorkflowExecutionChatSlotSelection> = {}) {
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.push(cache)
   function Shell() {
@@ -75,8 +74,7 @@ function mount(initial: Partial<WorkflowExecutionChatSlotSelection> = {}, curren
             : { runId: target.runId, waitingActivationId: target.waitingActivationId }) }) }) : null}
     </>
   }
-  render(<QueryClientProvider client={cache}><BoardAuthoringContext.Provider
-    value={currentAgentId ? { draftNodeAgentId: () => currentAgentId } : null}><Shell /></BoardAuthoringContext.Provider></QueryClientProvider>)
+  render(<QueryClientProvider client={cache}><Shell /></QueryClientProvider>)
   return cache
 }
 
@@ -84,7 +82,6 @@ it.each(['execution', 'coordinator'] as const)('pins the resolved %s before moun
   const target = kind === 'execution' ? executionTarget : coordinatorTarget
   const wire = install(selected(target))
   mount()
-  fireEvent.click(await screen.findByRole('button', { name: 'Open Run run' }))
   await screen.findByText('Working on the task.')
   expect(wire.reads).toEqual([target])
   const pins = wire.resolutions.at(-1)!.searchParams
@@ -121,7 +118,7 @@ it('requires an explicit Run and execution choice and never follows a successor 
   expect(screen.queryByRole('region', { name: 'Execution conversation' })).not.toBeInTheDocument()
 })
 
-it('requires an explicit attempt choice for a finished Run and keeps history switching available', async () => {
+it('opens a finished Run Agent chat without asking which of its executions to open', async () => {
   const choice = selected()
   if (choice.kind !== 'selected') throw new Error('Expected selected fixture')
   const candidate = (executionId: string) => ({ target: { ...choice.target, execution: { ...fixture.execution, executionId } },
@@ -132,11 +129,9 @@ it('requires an explicit attempt choice for a finished Run and keeps history swi
   server.use(http.get(`${base}/target`, ({ request }) => HttpResponse.json(new URL(request.url).searchParams.get('executionId')
     ? { ...choice, state: 'idle' } : choices)))
   mount({ runId: 'run' })
-  fireEvent.click(await screen.findByRole('button', { name: 'Execution execution · Attempt 1' }))
   expect(await screen.findByText('Working on the task.')).toBeInTheDocument()
   expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"executionId":"execution"')
-  fireEvent.click(screen.getByRole('button', { name: 'Choose another execution' }))
-  expect(await screen.findByRole('button', { name: 'Execution check · Attempt 1' })).toBeInTheDocument()
+  expect(screen.queryByText('Choose the exact execution to open.')).not.toBeInTheDocument()
 })
 
 it('retains transient status, hides denied history through a failed retry, and resumes only after a successful read', async () => {
@@ -176,34 +171,4 @@ it('mounts outside-run chat only for an unpinned current workflow and performs n
   fireEvent.click(screen.getByRole('button', { name: 'Toggle chat' }))
   await screen.findByRole('region', { name: 'Outside run conversation' })
   await waitFor(() => expect(wire.resolutions).toHaveLength(count + 1))
-})
-
-it('recovers a missing exact execution by explicitly clearing only its attempt pin', async () => {
-  const wire = install()
-  wire.controls.status = 404
-  mount({ runId: 'run', workflowVersionId: 'version', executionId: 'missing-execution' })
-  await screen.findByRole('alert')
-  expect(screen.getByLabelText('Chat selection')).toHaveTextContent('missing-execution')
-  wire.controls.status = 200
-  const choice = selected()
-  if (choice.kind !== 'selected') throw new Error('Expected selected fixture')
-  wire.controls.resolution = { kind: 'selection_required', items: [{ target: choice.target, agent: choice.agent,
-    workflowVersionId: choice.workflowVersionId, source: choice.source, state: choice.state }], revision: 1, nextCursor: null, hasMore: false }
-  fireEvent.click(screen.getByRole('button', { name: 'Choose another execution' }))
-  expect(await screen.findByRole('button', { name: 'Execution execution · Attempt 1' })).toBeInTheDocument()
-  expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"runId":"run"')
-  expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"workflowVersionId":"version"')
-  expect(screen.getByLabelText('Chat selection')).not.toHaveTextContent('missing-execution')
-})
-
-it('keeps Current selected until a destination is chosen and opens separate chat with the Current Agent', async () => {
-  const wire = install()
-  mount({}, 'current-agent')
-  expect(await screen.findByRole('button', { name: 'Open Run run' })).toBeInTheDocument()
-  expect(screen.getByLabelText('Chat selection')).not.toHaveTextContent('"runId"')
-  expect(wire.reads).toEqual([])
-  fireEvent.click(screen.getByRole('button', { name: 'Separate chat' }))
-  expect(await screen.findByRole('region', { name: 'Outside run conversation' })).toHaveTextContent('current-agent')
-  expect(screen.getByLabelText('Chat selection')).not.toHaveTextContent('"runId"')
-  expect(wire.reads).toEqual([])
 })

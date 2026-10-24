@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
-import { readImmutableWorkflowVersion } from '../src/modules/workflows/immutableRead.js'
+import { readImmutableWorkflowVersion, readImmutableAgentConfiguration } from '../src/modules/workflows/immutableRead.js'
 
 function fixture(form: 'sequential' | 'repeat' = 'sequential') {
   const { version } = makeCurrentWorkflowFixture(`immutable-reader-${form}`, form)
@@ -23,6 +23,27 @@ function fixture(form: 'sequential' | 'repeat' = 'sequential') {
 }
 
 describe('immutable workflow version reads', () => {
+  it('preserves immutable Agent tool defaults after their group tools are retired', () => {
+    const { configurations } = makeCurrentWorkflowFixture('retired-group-defaults', 'single')
+    const configuration = { ...configurations[0]!, graphqlTools: ['workflow_chat_read', 'context_get', 'workflow_chat_post'] }
+    const row = { id: configuration.id, workspace_id: configuration.workspaceId,
+      agent_id: configuration.agentId, version: configuration.version, record: configuration }
+    expect(readImmutableAgentConfiguration(row)).toEqual(configuration)
+    expect(row.record.graphqlTools).toEqual(['workflow_chat_read', 'context_get', 'workflow_chat_post'])
+  })
+
+  it('preserves immutable workflow tool overrides and their content hash after group tools are retired', () => {
+    const { version, row } = fixture()
+    const definition = { ...version.definition, nodes: version.definition.nodes.map((node, index) => index ? node : {
+      ...node, graphqlTools: { add: ['workflow_chat_read', 'context_get'], remove: ['workflow_chat_post'] },
+    }) }
+    const record = { ...version, definition, contentHash: `sha256:${createHash('sha256').update(canonicalGraphJson({
+      definition, configurations: version.agentConfigurationVersionIds, entryNodeId: version.entryNodeId,
+    })).digest('hex')}` }
+    expect(readImmutableWorkflowVersion({ ...row, record })).toEqual(record)
+    expect(readImmutableWorkflowVersion({ ...row, record: structuredClone(record) })).toEqual(record)
+  })
+
   it.each(['sequential', 'repeat'] as const)('preserves the saved %s definition on repeated reads', (form) => {
     const { version, row } = fixture(form)
     expect(readImmutableWorkflowVersion(row)).toEqual(version)

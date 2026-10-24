@@ -27,7 +27,6 @@ export interface ConversationDeliveryHooks {
   read(principal: ManagementPrincipal, target: ConversationTarget): Promise<ChatTargetRead>
   /** Reads persisted owner evidence only. */
   progress(command: StoredDelivery, tx: TransactionSql): Promise<Partial<Pick<ChatDeliveryReceipt, 'state' | 'nativeTurnId' | 'errorCode'>>>
-  changed?(receiptId: string): Promise<void>
   conversationChanged?(target: ConversationTarget): Promise<void>
 }
 
@@ -82,17 +81,16 @@ export class ConversationDeliveryOwner implements ConversationDeliveryPort {
       await tx.query('select id from chat_delivery_commands where id=$1 for update', [command.receipt.id])
       const current = await this.receipts.byReceipt(command.receipt.id, tx)
       if (!current) throw new DomainError('CHAT_RECEIPT_NOT_FOUND', 'The owner receipt is unavailable.', 404)
-      if (['completed', 'failed', 'canceled'].includes(current.receipt.state)) return { receipt: current.receipt, changed: false }
+      if (['completed', 'failed', 'canceled'].includes(current.receipt.state)) return current.receipt
       const evidence = await this.hooks.progress(current, tx)
       const next = { ...current.receipt, ...evidence, updatedAt: new Date().toISOString() }
       if (evidence.errorCode === undefined && ['accepted', 'completed', 'canceled'].includes(evidence.state ?? '')) delete next.errorCode
       if (Object.entries(evidence).every(([key, value]) => current.receipt[key as keyof ChatDeliveryReceipt] === value)
-        && next.errorCode === current.receipt.errorCode) return { receipt: current.receipt, changed: false }
+        && next.errorCode === current.receipt.errorCode) return current.receipt
       await this.receipts.updateLocked(tx, next)
-      return { receipt: next, changed: true }
+      return next
     }, { conflictRetries: 2 })
-    if (result.changed) await this.hooks.changed?.(result.receipt.id)
-    return result.receipt
+    return result
   }
 
   async read(principal: ManagementPrincipal, input: { target: DeliveryTarget }): Promise<ChatTargetRead> {
@@ -152,7 +150,6 @@ export class ConversationDeliveryOwner implements ConversationDeliveryPort {
       await this.controls.recordLocked(tx, principal.id, input, receipt, owner)
       return { receipt, replayed: false, owner, changed: canceled.changed || Boolean(owner.requestId) }
     }, { conflictRetries: 2 })
-    if (!result.replayed) for (const receiptId of result.receipt.affectedReceiptIds) await this.hooks.changed?.(receiptId)
     if (result.changed) await this.hooks.conversationChanged?.(target)
     if (result.replayed || !result.owner.requestId) return result.receipt
     try {

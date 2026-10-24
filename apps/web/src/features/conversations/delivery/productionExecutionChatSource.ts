@@ -2,7 +2,7 @@ import { EngineChatMessageSchema, WorkflowExecutionChatMessageRequestSchema,
   WorkflowExecutionChatChangeSchema } from '@foreman-code/contracts'
 import { apiClient, ApiError } from '../../../shared/api/client'
 import { eventStreamsAvailable, openEventStreamScope } from '../../../shared/api/eventStream'
-import { sameDeliveryTarget } from '../../workflow-chat'
+import { sameDeliveryTarget } from './sameDeliveryTarget'
 import type { ExecutionChatSource, ExecutionChatTarget } from './executionChatSource'
 
 function path(target: ExecutionChatTarget) {
