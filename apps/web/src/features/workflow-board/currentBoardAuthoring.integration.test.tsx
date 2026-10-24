@@ -580,7 +580,8 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await user.click(control('Activities'))
     await user.click(await screen.findByRole('button', { name: new RegExp(`Open Run ${oldRun.id} ·`) }))
     await waitFor(() => expect(mounted.router.state.location.search.workflowVersionId).toBe(ordinary.id))
-    expect(screen.getByRole('region', { name: 'Workflow authoring', hidden: true })).toBe(editor)
+    expect.soft(screen.getByRole('region', { name: 'Workflow authoring', hidden: true }) === editor,
+      'Selecting history retains the draft editor').toBe(true)
     await returnToDraft(user)
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).not.toHaveProperty('repeat')
     // Three Saves and two Starts on one mounted Board: about twice S3-01's work,
@@ -803,6 +804,8 @@ describe('latest Run on the draft Board', () => {
     const href = initial.router.state.location.href
     initial.unmount(); initial.query.clear()
     const mounted = await mount(mock, href)
+    server.use(http.get('*/api/workspaces/:workspaceId/workflows/:workflowId/execution-chat/target',
+      () => HttpResponse.json({ kind: 'unavailable', reason: 'NODE_UNAVAILABLE' })))
     await screen.findByRole('region', { name: 'Workflow authoring' })
     const graph = useGraphDraftStore.getState().nextDrafts[key]!.graph
     await waitFor(() => expect(canvasNode(graph.nodes[0]!.id)).toHaveTextContent('Running'))
@@ -817,11 +820,7 @@ describe('latest Run on the draft Board', () => {
     expect(control('Workflow actions')).toBeDisabled()
     const remove = within(authoring()).getByRole('button', { name: /^Remove Handoff ·/ })
     expect(remove).toBeDisabled()
-    const before = structuredClone(graph.edges)
     const canvas = within(screen.getByLabelText('Editable workflow graph'))
-    clickConnectionHandles(canvas.getByLabelText(`Connect ${graph.nodes[1]!.name} to another agent`),
-      canvas.getByLabelText(`Connect to ${graph.nodes[0]!.name}`))
-    expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.edges).toEqual(before)
     await user.click(control('Workflow settings'))
     const settings = within(await screen.findByRole('complementary', { name: 'Workflow settings' }))
     expect(settings.getByRole('spinbutton', { name: 'Agents at once' })).toBeDisabled()
@@ -832,7 +831,8 @@ describe('latest Run on the draft Board', () => {
     expect.soft(within(details).queryByText('Starts workflow'), 'Live nodes still show their details').toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Back to Board' }))
     await user.click(canvas.getByRole('button', { name: `Open ${graph.nodes[0]!.name} chat` }))
-    expect(await screen.findByRole('complementary', { name: 'Workflow side panel' })).toBeVisible()
+    const chat = await screen.findByRole('complementary', { name: 'Workflow side panel' })
+    expect(await within(chat).findByText('This Agent is not present in the selected saved workflow.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Back to Board' }))
     // React Flow receives a real mouse drag even while semantic edits are locked.
     const oldPosition = first.style.transform
@@ -865,6 +865,20 @@ describe('latest Run on the draft Board', () => {
     expect(canvasNode(graph.nodes[0]!.id)).toBe(first)
     await user.click(control('Workflow settings'))
     expect(within(screen.getByRole('complementary', { name: 'Workflow settings' })).getByRole('spinbutton', { name: 'Agents at once' })).toBeEnabled()
+  }, 30_000)
+
+  it('blocks connections between the draft nodes while the latest Run is live', async () => {
+    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
+    const { key } = await create(mock, user); stageShape(key, 'sequential', mock); await save(mock, user, 1)
+    const run = await start(mock, user)
+    runningNodes(mock, run.id); await mounted.query.invalidateQueries()
+    const graph = useGraphDraftStore.getState().nextDrafts[key]!.graph
+    await waitFor(() => expect(canvasNode(graph.nodes[0]!.id)).toHaveTextContent('Running'))
+    const before = structuredClone(graph.edges), canvas = within(screen.getByLabelText('Editable workflow graph'))
+    clickConnectionHandles(canvas.getByLabelText(`Connect ${graph.nodes[1]!.name} to another agent`),
+      canvas.getByLabelText(`Connect to ${graph.nodes[0]!.name}`))
+    expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.edges).toEqual(before)
+    expect(mock.versions.size).toBe(1)
   }, 30_000)
 
   it('keeps the latest Run on the draft until an older Run is explicitly chosen from Runs', async () => {
