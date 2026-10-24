@@ -3,7 +3,7 @@ import { SourceRootReferenceSchema } from './worktreeSettings.js'
 import { z } from 'zod'
 import { IdSchema } from './schemaPrimitives.js'
 import { SourceManifestSchema, SourceHashSchema, RootBindingSchema, MaterializationReceiptSchema } from './sourceMaterialization.js'
-import { RootFilesystemIdentitySchema } from './workspaceRootPolicies.js'
+import { WorkspaceRootPolicySchema, RootFilesystemIdentitySchema } from './workspaceRootPolicies.js'
 
 export type SourceAction =
   | 'sources:read'
@@ -40,7 +40,10 @@ export const SourceRootBindInputSchema = z.object({ workspaceId: IdSchema, comma
   expectedBindingRevision: z.number().int().nonnegative(), accessMode: z.enum(['read-only', 'exclusive-write']),
 }).strict()
 /** Capture the workspace project when needed and bind it to the selected saved root policy. */
-export const SourceRootSetupInputSchema = SourceRootBindInputSchema.omit({ source: true, expectedBindingRevision: true }).strict()
+export const SourceRootSetupInputSchema = z.union([
+  SourceRootBindInputSchema.omit({ source: true, expectedBindingRevision: true }).strict(),
+  z.object({ workspaceId: IdSchema, commandId: optionalCommandId(z.string().min(8).max(200)), hostRef: SourceHostSchema }).strict(),
+])
 export type SourceRootSetupInput = z.infer<typeof SourceRootSetupInputSchema>
 export const SourceRootRecordSchema = z.object({ version: z.literal(1), source: SourcePinSchema,
   selection: SourceRootSelectionSchema, binding: RootBindingSchema, ownerPrincipalId: IdSchema,
@@ -56,6 +59,8 @@ export const SourceRootRecordSchema = z.object({ version: z.literal(1), source: 
 })
 export type SourceRootRecord = z.infer<typeof SourceRootRecordSchema>
 export const SourceRootBindResultSchema = z.object({ value: SourceRootRecordSchema, replayed: z.boolean() }).strict()
+export const PlainWorkspaceFolderSchema = z.object({ kind: z.literal('plain'), policy: WorkspaceRootPolicySchema }).strict()
+export const SourceRootSetupResultSchema = z.object({ value: z.union([SourceRootRecordSchema, PlainWorkspaceFolderSchema, z.object({ kind: z.literal('selection-required') }).strict()]), replayed: z.boolean() }).strict()
 export const SourceRootGetInputSchema = z.object({ workspaceId: IdSchema, ...SourceRootReferenceSchema.shape }).strict()
 export const SourceMaterializationRecordSchema = z.object({ receipt: MaterializationReceiptSchema,
   rootPolicyId: IdSchema, rootPolicyRevision: z.string().regex(/^[1-9][0-9]*$/), operationId: IdSchema,

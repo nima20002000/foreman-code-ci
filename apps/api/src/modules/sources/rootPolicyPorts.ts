@@ -18,6 +18,8 @@ export interface WorkspaceRootPolicyPort {
   browse(root: AuthorizedWorkspaceRoot, relativePath: string): Promise<WorkspaceRootBrowseResult>
   fence(sql: SqlQuery, root: AuthorizedWorkspaceRoot): Promise<void>
   bind(sql: SqlQuery, principal: ManagementPrincipal, root: AuthorizedWorkspaceRoot, attestation: WorkspaceRootAttestation, nextLocationRevision: number): Promise<WorkspaceRootPolicy>
+  bindAssignedMain?(sql: SqlQuery, principal: ManagementPrincipal, workspaceId: string,
+    expectedLocationRevision: number): Promise<WorkspaceRootPolicy>
   bindManaged?(sql: SqlQuery, principal: ManagementPrincipal, root: AuthorizedWorkspaceRoot,
     attestation: WorkspaceRootAttestation): Promise<WorkspaceRootPolicy>
   resolve(sql: SqlQuery, principal: ManagementPrincipal,

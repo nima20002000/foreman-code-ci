@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
+import { posix } from 'node:path'
+import { ExecutionLocationSchema } from '@foreman-code/contracts'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { ApprovedRootAllowlistSchema, WorkspaceRootPolicySchema, WorkspaceRootSelectionSchema, WorkspaceRootAttestationSchema,
+import { ApprovedRootAllowlistSchema, WorkspaceRootPolicySchema, WorkspaceRootSelectionSchema, WorkspaceRootAttestationSchema, WorkspaceLocationIdentitySchema,
   type ApprovedRootAllowlist, type WorkspaceRootSelection, type WorkspaceRootPolicy, type WorkspaceRootAttestation } from '@foreman-code/contracts/workspace-root-policies'
 import { requireAuthorization } from '../access/policy.js'
 import { DomainError } from '../errors.js'
@@ -185,6 +187,34 @@ export class PostgresWorkspaceRootPolicies implements WorkspaceRootPolicyPort {
   async bind(sql: Sql, principal: ManagementPrincipal, root: AuthorizedWorkspaceRoot, raw: WorkspaceRootAttestation, nextLocationRevision: number): Promise<WorkspaceRootPolicy> {
     return this.bindPolicy(sql, principal, root, raw, { kind: 'location', locationRevision: nextLocationRevision })
   }
+  /** Adopt the already assigned Main folder without changing its saved location. */
+  async bindAssignedMain(sql: Sql, principal: ManagementPrincipal, workspaceId: string,
+    expectedLocationRevision: number): Promise<WorkspaceRootPolicy> {
+    await this.authorizeWorkspace(sql, principal, workspaceId)
+    const row = (await sql.query<{ execution_location: unknown; execution_location_identity: unknown }>(
+      'select execution_location,execution_location_identity from workspaces where id=$1 for share', [workspaceId])).rows[0]
+    const location = ExecutionLocationSchema.parse(row?.execution_location)
+    const identity = WorkspaceLocationIdentitySchema.parse(row?.execution_location_identity)
+    const hostRef = { kind: 'main' as const, mainId: this.mainId }
+    const configuration = await this.configuration(sql, hostRef)
+    const base = configuration.bases.find(base => base.accessModes.includes('read-write')
+      && (location.rootPath === base.canonicalPath || location.rootPath.startsWith(`${base.canonicalPath}/`)))
+    if (location.runnerId !== 'runner-local' || !base) {
+      throw new DomainError('ROOT_POLICY_UNAVAILABLE', 'The assigned Main folder is outside its configured workspace storage.', 409)
+    }
+    const root = await this.authorize(sql, principal, { workspaceId, hostRef,
+      allowedBaseId: base.baseId, configurationRevision: configuration.configurationRevision,
+      relativePath: posix.relative(base.canonicalPath, location.rootPath), accessMode: 'read-write',
+      expectedLocationRevision, expectedRootPolicyRevision: 0 })
+    const attestation = await this.attest(root)
+    if (attestation.canonicalProjectRoot !== location.rootPath
+      || attestation.filesystem.device !== identity.device || attestation.filesystem.inode !== identity.inode) {
+      throw new DomainError('WORKSPACE_LOCATION_CHANGED', 'The assigned Main directory was replaced after it was saved.', 409)
+    }
+    await this.fence(sql, root)
+    return this.bindPolicy(sql, principal, root, attestation,
+      { kind: 'location', locationRevision: expectedLocationRevision, preserveLocation: true })
+  }
   async bindManaged(sql: Sql, principal: ManagementPrincipal, root: AuthorizedWorkspaceRoot,
     attestation: WorkspaceRootAttestation): Promise<WorkspaceRootPolicy> {
     this.assertManagedSelection(root)
@@ -192,12 +222,12 @@ export class PostgresWorkspaceRootPolicies implements WorkspaceRootPolicyPort {
       { kind: 'managed', locationRevision: root.selection.expectedLocationRevision })
   }
   private async bindPolicy(sql: Sql, principal: ManagementPrincipal, root: AuthorizedWorkspaceRoot,
-    raw: WorkspaceRootAttestation, location: { kind: RootBindingKind; locationRevision: number }): Promise<WorkspaceRootPolicy> {
+    raw: WorkspaceRootAttestation, location: { kind: RootBindingKind; locationRevision: number; preserveLocation?: boolean }): Promise<WorkspaceRootPolicy> {
     if (this.actors.get(root)?.id !== principal.id) throw new DomainError('ROOT_AUTHORIZATION_MISSING', 'Root binding belongs to another scoped caller.', 403)
     const live = await this.authorizeWorkspace(sql, principal, root.selection.workspaceId, true)
     requireAuthorization(principal, 'workspace_locations:update', { workspaceId: root.selection.workspaceId }); requireAuthorization(live.principal, 'workspace_locations:update', { workspaceId: root.selection.workspaceId })
     const expectedRevision = root.selection.expectedLocationRevision
-      + (location.kind === 'location' && root.selection.hostRef.kind === 'main' ? 1 : 0)
+      + (location.kind === 'location' && root.selection.hostRef.kind === 'main' && !location.preserveLocation ? 1 : 0)
     if (location.locationRevision < 0 || location.locationRevision !== expectedRevision
       || live.locationRevision !== location.locationRevision)
       throw new DomainError('LOCATION_REVISION_CONFLICT', 'The workspace location changed during root binding.', 409)

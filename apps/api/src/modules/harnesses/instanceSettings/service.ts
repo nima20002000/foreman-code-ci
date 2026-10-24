@@ -200,7 +200,6 @@ export class HostHarnessOverrideService {
         throw new DomainError('REVISION_CONFLICT', 'The Worker profile changed during placement preparation. Refresh the choices.', 409)
       }
     }
-    this.profileChecks?.assertReady(profile)
     const previous = await this.profileChecks?.latestCheck(profile)
     const checked = await this.check(principal, source, { instanceId: profile.instanceId, target: profile.target,
       expectedRevision: profile.revision,

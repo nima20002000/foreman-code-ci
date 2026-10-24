@@ -75,7 +75,7 @@ export class AgentSourceAttemptAuthority implements SourceAttemptAuthority {
     const share = lock ? ' for share' : ''
     const row = (await sql.query<{ record: unknown }>(`select record from execution_native_placements where execution_id=$1${share}`, [record.receipt.executionId])).rows[0]
     const binding = NativeExecutionPlacementSchema.parse(row?.record)
-    if (binding.acceptedBindingHash !== actual.placement.bindingHash || binding.bindingHash !== finalHash || binding.runId !== actual.run.id
+    if ('kind' in binding || binding.acceptedBindingHash !== actual.placement.bindingHash || binding.bindingHash !== finalHash || binding.runId !== actual.run.id
       || binding.nodeId !== actual.intent.nodeId || binding.executionId !== record.receipt.executionId || binding.attemptId !== record.receipt.attemptId || binding.operationId !== record.operationId
       || binding.materialization.receipt.materializationId !== record.receipt.materializationId || sourceMaterializationDigest(binding.materialization) !== sourceMaterializationDigest(record))
       throw new DomainError('AGENT_SOURCE_FINAL_BINDING_CONFLICT', 'Only the actual finalized execution placement may adopt this original Agent source materialization.', 409)

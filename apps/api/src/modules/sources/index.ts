@@ -24,3 +24,5 @@ export type { MaterializationAttempt } from './ports.js'
 export type { RootWorkerClient } from './rootHosts.js'
 export type { AuthorizedWorkspaceRoot, WorkspaceRootPolicyPort } from './rootPolicyPorts.js'
 export type { PostgresSourceService } from './service.js'
+
+export { attestWorkspaceRoot } from './rootAttestation.js'

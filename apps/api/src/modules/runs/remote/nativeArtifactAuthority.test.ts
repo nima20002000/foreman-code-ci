@@ -23,7 +23,7 @@ vi.mock('./persistence.js', () => ({ readReconciledDispatchIntent: vi.fn() }))
 vi.mock('../../devices/hostAuthorization.js', () => ({ assertDeviceHostInstallation: vi.fn() }))
 vi.mock('./nativeArtifactOutputPostgres.js', () => ({ readNativeArtifactOutput: vi.fn() }))
 beforeEach(() => vi.resetAllMocks())
-function fixture() {
+function fixture(plain = false) {
   const mainId = randomUUID(), deviceId = randomUUID(), workerInstallationId = randomUUID(), digest = 'a'.repeat(64)
   const executionId = randomUUID(), attemptId = randomUUID(), operationId = randomUUID(), rootId = randomUUID()
   const configuration: AgentConfigurationVersion = { id: 'configuration', agentId: 'agent', workspaceId: 'workspace', version: 1,
@@ -32,8 +32,8 @@ function fixture() {
   const placement = freezePlacement({ schemaVersion: 1, mainId, mainInstallationId: mainId, runId: 'run', nodeId: 'node',
     hostRef: { kind: 'device', mainId, deviceId }, registration: { workerInstallationId, keyRevision: 1, authorizationRevision: 1 },
     destination: { canonicalProjectRoot: '/project', canonicalCwd: '/project', managedRuntimeRoot: '/runtime', directoryIdentityHash: digest,
-      rootPolicyId: 'policy', rootPolicyRevision: '1', locationRevision: '1', attestationId: 'attestation', attestationHash: digest },
-    source: { kind: 'pending', approvedSourceId: randomUUID(), snapshotId: randomUUID(), rootId, bindingRevision: 1, revisionId: 'source', manifestDigest: digest, materializationId: null, materializationDigest: null },
+      rootPolicyId: plain ? randomUUID() : 'policy', rootPolicyRevision: '1', locationRevision: '1', attestationId: 'attestation', attestationHash: digest },
+    source: plain ? { kind: 'plain', filesystem: { device: '1', inode: '2', mountId: '3' }, accessMode: 'read-write' } : { kind: 'pending', approvedSourceId: randomUUID(), snapshotId: randomUUID(), rootId, bindingRevision: 1, revisionId: 'source', manifestDigest: digest, materializationId: null, materializationDigest: null },
     payload: { kind: 'agent', agentId: 'agent', agentConfigurationVersionId: 'configuration', driverId: 'codex', driverRevision: '1',
       instanceId: 'instance', instanceRevision: '1', harnessInstallationId: 'harness', installationFingerprint: digest,
       runtimeContractVersion: 1, protocolRevision: '1', credentialScopeRefs: [], artifactOutputs: { version: 1, outputKeys: ['result'] } } })
@@ -238,14 +238,16 @@ describe('original accepted artifact authority', () => {
     accepted.context.nativeMessageId = 'native-message'
     await expect(t.authority.authorize(accepted, t.sql)).rejects.toMatchObject({ code: 'NATIVE_ARTIFACT_AUTHORITY_DENIED' })
   })
-  it('requires the exact original source, transfer operation and native materialization, and denies a stopped Run', async () => {
-    const t = fixture()
-    if (!('kind' in t.placement.source)) throw new Error('fixture')
+  it.each([false, true])('requires the exact original root, transfer operation and native binding, and denies a stopped Run (plain: %s)', async plain => {
+    const t = fixture(plain)
+    const source = t.placement.source
+    if (!('kind' in source)) throw new Error('fixture')
+    const rootId = source.kind === 'plain' ? t.placement.destination.rootPolicyId : source.rootId
     const transferId = randomUUID()
     const receipt: VerifiedTransferReceipt = { version: 1, receiptId: randomUUID(), transferId, sha256: 'a'.repeat(64), byteSize: 123,
       verifiedAt: new Date().toISOString(), intent: { version: 1, ...t.accepted.transferContext, transferId, operationId: t.intent.operationId,
         executionId: t.attempt.executionId, attemptId: t.attempt.attemptId, placementHash: t.attempt.placementHash,
-        rootId: t.placement.source.rootId, rootBindingRevision: 1, direction: 'to-main', byteClass: 'artifact',
+        rootId, rootBindingRevision: 1, direction: 'to-main', byteClass: 'artifact',
         sha256: 'a'.repeat(64), byteSize: 123, manifestDigest: 'b'.repeat(64), chunkBytes: 1024, expiresAt: '2099-01-01T00:00:00.000Z' } }
     await t.authority.assertSourceLive(t.accepted, receipt, t.sql)
     for (const changed of [{ ...receipt, intent: { ...receipt.intent, operationId: randomUUID() } },

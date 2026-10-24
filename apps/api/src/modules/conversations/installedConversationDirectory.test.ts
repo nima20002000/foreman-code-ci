@@ -11,7 +11,7 @@ import { identity, openPrivateRoot } from '../sources/privateFilesystem.js'
 import { workerOperatorDirectory } from './workerOperatorDirectory.js'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION } from '@foreman-code/contracts'
 
-it.each(['codex', 'claude'])('%s uses a read-only approved folder and rejects its replacement or permission change', async harness => {
+it.each([['codex', false], ['codex', true], ['claude', false]] as const)('%s uses a read-only approved folder and rejects its replacement or permission change (Run folder: %s)', async (harness, plain) => {
   const root = await mkdtemp(join(persistentFixtureRoot, 'conversation-root-'))
   const base = join(root, 'base')
   const project = join(base, 'project')
@@ -32,7 +32,30 @@ it.each(['codex', 'claude'])('%s uses a read-only approved folder and rejects it
         bases: [{ baseId: randomUUID(), canonicalPath: base, filesystem: await identity(baseHandle), accessModes: ['read-only'] }],
         managedRuntimeRoot: runtime, runtimeFilesystem: await identity(runtimeHandle) })
     } finally { await baseHandle.close(); await runtimeHandle.close() }
-    const binding = { ...f.binding, workingDirectory: project }
+    let binding = { ...f.binding, workingDirectory: project }
+    if (plain) {
+      if (f.binding.owner.kind !== 'agent' || f.binding.profile.target.hostRef.kind !== 'device') throw new Error('Worker Agent fixture required')
+      const handle = await openPrivateRoot(project)
+      const filesystem = await identity(handle).finally(() => handle.close())
+      const digest = 'a'.repeat(64), target = f.binding.profile.target
+      binding = WorkerConversationBindingSchema.parse({ ...binding, sourceExecution: {
+        executionId: 'original-execution', placement: { schemaVersion: 1, mainId: f.connection.mainId,
+          mainInstallationId: f.connection.mainId, runId: 'original-run', nodeId: f.binding.owner.workflowNodeId,
+          hostRef: target.hostRef, registration: { workerInstallationId: f.connection.workerInstallationId,
+            keyRevision: 1, authorizationRevision: 1 }, bindingHash: digest,
+          destination: { canonicalProjectRoot: project, canonicalCwd: project, managedRuntimeRoot: runtime,
+            directoryIdentityHash: digest, rootPolicyId: randomUUID(), rootPolicyRevision: '1', locationRevision: '1',
+            attestationId: 'original-attestation', attestationHash: digest },
+          source: { kind: 'plain', filesystem, accessMode: 'read-only' },
+          payload: { kind: 'agent', agentId: f.binding.owner.agentId, agentConfigurationVersionId: f.configuration.id,
+            driverId: 'codex', driverRevision: '1', instanceId: f.binding.profile.instanceId,
+            instanceRevision: f.binding.profile.instanceRevision, harnessInstallationId: target.harnessInstallationId,
+            installationFingerprint: target.installationFingerprint, runtimeContractVersion: 1,
+            protocolRevision: 'protocol', credentialScopeRefs: [] } },
+        workingTree: { canonicalProjectRoot: project, canonicalCwd: project, directoryIdentityHash: digest,
+          filesystem, accessMode: 'read-only', privateGit: null },
+      } })
+    }
     const directory = await installedConversationDirectory({ binding, configuration: f.configuration,
       approvedRoots: async () => roots })
     await directory.assertCurrent()

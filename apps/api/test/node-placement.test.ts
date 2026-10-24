@@ -32,7 +32,7 @@ describe('accepted node placement binding', () => {
     input.source.revisionId = 'new-source'
     expect(accepted.destination.canonicalCwd).toBe('/projects/one')
     expect(accepted.payload.kind === 'agent' && accepted.payload.instanceId).toBe('instance-1')
-    expect(accepted.source.revisionId).toBe('source-1')
+    expect(accepted.source).toHaveProperty('revisionId', 'source-1')
     expect(Object.isFrozen(accepted.payload)).toBe(true)
     expect(readPlacement(accepted)).toEqual(accepted)
   })
