@@ -57,9 +57,6 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
   // A draft node's Agent lets the server open its draft chat before the workflow is saved.
   const agentId=pins.runId?undefined:board?.draftNodeAgentId?.(nodeId)
   const selection=WorkflowExecutionChatSelectionSchema.parse({...pins,workflowNodeId:nodeId,...(agentId?{agentId}:{})})
-  const currentScope=canonicalJson(selection)
-  const [separateScope,setSeparateScope]=useState<string>()
-  const separate=!selection.runId&&!!agentId&&separateScope===currentScope
   const query=useInfiniteQuery({queryKey:executionChatSelectionKey(selection),
     initialPageParam:undefined as string|undefined,
     queryFn:({signal,pageParam})=>resolveExecutionChat({...selection,...(pageParam?{cursor:pageParam}:{})},{signal}),
@@ -71,8 +68,14 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
   const first=blocked?undefined:query.data?.pages[0], resolved=first?.kind==='selected'?first:undefined
   const pinned=!!resolved&&isPinned(selection,resolved)
   useEffect(()=>{
-    if(selection.runId&&resolved&&!pinned) onSelectTarget(resolved.target,resolved.workflowVersionId)
-  },[selection.runId,resolved,pinned,onSelectTarget])
+    if(resolved&&!pinned) onSelectTarget(resolved.target,resolved.workflowVersionId)
+  },[resolved,pinned,onSelectTarget])
+  // A finished Run's executions all open the same Agent history, so there is nothing to choose: open the first.
+  const settled=first?.kind==='selection_required'&&!query.hasNextPage&&first.items.length>0
+    &&first.items.every(item=>item.state==='idle')?first.items[0]:undefined
+  useEffect(()=>{
+    if(settled) onSelectTarget(settled.target,settled.workflowVersionId)
+  },[settled,onSelectTarget])
   const client=useMemo(()=>resolved?boundClient(cache,resolved):undefined,[cache,resolved])
   // A draft-only Agent (never saved) has no configuration to chat with yet: save only that Agent, never the
   // workflow graph, so chat opens even while an unrelated part of the workflow can't be saved.
@@ -93,7 +96,7 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
   },[draftOnly,saveChatAgent,saveAgent])
   // Settings changed on the Board (e.g. browser turned on) reach an open draft chat without saving the workflow:
   // opening the chat saves only this Agent's pending edits, and its next turn uses them.
-  const outsideRun=!selection.runId&&(first?.kind==='outside_run'||separate)
+  const outsideRun=!selection.runId&&first?.kind==='outside_run'
   const synced=useRef(false)
   useEffect(()=>{
     if(!outsideRun||!saveChatAgent||synced.current) return
@@ -103,29 +106,13 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
   const failure=query.error??blocked
   const error=failure instanceof Error?failure.message:'Chat could not refresh. Your selection has been kept.'
   const retry=<button type="button" onClick={()=>void query.refetch()} disabled={query.isFetching && !query.isRefetching}>Retry</button>
-  const chooseExecution=selection.runId&&selection.workflowVersionId?<button type="button"
-    onClick={()=>onSelectRun({runId:selection.runId!,workflowVersionId:selection.workflowVersionId!})}>Choose another execution</button>:null
-  if(!first) return failure?<div role="alert">{error} {retry} {chooseExecution}</div>:<p role="status">Loading selected Agent chat…</p>
+  if(!first) return failure?<div role="alert">{error} {retry}</div>:<p role="status">Loading selected Agent chat…</p>
   const status=query.isError?<div role="alert">{error} {retry}</div>:null
-  const separateAction=!selection.runId&&agentId?<button type="button"
-    onClick={()=>setSeparateScope(currentScope)}>Separate chat</button>:null
-  if(separate&&agentId) {
-    const View=views.OutsideRunChat
-    return <>{status}<p className="workflow-panel-hint">Separate chat · Current Agent <button type="button"
-      onClick={()=>setSeparateScope(undefined)}>Choose chat destination</button></p><View selection={selection}
-      resolved={{kind:'outside_run',reason:'SEPARATE_CHAT',agent:{workspaceId:selection.workspaceId,workflowId:selection.workflowId,
-        workflowNodeId:nodeId,agentId}}} onSelectTarget={onSelectTarget} onSelectRun={onSelectRun}/></>
-  }
-  if(resolved&&!selection.runId) return <section aria-label="Select Agent chat target">
-    {status}<p>Choose where to chat with this Agent.</p><button type="button"
-      onClick={()=>onSelectTarget(resolved.target,resolved.workflowVersionId)}>Open Run {resolved.target.kind==='workflow_execution'
-        ?resolved.target.execution.runId:resolved.target.runId}</button> {separateAction}
-  </section>
   if(resolved) {
     if(!pinned||!client) return <p role="status">Opening the selected Run target…</p>
     const View=views.ExecutionChat
     return <>{status}<p className="workflow-panel-hint" data-testid="agent-chat-scope">{resolved.target.kind==='workflow_execution'
-      ?`Run · attempt ${resolved.target.execution.attempt}`:'Run · coordinator'} {chooseExecution}</p><View key={canonicalJson(resolved.target)} selection={selection} resolved={resolved}
+      ?`Run · attempt ${resolved.target.execution.attempt}`:'Run · coordinator'}</p><View key={canonicalJson(resolved.target)} selection={selection} resolved={resolved}
       client={client} queryKey={executionChatReadKey(resolved.target)} onSelectTarget={onSelectTarget} onSelectRun={onSelectRun}/></>
   }
   if(first.kind==='outside_run') {
@@ -137,10 +124,9 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
     <button type="button" onClick={saveAgent}>Try again</button></>
   if(first.kind==='unavailable') return <>{status}<p role="status">{first.reason==='NO_EXECUTION'
     ?'This saved node has no available execution. Choose a Run to read its history.'
-    :first.reason==='NODE_UNAVAILABLE'?'This Agent is not present in the selected saved workflow.':'The selected saved workflow is unavailable.'}</p>{chooseExecution}</>
+    :first.reason==='NODE_UNAVAILABLE'?'This Agent is not present in the selected saved workflow.':'The selected saved workflow is unavailable.'}</p></>
   return <section aria-label="Select Agent chat target">
     {status}<p>{first.kind==='run_selection_required'?'Choose a Run for this Agent.':'Choose the exact execution to open.'}</p>
-    {separateAction}
     <ul>{query.data?.pages.flatMap(page=>page.kind==='run_selection_required'?page.items.map(item=>
       <li key={item.runId}><button type="button" onClick={()=>onSelectRun(item)}>Run {item.runId}</button></li>)
       :page.kind==='selection_required'?page.items.map(item=>
