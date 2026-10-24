@@ -306,19 +306,6 @@ describe('disabled collaboration shell through navigation and rendered controls'
     expect(await screen.findByText('Choose exact work')).toBeVisible()
   })
 
-  it('clears unavailable chat destination pins through URL navigation and retains the Agent panel', async () => {
-    const router = mount('/workspaces/workspace?workflowId=workflow&runId=missing-run&workflowVersionId=missing-version&executionSemanticsVersion=3&boardPanel=agent&boardNodeId=node-a&boardAgentTab=chat&boardExecutionId=missing-execution', {
-      executionChat: value => <Button onClick={() => value.onSelectRun(undefined)}>Choose chat destination</Button>,
-    })
-    await userEvent.click(await screen.findByRole('button', { name: 'Choose chat destination' }))
-    await waitFor(() => {
-      expect(router.state.location.search).toMatchObject({ workflowId: 'workflow', boardPanel: 'agent', boardNodeId: 'node-a', boardAgentTab: 'chat' })
-      for (const key of ['selectedRunId', 'runId', 'workflowVersionId', 'executionSemanticsVersion', 'boardExecutionId', 'boardWaitingActivationId']) {
-        expect(router.state.location.search).not.toHaveProperty(key)
-      }
-    })
-  })
-
   it('opens Group chat in the floating panel without Agent tabs, while the Agent panel offers Chat, Settings, Details and Browser', async () => {
     const user = userEvent.setup()
     const router = mount('/workspaces/workspace?workflowId=workflow', { groupChat: () => <p>Group messages</p> })

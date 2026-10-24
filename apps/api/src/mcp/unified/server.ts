@@ -7,7 +7,7 @@ import { McpServer } from '@modelcontextprotocol/server'
 import { paginateToolLists } from '../toolListPagination.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { z } from 'zod'
-import { GRAPHQL_AGENT_TOOLS } from '@foreman-code/contracts'
+import { FOREMAN_AGENT_TOOLS } from '@foreman-code/contracts'
 
 import type { AgentReferenceService } from '../../modules/files/references/agentService.js'
 import { registerExecutionReferenceTools } from '../shared/executionReferences.js'
@@ -30,7 +30,7 @@ import { stripMcpInputSchemas } from '../shared/inputSchemas.js'
 import { retryReadOnlyToolConnections } from '../shared/databaseReadRetry.js'
 import { MCP_ROLE_LABELS, roleInstructions, roleList, toolRoles, type McpRole } from './roles.js'
 
-export interface GraphqlMcpContext {
+export interface ForemanMcpContext {
   role: McpRole
   principal: ManagementPrincipal
   reauthorize?: () => Promise<ManagementPrincipal>
@@ -63,10 +63,10 @@ async function collectTools(register: (server: McpServer) => unknown): Promise<T
 }
 
 function agentCatalog(): Array<{ name: string; description: string }> {
-  return Object.entries(GRAPHQL_AGENT_TOOLS).map(([name, definition]) => ({ name, description: definition.description }))
+  return Object.entries(FOREMAN_AGENT_TOOLS).map(([name, definition]) => ({ name, description: definition.description }))
 }
 
-function requireWorkerToolCatalog(context: GraphqlMcpContext, tools: readonly ToolDefinition[]): void {
+function requireWorkerToolCatalog(context: ForemanMcpContext, tools: readonly ToolDefinition[]): void {
   const registered = new Set(tools.map(tool => tool.name))
   const missing = context.tools?.filter(name => {
     if (!toolRoles(name).includes(context.role)) return false
@@ -93,7 +93,7 @@ export interface McpRequestRegistration {
 }
 
 /** Schemas are shared; handlers retain this request's grants, signal and full discovery callback. */
-function requestOperatorTools(context: GraphqlMcpContext, registration: McpRequestRegistration): Promise<OperatorRequestTools> {
+function requestOperatorTools(context: ForemanMcpContext, registration: McpRequestRegistration): Promise<OperatorRequestTools> {
   if (!registration.operator) {
     const registered: OperatorRequestTools = { tools: [] }
     registered.tools = operatorRequestTools({ principal: context.principal, services: context.operator!,
@@ -109,7 +109,7 @@ const ToolCall = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(), 
   method: z.literal('tools/call'), params: z.object({ name: z.string() }).passthrough() }).passthrough()
 
 /** Known tools hidden by role, Agent configuration or Operator grants still receive an audited denial. */
-export async function roleDeniedToolCall(context: GraphqlMcpContext, body: unknown,
+export async function roleDeniedToolCall(context: ForemanMcpContext, body: unknown,
   registration: McpRequestRegistration = {}) {
   const call = ToolCall.safeParse(body)
   if (!call.success) return undefined
@@ -149,7 +149,7 @@ export async function roleDeniedToolCall(context: GraphqlMcpContext, body: unkno
 }
 
 /** One server for every role. Each caller lists only its enabled tools: the existing, grant-checked implementations. */
-export async function createGraphqlMcpServer(context: GraphqlMcpContext, requestBody?: unknown,
+export async function createForemanMcpServer(context: ForemanMcpContext, requestBody?: unknown,
   registration: McpRequestRegistration = {}): Promise<McpServer> {
   const call = ToolCall.safeParse(requestBody)
   const requestedTool = call.success && call.data.params.name !== 'operator_get_capabilities' && !OPERATOR_CATALOG_TOOLS.has(call.data.params.name)

@@ -4,7 +4,7 @@ import { CI_FAILURE_HISTORY_LIMITS, CI_LOG_MAX_BYTES, CI_RUN_JOBS_LIMIT, CiListO
   type OperatorCiListInput } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { MainCiContext } from './environment.js'
-import { DomainError, databaseReadFailure } from '@foreman-code/contracts/server-kit'
+import { DomainError, databaseReadFailure } from '@foreman-code/contracts-node/server-kit'
 import { CI_GET_ACTIONS, type CiAuthority } from './authority.js'
 import { ciGroupState } from './parts.js'
 import { CI_QUEUE_ORDER, ciQueueReason } from './priority.js'

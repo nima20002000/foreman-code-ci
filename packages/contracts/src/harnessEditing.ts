@@ -6,13 +6,15 @@ import {
   type AgentEffort,
   type CodexHarnessConfiguration,
   type HarnessConfiguration,
+  type RecordedHarnessConfiguration,
 } from './index.js';
 
 /** Legacy absence is supported. Never mutate the shared defaults or a saved snapshot. */
 export function withAdvancedDefaults(value: CodexHarnessConfiguration): CodexHarnessConfiguration;
 export function withAdvancedDefaults(value: ClaudeHarnessConfiguration): ClaudeHarnessConfiguration;
 export function withAdvancedDefaults(value: HarnessConfiguration): HarnessConfiguration;
-export function withAdvancedDefaults(value: HarnessConfiguration): HarnessConfiguration {
+export function withAdvancedDefaults(value: RecordedHarnessConfiguration): RecordedHarnessConfiguration;
+export function withAdvancedDefaults(value: RecordedHarnessConfiguration): RecordedHarnessConfiguration {
   if (value.harness === 'claude') return structuredClone(value);
   if (value.harness === 'codex') {
     return structuredClone({ ...value, advanced: value.advanced ?? DEFAULT_CODEX_ADVANCED_CONFIGURATION });
@@ -21,7 +23,7 @@ export function withAdvancedDefaults(value: HarnessConfiguration): HarnessConfig
 }
 
 /** Empty editor lines are separators, not paths. All other path characters are significant. */
-export function prepareHarnessConfiguration(value: HarnessConfiguration): HarnessConfiguration {
+export function prepareHarnessConfiguration(value: RecordedHarnessConfiguration): HarnessConfiguration {
   const next = withAdvancedDefaults(value);
   if (next.harness === 'codex' && next.advanced) {
     next.advanced.additionalWritableDirectories = next.advanced.additionalWritableDirectories.filter((path) => path !== '');
@@ -43,6 +45,6 @@ export function changeCodexSandbox(
 }
 
 /** This projection is optional; a provider variant is not a product effort enum. */
-export function legacyEffortForHarness(value: HarnessConfiguration): AgentEffort | undefined {
+export function legacyEffortForHarness(value: RecordedHarnessConfiguration): AgentEffort | undefined {
   return value.harness === 'codex' ? value.reasoningEffort : value.harness === 'opencode' ? AgentEffortSchema.safeParse(value.variant).data : undefined;
 }

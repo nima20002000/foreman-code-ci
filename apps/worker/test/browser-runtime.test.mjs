@@ -293,11 +293,11 @@ test('Main cutover drains before stop and restores runtime before the previous A
 function bootstrapFixture(overrides = {}) {
   const events = [], failures = [], identity = 'e'.repeat(64);
   const unused = async () => { throw new Error('This bootstrap fixture does not admit browser operations.'); };
-  /** @type {import('../../api/src/modules/browser-runtime/types.js').BrowserSubjectAuthority} */
+  /** @type {import('@foreman-code/api/worker/collaboration').BrowserSubjectAuthority} */
   const subjectAuthority = { resolve: unused, assertCurrent: unused };
-  /** @type {import('../../api/src/modules/browser-profiles/keys.js').BrowserPairingAuthority} */
+  /** @type {import('@foreman-code/api/worker/collaboration').BrowserPairingAuthority} */
   const pairing = { current: unused, assertCurrent: unused, wrappingKey: unused, assertInstallation: unused };
-  /** @type {import('../../api/src/modules/browser-runtime/hostFactory.js').BrowserHostKeyRequests} */
+  /** @type {import('@foreman-code/api/worker/collaboration').BrowserHostKeyRequests} */
   const keys = { exportKey: unused, snapshotKey: unused };
   const descriptor = { rootDirectory: '/fixture/runtime', manifestSha256: identity, runtimeVersion: '1.0.0',
     profileFormat: 1, target, nativeHostModule: '/fixture/runtime/native-host.mjs',

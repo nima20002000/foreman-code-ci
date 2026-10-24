@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { settleObserved } from '../../diagnostics/index.js'
 import { isDeepStrictEqual } from 'node:util'
 import { McpServer } from '@modelcontextprotocol/server'
@@ -94,7 +95,7 @@ export function createProductionWorkflowArtifacts(input: ProductionWorkflowArtif
     app.post('/api/artifact-transfers', { bodyLimit: 4096, onRequest: async request => { await auth.producer(request) } },
       async (request, reply) => { reply.header('cache-control', 'no-store'); return admit(request, request.body, 'http') })
     app.post('/mcp/artifact-transfers', { bodyLimit: 16384, onRequest: async request => { await auth.producer(request) } }, async (request, reply) => {
-      const server = new McpServer({ name: 'graphql-artifact-transfers', version: '1.0.0' })
+      const server = new McpServer({ name: INSTALLATION_NAMES.mcp.artifactTransfers, version: '1.0.0' })
       registerTransferTool(server, request)
       const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined })
       reply.raw.once('close', () => { void settleObserved('http', 'close disconnected MCP resources', [transport.close(), server.close()]) })

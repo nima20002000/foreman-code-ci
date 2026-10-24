@@ -5,8 +5,7 @@ import type { executionChatReadKey, WorkflowExecutionChatClient } from './client
 
 export interface WorkflowExecutionChatNavigation {
   onSelectTarget(target:WorkflowExecutionChatTarget,workflowVersionId:string):void
-  // Undefined returns to Current so unavailable Run/version pins can be replaced explicitly.
-  onSelectRun(scope:{runId:string;workflowVersionId:string}|undefined):void
+  onSelectRun(scope:{runId:string;workflowVersionId:string}):void
 }
 /** The shared rail supplies URL-owned pins and atomic navigation callbacks. */
 export type WorkflowExecutionChatSlotSelection =

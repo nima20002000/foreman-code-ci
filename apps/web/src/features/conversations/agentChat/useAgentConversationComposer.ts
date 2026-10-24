@@ -1,18 +1,15 @@
-import { useSessionControls } from '../sessionControls/useSessionControls'
+import { useSessionControls, prepareChatAttachments, useConversationDraftStore, stateBelongsToContext } from '../../chat-core'
 import { compactionBlocksSend, parseSessionCommand, type SessionMode } from '@foreman-code/contracts'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { AgentChatIntent, SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import { useConversationAttachments } from '../../attachments'
 
-import { prepareChatAttachments } from '../chatAttachmentAttempt'
 
 import { useAgentChat } from './useAgentChat'
 import { selectedRunChatApi } from './selectedRunChatClient'
 import { agentChatApi } from '../../../shared/api/agentChat'
 import { assertSession, sessionGeneration } from '../../../shared/api/sessionBoundary'
-import { useConversationDraftStore } from '../conversationDraftStore'
-import { stateBelongsToContext } from './model'
 
 export function useAgentConversationComposer({ chat, state, sessionControls, attachments, draft }: {
   chat: ReturnType<typeof useAgentChat>
@@ -81,7 +78,7 @@ export function useAgentConversationComposer({ chat, state, sessionControls, att
       }
       if (command.kind === 'new') {
         if (chat.pending || startNew.isPending || newInFlight.current) return false
-        const denied = chat.blocked('agent_chat:write', true)
+        const denied = chat.blocked('agent_chat:write')
         if (denied) throw new Error(denied)
         const expectedConversationId = state?.conversation?.id ?? null
         const retry = startNew.isError && startNew.variables?.expectedConversationId === expectedConversationId
@@ -89,7 +86,7 @@ export function useAgentConversationComposer({ chat, state, sessionControls, att
         newInFlight.current = true
         try {
           await startNew.mutateAsync(retry ?? { requestId: crypto.randomUUID(), expectedConversationId,
-            draftContent: content })
+            draftContent: useConversationDraftStore.getState().drafts[chat.draftKey] ?? '' })
         } finally { newInFlight.current = false }
         return true
       }

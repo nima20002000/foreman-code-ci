@@ -11,7 +11,7 @@ import type { ResolvedJobDefinitionSpecRecord } from '@foreman-code/contracts/jo
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../access/policy.js'
 import type { PostgresCommandCoordinator } from '../commands/index.js'
-import type { PostgresSourceService } from '../sources/service.js'
+import type { PostgresSourceService } from '../sources/index.js'
 import { lockActiveWorkspace } from '../workspaces/index.js'
 import { DomainError } from '../errors.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
