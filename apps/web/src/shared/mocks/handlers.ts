@@ -264,7 +264,6 @@ export const handlers: RequestHandler[] = [
     sessionControlsResponse(String(params.conversationId))),
   http.get('/api/workspaces/:workspaceId/agent-chat/conversations/:conversationId/session-controls', ({ params }) =>
     sessionControlsResponse(String(params.conversationId))),
-  http.get('*/api/devices', () => HttpResponse.json({ devices: [] })),
   http.get('*/api/management/computers/maintenance', () => HttpResponse.json({ computers: [] })),
   http.post('*/api/management/computers/maintenance/read', async ({ request }) => {
     const { target } = ComputerMaintenanceReadInputSchema.parse(await request.json())

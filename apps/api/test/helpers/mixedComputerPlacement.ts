@@ -36,7 +36,6 @@ type Fixture = Awaited<ReturnType<typeof currentOperatorIntegration>>
 export async function mixedComputerPlacement(f: Fixture, directory: string, options: {
   git?: SourceManifest['git']
   sourceAccessMode?: SourceRootRecord['binding']['accessMode']
-  unboundMainSource?: boolean
   unconfiguredDeviceRoot?: boolean
   unconfiguredFirstDeviceRoot?: boolean
   unboundFirstDeviceSource?: boolean
@@ -137,8 +136,7 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
       snapshotId: source.snapshotId, manifestDigest: source.manifestDigest },
     ownerPrincipalId: f.writer.principal.id, authorizedByPrincipalId: f.writer.principal.id,
     registration: policy.registration, attestationId: randomUUID(), attestationDigest: 'a'.repeat(64), boundAt: f.f.createdAt })
-    const unboundSource = kind === 'main' && options.unboundMainSource
-      || kind === 'device' && options.unboundFirstDeviceSource && placements.length === 1
+    const unboundSource = kind === 'device' && options.unboundFirstDeviceSource && placements.length === 1
     if (!unconfiguredRoot && !unboundSource) {
       await f.db.pool.query(`insert into source_root_catalog(root_id,workspace_id,scope_hash,current_binding_revision)
         values($1,$2,$3,1)`, [root.binding.rootId, policy.workspaceId, sourceSha256(Buffer.from(JSON.stringify({
