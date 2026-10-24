@@ -41,7 +41,7 @@ it('opens the saved workflow for authoring before any departure', async () => {
 
   const authoring = await screen.findByLabelText('Workflow authoring', {}, { timeout: 8000 })
   expect(authoring).toHaveRole('region')
-  expect(within(screen.getByRole('banner', { name: 'Board toolbar' })).getByRole('heading', { name: 'Research to review' })).toBeVisible()
+  expect(within(authoring).getByRole('heading', { name: 'Research to review' })).toBeVisible()
   const researcher = await within(authoring).findByLabelText(
     /^Researcher, .*starts the workflow.*Draft$/, {}, { timeout: 8000 },
   )
@@ -71,7 +71,7 @@ it.each([
     })
     render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
     const authoring = await screen.findByRole('region', { name: 'Workflow authoring' }, { timeout: 8000 })
-    expect(within(screen.getByRole('banner', { name: 'Board toolbar' })).getByRole('heading', { name: 'Research to review' })).toBeVisible()
+    expect(within(authoring).getByRole('heading', { name: 'Research to review' })).toBeVisible()
     const canvas = within(authoring).getByLabelText('Editable workflow graph')
     expect(await within(canvas).findByRole('button', { name: /^Researcher,/ }, { timeout: 8000 })).toBeVisible()
     expect(await within(authoring).findByRole('button', {

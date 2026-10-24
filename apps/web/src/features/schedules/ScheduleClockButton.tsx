@@ -3,11 +3,11 @@ import { useStore } from 'zustand'
 import { Icon, IconButton } from '../../shared/ui/nocturne'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { createScheduleEditorStore } from './editorStore'
-import { ScheduleModal, type ScheduleNavigation } from './ScheduleModal'
+import { ScheduleModal } from './ScheduleModal'
 import { useScheduleCommand } from './queries'
 import './schedules.css'
 
-export interface ScheduleClockButtonProps extends ScheduleNavigation {
+export interface ScheduleClockButtonProps {
   workspaceId: string
   workflowId?: string | null
   /** True only when a persisted workflow version exists; a client-allocated id is insufficient. */
@@ -22,10 +22,10 @@ export function ScheduleClockButton(props: ScheduleClockButtonProps) {
   }
   // Drafts, dialogs, and in-flight callbacks can never migrate into another workflow.
   return <SavedScheduleClock key={JSON.stringify([sessionGeneration(), props.workspaceId, props.workflowId])}
-    workspaceId={props.workspaceId} workflowId={props.workflowId} onSelectRun={props.onSelectRun} onReviewWorkflow={props.onReviewWorkflow} />
+    workspaceId={props.workspaceId} workflowId={props.workflowId} />
 }
 
-function SavedScheduleClock({ workspaceId, workflowId, onSelectRun, onReviewWorkflow }: { workspaceId: string; workflowId: string } & ScheduleNavigation) {
+function SavedScheduleClock({ workspaceId, workflowId }: { workspaceId: string; workflowId: string }) {
   // React holds only the store instance; Zustand owns all local interaction state.
   const [store] = useState(createScheduleEditorStore)
   const open = useStore(store, (state) => state.open)
@@ -38,6 +38,6 @@ function SavedScheduleClock({ workspaceId, workflowId, onSelectRun, onReviewWork
       aria-haspopup="dialog" aria-expanded={open} onClick={() => store.getState().show()}>
       <Icon name="clock" size={16} />
     </IconButton>
-    <ScheduleModal scope={{ workspaceId, workflowId }} store={store} returnFocusRef={trigger} onSelectRun={onSelectRun} onReviewWorkflow={onReviewWorkflow} />
+    <ScheduleModal scope={{ workspaceId, workflowId }} store={store} returnFocusRef={trigger} />
   </>
 }
