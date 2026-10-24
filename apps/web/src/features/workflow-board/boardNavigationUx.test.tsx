@@ -16,6 +16,8 @@ afterEach(() => useRunsSelectorUi.getState().setOpen(null))
 it('filters Runs without prompting or losing an unapplied Master hierarchy form', async () => {
   const fixture = await meaningfulSaveFixture(false, authoringFixture(['orchestrator', 'orchestrator', 'coder']))
   measureBoardWire(fixture.mock, fixture.reply)
+  server.use(http.get(`*/api/management/workspaces/${fixture.workspaceId}/workflows/${fixture.workflowId}/runs/summaries`, () =>
+    HttpResponse.json({ items: [], pageInfo: { nextCursor: null } })))
   const { router } = await mountMeasuredBoard(fixture.href), user = userEvent.setup()
   await user.click(await screen.findByRole('button', { name: 'Workflow settings' }))
   const hierarchy = await screen.findByRole('region', { name: 'Master hierarchy' })
@@ -23,6 +25,7 @@ it('filters Runs without prompting or losing an unapplied Master hierarchy form'
   await user.selectOptions(within(hierarchy).getByLabelText('Node 2 reports to'), 'node-1')
   await user.click(screen.getByRole('button', { name: 'Runs' }))
   const filter = await screen.findByRole('combobox', { name: 'Run status' })
+  expect(await screen.findByText('No runs', { exact: true })).toBeVisible()
   await user.selectOptions(filter, 'failed')
   await waitFor(() => expect(router.state.location.search.runStatus).toBe('failed'))
   expect(screen.queryByRole('alertdialog', { name: 'Save changes before leaving?' })).not.toBeInTheDocument()
