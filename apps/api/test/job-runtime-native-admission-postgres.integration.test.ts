@@ -21,7 +21,7 @@ import type { JobQualificationCandidate } from '../src/modules/jobs/qualificatio
 import { jobDigest } from '../src/modules/jobs/service.js'
 import { jobSpec } from './helpers/jobFixture.js'
 import { postgresEnabled } from './helpers/database.js'
-import { beginTransaction, commitTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 const uuid='11111111-1111-4111-8111-111111111111',digest='1'.repeat(64)
 const principal:ManagementPrincipal={id:'runtime-reader',name:'Runtime reader',audience:'operator',grants:[{actions:['job_definitions:read','job_definitions:write'],scope:{workspaceIds:['workspace-fixture']}}],expiresAt:'2099-01-01T00:00:00.000Z',revokedAt:null}
 const root=SourceRootRecordSchema.parse({version:1,source:{approvedSourceId:uuid,snapshotId:uuid,manifestDigest:digest},selection:{hostRef:{kind:'main',mainId:uuid},rootPolicyId:'root-policy',rootPolicyRevision:'1',locationRevision:'1'},binding:{version:1,mainId:uuid,deviceId:null,workerInstallationId:null,workspaceId:'workspace-fixture',rootId:uuid,bindingRevision:1,locationRevision:1,canonicalPath:'/approved',filesystem:{device:'1',inode:'2',mountId:'3'},accessMode:'exclusive-write',snapshotId:uuid,manifestDigest:digest},ownerPrincipalId:principal.id,authorizedByPrincipalId:principal.id,registration:null,attestationId:'actual-test-attestation',attestationDigest:digest,boundAt:'2026-10-01T00:00:00.000Z'})
@@ -110,7 +110,11 @@ describe.skipIf(!postgresEnabled)('Main qualification admission PostgreSQL and a
     const input={candidate:{approvalId:uuid,qualificationId:uuid,operationId:uuid,fingerprint} as JobQualificationCandidate,runCommandId:'actual-command',runPrincipalId:principal.id,
       resolveRoot:async()=>root,readCurrent:async()=>({fingerprint,connection:null})}
     let admission
-    try {await beginTransaction(sql);admission=await admitInstalledJobQualification(sql,input);expect(await admitInstalledJobQualification(sql,input)).toEqual(admission);await commitTransaction(sql)}finally{sql.release()}
+    try { admission = await withTransaction({ client: sql }, async transaction => {
+      const result = await admitInstalledJobQualification(transaction, input)
+      expect(await admitInstalledJobQualification(transaction, input)).toEqual(result)
+      return result
+    }) } finally { sql.release() }
     const http=await app.inject({method:'GET',url:`/api/management/workspaces/${profile.workspaceId}/jobs/runtime-qualifications/${uuid}`,headers:{authorization:`Bearer ${token}`}})
     expect(http.statusCode).toBe(200);expect(http.json().nativeAdmission).toEqual(admission);expect(http.json().measurement).toBeNull()
     const client=new Client({name:'runtime-admission-tests',version:'1'});clients.push(client)

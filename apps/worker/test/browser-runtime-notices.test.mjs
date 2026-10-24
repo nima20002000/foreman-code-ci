@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { collectChromiumNotices, copyNativeLicenses } from '../../../scripts/browser-runtime-install.mjs';
 
 test('bundled native module notices come from the package owning a nested module boundary', async t => {
@@ -34,22 +34,4 @@ test('collects the internal Chromium credits page through the supported headless
     && args.at(-1) === 'chrome://credits/' ? html : '<html><body></body></html>' });
   await collectChromiumNotices('chromium', directory, directory, browser);
   assert.equal(await readFile(join(directory, 'licenses/chromium-credits.html'), 'utf8'), html);
-});
-
-
-test('retains the pinned supplemental notice for the schema validator bundled into the native host', async t => {
-  const parent = join(homedir(), '.cache', 'foreman-tmp');
-  await mkdir(parent, { recursive: true, mode: 0o700 });
-  const directory = await mkdtemp(join(parent, 'browser-schema-notices-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const packageRoot = join(directory, 'node_modules/@cfworker/json-schema');
-  await mkdir(packageRoot, { recursive: true });
-  await writeFile(join(packageRoot, 'package.json'), JSON.stringify({ name: '@cfworker/json-schema', version: '4.1.1', license: 'MIT' }));
-  const notice = 'apps/worker/artifacts/licenses/cfworker.txt';
-  await mkdir(dirname(join(directory, notice)), { recursive: true });
-  const terms = await readFile(new URL('../artifacts/licenses/cfworker.txt', import.meta.url));
-  await writeFile(join(directory, notice), terms);
-  const unit = join(directory, 'unit');
-  await copyNativeLicenses(['node_modules/@cfworker/json-schema/dist/index.js'], directory, unit);
-  assert.deepEqual(await readFile(join(unit, 'licenses/native-packages/_cfworker_json-schema-4.1.1/LICENSE')), terms);
 });

@@ -1,5 +1,5 @@
 import { logIgnoredError, settleObserved } from '../diagnostics/index.js'
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import { assertClaudeFullAccess } from './nativeWorkflowConfiguration.js'
 import { isDeepStrictEqual } from 'node:util'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
@@ -7,7 +7,7 @@ import { QualificationCache } from './qualificationCache.js'
 import { qualificationError } from './qualificationErrors.js'
 
 import { CODEX_INTERACTION_SUPPORT, HarnessDefaultsSchema, HarnessQualificationSchema, withAdvancedDefaults,
-  type HarnessConfiguration, type AgentHarness, type HarnessDefaults } from '@foreman-code/contracts'
+  type RecordedHarnessConfiguration, type AgentHarness, type HarnessDefaults } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 
 import { requireAuthorization } from '../access/policy.js'
@@ -43,13 +43,13 @@ export class HarnessCatalogService {
         : []))
   }
 
-  private currentStatus(value: HarnessConfiguration,
+  private currentStatus(value: RecordedHarnessConfiguration,
     options: { signal?: AbortSignal; allowStale?: boolean } = {}) {
     return this.statuses.get(canonicalJson(withAdvancedDefaults(value)),
       (active) => this.inspectConfiguration(value, active), options)
   }
 
-  private async inspectConfiguration(value: HarnessConfiguration, signal?: AbortSignal) {
+  private async inspectConfiguration(value: RecordedHarnessConfiguration, signal?: AbortSignal) {
     assertClaudeFullAccess(value)
     try {
       return await this.checks.get(canonicalJson(withAdvancedDefaults(value)), async (active) => {
@@ -93,11 +93,11 @@ export class HarnessCatalogService {
   }
 
   /** Native model/variant/Agent qualification shared by every defaults writer. No turn is started. */
-  async qualifyConfiguration(value: HarnessConfiguration) {
+  async qualifyConfiguration(value: RecordedHarnessConfiguration) {
     return (await this.inspectConfiguration(value)).qualification
   }
 
-  async checkConfiguration(principal: ManagementPrincipal, configuration: HarnessConfiguration, signal?: AbortSignal) {
+  async checkConfiguration(principal: ManagementPrincipal, configuration: RecordedHarnessConfiguration, signal?: AbortSignal) {
     requireAuthorization(principal, 'harnesses:read')
     return { configuration, ...await this.currentStatus(configuration,
       { ...(signal ? { signal } : {}), allowStale: false }) }

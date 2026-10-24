@@ -12,7 +12,7 @@ import { RemoteOwnerControlSchema, RemoteReviewerAssignmentSchema, remoteActiveN
 import { RemoteExecutionRpcRequestSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import type { DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
 import type { NativeSessionManagerResolver, NativeManagerResolutionContext } from '../../interactions/runtimePorts.js'
-import type { NativeHarnessSessionManager, NativeHistory, NativeTurnInput, ChildProcessEnvironment } from '../../harnesses/port.js'
+import type { NativeHarnessSessionManager, NativeHistory, NativeTurnInput, ChildProcessEnvironment } from '../../harnesses/index.js'
 import { assertRuntimeLeafPath, assertRuntimeLeafBinding, type RuntimeLeafAttestation } from './runtimeLeaf.js'
 import { readPlacement } from '../../placement/binding.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
@@ -20,9 +20,9 @@ import { HistoryObservationPages } from './historyObservationPages.js'
 import { startNativeHistoryDownload } from './nativeHistoryPage.js'
 import { logIgnoredError } from '../../diagnostics/index.js'
 import { inspectNativeResponse } from '../../harnesses/responseAvailability.js'
-import { supportsExpectedTurnSteer } from '../../harnesses/index.js'
+import { supportsExpectedTurnSteer } from '../../harnesses/capabilities.js'
 import { sha256CanonicalJsonHex, sha256Hex } from '../../../shared/hash.js'
-import { retiredHarnessError } from '../../harnesses/index.js'
+import { retiredHarnessError } from '../../harnesses/retiredHarness.js'
 
 function executableHarness(harness: RecordedAgentHarness): AgentHarness {
   if (harness === 'opencode') {

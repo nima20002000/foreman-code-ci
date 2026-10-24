@@ -1,3 +1,4 @@
+import { verificationRuntimeFiles, verificationArtifactPath } from '../../../../packages/verification-runner/runtime-files.mjs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile, open } from 'node:fs/promises';
@@ -21,12 +22,10 @@ async function installedRuntimeFiles(offlineSeed) {
   const controlNames = ['Containerfile', 'corepack'];
   if (offlineSeed) controlNames.push('seed-policy.mjs', 'verification-policy.mjs', 'verification-observation.mjs');
   const entries = controlNames.map(name => ({ root: controls, name, destination: name }));
-  for (const name of ['verification-runner.mjs', 'verify-repository.mjs', 'verification-reports.mjs', 'integration-process.mjs', 'integration-capabilities.mjs']) {
-    entries.push({ root: scripts, name, destination: `verification/${name}` });
-  }
-  for (const path of ['apps/worker/src/diagnostics.mjs', 'packages/contracts/src/verificationEnvironment.mjs',
-    'packages/contracts/src/integrationScheduling.mjs']) {
-    entries.push({ root: join(scripts, '..', dirname(path)), name: basename(path), destination: path });
+  for (const path of verificationRuntimeFiles) {
+    const installedPath = bundled ? verificationArtifactPath(path) : path;
+    entries.push({ root: join(scripts, '..', dirname(installedPath)), name: basename(installedPath),
+      destination: verificationArtifactPath(path) });
   }
   return Promise.all(entries.map(async entry => ({ ...entry,
     bytes: await readSeedFile(entry.root, entry.name, 1024 * 1024) })));

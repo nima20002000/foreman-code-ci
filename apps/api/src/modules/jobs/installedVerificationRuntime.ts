@@ -1,7 +1,7 @@
 import { InstalledVerificationRuntimeConfigurationSchema, InstalledVerificationRuntimeCaptureInputSchema,
   MAX_VERIFICATION_CONFIGURATION_BYTES, readProtectedRuntimeFile, type InstalledVerificationRuntimeCaptureInput,
   type InstalledVerificationRuntimeConfiguration, type InstalledRuntimeConfigurationLocation,
-  type InstalledRuntimeObservedHost } from '@foreman-code/contracts/installed-runtime-node'
+  type InstalledRuntimeObservedHost } from '@foreman-code/contracts-node/installed-runtime-node'
 import { readVerificationQuotaPool } from './quotaOwnership.js'
 import { isDeepStrictEqual } from 'node:util'
 import { canonicalGraphJson } from '@foreman-code/contracts/current'

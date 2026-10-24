@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { Message } from '@foreman-code/contracts'
 import { EmptyState, MessageBubble } from '../../shared/ui/nocturne'
 import './conversationHistory.css'
-import { TextTruncationNotice } from './TextTruncationNotice'
+import { TextTruncationNotice } from '../chat-core'
 
 export interface ConversationHistoryProps {
   messages: Message[]

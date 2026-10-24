@@ -281,9 +281,15 @@ export const RetiredOpenCodeConfigurationSchema = z
 export type RetiredOpenCodeConfiguration = z.infer<typeof RetiredOpenCodeConfigurationSchema>;
 
 /** Readback preserves retired provider settings without authorizing execution. */
-export const HarnessConfigurationSchema = z.discriminatedUnion("harness", [
+export const RecordedHarnessConfigurationSchema = z.discriminatedUnion("harness", [
   CodexHarnessConfigurationSchema,
   RetiredOpenCodeConfigurationSchema,
+  ClaudeHarnessConfigurationSchema,
+]);
+export type RecordedHarnessConfiguration = z.infer<typeof RecordedHarnessConfigurationSchema>;
+/** Executable configuration. Retired providers belong only to recorded readback. */
+export const HarnessConfigurationSchema = z.discriminatedUnion("harness", [
+  CodexHarnessConfigurationSchema,
   ClaudeHarnessConfigurationSchema,
 ]);
 export type HarnessConfiguration = z.infer<typeof HarnessConfigurationSchema>;
@@ -293,12 +299,12 @@ export const SupportedHarnessConfigurationSchema = z.discriminatedUnion("harness
 ]);
 
 /** A retired (saved OpenCode) configuration never gets write access; Codex and Claude follow their sandbox. */
-export function isReadOnlyHarnessConfiguration(configuration: HarnessConfiguration): boolean {
+export function isReadOnlyHarnessConfiguration(configuration: RecordedHarnessConfiguration): boolean {
   return configuration.harness === "opencode" || configuration.sandbox === "read-only";
 }
 
 /** Preserve native variants in harnessConfiguration; this is only a legacy display projection. */
-export function projectHarnessEffort(configuration: HarnessConfiguration): AgentEffort | undefined {
+export function projectHarnessEffort(configuration: RecordedHarnessConfiguration): AgentEffort | undefined {
   const value = configuration.harness === "codex" ? configuration.reasoningEffort : configuration.harness === "opencode" ? configuration.variant : undefined;
   const effort = AgentEffortSchema.safeParse(value);
   return effort.success ? effort.data : undefined;
@@ -334,7 +340,7 @@ export const HarnessWorkflowCompatibilitySchema = z.object({
   }
 });
 export function validateHarnessWorkflowCompatibility(
-  configuration: HarnessConfiguration,
+  configuration: RecordedHarnessConfiguration,
   workflowApprovalHandler?: ApprovalHandler,
   designatedOrchestrator = false,
 ): HarnessConfiguration {
@@ -347,7 +353,7 @@ const AgentTemplateSchema = z.object({
   harnessProfileSelection: z.lazy(() => HarnessProfileSelectionSchema).optional(),
   role: ConfiguredAgentProductRoleSchema,
   boardAddable: z.boolean(),
-  harness: HarnessConfigurationSchema,
+  harness: RecordedHarnessConfigurationSchema,
 }).strict().superRefine((value, context) => {
   if (value.role === "operator" && value.boardAddable) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["boardAddable"], message: "Operator is application-level and cannot be added to a workflow board" });
@@ -415,7 +421,9 @@ export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = AgentDefaultsSchema.parse({
 });
 
 /** New Operator provider selections use full access, without changing board presets or approval routing. */
-export function operatorHarnessDefaults(base: HarnessConfiguration): HarnessConfiguration {
+export function operatorHarnessDefaults(base: HarnessConfiguration): HarnessConfiguration;
+export function operatorHarnessDefaults(base: RecordedHarnessConfiguration): RecordedHarnessConfiguration;
+export function operatorHarnessDefaults(base: RecordedHarnessConfiguration): RecordedHarnessConfiguration {
   if (base.harness === "codex") return changeCodexSandbox(base, "danger-full-access");
   if (base.harness === "claude") return { ...base, sandbox: "danger-full-access" };
   return structuredClone(base);
@@ -733,7 +741,7 @@ export const AgentSchema = z
     model: z.string().trim().min(1).optional(),
     effort: AgentEffortSchema.optional(),
     fastMode: z.boolean().optional(),
-    harnessConfiguration: HarnessConfigurationSchema.optional(),
+    harnessConfiguration: RecordedHarnessConfigurationSchema.optional(),
     harnessProfileSelection: z.lazy(() => HarnessProfileSelectionSchema).optional(),
     configurationVersionId: IdSchema.optional(),
     prompt: AgentPromptSchema.optional(),
@@ -766,7 +774,7 @@ export const AgentConfigurationVersionSchema = z
      * skills are delivered as native app instructions, separate from task text. Absent on
      * earlier accepted configurations, which keep their original in-task delivery. */
     instructionDelivery: z.literal("native-v1").optional(),
-    harness: HarnessConfigurationSchema,
+    harness: RecordedHarnessConfigurationSchema,
     contentHash: z.string().trim().min(1),
     createdAt: TimestampSchema,
   })
@@ -779,7 +787,7 @@ export const OperatorConfigurationVersionSchema = z.object({
   id: IdSchema,
   operatorId: IdSchema,
   version: z.number().int().positive(),
-  harness: HarnessConfigurationSchema,
+  harness: RecordedHarnessConfigurationSchema,
   showThinking: z.boolean().optional(),
   assignedSkills: z.array(WorkspaceSkillReferenceSchema).max(100).optional(),
   resolvedSkills: z.array(ResolvedSkillSchema).max(100).optional(),
@@ -1355,7 +1363,7 @@ export const RecordedOperatorChatSettingsSchema = z.union([
     showThinking: z.boolean() }).strict(),
 ]);
 export type OperatorChatSettings = z.infer<typeof OperatorChatSettingsSchema>;
-export function operatorChatSettings(harness: HarnessConfiguration, showThinking = false): OperatorChatSettings {
+export function operatorChatSettings(harness: RecordedHarnessConfiguration, showThinking = false): OperatorChatSettings {
   if (harness.harness === "opencode") throw new Error(RETIRED_OPENCODE_MESSAGE);
   if (harness.harness === "claude") {
     return { harness: "claude", model: harness.model, ...(harness.accountId ? { accountId: harness.accountId } : {}),
@@ -1366,7 +1374,7 @@ export function operatorChatSettings(harness: HarnessConfiguration, showThinking
     serviceTier: harness.serviceTier, showThinking };
 }
 /** Apply chat controls without replacing the accepted execution permissions. */
-export function applyOperatorChatSettings(base: HarnessConfiguration, settings: OperatorChatSettings) {
+export function applyOperatorChatSettings(base: RecordedHarnessConfiguration, settings: OperatorChatSettings) {
   if (base.harness !== settings.harness) throw new Error("Select the matching harness defaults before applying chat settings.");
   if (settings.harness === "claude") {
     const configuration = ClaudeHarnessConfigurationSchema.parse({ ...base, accountId: settings.accountId, model: settings.model });
