@@ -120,6 +120,28 @@ async function assertBundledWatchdog(f, worker, suite) {
   assert.match(result.stdout, /watched command completed/);
 }
 
+test('Worker artifacts bundle and load every public Worker API entry point without control-plane dependencies', async t => {
+  const f = await fixture(t);
+  const entries = {
+    'byte-transfer': 'loadWorkerRsyncEntrypoint', ci: 'ciPlatform',
+    collaboration: 'createInstalledBrowserComposition', computers: 'requireWorkerBundleReady',
+    devices: 'createWorkerConnection', diagnostics: 'ignoreError',
+    harnesses: 'NativeProcessRegistry', jobs: 'readVerificationQuotaPool',
+    runs: 'createWorkerExecutionDomains', sources: 'sourceBindingHash',
+  };
+  for (const [entry, name] of Object.entries(entries)) {
+    await appendFile(join(f.root, 'apps/worker/src/workerFactory.mjs'),
+      `\nexport * as ${name}Api from '@foreman-code/api/worker/${entry}';\n`);
+  }
+  const result = f.build();
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  const worker = await import(pathToFileURL(join(f.directory, 'release/src/worker.mjs')).href);
+  for (const name of Object.values(entries)) assert.ok(worker[`${name}Api`][name]);
+  const failure = new worker.createWorkerConnectionApi.DeviceApplicationError('unavailable');
+  assert.equal(failure.retryable, true);
+});
+
 test('Worker artifacts reject forbidden modules, sensitive files and imports outside source scope', async t => {
   const forbidden = [
     'apps/api/src/server.ts', 'apps/api/src/app.ts', 'apps/api/src/production.ts',

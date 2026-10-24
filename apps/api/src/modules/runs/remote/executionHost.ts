@@ -20,9 +20,9 @@ import { HistoryObservationPages } from './historyObservationPages.js'
 import { startNativeHistoryDownload } from './nativeHistoryPage.js'
 import { logIgnoredError } from '../../diagnostics/index.js'
 import { inspectNativeResponse } from '../../harnesses/responseAvailability.js'
-import { supportsExpectedTurnSteer } from '../../harnesses/index.js'
+import { supportsExpectedTurnSteer } from '../../../shared/harnessPolicy.js'
 import { sha256CanonicalJsonHex, sha256Hex } from '../../../shared/hash.js'
-import { retiredHarnessError } from '../../harnesses/index.js'
+import { retiredHarnessError } from '../../../shared/harnessPolicy.js'
 
 function executableHarness(harness: RecordedAgentHarness): AgentHarness {
   if (harness === 'opencode') {
