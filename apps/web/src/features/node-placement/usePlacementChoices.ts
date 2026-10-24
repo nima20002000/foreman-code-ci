@@ -70,6 +70,6 @@ export function usePlacementChoices(scope: NodePlacementChoicesInput | undefined
     ...(choice.availability !== 'ready' ? { unavailableReason: choice.reason ?? `Computer ${choice.availability}` } : {}),
   })) : []
   const unavailableComputers = current && !query.isError && query.data
-    ? query.data.unavailableComputers ?? [] : []
+    ? (query.data.unavailableComputers ?? []).map(({ name, reason }) => ({ name, reason })) : []
   return { ...query, current, options, unavailableComputers }
 }

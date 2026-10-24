@@ -100,7 +100,7 @@ function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placem
       worktreeLabel: edit.graph.defaultWorktree ? worktreeLabel(edit.graph.defaultWorktree, roots) : undefined }}
     placementChoices={{ options, hidden: !choices.current, unavailableComputers: choices.unavailableComputers,
       disabled: edit.busy || !!edit.pending,
-      note: !choiceScope ? 'Save the workflow to choose another computer.' : choices.isError ? 'Computers can’t be checked right now. Try again shortly.' : undefined,
+      note: !choiceScope ? 'Save this Agent to choose another computer.' : choices.isError ? 'Computers can’t be checked right now. Try again shortly.' : undefined,
       optionsState: placementOptions ? 'ready' : !choiceScope || choices.isError || choices.isPaused ? 'unavailable' : choices.isPending ? 'loading' : 'ready' }}
     draft={{ retained: edit.agentForms?.[node.id], extraDirty: parentDirty,
       onChange: (form) => useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => ({ ...current,

@@ -60,6 +60,5 @@ export function AddBoardAgentMenu({ draftKey, edit, disabled, report }: {
       disabled: disabled || !defaults.data || role === 'master' && hasMaster,
       ...(defaults.isError ? { description: 'Agent profiles are unavailable.' }
         : role === 'master' && hasMaster ? { description: 'This workflow already has a Master.' } : {}),
-      // Stays open so several Agents can be added in a row.
-      keepOpen: true, onSelect: () => add(role, label) }))} />
+      onSelect: () => add(role, label) }))} />
 }
