@@ -12,7 +12,7 @@ import { DomainError } from '../src/modules/errors.js'
 import { createOperatorMcpServer } from '../src/mcp/operator/server.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { cacheToolSchemaConversions } from '../src/mcp/shared/schemaCache.js'
-import { registerForemanMcp } from '../src/mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 
 it('reuses input and output conversions across servers while preserving defaults and validation', async () => {
   const schema = z.object({ value: z.string().default('default') }).strict()
@@ -94,7 +94,7 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     if (!(error instanceof DomainError)) throw error
     return reply.code(error.status).send({ error: { code: error.code } })
   })
-  registerForemanMcp(app, { access, operator: services })
+  registerGraphqlMcp(app, { access, operator: services })
   const referenceServer = createOperatorMcpServer({ principal, services })
   const reference = new Client({ name: 'operator-reference-client', version: '1' })
   async function rpc<Result>(method: string, params?: Record<string, unknown>): Promise<Result> {

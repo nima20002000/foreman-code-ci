@@ -3,7 +3,7 @@ import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/con
 import { DomainError } from '../errors.js'
 import type { ExecutionCredentialProvider } from '../harnesses/mcpDetection.js'
 import { beforeGraphCommit } from '../run-graph/connection.js'
-import type { RunOwnership } from '../runs/index.js'
+import type { RunOwnership } from '../runs/ownership.js'
 import { readWorkflowClosure } from './workflowClosure.js'
 
 function pending(): never {

@@ -41,7 +41,7 @@ async function fixture(t) {
     return spawnSync(process.execPath, [join(root, 'scripts/build-worker-artifact.mjs'),
       targetFile, join(directory, 'release')], {
       cwd: root, encoding: 'utf8', timeout: 120_000,
-      env: { ...environment, GRAPHQL_WORKER_BUILD_COMMIT: commit, },
+      env: { ...environment, FOREMAN_CODE_WORKER_BUILD_COMMIT: commit, GRAPHQL_WORKER_BUILD_COMMIT: commit },
     });
   };
   return { root, directory, write, build };
@@ -53,13 +53,11 @@ test('Worker artifacts bundle new transitive API helpers without registering mod
     "export const value = 'bundled from the import graph';\n");
   await f.write('apps/api/src/modules/worker-build-fixture/helper.ts',
     "import { value } from './value.js';\nexport const importedHelper = () => value;\n");
-  await appendFile(join(f.root, 'apps/api/src/worker/harnesses.ts'),
-    "\nexport { importedHelper } from '../modules/worker-build-fixture/helper.js';\n"
-      + "export { configurationWithNodeSkills } from '../modules/skills/nodeSkills.js';\n"
-      + "export { agentInstructionBundle } from '../modules/skills/instructions.js';\n");
   await appendFile(join(f.root, 'apps/worker/src/workerFactory.mjs'),
-    "\nexport { importedHelper, configurationWithNodeSkills, agentInstructionBundle } from '@foreman-code/api/worker/harnesses';\n"
-      + "export { HostCiRunner } from '@foreman-code/api/worker/ci';\n"
+    "\nexport { importedHelper } from '../../api/src/modules/worker-build-fixture/helper.ts';\n"
+      + "export { HostCiRunner } from '../../api/src/modules/ci/runner.ts';\n"
+      + "export { configurationWithNodeSkills } from '../../api/src/modules/skills/nodeSkills.ts';\n"
+      + "export { agentInstructionBundle } from '../../api/src/modules/skills/instructions.ts';\n"
       + "export { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current';\n");
   const result = f.build();
   assert.ifError(result.error);
@@ -122,6 +120,28 @@ async function assertBundledWatchdog(f, worker, suite) {
   assert.match(result.stdout, /watched command completed/);
 }
 
+test('Worker artifacts bundle and load every public Worker API entry point without control-plane dependencies', async t => {
+  const f = await fixture(t);
+  const entries = {
+    'byte-transfer': 'loadWorkerRsyncEntrypoint', ci: 'ciPlatform',
+    collaboration: 'createInstalledBrowserComposition', computers: 'requireWorkerBundleReady',
+    devices: 'createWorkerConnection', diagnostics: 'ignoreError',
+    harnesses: 'NativeProcessRegistry', jobs: 'readVerificationQuotaPool',
+    runs: 'createWorkerExecutionDomains', sources: 'sourceBindingHash',
+  };
+  for (const [entry, name] of Object.entries(entries)) {
+    await appendFile(join(f.root, 'apps/worker/src/workerFactory.mjs'),
+      `\nexport * as ${name}Api from '@foreman-code/api/worker/${entry}';\n`);
+  }
+  const result = f.build();
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  const worker = await import(pathToFileURL(join(f.directory, 'release/src/worker.mjs')).href);
+  for (const name of Object.values(entries)) assert.ok(worker[`${name}Api`][name]);
+  const failure = new worker.createWorkerConnectionApi.DeviceApplicationError('unavailable');
+  assert.equal(failure.retryable, true);
+});
+
 test('Worker artifacts reject forbidden modules, sensitive files and imports outside source scope', async t => {
   const forbidden = [
     'apps/api/src/server.ts', 'apps/api/src/app.ts', 'apps/api/src/production.ts',
@@ -143,4 +163,19 @@ test('Worker artifacts reject forbidden modules, sensitive files and imports out
       assert.match(result.stderr, /Forbidden snapshot source:/);
     });
   }
+});
+
+
+test('Worker public API exports preserve retryable device failures', async () => {
+  const { DeviceApplicationError } = await import('@foreman-code/api/worker/devices');
+  const failure = new DeviceApplicationError('unavailable');
+  assert.equal(failure.code, 'unavailable');
+  assert.equal(failure.retryable, true);
+});
+
+test('the committed Worker import graph passes the artifact source boundary', () => {
+  const result = spawnSync(process.execPath, [join(repository, 'scripts/check-worker-imports.mjs')],
+    { cwd: repository, encoding: 'utf8', timeout: 30_000 });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
 });

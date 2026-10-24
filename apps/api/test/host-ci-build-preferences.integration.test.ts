@@ -24,6 +24,7 @@ import { mainCiContext } from '../src/modules/ci/context.js'
 it('honors persisted MCP build participation and priority while retaining assigned run control', async () => {
   const db = await migratedDatabase()
   const clients: Client[] = []
+  let phase = 'setup'
   let preferredStatusRequested = deferred()
   let preferredStatusReleased = deferred()
   let app: ReturnType<typeof buildApp> | undefined
@@ -199,6 +200,7 @@ it('honors persisted MCP build participation and priority while retaining assign
     } })).isError).toBe(true)
     expect((await db.pool.query('select count(*)::int as count from ci_runs')).rows[0]!.count).toBe(0)
 
+    phase = 'unsupported protocol'
     outdated.add(devices[1]!.registration.deviceId)
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(Date.now() + 5001)
@@ -227,11 +229,13 @@ it('honors persisted MCP build participation and priority while retaining assign
     starts.length = 0
 
     // Cache expiry starts a background refresh; priority is only comparable after readiness is observed.
+    phase = 'preferred readiness'
     const readiness = list()
     await preferredStatusRequested.promise
     preferredStatusReleased.resolve()
     expect((await readiness).computers.find(computer => computer.hostRef.deviceId === devices[1]!.registration.deviceId))
       .toMatchObject({ ready: true, reasons: [], priority: 90, slotsUsed: 0, slotsTotal: 1 })
+    phase = 'preferred start'
     const first = await start()
     const firstRead = await getRunning(first.ticketId)
     expect(firstRead.run.computer?.hostRef).toEqual(devices[1]!.target.hostRef)
@@ -244,17 +248,21 @@ it('honors persisted MCP build participation and priority while retaining assign
       .rejects.toMatchObject({ code: 'BUILD_COMPUTER_DISABLED' })
     expect((await get(first.ticketId)).run.state).toBe('running')
     expect(await call(reader, 'ci_logs_read', { workspaceId, ticketId: first.ticketId })).toMatchObject({ text: '' })
+    phase = 'second start'
     const second = await start()
     expect((await getRunning(second.ticketId)).run.computer?.hostRef).toEqual(devices[0]!.target.hostRef)
     await save(main, true, 100)
+    phase = 'main start'
     const third = await start()
     expect((await getRunning(third.ticketId)).run.computer?.hostRef).toEqual(main.hostRef)
     expect(starts).toEqual([devices[1]!.registration.deviceId, devices[0]!.registration.deviceId, 'main'])
+    phase = 'assigned cancellation'
     await cancel(first.ticketId)
     expect((await get(first.ticketId)).run.state).toBe('canceled')
     const entry = runs.get(second.ticketId)!
     entry.run = { ...entry.run, state: 'passed', exitCode: 0, finishedAt: new Date().toISOString() }
     await save(devices[0]!.target, false, 20)
+    phase = 'disabled completion'
     const completed = await getSettled(second.ticketId)
     expect(completed.wait).toMatchObject({ status: 'settled', tickets: 1, settledTickets: 1 })
     expect(completed.run.state).toBe('passed')
@@ -264,6 +272,7 @@ it('honors persisted MCP build participation and priority while retaining assign
     expect((await read(main)).preference.buildEnabled).toBe(false)
     expect((await list()).computers).toEqual([])
     expect((await get(third.ticketId)).run.state).toBe('running')
+    phase = 'main cancellation'
     await cancel(third.ticketId)
     await ci.drain()
     preferredStatusRequested = deferred()
@@ -286,6 +295,7 @@ it('honors persisted MCP build participation and priority while retaining assign
     // Expire the cached status so this barrier observes a new readiness request.
     vi.setSystemTime(Date.now() + 5001)
     // Re-enabled workers need observed readiness before comparing partition priority and capacity.
+    phase = 'partition readiness'
     const partitionReadiness = list()
     await preferredStatusRequested.promise
     preferredStatusReleased.resolve()
@@ -295,6 +305,7 @@ it('honors persisted MCP build participation and priority while retaining assign
       { hostRef: devices[0]!.target.hostRef, ready: true, reasons: [], priority: 20, buildAllowancePercent: 100,
         slotsUsed: 0, slotsTotal: 1 },
     ])
+    phase = 'partition start'
     const partitioned = CiRunOutputSchema.parse(await call(writer, 'ci_run', {
       workspaceId, suite: 'integration', commandId: randomUUID(), partitions: 2,
     }))
@@ -310,11 +321,13 @@ it('honors persisted MCP build participation and priority while retaining assign
     expect(lower.computer?.hostRef).toEqual(devices[0]!.target.hostRef)
     expect(higher.partition!.weights).toEqual(lower.partition!.weights)
     expect(higher.partition!.weights![0]! / higher.partition!.weights![1]!).toBeCloseTo(0.5, 1)
+    phase = 'partition cancellation'
     await cancel(...partitioned.partitions!.map(ticket => ticket.ticketId))
     const smokeInput = { workspaceId, suite: 'integration', scope: 'affected', commit: 'a'.repeat(40),
       commandId: randomUUID(), files: ['apps/api/test/feature.integration.test.ts'],
       smokeComputer: devices[1]!.target.hostRef }
     expect((await reader.callTool({ name: 'ci_run', arguments: smokeInput })).isError).toBe(true)
+    phase = 'smoke start'
     const smoke = CiRunOutputSchema.parse(await call(writer, 'ci_run', smokeInput))
     const smokeRead = await getRunning(smoke.ticketId)
     expect(smokeRead.run).toMatchObject({ state: 'running', integrationShards: 4,
@@ -324,7 +337,9 @@ it('honors persisted MCP build participation and priority while retaining assign
     const storedSmoke = (await db.pool.query('select record from ci_runs where id=$1', [smoke.ticketId])).rows[0]!.record
     expect(storedSmoke).not.toHaveProperty('smokeComputer')
     expect({ ...storedSmoke, smokeComputer: smokeInput.smokeComputer }).toEqual(smokeRead.run)
+    phase = 'complete'
   } finally {
+    console.info('CI preferences phase:', phase)
     preferredStatusReleased.resolve()
     vi.useRealTimers()
     await Promise.allSettled(clients.map(client => client.close()))

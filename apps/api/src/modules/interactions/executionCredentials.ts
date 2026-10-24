@@ -1,25 +1,24 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type pg from 'pg'
 import { DomainError } from '../errors.js'
-import type { PostgresAccessService } from '../access/index.js'
-import { prepareClaudeWorkflowCredentials } from '../harnesses/claudeSdk/workflowCredentials.js'
-import type { AppMcpRoutes } from '../harnesses/appMcpRoutes.js'
+import type { PostgresAccessService } from '../access/postgres.js'
+import { prepareClaudeWorkflowCredentials } from '../harnesses/index.js'
+import type { AppMcpRoutes } from '../harnesses/index.js'
 import { McpDetectionService, WorkerLaunchCredentialService, type ExecutionCredentialProvider } from '../harnesses/mcpDetection.js'
-import type { NativeLaunchRecords } from '../harnesses/nativeLaunchRecords.js'
-import type { NativeHarnessFactories } from '../harnesses/runtimeFactory.js'
-import type { placedContinuationValidator } from '../placement/continuation.js'
-import type { createProductionRemoteWorkflow } from '../placement/productionRemoteWorkflow.js'
-import { remoteMcpPreflight } from '../placement/remoteMcpPreflight.js'
-import type { PostgresRunRepository } from '../runs/index.js'
-import type { WorkspaceLocationService } from '../workspaces/location.js'
+import type { NativeLaunchRecords } from '../harnesses/index.js'
+import type { NativeHarnessFactories } from '../harnesses/index.js'
+import type { placedContinuationValidator } from '../placement/index.js'
+import type { createProductionRemoteWorkflow } from '../placement/index.js'
+import { remoteMcpPreflight } from '../placement/index.js'
+import type { PostgresRunRepository } from '../runs/postgres.js'
+import type { WorkspaceLocationService } from '../workspaces/index.js'
 import { readRetainedRemoteReviewer } from './retainedRemoteReviewer.js'
 import type { ExecutionScopedNativeSessionManagerResolver, NativeManagerResolutionContext } from './runtimePorts.js'
-import type { CurrentWorkerCredentialService } from './current/credentials.js'
+import type { Wave25WorkerCredentialService } from './current/credentials.js'
 
 export interface ExecutionCredentialDependencies {
   pool: pg.Pool
   access: Pick<PostgresAccessService, 'authenticate'>
-  credentials: CurrentWorkerCredentialService
+  credentials: Wave25WorkerCredentialService
   /** The MCP routes the credentials unlock; refreshed whenever a credential is issued or restored. */
   appRoutes: Pick<AppMcpRoutes, 'refresh'>
   /** True once shutdown has begun; renewals then skip the route refresh. */
@@ -70,7 +69,7 @@ export function createExecutionCredentialProvider(dependencies: ExecutionCredent
       if (principal.id !== retained.principalId || principal.agentId !== execution.agentId)
         throw new DomainError('REVIEWER_CREDENTIAL_LOST', 'The original process credential changed.', 409)
       return { principalId: principal.id, expiresAt: principal.expiresAt,
-        environment: { agentId: execution.agentId, variables: { [INSTALLATION_NAMES.environment.MCP_TOKEN]: applicationAccess.token } } }
+        environment: { agentId: execution.agentId, variables: { GRAPHQL_MCP_TOKEN: applicationAccess.token } } }
     },
     async bindReviewerJob(executionId, credential, job, lane) {
       await credentials.bindReviewerJob(executionId, credential, job, lane)

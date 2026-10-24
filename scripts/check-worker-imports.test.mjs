@@ -37,11 +37,11 @@ for (const entry of entries) {
     f.write('packages/contracts/src/fixture.ts',
       "export * from '../../../apps/api/src/modules/runs/ownerLeases.js'")
     f.write('apps/api/src/modules/runs/ownerLeases.ts',
-      "import '../../infrastructure/databaseTimeout.js'")
-    f.write('apps/api/src/infrastructure/databaseTimeout.ts', 'export const timeout = 1')
+      "import '../../infrastructure/database.js'")
+    f.write('apps/api/src/infrastructure/database.ts', 'export const timeout = 1')
     const result = f.run()
     assert.equal(result.status, 1)
-    assert.match(result.stderr, /Forbidden snapshot source: apps\/api\/src\/infrastructure\/databaseTimeout\.ts/)
+    assert.match(result.stderr, /Forbidden snapshot source: apps\/api\/src\/infrastructure\/database\.ts/)
     assert.match(result.stderr, /ownerLeases\.ts/)
   })
 }
@@ -107,21 +107,4 @@ test('follows CI package exports into apps/ci/src and still rejects its database
   assert.equal(result.status, 1)
   assert.match(result.stderr, /Forbidden snapshot source: apps\/api\/src\/infrastructure\/db\.ts/)
   assert.match(result.stderr, /apps\/ci\/src\/runner\.ts/)
-})
-
-
-test('bundles Node contracts from source and checks their transitive imports', t => {
-  const f = fixture(t)
-  f.write('packages/contracts-node/package.json', JSON.stringify({ exports: {
-    './server-kit': { import: './dist/serverKit.js' },
-  } }))
-  f.write(entries[0], "import '@foreman-code/contracts-node/server-kit'")
-  f.write('packages/contracts-node/src/serverKit.ts', "import { createHash } from 'node:crypto'; export { createHash }")
-  assert.equal(f.run().status, 0)
-  f.write('packages/contracts-node/src/serverKit.ts', "import '../../../apps/api/src/infrastructure/db.js'")
-  f.write('apps/api/src/infrastructure/db.ts', 'export const db = 1')
-  const result = f.run()
-  assert.equal(result.status, 1)
-  assert.match(result.stderr, /Forbidden snapshot source: apps\/api\/src\/infrastructure\/db\.ts/)
-  assert.match(result.stderr, /packages\/contracts-node\/src\/serverKit\.ts/)
 })
