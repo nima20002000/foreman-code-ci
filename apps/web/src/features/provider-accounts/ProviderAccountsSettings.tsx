@@ -109,8 +109,8 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
       open={onSelect ? Boolean(selected) : Boolean(auth?.open)} canManage={true}
       {...(authOperationId ? { operationId: authOperationId } : {})}
       onOperation={operationId => {
-        setAuthentication({ scopeKey, provider: authAccount.provider, accountId: authAccount.id, operationId, open: true })
-        onSelect?.({ provider: authAccount.provider, accountId: authAccount.id, operationId,
+        setAuthentication({ scopeKey, provider: authAccount.provider, accountId: authAccount.id, ...(operationId ? { operationId } : {}), open: true })
+        onSelect?.({ provider: authAccount.provider, accountId: authAccount.id, ...(operationId ? { operationId } : {}),
           ...(scope.target ? { target: scope.target } : {}) })
       }}
       onClose={() => {
