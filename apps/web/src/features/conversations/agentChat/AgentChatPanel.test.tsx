@@ -607,7 +607,7 @@ it('displays the accepted chat account after the provider default changes', asyn
   expect(screen.queryByRole('combobox', { name: 'Account' })).not.toBeInTheDocument()
 })
 
-it('retains a removed account and its source Run without offering a replacement chat', async () => {
+it('retains a removed account and its source Run while offering an explicit separate chat', async () => {
   const initial: AgentChatState = structuredClone(agentChatFixtures.idleAfterCompletion)
   if (!initial.conversation) throw new Error('A saved conversation is required')
   initial.conversation.providerAccountBinding = accountBinding()
@@ -624,6 +624,11 @@ it('retains a removed account and its source Run without offering a replacement 
   expect(await screen.findByText('Saved account unavailable')).toBeVisible()
   expect(await screen.findAllByText(/This account was removed from selection/)).not.toHaveLength(0)
   expect(screen.getByRole('region', { name: 'Source Run account · saved chat account' })).toBeVisible()
-  expect(screen.queryByRole('button', { name: 'Start separate chat without this Run' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
   expect(mounted.newConversation).not.toHaveBeenCalled()
+  expect(mounted.mock.calls.filter(call => call.method === 'POST')).toEqual([])
+  await userEvent.click(screen.getByRole('button', { name: 'Start separate chat without this Run' }))
+  expect(mounted.newConversation).toHaveBeenCalledOnce()
+  expect(mounted.mock.getState(initial.context).conversation).toEqual(initial.conversation)
+  expect(mounted.mock.calls.filter(call => call.method === 'POST')).toEqual([])
 })
