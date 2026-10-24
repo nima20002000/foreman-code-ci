@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { DeviceSessionBindingSchema, type DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { BYTE_TRANSFER_POLICY, TransferContextSchema, TransferIntentSchema, TransferProgressSchema,
   VerifiedTransferReceiptSchema, type TransferContext, type TransferIntent, type ByteTransferPort } from '@foreman-code/contracts/byte-transfer'
-import type { DeviceEndpoint } from '../devices/index.js'
+import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
 import { DeviceApplicationError, type DeviceApplicationChannel, type DeviceExtensionContext, type DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
 import { DeviceConnectionError } from '../devices/deviceWire.js'
 import { ResumableByteTransferService, TransferExpiredError, type TransferAuthorization, type TransferOperation } from './service.js'

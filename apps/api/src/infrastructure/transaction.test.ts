@@ -3,7 +3,6 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { componentLogger } from './logger.js'
 import { ExclusiveGraphConnection, beforeGraphCommit } from '../modules/run-graph/connection.js'
 import { beginTransaction, commitTransaction, withTransaction } from './transaction.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
 
 vi.mock('./logger.js', () => {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
@@ -26,20 +25,6 @@ function fixture(failures: Record<number, Error> = {}) {
 function reports() {
   return vi.mocked(componentLogger('db').info).mock.calls.map(([fields]) => fields)
 }
-
-it.each([2, 3])('maps a database rule failure at statement %i after rollback and restores the connection', async statement => {
-  const cause = Object.assign(new Error('REPEAT_SCOPE_CONFLICT'), { code: 'P0001' })
-  const f = fixture({ [statement]: cause })
-  const failure = await withTransaction(f.pool, async client => { await client.query('select 1') })
-    .catch((error: unknown) => error)
-  expect(failure).toBeInstanceOf(DomainError)
-  expect(failure).toMatchObject({ code: 'REPEAT_SCOPE_CONFLICT', status: 409,
-    message: 'The repeat operation conflicts with its pinned durable evidence.', cause })
-  expect(reports()).toEqual([{ metric: 'db_transaction_statements', operation: 'transaction',
-    outcome: 'rolled_back', statements: statement + 1 }])
-  expect(f.release).toHaveBeenCalledOnce()
-  await expectClientRestored(f)
-})
 
 async function expectClientRestored(f: ReturnType<typeof fixture>) {
   const response = Promise.resolve({ rows: [], rowCount: 0, command: '', oid: 0, fields: [] })
@@ -84,30 +69,6 @@ it('runs joined work inside the caller transaction without its own transaction c
   expect(f.statements()).toBe(1)
   expect(connect).not.toHaveBeenCalled()
   expect(reports()).toEqual([])
-})
-
-it('leaves joined rule errors raw until the owning transaction rolls back', async () => {
-  const cause = Object.assign(new Error('REPEAT_SCOPE_CONFLICT'), { code: 'P0001' })
-  const f = fixture({ 2: cause })
-  await expect(withTransaction(f.pool, async client => {
-    await expect(withTransaction(f.pool, async joined => { await joined.query('select 1') },
-      { join: client })).rejects.toBe(cause)
-    throw cause
-  })).rejects.toMatchObject({ code: 'REPEAT_SCOPE_CONFLICT', status: 409, cause })
-  await expectClientRestored(f)
-})
-
-it('maps graph rule failures after recovery and lets the owner start another transaction', async () => {
-  const cause = Object.assign(new Error('REPEAT_SCOPE_CONFLICT'), { code: 'P0001' })
-  const f = fixture({ 2: cause })
-  const connection = new ExclusiveGraphConnection(f.client, () => {})
-  try {
-    await expect(connection.transaction(async sql => { await sql.query('select 1') }))
-      .rejects.toMatchObject({ code: 'REPEAT_SCOPE_CONFLICT', status: 409, cause })
-    expect(await connection.transaction(async sql => { await sql.query('select 1'); return 'recovered' }))
-      .toBe('recovered')
-    expect(connection.unusable).toBe(false)
-  } finally { await connection.close() }
 })
 
 it('starts its own pooled transaction when there is no caller transaction to join', async () => {

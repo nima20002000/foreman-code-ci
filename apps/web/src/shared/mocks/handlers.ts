@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { agentChatHandlers, resetAgentChatFixtures } from './agentChatHandlers'
 import { createCurrentBoardMock } from './currentBoard'
 import { ComputerAccountsReadInputSchema } from '@foreman-code/contracts/computer-accounts'
@@ -204,7 +203,7 @@ const currentAuthoringHandler = http.all(/\/api\/management\/workspaces\/[^/]+\/
 export const mockRuntimeIdentity = { installationId: 'd95abeb8-598a-49a4-8c3c-c6e3533053e8', checkoutId: 'a'.repeat(64), databaseId: 'b'.repeat(64) }
 /** Ordinary fixtures model an already-bound installation; call again after clearing localStorage. */
 export function bindMockInstallation(): void {
-  window.localStorage.setItem(INSTALLATION_NAMES.browserStorage.chatBinding, `${mockRuntimeIdentity.checkoutId}:${mockRuntimeIdentity.installationId}`)
+  window.localStorage.setItem('graphql.chat-instance-binding', `${mockRuntimeIdentity.checkoutId}:${mockRuntimeIdentity.installationId}`)
 }
 
 function sessionControlsResponse(conversationId: string) {
@@ -443,7 +442,7 @@ export const handlers: RequestHandler[] = [
       nativeFilters: {},
       detection: {
         harness,
-        serverName: INSTALLATION_NAMES.mcp.server,
+        serverName: 'graphql',
         state: 'not_detected',
         endpointMatches: null,
         credentialEnvironmentVariable: null,

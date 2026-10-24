@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { OwnedOCIContainer, proveOCIBoundaryEmpty } from '../src/modules/jobs/executorContainerOwner.js'
 import { readProtectedRuntimeConfiguration } from '../src/modules/jobs/installedRuntimeHost.js'
 import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES }
-  from '@foreman-code/contracts-node/installed-runtime-node'
+  from '@foreman-code/contracts/installed-runtime-node'
 import { reconcileInstalledJobRuntimeQualification, runInstalledJobRuntimeQualification }
   from '../src/modules/jobs/installedRuntimeQualification.js'
 import { runQualificationCommand } from '../src/modules/jobs/qualification.js'

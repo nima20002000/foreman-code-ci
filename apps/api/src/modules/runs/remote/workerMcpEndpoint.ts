@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import { registerAppRoute } from '../../harnesses/appMcpLauncher.js'
-import type { ChildProcessEnvironment } from '../../harnesses/index.js'
+import type { ChildProcessEnvironment } from '../../harnesses/port.js'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { AgentFilePublishInputSchema, AgentFilePublishResultSchema, type AgentFilePublishInput, type AgentFilePublishResult } from '@foreman-code/contracts/files'
 import { TransferIntentSchema } from '@foreman-code/contracts/byte-transfer'

@@ -1,7 +1,7 @@
 import Fastify from 'fastify'
 import { expect, it, vi } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { registerForemanMcp } from '../src/mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { DeviceApplicationAdmissionError, DeviceApplicationError } from '../src/modules/devices/deviceApplicationError.js'
@@ -32,7 +32,7 @@ it.each([
   app.setErrorHandler((error, _request, reply) => {
     reply.code(error instanceof DomainError ? error.status : 500).send({ error: 'request failed' })
   })
-  registerForemanMcp(app, { access, operator: services })
+  registerGraphqlMcp(app, { access, operator: services })
   const call = (token: string) => app.inject({ method: 'POST', url: '/mcp',
     headers: { authorization: `Bearer ${token}`, accept: 'application/json, text/event-stream' },
     payload: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: input } },

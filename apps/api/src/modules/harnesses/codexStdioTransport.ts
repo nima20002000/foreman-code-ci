@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { beginRuntimeTiming, runtimeTimingPoint } from '../diagnostics/index.js'
 import { randomUUID } from 'node:crypto'
 import { HarnessExecutionError } from './errors.js'
@@ -495,7 +494,7 @@ export class CodexStdioTransport {
 
   private async receive(line: string): Promise<void> {
     let message: unknown
-    try { message = redactKnownSecrets(JSON.parse(line), [this.environment[INSTALLATION_NAMES.environment.MCP_TOKEN] ?? '', this.environment[INSTALLATION_NAMES.privateEnvironment.productMcpToken] ?? '']) } catch {
+    try { message = redactKnownSecrets(JSON.parse(line), [this.environment.GRAPHQL_MCP_TOKEN ?? '', this.environment.FOREMAN_CODE_MCP_TOKEN ?? '']) } catch {
       this.onNotification('protocol/malformed', { reason: 'invalid_json' }); return
     }
     if (!isObject(message)) { this.onNotification('protocol/malformed', { reason: 'invalid_envelope' }); return }

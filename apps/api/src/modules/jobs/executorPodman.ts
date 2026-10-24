@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { JOB_GIT_ENVIRONMENT, JOB_GIT_CONTAINER_DIRECTORY, JOB_PRIVATE_GIT_LAYOUT, requireJobGitMounts, verifyJobGitMounts } from './privateGitMounts.js'
 import { spawnProcess } from '../../shared/process.js'
 import { constants } from 'node:fs'
@@ -105,7 +104,7 @@ export function podmanIsolationCreateArgv(input: PodmanIsolationInput): string[]
     ...temporary,
     '--workdir', `/workspace${relative}`, '--unsetenv-all',
     ...Object.entries(environment).flatMap(([key, value]) => ['--env', `${key}=${value}`]), '--env', 'PATH=/usr/local/bin:/usr/bin:/bin',
-    '--env', 'LANG=C.UTF-8', '--env', 'CI=1', ...Object.entries(JOB_GIT_ENVIRONMENT).flatMap(([key,value])=>['--env',`${key}=${value}`]), '--env', `${INSTALLATION_NAMES.environment.JOB_INPUT_MANIFEST}=${JOB_INPUT_MANIFEST_CONTAINER_PATH}`, '--entrypoint', input.argv[0]!,
+    '--env', 'LANG=C.UTF-8', '--env', 'CI=1', ...Object.entries(JOB_GIT_ENVIRONMENT).flatMap(([key,value])=>['--env',`${key}=${value}`]), '--env', `FOREMAN_CODE_JOB_INPUT_MANIFEST=${JOB_INPUT_MANIFEST_CONTAINER_PATH}`, '--env', `GRAPHQL_JOB_INPUT_MANIFEST=${JOB_INPUT_MANIFEST_CONTAINER_PATH}`, '--entrypoint', input.argv[0]!,
     input.profile.imageDigest, ...input.argv.slice(1)]
 }
 

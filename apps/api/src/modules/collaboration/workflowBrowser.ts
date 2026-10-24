@@ -6,7 +6,7 @@ import {
 import type { AcceptedWorkflowRunCurrent, WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
-import type { RunOwnership } from '../runs/index.js'
+import type { RunOwnership } from '../runs/ownership.js'
 import type { BrowserLifecyclePort } from './ports.js'
 import { disabledBrowserLifecyclePort } from './disabled.js'
 import { retainWorkflowPreparationLocked, withWorkflowPreparation, workflowPreparationIdentityLocked } from './workflowPreparation.js'

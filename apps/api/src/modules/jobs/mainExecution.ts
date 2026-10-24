@@ -9,7 +9,7 @@ import type { JobApplicationBridge } from '../runs/remote/jobApplicationBridge.j
 import { createInstalledJobSource } from '../runs/remote/installedJobSource.js'
 import { createLocalJobCanonicalOutputs } from '../runs/remote/jobCanonicalOutputs.js'
 import { readInstalledRootConfiguration } from '../sources/installedRootConfiguration.js'
-import type { ReadonlyJobInputDelivery } from '../files/index.js'
+import type { ReadonlyJobInputDelivery } from '../files/jobInputs/delivery.js'
 import type { JobPublicationAuthority } from './authority.js'
 import type { InstalledRuntimeConfigurationLocation } from './installedRuntimeHost.js'
 import { createInstalledJobExecutionHost } from './executorInstalled.js'

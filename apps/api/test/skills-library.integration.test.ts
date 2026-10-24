@@ -24,7 +24,7 @@ import { PostgresFoundationSettingsRepository } from '../src/modules/settings/fo
 import { FoundationSettingsManagementService } from '../src/modules/settings/management.js'
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
 import type { AppInteractionService } from '../src/modules/interactions/app.js'
-import { createForemanMcpServer } from '../src/mcp/unified/server.js'
+import { createGraphqlMcpServer } from '../src/mcp/unified/server.js'
 import { agentInstructionBundle } from '../src/modules/skills/instructions.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
@@ -332,7 +332,7 @@ describe.skipIf(!postgresEnabled)('Skills library over real PostgreSQL, HTTP and
     // A Worker Agent (Coder or Orchestrator role) on the one server is not offered skill management, and a
     // direct call is refused (the unified server lists only each role's own tools).
     for (const role of ['coder', 'orchestrator'] as const) {
-      const server = await createForemanMcpServer({ references: workerToolServices(database.pool, commands).references, role, principal: { id: `worker-${role}`, name: role, audience: 'worker', agentId: 'agent-1',
+      const server = await createGraphqlMcpServer({ references: workerToolServices(database.pool, commands).references, role, principal: { id: `worker-${role}`, name: role, audience: 'worker', agentId: 'agent-1',
         expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null, grants: [{ actions: ['skills:read', 'skills:publish'], scope: {} }] },
       operator: services, interactions: { canRead: async () => true, canRespond: async () => role === 'orchestrator' } as unknown as AppInteractionService })
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()

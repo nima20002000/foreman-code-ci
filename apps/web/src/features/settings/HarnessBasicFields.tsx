@@ -2,7 +2,7 @@ import { ApiError } from '../../shared/api/client'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { retiredHarnessLabel } from './settingsPresentation'
 import { useId, useState } from 'react'
-import { changeCodexSandbox, type CodexHarnessConfiguration, type HarnessConfiguration, type RecordedHarnessConfiguration } from '@foreman-code/contracts'
+import { changeCodexSandbox, type CodexHarnessConfiguration, type HarnessConfiguration } from '@foreman-code/contracts'
 import { Alert, Button, Combobox, ConfirmDialog, Select, Switch } from '../../shared/ui/nocturne'
 import { useRefreshNativeHarness } from '../../shared/api/harnessSettings'
 import { fieldMessage, type FieldIssue } from './fieldValidation'
@@ -15,7 +15,7 @@ import './settingsHelp.css'
 
 type Props = { value: HarnessConfiguration; onChange(value: HarnessConfiguration): void; issues?: readonly FieldIssue[] }
 function EditableHarnessBasicFields({ value, onChange, issues = [], includeSandbox = true, qualified, checking = false, checkError, accountHost }: Props & { includeSandbox?: boolean; qualified?: boolean; checking?: boolean; checkError?: string; accountHost?: DeviceProvisioningTarget['hostRef'] | undefined }) {
-  const query = useProviderHarnessModels(value.harness, value.accountId, accountHost)
+  const query = useProviderHarnessModels(value.harness, value.harness === 'opencode' ? undefined : value.accountId, accountHost)
   const refresh = useRefreshNativeHarness(value.harness)
   const selected = query.data?.models.find((item) => item.id === value.model)
   const models: Array<{ value: string; label: string; description: string; disabled?: boolean }> = query.data?.models.map((item) => ({ value: item.id, label: item.name || item.id, description: item.id })) ?? []
@@ -24,6 +24,7 @@ function EditableHarnessBasicFields({ value, onChange, issues = [], includeSandb
   const missingModel = !value.model.trim() ? <Alert tone="warning" title="Default model unavailable">
     Choose a native model before using this preset.
   </Alert> : null
+  if (value.harness === 'opencode') return null
   const account = <ProviderAccountSelect provider={value.harness} value={value.accountId} hostRef={accountHost}
     onChange={accountId => {
       if (accountId) onChange({ ...value, accountId })
@@ -66,7 +67,7 @@ function EditableHarnessBasicFields({ value, onChange, issues = [], includeSandb
   </div>
 }
 function HarnessModelOptions({ value, onChange, issues = [], accountHost }: Props & { accountHost?: DeviceProvisioningTarget['hostRef'] | undefined }) {
-  const query = useProviderHarnessModels(value.harness, value.accountId, accountHost)
+  const query = useProviderHarnessModels(value.harness, value.harness === 'opencode' ? undefined : value.accountId, accountHost)
   const errorId = useId()
   if (value.harness !== 'codex') return null
   const supported = query.data?.models.find((item) => item.id === value.model)?.serviceTiers.includes('priority') === true
@@ -99,9 +100,9 @@ export function HarnessSandboxField({ value, onChange, issues = [] }: {
   </div>
 }
 
-export function HarnessBasicFields(props: Omit<Parameters<typeof EditableHarnessBasicFields>[0], 'value'> & { value: RecordedHarnessConfiguration }) {
+export function HarnessBasicFields(props: Parameters<typeof EditableHarnessBasicFields>[0]) {
   if (props.value.harness === 'opencode') return <p role="status">{retiredHarnessLabel}</p>
-  return <EditableHarnessBasicFields {...props} value={props.value} />
+  return <EditableHarnessBasicFields {...props} />
 }
 
 /** The server's "sign in to this harness" refusal, which reads better as a plain state than as an error. */

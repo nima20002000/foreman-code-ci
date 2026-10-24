@@ -32,7 +32,7 @@ async function fixture() {
   const service = `ExecStart=${previousNode} ${join(root, 'current/src/cli.mjs')} run --state ${stateDirectory}\n`
   await writeFile(join(root, 'graphql-worker.service.previous'), service, { mode: 0o600 })
   vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
-  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', dirname(launcher))
+  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', dirname(launcher))
   const entry = { command: previousNode, args: [launcher], env_vars: ['GRAPHQL_MCP_TOKEN'], enabled: false,
     disabled_tools: ['interaction_respond'] }
   return { home, root, stateDirectory, releaseDirectory, launcher, previousNode, service, entry }

@@ -1,6 +1,6 @@
 import { conversationDeliveryFixture } from '../src/modules/conversations/conversationDelivery.test-support.js'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
-import { canonicalJson, effectiveForemanTools, type AgentSubject, type AgentConfigurationVersion, type NodeBrowserSettings, type ResolvedSkill } from '@foreman-code/contracts'
+import { canonicalJson, effectiveGraphqlTools, type AgentSubject, type AgentConfigurationVersion, type NodeBrowserSettings, type ResolvedSkill } from '@foreman-code/contracts'
 import { randomUUID } from 'node:crypto'
 import type { NodeSkillOverride } from '@foreman-code/contracts/current'
 import { currentDatabase } from './helpers/database.js'
@@ -45,7 +45,7 @@ it('saves Browser tool defaults and a pinned managed skill while preserving an e
   const node = version.definition.nodes.find(item => item.id === f.execution.workflowNodeId)!
   if (node.kind === 'job') throw new Error('Expected an Agent')
   const configuration = (await repository.getAgentConfiguration(version.agentConfigurationVersionIds[node.agentId]!))!
-  const tools = effectiveForemanTools(configuration.productRole!, configuration.graphqlTools, node.graphqlTools, false, browserAgentTools)
+  const tools = effectiveGraphqlTools(configuration.productRole!, configuration.graphqlTools, node.graphqlTools, false, browserAgentTools)
   expect(tools).toContain('browser_state_read')
   expect(tools).toContain('browser_tab_create')
   expect(tools).not.toContain('browser_action')
