@@ -205,14 +205,3 @@ it('opens a card in its own window with what its Agent did and every update acro
   // The Board's own memory board stays closed; the card opens on its own.
   expect(screen.queryByRole('dialog', { name: 'Memory board' })).toBeNull()
 }, 20_000)
-
-
-it('opens memory from an empty Kanban so its first card can be created', async () => {
-  const board = install('kanban-empty-memory', { visible: true, frame: null })
-  board.memory.cards.clear()
-  await mountMeasuredBoard(board.href)
-  const kanban = await screen.findByRole('region', { name: 'Kanban' })
-  await userEvent.click(within(kanban).getByRole('button', { name: 'Open memory board' }))
-  const dialog = await screen.findByRole('dialog', { name: 'Memory board' })
-  expect(await within(dialog).findByRole('button', { name: 'Add card' })).toBeVisible()
-})

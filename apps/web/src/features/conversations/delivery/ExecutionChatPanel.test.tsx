@@ -91,6 +91,18 @@ describe('exact Execution chat public surface', () => {
     expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
   }, 15_000)
 
+  it.each(['completed', 'canceled'] as const)('keeps %s retained input history while offering the finished execution follow-up', async status => {
+    const receipt: ChatDeliveryReceipt = { id: 'settled-receipt', commandId: 'settled-command', target,
+      requestedIntent: 'next_turn', appliedIntent: 'next_turn', state: status, createdAt: date, updatedAt: date }
+    const state = endpoints({ ...structuredClone(initial), state: 'idle',
+      capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false }, receipts: [receipt] })
+    state.inputs = [{ commandId: receipt.commandId, receiptId: receipt.id, target, origin: 'direct', content: 'Retained request',
+      truncated: false, bodyCursor: null, attachments: [], intent: 'next_turn', createdAt: date }]
+    mount(new NativeSource(), { followUp: <p>Agent chat follow-up</p> })
+    expect(await screen.findByText('Retained request')).toBeVisible()
+    expect(await screen.findByText('Agent chat follow-up')).toBeInTheDocument()
+  })
+
   it('says the Run ended when a message is refused for that, instead of losing chat access', async () => {
     const state = endpoints()
     server.use(http.post(`${root}/send`, () => {
