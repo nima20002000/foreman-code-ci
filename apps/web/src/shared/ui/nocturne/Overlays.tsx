@@ -115,19 +115,18 @@ export function BottomSheet(props: Omit<DialogProps, 'variant'>) { return <Dialo
 
 export interface ConfirmDialogProps {
   open: boolean; onOpenChange: (open: boolean) => void; title: string; description: string
-  confirmLabel: string; onConfirm: () => void; confirmation?: string; pending?: boolean; error?: string; dismissalReason?: string
+  confirmLabel: string; onConfirm: () => void; confirmation?: string; pending?: boolean; error?: string
 }
 export function ConfirmDialog(props: ConfirmDialogProps) {
-  return <Dialog open={props.open} onOpenChange={props.onOpenChange} title={props.title} description={props.description} dismissible={!props.pending && !props.dismissalReason} busy={props.pending} role="alertdialog" size="sm">
+  return <Dialog open={props.open} onOpenChange={props.onOpenChange} title={props.title} description={props.description} dismissible={!props.pending} busy={props.pending} role="alertdialog" size="sm">
     {props.open && <ConfirmContents {...props} />}
   </Dialog>
 }
-function ConfirmContents({ confirmation, pending, error, dismissalReason, onOpenChange, onConfirm, confirmLabel }: ConfirmDialogProps) {
+function ConfirmContents({ confirmation, pending, error, onOpenChange, onConfirm, confirmLabel }: ConfirmDialogProps) {
   const [typed, setTyped] = useState('')
   return <div className="n-stack">{confirmation && <TextField label={`Type “${confirmation}” to confirm`} value={typed} disabled={pending} onChange={(event) => setTyped(event.currentTarget.value)} autoComplete="off" spellCheck={false} />}
     {error && <p className="n-field-error" role="alert">{error}</p>}
-    {dismissalReason && <p role="status">{dismissalReason}</p>}
-    <div className="n-actions"><Button disabled={pending || Boolean(dismissalReason)} onClick={() => onOpenChange(false)}>Keep it</Button><Button variant="danger" loading={pending}
+    <div className="n-actions"><Button disabled={pending} onClick={() => onOpenChange(false)}>Keep it</Button><Button variant="danger" loading={pending}
       disabled={Boolean(confirmation) && typed !== confirmation} onClick={onConfirm}>{confirmLabel}</Button></div></div>
 }
 
