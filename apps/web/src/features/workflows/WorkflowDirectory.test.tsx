@@ -106,6 +106,9 @@ describe('WorkflowDirectory', () => {
 
     await user.click(screen.getByRole('button', { name: 'Open actions for Review flow' }))
     await user.click(screen.getByRole('button', { name: 'Remove workflow' }))
+    const confirmation = await screen.findByRole('alertdialog', { name: 'Remove Review flow?' })
+    expect(screen.getByTestId('workflow-card-workflow-content-pipeline')).toBeVisible()
+    await user.click(within(confirmation).getByRole('button', { name: 'Remove workflow' }))
     await waitFor(() => {
       expect(screen.queryByTestId('workflow-card-workflow-content-pipeline')).not.toBeInTheDocument()
     })
