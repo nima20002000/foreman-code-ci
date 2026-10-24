@@ -12,6 +12,7 @@
     "@foreman-code/api": "workspace:*",
     "@foreman-code/ci": "workspace:*",
     "@foreman-code/contracts": "workspace:*",
+    "@foreman-code/contracts-node": "workspace:*",
     "ws": "8.22.0"
   },
   "devDependencies": {

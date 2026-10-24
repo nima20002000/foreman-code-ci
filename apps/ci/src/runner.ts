@@ -7,12 +7,13 @@ import { sanitizeCiText, serializeCiJson } from './text.js'
 import { availableParallelism, freemem, homedir, totalmem } from 'node:os'
 import { join, matchesGlob } from 'node:path'
 import { gzipSync, gunzipSync } from 'node:zlib'
+import { ciWorkspacePackages } from '@foreman-code/contracts/ci-import-graph'
 import { compactIntegrationCoverage, expandIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { CiIntegrationCoverageSchema, CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, integrationPartition,
   CiSelectionSchema, validCiSelection,
   CI_HOST_START_PROTOCOL_VERSION,
   type CiDurations, type CiHostReply, type CiHostRequest, type CiHostRun, type CiSuite, type CiPart, type CiPartition, type CiScope } from '@foreman-code/contracts'
-import { DomainError, underDeadline } from '@foreman-code/contracts/server-kit'
+import { DomainError, underDeadline } from '@foreman-code/contracts-node/server-kit'
 import { ciRepositoryCapabilities } from './repository.js'
 import { allowedCiResources, gateIntegrationShards, hostCiCapacity } from './capacity.js'
 import type { CiContext } from './environment.js'
@@ -978,10 +979,12 @@ export class HostCiRunner {
       "  .split('\\0').filter(Boolean)",
       'const sources = new Map(paths.map(file => [file, /\\.(?:[cm]?[jt]sx?|json|css)$/.test(file)',
       "  ? readFileSync(join(process.cwd(), file), 'utf8') : '']))",
-      "const manifest = sources.get('packages/contracts/package.json')",
+      `const exports = Object.fromEntries(Object.entries(${JSON.stringify(ciWorkspacePackages)}).map(([name, directory]) => {`,
+      "  const manifest = sources.get(`${directory}/package.json`); return [name, manifest ? JSON.parse(manifest).exports ?? {} : {}]",
+      '}))',
       'console.log(JSON.stringify(selectAffectedFiles({ suite, changedFiles:',
       '  [...new Set([...JSON.parse(changed), ...coverage?.changedFiles ?? []])], sources, coverageMap, coverageReason: coverage?.reason,',
-      '  exports: manifest ? JSON.parse(manifest).exports : {} })))',
+      '  exports })))',
     ].join('\n')
     const result = await this.ports.run('node', ['--input-type=module', '-e', code, selector,
       meta.suite, meta.commit, JSON.stringify(changed), coveragePath], { cwd: source, env: this.environment, signal })
@@ -1127,7 +1130,8 @@ export class HostCiRunner {
       // pnpm script commands can reinstall dependencies, so preparation must wait for installation.
       ...(prerequisites ? [`SUITE=${quote(prerequisiteSuite)} bash scripts/ci-suite.sh prepare`
         + ` >${quote(join(run, 'preparation.log'))} 2>&1 & preparation_pid=$!`] : []),
-      ...(contracts ? ['step contracts', 'corepack pnpm --filter @foreman-code/contracts build || finish $?'] : []),
+      ...(contracts ? ['step contracts', 'corepack pnpm --filter @foreman-code/contracts build || finish $?',
+        'corepack pnpm --filter @foreman-code/contracts-node build || finish $?'] : []),
       ...(prerequisites ? ['step prepare', 'wait "$preparation_pid"; preparation_code=$?',
         `cat ${quote(join(run, 'preparation.log'))}`, '[ "$preparation_code" = 0 ] || finish "$preparation_code"'] : []),
       `echo "[ci-setup] setup completed in $(( $(date +%s%3N) - ${Date.parse(meta.startedAt)} )) ms"`,

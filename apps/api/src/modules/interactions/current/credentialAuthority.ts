@@ -94,7 +94,7 @@ export async function credentialAuthority(
 
 /** Additional check on the real authenticated App endpoint. The legacy predicate
  * remains in force; typed-route/session/generation eligibility is additive. */
-export async function assertWave25WorkerBinding(sql: SqlQuery, principalId: string): Promise<void> {
+export async function assertCurrentWorkerBinding(sql: SqlQuery, principalId: string): Promise<void> {
   const row = (await sql.query<WorkerCredentialBinding>(
     `select b.*,b.approval_connection_generation::text,b.approval_review_lease_fence::text,p.revoked_at is null and b.revoked_at is null
       and p.expires_at>clock_timestamp() and p.audience='worker' and p.agent_id=b.agent_id as live,v.execution_semantics_version

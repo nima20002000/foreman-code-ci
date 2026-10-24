@@ -4,7 +4,7 @@ import { nativeChatPrompt, preflightChatInput, restoreAcceptedChatInput, type Ac
 import type { ReadObservation } from '@foreman-code/contracts'
 import { failedReadObservation, successfulReadObservation } from '../diagnostics/index.js'
 import { DeviceConnectionError } from '../devices/deviceWire.js'
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import { RETIRED_OPENCODE_MESSAGE, type NodeBrowserSettings } from '@foreman-code/contracts'
 import type { ChatResponseAcknowledgment } from '@foreman-code/contracts/interaction-activity'
 import { withInteractionResponse, isSessionNativeInteraction } from '@foreman-code/contracts'

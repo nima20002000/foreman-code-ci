@@ -1,9 +1,10 @@
+import { createAgentChatManagerResolver, createOperatorManagerResolver } from './modules/conversations/managerResolvers.js'
 import { BROWSER_DEVICE_EXTENSION } from '@foreman-code/contracts'
 import { createProductionBrowser } from './modules/collaboration/browserComposition.js'
 import { createMainBrowserRemote } from './modules/collaboration/browserRemote.js'
 import { prepareAgentChatInput, prepareOperatorChatInput } from './modules/collaboration/chatInputPreparation.js'
 import { ConversationCredentials } from './modules/access/conversationCredentialIssuer.js'
-import { conversationChatTools, readConversationCredential } from './modules/access/conversationCredentials.js'
+import { readConversationCredential } from './modules/access/conversationCredentials.js'
 import { ConversationNativeAccess } from './modules/collaboration/conversationNativeAccess.js'
 import { createProductionWorkflowChat } from './modules/collaboration/groupChatProduction.js'
 import { createMemoryBoardService } from './modules/memory-boards/production.js'
@@ -24,8 +25,9 @@ import { startStateDeadlineSweeper } from './modules/diagnostics/stateDeadlines.
 import { reportServiceFailure, trackService } from './modules/diagnostics/serviceHealth.js'
 import { ProductionCiEnrollmentInventory } from './modules/ci/enrollmentInventory.js'
 import { CI_HOST_NAMESPACE, CI_RUNTIME_NAMESPACE, DEFAULT_STUCK_EXECUTION_IDLE_MS } from '@foreman-code/contracts'
+import { createCiHttpTransport } from './modules/ci/client.js'
 import { agentFileReader, CiEnrollment, CiRuntimeProvisioner, createCircleCi, createHostCi } from './modules/ci/mount.js'
-import type { CircleCreditUsage, CircleStandby, CloudCis, HostCiService, ReadAgentFiles } from './modules/ci/types.js'
+import type { CircleCreditUsage, CircleStandby, CloudCis, CiServiceClient, ReadAgentFiles } from './modules/ci/types.js'
 import { FleetMaintenanceService } from './modules/computers/fleet.js'
 import { computerConnectionsReader } from './modules/computers/connections.js'
 import { startWorkerPublicationSync } from './modules/computers/workerPublicationSync.js'
@@ -98,7 +100,7 @@ import { qualifyClaudeNativeProfile } from './modules/harnesses/claudeSdk/native
 import { discoverInventoryLauncher } from './modules/harnesses/hostDiscovery.js'
 import { inventoryDriverPayloads } from './modules/harnesses/payloadDiscovery.js'
 import { runCommand } from './modules/harnesses/process.js'
-import { productionClaudeManager, type ClaudeProfileOwner } from './modules/harnesses/claudeSdk/production.js'
+import type { ClaudeProfileOwner } from './modules/harnesses/claudeSdk/production.js'
 import { requireClaudeProductionCredentialDelivery } from './modules/harnesses/claudeSdk/productionCredentials.js'
 import { ProviderAccountsService } from './modules/provider-accounts/service.js'
 import { ProviderAccountsRepository } from './modules/provider-accounts/repository.js'
@@ -110,12 +112,11 @@ import { NativeProviderAccountOperations } from './modules/provider-accounts/nat
 import { NativeAccountJournal } from './modules/provider-accounts/nativeJournal.js'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { ProviderAccountConfigurationService } from './modules/harnesses/providerAccountConfiguration.js'
-import { productionSelectedProfileManager } from './modules/harnesses/selectedProfileProduction.js'
 import { createProductionWorkerConversations } from './modules/conversations/workerProduction.js'
 import { REMOTE_EXECUTION_EXTENSION, REMOTE_PREPARATION_EXTENSION, WorkerConversationCallbackSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { executionExtension } from './modules/runs/remote/executionRouter.js'
 import { AcceptedHarnessProfileAdmission, AcceptedClaudeProfileAdmission, type AcceptedProfileAuthority } from './modules/harnesses/instanceSettings/acceptedProfile.js'
-import { RETIRED_OPENCODE_MESSAGE, type AgentConfigurationVersion, type AgentDefaults } from '@foreman-code/contracts'
+import type { AgentDefaults } from '@foreman-code/contracts'
 import { inspectClaudeOperatorConfiguration } from './modules/harnesses/claudeSdk/operatorConfigurationInspection.js'
 import { inspectWorkerClaudeOperatorConfiguration } from './modules/harnesses/workerClaudeOperatorInspection.js'
 import { requireClaudePolicyQualification } from './modules/harnesses/claudeSdk/configuration.js'
@@ -123,7 +124,6 @@ import { harnessSignInRequired, onlySignInRequired, qualificationError } from '.
 import { chatModelOptions } from './modules/harnesses/sessionControlDefaults.js'
 import { authorizeOperatorConfigurationRead } from './modules/operators/configurationRead.js'
 import { operatorCodexFileAdmissions } from './modules/harnesses/operatorFiles/codex.js'
-import { nativeCorrelation } from './modules/conversations/operatorChatRepository.js'
 import { randomUUID } from 'node:crypto'
 import { createWorkflowNativeCaptureChannel } from './modules/interactions/workflowNativeCapture.js'
 import { createReviewNativeCaptureChannel } from './modules/interactions/reviewNativeCapture.js'
@@ -193,13 +193,13 @@ import { MainCodexSelection } from './modules/computers/installedCodexSelection.
 import { workspaceStorageRoot } from './modules/workspaces/storage.js'
 import { HarnessDirectoryBrowser } from './modules/harnesses/directoryBrowser.js'
 import { CodexMcpConnections } from './modules/harnesses/codexMcpConnections.js'
-import type { CheckpointStore } from './infrastructure/checkpoints.js'
+import type { CheckpointStore } from './composition/checkpoints.js'
 import type { createDatabase } from './infrastructure/database.js'
 import { OperatorRuntimeOwner } from './infrastructure/operatorRuntimeOwner.js'
 import { RuntimeShutdown } from './infrastructure/runtimeShutdown.js'
 import { PostgresAccessService } from './modules/access/postgres.js'
 import { PostgresLocalHumanAccess } from './modules/access/localHuman.js'
-import { Wave25WorkerCredentialService as WorkerCredentialService } from './modules/interactions/current/credentials.js'
+import { CurrentWorkerCredentialService as WorkerCredentialService } from './modules/interactions/current/credentials.js'
 import {
   ensureOperatorRuntimeDirectory,
   OperatorChatService,
@@ -207,7 +207,6 @@ import {
 } from './modules/conversations/operatorChat.js'
 import { PostgresOperatorChatAuthority } from './modules/conversations/operatorChatAuthority.js'
 import { AgentChatService, withAgentChatHooks } from './modules/conversations/agentChat.js'
-import type { ConversationFeatureContext } from './modules/conversations/conversationFeatureSubject.js'
 import { createAgentChatAvailability, createAgentChatCompactionRecovery, createAgentChatProfileSelection,
   createChatCompactionRecovery, createWorkerChatPreflight } from './modules/conversations/chatSources.js'
 import { qualifiedAgentChatSteer } from './modules/conversations/chatSteerQualification.js'
@@ -231,7 +230,6 @@ import { NativeHarnessFactories } from './modules/harnesses/runtimeFactory.js'
 import type { ProductionHarnessInfrastructure } from './modules/harnesses/productionInfrastructure.js'
 import { productionCodexChatFiles, type ProductionCodexChatFiles } from './modules/harnesses/codexFiles/production.js'
 import { McpDetectionService } from './modules/harnesses/mcpDetection.js'
-import { productionOperatorManagers } from './modules/harnesses/operatorFiles/managers.js'
 import { ExecutionReadinessService } from './modules/harnesses/executionReadiness.js'
 import { NativeRollout } from './modules/harnesses/nativeRollout.js'
 import type { NativeHarnessSessionManager } from './modules/harnesses/port.js'
@@ -242,7 +240,7 @@ import { ApprovalExecutionCoordinator, type CurrentApprovalExecutionDependencies
 import { PostgresWorkflowClosureStore } from './modules/interactions/workflowClosure.js'
 import { retryStartupDatabase } from './infrastructure/databaseRetry.js'
 import { OperatorInteractionService } from './modules/interactions/operator.js'
-import { Wave25InteractionRepository as PostgresInteractionRepository } from './modules/interactions/current/repository.js'
+import { CurrentInteractionRepository as PostgresInteractionRepository } from './modules/interactions/current/repository.js'
 import { InteractionService } from './modules/interactions/service.js'
 import { AutomaticReviewService } from './modules/interactions/automaticReview.js'
 import { PostgresOperatorRepository } from './modules/operators/postgres.js'
@@ -394,7 +392,7 @@ interface StartedServices {
   artifactOutputsGate?: ReturnType<typeof createWorkflowArtifactOutputsGate>
   localWorkflowArtifacts?: LocalWorkflowArtifacts
   telemetry?: ResourceTelemetryRuntime
-  hostCi?: HostCiService
+  hostCi?: CiServiceClient
   cloudCis?: CloudCis
 }
 
@@ -698,7 +696,7 @@ function createDeviceRuntime({ base, callbacks, started, transport }: {
           applicationInstallationId: binding.workerInstallationId,
           keyRevision: binding.keyRevision, authorizationRevision: binding.authorizationRevision,
         })
-        void ci?.dispatch()
+        void ci?.dispatch().catch(error => callbacks.app.get().log.error({ err: error }, 'CI dispatch failed'))
       }
       if (computerSync) {
         void computerSync.paired({
@@ -1329,56 +1327,11 @@ function createConversationManagers({ base, callbacks, started, transport, devic
   const recoverChatCompaction = createChatCompactionRecovery({ workerChats, selectedProfiles, harnessRegistry, processRegistry,
     nativeFactories, operatorConversations, agentConversations })
   const operatorAccountBindings = new Map<string, AcceptedProviderAccountBinding>()
-  const resolveOperatorManager = productionOperatorManagers({
+  const resolveOperatorManager = createOperatorManagerResolver({
     app: () => callbacks.app.get(), pool: database.pool, config, workingDirectory: operatorWorkingDirectory,
-    processRegistry, responseJournal, managers: operatorManagers, nativeFactories,
-    accountBinding: conversationId => operatorAccountBindings.get(conversationId),
-    createDevice: (configuration, conversationId, fileInputs) => workerChats.create({
-      configuration, conversationId, workingDirectory: operatorWorkingDirectory, fileInputs,
-      appMcpAccess: fileInputs && configuration.harness.harness === 'claude' ? 'none' : 'scoped' }),
-    createSelected: (configuration, conversationId, fileInputs, recovery) => {
-      if (configuration.harness.harness === 'opencode') {
-        throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
-      }
-      if (!configuration.harnessProfileSelection || configuration.harness.harness === 'claude') throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The selected Operator driver profile is unavailable.', 409)
-      return productionSelectedProfileManager({ factories: nativeFactories, registry: harnessRegistry, profiles: selectedProfiles,
-        ...(operatorAccountBindings.get(conversationId)
-          ? { accountBinding: operatorAccountBindings.get(conversationId)! } : {}),
-        selector: configuration.harnessProfileSelection, binding: { kind: 'operator', conversationId, repository: operatorConversations },
-        configuration: configuration.harness, role: 'operator', workingDirectory: operatorWorkingDirectory, ownerAgentId: configuration.operatorId,
-        recovery, appMcpAccess: 'scoped',
-        ...(fileInputs ? { files: productionCodexChatFiles(() => callbacks.app.get(), conversationId, operatorCodexFileAdmissions(() => callbacks.app.get(), database.pool,
-          configuration, operatorWorkingDirectory, fileStorageRoot)) } : {}),
-      }).manager
-    },
-    createClaude: (configuration, conversationId, fileInputs, recovery) => {
-      if (configuration.harness.harness !== 'claude') throw new DomainError('HARNESS_CONFIGURATION_MISMATCH', 'Claude requires the pinned Claude configuration.', 409)
-      const controlBinding: Extract<import('./modules/harnesses/claudeSdk/domainAuthority.js').ClaudeDomainBinding, { kind: 'operator' }>
-        = { kind: 'operator', conversationId, repository: operatorConversations }
-      const claude = productionClaudeManager({ pool: database.pool, factories: nativeFactories, registry: harnessRegistry,
-        accounts: providerAccounts,
-        ...(operatorAccountBindings.get(conversationId)
-          ? { accountBinding: operatorAccountBindings.get(conversationId)! } : {}),
-        profiles: claudeProfiles,
-        ...(configuration.harnessProfileSelection ? { selector: configuration.harnessProfileSelection } : {}),
-        binding: controlBinding, role: 'operator',
-        configuration: configuration.harness, workingDirectory: operatorWorkingDirectory, ownerAgentId: configuration.operatorId,
-        recovery, appMcpAccess: fileInputs ? 'none' : 'scoped', mode: harnessHost.mode,
-        ...(fileInputs ? { files: { service: () => productionFileTools(callbacks.app.get()), ...(infrastructure?.claudeFileSdk ? { sdk: infrastructure.claudeFileSdk } : {}) } } : {}),
-        ...(infrastructure?.claudeClient ? { loadClient: infrastructure.claudeClient } : {}),
-        inspectionStart: async () => {
-          const row = await operatorConversations.active(conversationId)
-          if (!row || !row.active_request_id && !controlBinding.controlPrincipalId
-            || row.operator_configuration_version_id !== configuration.id) throw new DomainError('CLAUDE_OWNER_UNAVAILABLE', 'The accepted Operator turn is unavailable.', 409)
-          return { kind: 'operator', correlationId: nativeCorrelation(conversationId, row.active_request_id ?? 'session-control'), configuration,
-            workingDirectory: operatorWorkingDirectory, environment: { agentId: configuration.operatorId, variables: {} } }
-        },
-      })
-      launches.recordClaude(claude)
-      return claude.manager
-    },
-    selectInstallation: (configuration) => harnessRegistry.initialized
-      ? harnessRegistry.pinAccepted({ ...configuration, agentId: configuration.operatorId }) : undefined,
+    fileStorageRoot, harnessMode: harnessHost.mode, infrastructure, processRegistry, responseJournal,
+    managers: operatorManagers, nativeFactories, harnessRegistry, providerAccounts, claudeProfiles, selectedProfiles,
+    workerChats, operatorConversations, operatorAccountBindings, launches,
     chat: {
       prepareInput: prepareOperatorChatInput(database.pool, createWorkerChatPreflight(deviceRuntime)),
       prepareAccountBinding: async (configuration, conversationId) => {
@@ -1497,82 +1450,12 @@ function createAgentChat({ base, callbacks, transport, accountStage, repositoryS
   const { agentChatProfileSelection, agentConversations, engine, recoverChatCompaction, workerChats } = conversationStage
   const agentChatManagers = new Map<string, NativeHarnessSessionManager>()
   const conversationNativeAccess = new ConversationNativeAccess(new ConversationCredentials(database.pool))
-  const resolveAgentChatManager = async (conversationId: string, configuration: AgentConfigurationVersion, workingDirectory: string,
-    accountSource?: { executionId: string }, featureContext?: ConversationFeatureContext): Promise<NativeHarnessSessionManager> => {
-    if (configuration.harness.harness === 'opencode') {
-      throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
-    }
-    const existing = agentChatManagers.get(conversationId)
-    if (existing) return existing
-    const accountBinding = await providerAccounts.runtimeBinding('agent-conversation', conversationId,
-      configuration.harness, configuration.harnessProfileSelection)
-    const selected = await agentChatProfileSelection(configuration, workingDirectory, accountSource?.executionId)
-    const selector = selected.profileSelection
-    const resolved = agentChatManagers.get(conversationId)
-    if (resolved) return resolved
-    const appMcpAccess = featureContext && conversationChatTools(featureContext).length ? 'scoped' as const : 'none' as const
-    if (selector?.target.hostRef.kind === 'device') {
-      const manager = workerChats.create({ configuration, conversationId, workingDirectory, appMcpAccess, fileInputs: true,
-        profileSelection: selector, sourceExecution: selected.sourceExecution,
-        applicationAccess: start => {
-          const token = start.environment?.variables.FOREMAN_CODE_MCP_TOKEN ?? start.environment?.variables.GRAPHQL_MCP_TOKEN
-          return token ? { kind: 'agent-chat-mcp', token } : undefined
-        } })
-      if (featureContext) await conversationNativeAccess.bind(manager, featureContext)
-      agentChatManagers.set(conversationId, manager)
-      return manager
-    }
-    // Chat processes have their own owner scope; they never share a workflow execution's manager.
-    const recovery = processRegistry.scope(`conversation:agent-chat:${conversationId}`)
-    const sourceRecovery = accountSource
-      ? { accountSourceRecovery: processRegistry.scope(`execution:${accountSource.executionId}`) } : {}
-    const harness = configuration.harness
-    if (harness.harness === 'claude') {
-      const { manager } = productionClaudeManager({ pool: database.pool, factories: nativeFactories, registry: harnessRegistry,
-        ...sourceRecovery,
-        ...(accountBinding?.kind === 'slot' ? { accountBinding } : {}),
-        accounts: providerAccounts,
-        profiles: claudeProfiles,
-        ...(selector ? { selector } : {}),
-        binding: { kind: 'agent', conversationId, workspaceId: configuration.workspaceId, repository: agentConversations },
-        role: 'agent-chat', configuration: harness, workingDirectory, ownerAgentId: configuration.agentId, recovery,
-        appMcpAccess, mode: harnessHost.mode,
-        files: { service: () => productionFileTools(callbacks.app.get()), ...(infrastructure?.claudeFileSdk ? { sdk: infrastructure.claudeFileSdk } : {}) },
-        ...(infrastructure?.claudeClient ? { loadClient: infrastructure.claudeClient } : {}),
-        inspectionStart: async () => { throw new DomainError('CLAUDE_MANAGEMENT_MCP_FORBIDDEN', 'Agent chat has no management MCP inspection authority.', 403) },
-      })
-      if (featureContext) await conversationNativeAccess.bind(manager, featureContext)
-      agentChatManagers.set(conversationId, manager)
-      return manager
-    }
-    if (selector) {
-      const { manager } = productionSelectedProfileManager({ factories: nativeFactories, registry: harnessRegistry, profiles: selectedProfiles,
-        ...sourceRecovery,
-        ...(accountBinding?.kind === 'slot' ? { accountBinding } : {}),
-        selector,
-        binding: { kind: 'agent', conversationId, workspaceId: configuration.workspaceId, repository: agentConversations },
-        configuration: harness, role: 'agent-chat', workingDirectory, ownerAgentId: configuration.agentId, recovery, appMcpAccess,
-        files: productionCodexChatFiles(() => callbacks.app.get(), conversationId, chatFileAdmissions) })
-      if (featureContext) await conversationNativeAccess.bind(manager, featureContext)
-      agentChatManagers.set(conversationId, manager)
-      return manager
-    }
-    const selection = harnessRegistry.initialized ? harnessRegistry.pinAccepted(configuration) : undefined
-    const { manager } = nativeFactories.allocate({
-      ...sourceRecovery,
-      ...(accountBinding?.kind === 'slot' ? { accountBinding } : {}),
-      ...(selection ? { selection } : {}),
-      role: 'agent-chat', workingDirectory, ownerAgentId: configuration.agentId,
-      configured: { instanceId: selection?.instance.instanceId ?? configuration.agentId, instanceRevision: configuration.id, driverId: harness.harness,
-        enabled: true, configuration: harness },
-      processRecovery: recovery, appMcpAccess,
-      harness: 'codex',
-      chatFiles: productionCodexChatFiles(() => callbacks.app.get(), conversationId, chatFileAdmissions),
-    })
-    if (featureContext) await conversationNativeAccess.bind(manager, featureContext)
-    agentChatManagers.set(conversationId, manager)
-    return manager
-  }
+  const resolveAgentChatManager = createAgentChatManagerResolver({
+    app: () => callbacks.app.get(), pool: database.pool, harnessMode: harnessHost.mode, infrastructure,
+    processRegistry, nativeFactories, harnessRegistry, providerAccounts, claudeProfiles, selectedProfiles,
+    workerChats, managers: agentChatManagers, agentConversations, agentChatProfileSelection,
+    conversationNativeAccess, chatFileAdmissions,
+  })
   const agentChatManagerFactory = withAgentChatHooks(resolveAgentChatManager, {
     recoverCompaction: createAgentChatCompactionRecovery({ agentConversations, profileSelection: agentChatProfileSelection,
       recover: recoverChatCompaction }),
@@ -2482,15 +2365,20 @@ async function initializeCiServices(
   const hostCi = createHostCi({ pool: database.pool, mainId: machine.installationId, commands,
     devices: () => deviceRuntime.endpointForDomains(), workerExecution, clouds, discoverClouds, readAgentFiles,
     circleCredits, circleStandby })
-  started.hostCi = hostCi
+  const ciTransport = await createCiHttpTransport(hostCi)
+  const ci = ciTransport.client
+  started.hostCi = ci
   hostCi.start()
-  app.addHook('onClose', async () => { await hostCi.close() })
+  app.addHook('onClose', async () => {
+    await ciTransport.close()
+    await hostCi.close()
+  })
   const stopDeadlineSweeper = startStateDeadlineSweeper(database.pool, {
-    ciRuns: now => hostCi.expireOverdueRuns(now),
+    ciRuns: now => ci.expireOverdueRuns(now),
     workerPublication: () => readProductionWorkerReleasePublication({ environment: process.env,
       releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }) })
   app.addHook('onClose', async () => { stopDeadlineSweeper() })
-  runtimeServices.ci = hostCi
+  runtimeServices.ci = ci
   runtimeServices.jobRuntimeProfiles = jobRuntime.profiles
   const ciRuntime = runtimeServices.ciRuntime = new CiRuntimeProvisioner(database.pool, jobRuntime.profiles, jobRuntime.sources,
     () => deviceRuntime.endpointForDomains(), commands, { changed: () => jobRuntime.jobs.requestQueueWake(),
@@ -2499,7 +2387,7 @@ async function initializeCiServices(
     ciRuntime, new ProductionCiEnrollmentInventory(database.pool, jobRuntime.sources,
       () => deviceRuntime.endpointForDomains(), () => jobRuntime.mainCiRuntime, workerExecution,
       new ManagedWorkspaceRootService(commands, workspaceRoots, jobRuntime.policies)),
-    () => { if (!runtimeState.closing) void hostCi.dispatch() })
+    () => { if (!runtimeState.closing) void ci.dispatch().catch(error => app.log.error({ err: error }, 'CI dispatch failed')) })
   runtimeServices.ciEnrollment.request()
   const enrollmentTimer = setInterval(() => runtimeServices.ciEnrollment?.request(), 30_000)
   enrollmentTimer.unref()

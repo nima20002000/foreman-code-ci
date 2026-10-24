@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import type { ReadObservation } from '@foreman-code/contracts'
 import { componentLogger } from '../diagnostics/index.js'
 import { failedReadObservation, successfulReadObservation } from '../diagnostics/index.js'
