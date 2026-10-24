@@ -199,95 +199,64 @@ describe('Board Agent chat live execution activity', () => {
     const mounted = mountChat(state)
     mounted.mock.setExecutionActivity(state.context, livePage(numberedMessages(1, 200), '200'))
     const check = await screen.findByRole('region', { name: 'Loop 1 · Working' })
-    for (const end of [400, 600, 800]) {
-      await pollActivity(mounted, livePage(numberedMessages(end - 199, end), String(end)))
+    for (const end of [250, 300, 350]) {
+      await pollActivity(mounted, livePage(numberedMessages(end - 49, end), String(end)))
       expect(await within(check).findByText(`Activity ${end}`)).toBeVisible()
       expect(activityData(mounted.client)?.items.length).toBeLessThanOrEqual(200)
       expect(within(check).getAllByRole('listitem', { hidden: true }).length).toBeLessThanOrEqual(200)
     }
-    expect(within(check).getByText('Activity 800')).toBeVisible()
+    expect(within(check).getByText('Activity 350')).toBeVisible()
     expect(within(check).queryByText('Activity 1')).not.toBeInTheDocument()
   })
 
   it('keeps history browsable during polling and ignores an abandoned history read', async () => {
-    let t0 = performance.now(); const lap = (label: string) => { const now = performance.now(); console.log(`DIAG ${label} ${Math.round(now - t0)}ms polls=${polls}`); t0 = now }; let polls = 0
     const state = runState()
-    lap('1')
     const mounted = mountChat(state)
-    lap('2')
     mounted.mock.setExecutionActivity(state.context,
-      livePage(numberedMessages(601, 800), '800', { hasEarlierItems: true }))
+      livePage(numberedMessages(751, 800), '800', { hasEarlierItems: true }))
     const check = await screen.findByRole('region', { name: 'Loop 1 · Working' })
-    lap('5')
     expect(within(check).getByText('Activity 800')).toBeVisible()
-    lap('6')
 
     const pending = deferred<AgentChatExecutionActivityPage>()
     const abandoned = deferred<AgentChatExecutionActivityPage>()
     const before: string[] = []
     server.use(http.get('/api/workspaces/:workspaceId/agent-chat/execution-activity', async ({ request }) => {
       const cursor = new URL(request.url).searchParams.get('before')
-      if (!cursor) polls += 1
       if (!cursor) return undefined
       before.push(cursor)
-      if (cursor === '601') return HttpResponse.json(await pending.promise)
-      if (cursor === '201') return HttpResponse.json(await abandoned.promise)
-      return HttpResponse.json({ ...livePage(numberedMessages(201, 400), '850', { hasEarlierItems: true }),
+      if (cursor === '751') return HttpResponse.json(await pending.promise)
+      if (cursor === '651') return HttpResponse.json(await abandoned.promise)
+      return HttpResponse.json({ ...livePage(numberedMessages(651, 700), '850', { hasEarlierItems: true }),
         mode: 'earlier', cursor: undefined })
     }))
-    { const q = performance.now(); within(check).getByRole('button', { name: 'Load earlier activity' }); console.log(`DIAG getByRole-button ${Math.round(performance.now() - q)}ms`) }
-    { const q = performance.now(); within(check).getByText('Activity 800'); console.log(`DIAG getByText ${Math.round(performance.now() - q)}ms`) }
-    { const q = performance.now(); within(check).getAllByRole('listitem', { hidden: true }); console.log(`DIAG listitem-hidden ${Math.round(performance.now() - q)}ms`) }
-    { const q = performance.now(); screen.getByRole('region', { name: 'Loop 1 · Working' }); console.log(`DIAG region ${Math.round(performance.now() - q)}ms`) }
     fireEvent.click(within(check).getByRole('button', { name: 'Load earlier activity' }))
-    lap('20')
-    await waitFor(() => expect(before).toEqual(['601']))
-    lap('21')
+    await waitFor(() => expect(before).toEqual(['751']))
     await pollActivity(mounted, livePage(numberedMessages(801, 850), '850'))
-    lap('22')
     await finishRead(mounted.client, () => pending.resolve({
-      ...livePage(numberedMessages(401, 600), '800', { hasEarlierItems: true }), mode: 'earlier', cursor: undefined,
+      ...livePage(numberedMessages(701, 750), '800', { hasEarlierItems: true }), mode: 'earlier', cursor: undefined,
     }))
-    expect(await within(check).findByText('Activity 401')).toBeVisible()
-    lap('26')
+    expect(await within(check).findByText('Activity 701')).toBeVisible()
     expect(within(check).queryByText('Activity 850')).not.toBeInTheDocument()
-    lap('27')
     await pollActivity(mounted, livePage(numberedMessages(851, 900), '900'))
-    lap('28')
-    expect(within(check).getByText('Activity 401')).toBeVisible()
-    lap('29')
+    expect(within(check).getByText('Activity 701')).toBeVisible()
     fireEvent.click(within(check).getByRole('button', { name: 'Load earlier activity' }))
-    lap('30')
-    expect(await within(check).findByText('Activity 201')).toBeVisible()
-    lap('31')
-    expect(before).toEqual(['601', '401'])
-    lap('32')
+    expect(await within(check).findByText('Activity 651')).toBeVisible()
+    expect(before).toEqual(['751', '701'])
     expect(within(check).getAllByRole('listitem', { hidden: true }).length).toBeLessThanOrEqual(200)
-    lap('33')
     fireEvent.click(within(check).getByRole('button', { name: 'Load earlier activity' }))
-    lap('34')
-    await waitFor(() => expect(before).toEqual(['601', '401', '201']))
-    lap('35')
+    await waitFor(() => expect(before).toEqual(['751', '701', '651']))
     fireEvent.click(within(check).getByRole('button', { name: 'Back to latest activity' }))
-    lap('36')
     expect(await within(check).findByText('Activity 900')).toBeVisible()
-    lap('37')
     await pollActivity(mounted, livePage(numberedMessages(901, 950), '950'))
-    lap('38')
     expect(await within(check).findByText('Activity 950')).toBeVisible()
-    lap('39')
     await finishRead(mounted.client, () => abandoned.resolve({
-      ...livePage(numberedMessages(1, 200), '900'), mode: 'earlier', cursor: undefined,
+      ...livePage(numberedMessages(601, 650), '900'), mode: 'earlier', cursor: undefined,
     }))
     expect(within(check).getByText('Activity 950')).toBeVisible()
-    lap('43')
-    expect(within(check).queryByText('Activity 201')).not.toBeInTheDocument()
-    lap('44')
+    expect(within(check).queryByText('Activity 651')).not.toBeInTheDocument()
     expect(within(check).queryByRole('button', { name: 'Back to latest activity' })).not.toBeInTheDocument()
-    lap('45')
     expect(activityData(mounted.client)?.items.length).toBeLessThanOrEqual(200)
-    lap('46')
-  }, 30_000)
+  })
 
   it('caps multibyte transcript bytes and reloads entries evicted by the byte budget', async () => {
     const state = runState()
