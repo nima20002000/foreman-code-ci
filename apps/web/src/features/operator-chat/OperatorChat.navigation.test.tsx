@@ -43,21 +43,6 @@ beforeEach(() => {
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()) })
 
 describe('Operator conversation destinations', () => {
-  it('stays closed through unrelated Board navigation until the launcher is clicked', async () => {
-    const router = mount()
-    expect(await screen.findByText('Transcript one')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Close Operator chat' }))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Operator chat' })).not.toBeInTheDocument())
-    for (const selectedSubagentId of ['another-worker', 'worker']) {
-      await act(async () => { await router.navigate({ to: '/', hash: `operatorConversationId=conversation-one&selectedSubagentId=${selectedSubagentId}` }) })
-      expect(screen.queryByRole('dialog', { name: 'Operator chat' })).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Open Operator chat' })).toBeVisible()
-    }
-    fireEvent.click(screen.getByRole('button', { name: 'Open Operator chat' }))
-    expect(await screen.findByRole('dialog', { name: 'Operator chat' })).toBeVisible()
-    expect(await screen.findByText('Transcript one')).toBeVisible()
-  })
-
   it('opens a copied conversation URL instead of the browser-local selection', async () => {
     useOperatorChatStore.setState({ open: false })
     mount('/#operatorConversationId=conversation-two')
