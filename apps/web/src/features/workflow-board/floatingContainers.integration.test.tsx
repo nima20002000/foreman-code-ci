@@ -127,3 +127,18 @@ describe('floating Board containers', () => {
     expect(z(inboxRoot)).toBeGreaterThan(z(activities))
   }, 30_000)
 })
+
+it('raises CI and the shared Agent window when each is opened or focused', async () => {
+  const { names } = await mountBoard('containers-ci-focus')
+  const agent = await openChat(names.first)
+  fireEvent.click(screen.getByRole('button', { name: /^CI server,/ }))
+  const ci = await screen.findByRole('complementary', { name: 'CI server' })
+  expect(z(ci)).toBeGreaterThan(z(agent))
+  fireEvent.pointerDown(agent)
+  expect(z(agent)).toBeGreaterThan(z(ci))
+  fireEvent.focusIn(ci)
+  expect(z(ci)).toBeGreaterThan(z(agent))
+  await userEvent.click(screen.getByRole('button', { name: 'Activities' }))
+  const activities = await screen.findByRole('region', { name: 'Activities popover' })
+  expect(z(activities)).toBeGreaterThan(z(ci))
+}, 30_000)

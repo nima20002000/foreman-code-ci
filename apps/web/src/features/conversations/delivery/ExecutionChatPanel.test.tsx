@@ -5,9 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { ChatSendRequestSchema, ChatStopRequestSchema, type ChatDeliveryReceipt, type ChatSendRequest,
   type ChatStopRequest, type EngineChatMessage, type EngineChatReadback } from '@foreman-code/contracts'
-import { agentChatFixtures } from '@foreman-code/contracts/agent-chat'
-import { agentChatFixtureFor, createAgentChatMock } from '../../../shared/mocks/agentChatHandlers'
-import { AgentConversation } from '../agentChat/AgentConversation'
 import { server } from '../../../mocks/server'
 import { ApiError } from '../../../shared/api/client'
 import type { ConversationAttachments } from '../../attachments'
@@ -69,7 +66,7 @@ function endpoints(value: EngineChatReadback = structuredClone(initial)) {
   return state
 }
 function mount(source: NativeSource, options: { visible?: boolean; nativeTurnId?: string; attachments?: ConversationAttachments;
-  onOpenContinuation?: (receipt: ChatDeliveryReceipt) => void; followUp?: (inputs: ReactNode) => ReactNode } = {}) {
+  onOpenContinuation?: (receipt: ChatDeliveryReceipt) => void; followUp?: ReactNode } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   clients.push(client)
   const tree = (visible = true) => <QueryClientProvider client={client}><ExecutionChatPanel visible={visible}
@@ -84,7 +81,7 @@ afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear())
 describe('exact Execution chat public surface', () => {
   it('notices on its own that the Run ended and offers the follow-up instead of a message box', async () => {
     const state = endpoints()
-    mount(new NativeSource(), { followUp: inputs => <>{inputs}<p>Agent chat follow-up</p></> })
+    mount(new NativeSource(), { followUp: <p>Agent chat follow-up</p> })
     expect(await screen.findByRole('textbox', { name: 'Message' })).toBeInTheDocument()
     await waitFor(() => expect(state.reads).toBe(2))
     await new Promise(resolve => setTimeout(resolve, 300))
@@ -94,57 +91,6 @@ describe('exact Execution chat public surface', () => {
     expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
   }, 15_000)
 
-  it.each(['completed', 'canceled'] as const)('keeps %s retained input history while offering the finished execution follow-up', async status => {
-    const receipt: ChatDeliveryReceipt = { id: 'settled-receipt', commandId: 'settled-command', target,
-      requestedIntent: 'next_turn', appliedIntent: 'next_turn', state: status, createdAt: date, updatedAt: date }
-    const state = endpoints({ ...structuredClone(initial), state: 'idle',
-      capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false }, receipts: [receipt] })
-    state.inputs = [{ commandId: receipt.commandId, receiptId: receipt.id, target, origin: 'direct', content: 'Retained request',
-      truncated: false, bodyCursor: null, attachments: [], intent: 'next_turn', createdAt: date }]
-    mount(new NativeSource(), { followUp: inputs => <>{inputs}<p>Agent chat follow-up</p></> })
-    expect(await screen.findByText('Retained request')).toBeVisible()
-    expect(await screen.findByText('Agent chat follow-up')).toBeInTheDocument()
-  })
-
-  it('does not strand follow-up behind a terminal input whose receipt is outside the current window', async () => {
-    const state = endpoints({ ...structuredClone(initial), state: 'idle',
-      capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } })
-    const receipt: ChatDeliveryReceipt = { id: 'old-receipt', commandId: 'old-command', target,
-      requestedIntent: 'next_turn', appliedIntent: 'next_turn', state: 'completed', createdAt: date, updatedAt: date }
-    state.inputs = [{ commandId: receipt.commandId, receiptId: receipt.id, target, origin: 'direct', content: 'Older retained input',
-      truncated: false, bodyCursor: null, attachments: [], intent: 'next_turn', createdAt: date }]
-    server.use(http.post(`${root}/read`, async ({ request }) => {
-      const input = await request.json() as { deliveryInputs?: unknown; receiptId?: string }
-      return HttpResponse.json(input.deliveryInputs ? { target, deliveryInputs: { items: state.inputs, nextCursor: null, hasMore: false, revision: 1 } }
-        : input.receiptId ? { target, receipts: [receipt] } : state.value)
-    }))
-    mount(new NativeSource(), { followUp: inputs => <>{inputs}<p>Agent chat follow-up</p></> })
-    expect(await screen.findByText('Older retained input')).toBeVisible()
-    expect(await screen.findByText('Completed')).toBeVisible()
-    expect(await screen.findByText('Agent chat follow-up')).toBeInTheDocument()
-  })
-
-  it('preserves an unsent message when the execution completes into its Agent follow-up', async () => {
-    const state = endpoints()
-    const context = { ...target.agent, runId: target.execution.runId }
-    const selection = { workspaceId: context.workspaceId, workflowId: context.workflowId,
-      workflowNodeId: context.workflowNodeId, runId: context.runId, executionId: target.execution.executionId }
-    const followUp = agentChatFixtureFor(agentChatFixtures.idleAfterCompletion, context)
-    if (!followUp.conversation || followUp.conversation.origin.kind !== 'run_execution') throw new Error('Expected Run conversation')
-    followUp.conversation.origin.executionId = target.execution.executionId
-    const mock = createAgentChatMock(followUp)
-    server.use(...mock.handlers, http.get('*/api/workspaces/:workspaceId/agent-chat/workflows/:workflowId/runs/:runId/nodes/:workflowNodeId', () =>
-      HttpResponse.json({ kind: 'selected', selection,
-        key: { ...context, executionId: target.execution.executionId, conversationId: followUp.conversation!.id }, state: followUp })))
-    mount(new NativeSource(), { followUp: retainedInputs => <AgentConversation retainedInputs={retainedInputs} context={context} name="Ava"
-      selection={selection} /> })
-    const input = await screen.findByRole('textbox', { name: 'Message' })
-    fireEvent.change(input, { target: { value: 'Keep my unsent question' } })
-    state.value = { ...state.value, state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } }
-    await waitFor(() => expect(screen.getByTestId('agent-conversation')).toBeInTheDocument(), { timeout: 6000 })
-    expect(await screen.findByRole('textbox', { name: 'Message' })).toHaveValue('Keep my unsent question')
-  }, 15_000)
-
   it('says the Run ended when a message is refused for that, instead of losing chat access', async () => {
     const state = endpoints()
     server.use(http.post(`${root}/send`, () => {
@@ -152,7 +98,7 @@ describe('exact Execution chat public surface', () => {
       return HttpResponse.json({ error: { code: 'RUN_AUTHORIZATION_REVOKED',
         message: 'The authority that accepted this Run is no longer valid.' } }, { status: 403 })
     }))
-    mount(new NativeSource(), { followUp: inputs => <>{inputs}<p>Agent chat follow-up</p></> })
+    mount(new NativeSource(), { followUp: <p>Agent chat follow-up</p> })
     const input = await screen.findByRole('textbox', { name: 'Message' })
     fireEvent.change(input, { target: { value: 'What was the title?' } })
     fireEvent.keyDown(input, { key: 'Enter' })
@@ -360,7 +306,7 @@ describe('exact Execution chat public surface', () => {
       requestedIntent: 'next_turn', appliedIntent: 'next_turn', state: 'unknown', createdAt: date, updatedAt: date }
     endpoints({ ...structuredClone(initial), state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false },
       receipts: [receipt] })
-    mount(new NativeSource(), { followUp: inputs => <>{inputs}<p>Agent chat follow-up</p></> })
+    mount(new NativeSource(), { followUp: <p>Agent chat follow-up</p> })
     expect(await screen.findByText('Delivery unconfirmed')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Check status' })).toBeVisible()
     expect(screen.queryByText('Agent chat follow-up')).not.toBeInTheDocument()
