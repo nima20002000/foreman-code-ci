@@ -13,10 +13,10 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
   const pathname = location.pathname
   const scope = JSON.stringify([workspaceId, workflowId])
   const opener = useRef<HTMLElement | null>(null)
-  const { boardPanel, boardNodeId, boardExecutionId, boardWaitingActivationId, boardAgentTab, browserSessionId, browserTabId } = search
-  const panel = useMemo(() => boardSidePanelFromSearch({ boardPanel, boardNodeId, boardExecutionId, boardWaitingActivationId, boardAgentTab, browserSessionId, browserTabId }),
-    [boardPanel, boardNodeId, boardExecutionId, boardWaitingActivationId, boardAgentTab, browserSessionId, browserTabId])
-  const browserKey = JSON.stringify([workspaceId, workflowId, run?.runId ?? search.selectedRunId ?? search.runId,
+  const { boardPanel, boardNodeId, boardRunId, boardExecutionId, boardWaitingActivationId, boardAgentTab, browserSessionId, browserTabId } = search
+  const panel = useMemo(() => boardSidePanelFromSearch({ boardPanel, boardNodeId, boardRunId, boardExecutionId, boardWaitingActivationId, boardAgentTab, browserSessionId, browserTabId }),
+    [boardPanel, boardNodeId, boardRunId, boardExecutionId, boardWaitingActivationId, boardAgentTab, browserSessionId, browserTabId])
+  const browserKey = JSON.stringify([workspaceId, workflowId, run?.runId ?? search.selectedRunId ?? search.runId ?? boardRunId,
     boardNodeId, boardExecutionId])
   const visible = panel.kind === 'browser' && search.boardMemory !== true
   const browser = useRef({ key: browserKey, visible, released: false, release: beforeBrowserHide })
@@ -60,6 +60,7 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
         if (next.kind === 'agent' || next.kind === 'browser') {
           if (next.kind === 'agent' || next.nodeId !== undefined) {
             selected.boardNodeId = next.nodeId
+            selected.boardRunId = next.runId
             selected.boardExecutionId = next.executionId
             selected.boardWaitingActivationId = next.waitingActivationId
             selected.browserSessionId = next.kind === 'browser' ? next.sessionId : undefined
@@ -105,7 +106,7 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
     releaseBrowser()
     void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true,
       search: previous => previous.workflowId && previous.workflowId !== workflowId ? previous : ({ ...previous, workflowId,
-        selectedRunId: undefined, runId: target.runId, workflowVersionId: target.workflowVersionId, executionSemanticsVersion: 3,
+        boardRunId: undefined, selectedRunId: undefined, runId: target.runId, workflowVersionId: target.workflowVersionId, executionSemanticsVersion: 3,
         boardView: tab === 'details' ? 'graph' : previous.boardView, boardPanel: 'agent', boardAgentTab: tab,
         boardNodeId: target.nodeId, boardExecutionId: target.executionId,
         boardWaitingActivationId: undefined,
@@ -122,7 +123,7 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
     releaseBrowser()
     void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true,
       search: previous => previous.workflowId && previous.workflowId !== workflowId ? previous : ({ ...previous, workflowId,
-        selectedRunId: undefined, runId: target.runId, workflowVersionId: versionId, executionSemanticsVersion: 3,
+        boardRunId: undefined, selectedRunId: undefined, runId: target.runId, workflowVersionId: versionId, executionSemanticsVersion: 3,
         boardPanel: 'agent', boardAgentTab: 'chat', boardNodeId: target.agent.workflowNodeId,
         boardExecutionId: undefined, boardWaitingActivationId: target.waitingActivationId,
         runNodeId: undefined, runRelationshipId: undefined, runExchangeKey: undefined,
@@ -132,7 +133,7 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
     releaseBrowser()
     void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true,
       search: previous => previous.workflowId && previous.workflowId !== workflowId ? previous : ({ ...previous, workflowId,
-        selectedRunId: target && !target.workflowVersionId ? target.runId : undefined,
+        boardRunId: undefined, selectedRunId: target && !target.workflowVersionId ? target.runId : undefined,
         runId: target?.workflowVersionId ? target.runId : undefined, workflowVersionId: target?.workflowVersionId,
         executionSemanticsVersion: target?.workflowVersionId ? 3 : undefined,
         boardExecutionId: undefined, boardWaitingActivationId: undefined,
@@ -140,7 +141,7 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
       }) })
   }, [navigate, workspaceId, workflowId, releaseBrowser])
   const agentSelection: Extract<BoardSidePanel, { kind: 'agent' }> | undefined = search.boardNodeId
-    ? { kind: 'agent', nodeId: search.boardNodeId, tab: search.boardAgentTab ?? 'chat',
+    ? { kind: 'agent', nodeId: search.boardNodeId, ...(search.boardRunId ? { runId: search.boardRunId } : {}), tab: search.boardAgentTab ?? 'chat',
       ...(search.boardExecutionId ? { executionId: search.boardExecutionId } : {}),
       ...(search.boardWaitingActivationId ? { waitingActivationId: search.boardWaitingActivationId } : {}) } : undefined
   return { scope, opener, panel, selectPanel, agentSelection, releaseBrowser, view: search.boardView ?? 'graph', selectView,

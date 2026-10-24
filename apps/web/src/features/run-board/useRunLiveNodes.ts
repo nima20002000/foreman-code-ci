@@ -34,16 +34,15 @@ export function useRunLiveNodes(scope: RepeatGraphScopeCurrent, names: ReadonlyM
   const working = Boolean(visible && record?.state.executions.some((execution) => execution.workActivationId))
   const handoffs = useRunHandoffsQuery(scope, working)
   const { refetch } = handoffs
-  const scopeKey = JSON.stringify([scope.workspaceId, scope.workflowId, scope.runId, scope.workflowVersionId])
-  const [caughtUp, setCaughtUp] = useState({ scopeKey, record })
+  const [caughtUp, setCaughtUp] = useState(record)
   useEffect(() => {
     if (!working) return
     let current = true
-    void refetch().then(() => { if (current) setCaughtUp({ scopeKey, record }) })
+    void refetch().then(() => { if (current) setCaughtUp(record) })
     return () => { current = false }
-  }, [working, record, refetch, scopeKey])
-  const shown = working ? caughtUp.scopeKey === scopeKey ? caughtUp.record : undefined : record
-  const choreography = useRunChoreography(shown, edges, working ? handoffs.data?.transfers : undefined, scopeKey)
+  }, [working, record, refetch])
+  const shown = working ? caughtUp : record
+  const choreography = useRunChoreography(shown, edges, working ? handoffs.data?.transfers : undefined)
   // One line per agent pair: an approval beside a handoff travels on the handoff's line.
   const lines = useMemo(() => relationshipLines(edges), [edges])
   const flights: [string, EdgePulse[]][] = []

@@ -26,8 +26,8 @@ export type WorkspaceBoardExecutionSelection = z.infer<typeof WorkspaceBoardExec
 export const BoardSidePanelSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('none') }).strict(),
   z.object({ kind: z.literal('agent'), nodeId: GraphIdSchema,
-    tab: z.enum(['chat', 'settings', 'details']), executionId: GraphIdSchema.optional(), waitingActivationId: GraphIdSchema.optional() }).strict(),
-  z.object({ kind: z.literal('browser'), nodeId: GraphIdSchema.optional(), executionId: GraphIdSchema.optional(),
+    tab: z.enum(['chat', 'settings', 'details']), runId: GraphIdSchema.optional(), executionId: GraphIdSchema.optional(), waitingActivationId: GraphIdSchema.optional() }).strict(),
+  z.object({ kind: z.literal('browser'), nodeId: GraphIdSchema.optional(), runId: GraphIdSchema.optional(), executionId: GraphIdSchema.optional(),
     waitingActivationId: GraphIdSchema.optional(), sessionId: GraphIdSchema.optional(), tabId: GraphIdSchema.optional() }).strict(),
 ]).superRefine((panel, context) => {
   if ((panel.kind === 'agent' || panel.kind === 'browser') && panel.executionId && panel.waitingActivationId) context.addIssue({ code: 'custom',
@@ -39,6 +39,8 @@ const BoardSurfaceSelectionFields = {
   boardView: z.enum(['graph', 'overview']).optional(),
   boardPanel: z.enum(['agent', 'browser']).optional(),
   boardAgentTab: z.enum(['chat', 'settings', 'details']).optional(),
+  /** The open panel's exact Run; selecting it keeps the workflow Board on screen. */
+  boardRunId: GraphIdSchema.optional(),
   boardNodeId: GraphIdSchema.optional(), boardExecutionId: GraphIdSchema.optional(),
   boardWaitingActivationId: GraphIdSchema.optional(),
   boardTeamId: GraphIdSchema.optional(),
@@ -80,6 +82,7 @@ export const WorkspaceBoardSearchSchema = UrlSearchSelectionSchema.extend({
 }).strict().superRefine((value, context) => {
   if (value.runNodeId && value.runRelationshipId) context.addIssue({ code: 'custom', message: 'Inspect one Run node or relationship at a time.' })
   if (value.boardPanel === 'agent' && !value.boardNodeId) context.addIssue({ code: 'custom', path: ['boardNodeId'], message: 'Agent panels require a selected node.' })
+  if (value.boardRunId && !value.workflowId) context.addIssue({ code: 'custom', path: ['boardRunId'], message: 'A panel Run requires its workflow.' })
   if (value.boardExecutionId && !value.boardNodeId) context.addIssue({ code: 'custom', path: ['boardExecutionId'], message: 'Execution selection requires its node.' })
   if (value.boardWaitingActivationId && !value.boardNodeId) context.addIssue({ code: 'custom', path: ['boardWaitingActivationId'], message: 'Consultation selection requires its node.' })
   if (value.boardExecutionId && value.boardWaitingActivationId) context.addIssue({ code: 'custom', path: ['boardWaitingActivationId'], message: 'Select either an execution or a waiting coordinator.' })
@@ -97,9 +100,9 @@ export type WorkflowBoardSelection = WorkspaceBoardSearch
 export function boardSidePanelFromSearch(search: WorkspaceBoardSearch): BoardSidePanel {
   switch (search.boardPanel) {
     case 'agent': return BoardSidePanelSchema.parse({ kind: 'agent', nodeId: search.boardNodeId,
-      tab: search.boardAgentTab ?? 'chat', ...(search.boardExecutionId ? { executionId: search.boardExecutionId } : {}),
+      tab: search.boardAgentTab ?? 'chat', ...(search.boardRunId ? { runId: search.boardRunId } : {}), ...(search.boardExecutionId ? { executionId: search.boardExecutionId } : {}),
       ...(search.boardWaitingActivationId ? { waitingActivationId: search.boardWaitingActivationId } : {}) })
-    case 'browser': return { kind: 'browser', ...(search.boardNodeId ? { nodeId: search.boardNodeId } : {}),
+    case 'browser': return { kind: 'browser', ...(search.boardRunId ? { runId: search.boardRunId } : {}), ...(search.boardNodeId ? { nodeId: search.boardNodeId } : {}),
       ...(search.boardExecutionId ? { executionId: search.boardExecutionId } : {}),
       ...(search.boardWaitingActivationId ? { waitingActivationId: search.boardWaitingActivationId } : {}),
       ...(search.browserSessionId ? { sessionId: search.browserSessionId } : {}), ...(search.browserTabId ? { tabId: search.browserTabId } : {}) }
@@ -133,7 +136,8 @@ export function resolveWorkflowBoardLocation(pathname: string, rawSearch: unknow
   })
   if (pinned && requested && !sameCanonicalGraphScope(pinned, requested)) throw new Error('The Run URL contains conflicting immutable pins.')
   if ((search.runNodeId || search.runRelationshipId || search.runExchangeKey) && !pinned && !requested) throw new Error('Run inspection needs a complete Run selection.')
-  if ((search.boardExecutionId || search.boardWaitingActivationId) && !pinned && !requested) throw new Error('Board execution or consultation selection needs a complete Run selection.')
+  if ((search.boardExecutionId || search.boardWaitingActivationId) && !pinned && !requested && !search.boardRunId) throw new Error('Board execution or consultation selection needs a complete Run selection.')
+  if (search.boardRunId && (pinned ?? requested) && search.boardRunId !== (pinned ?? requested)!.runId) throw new Error('The panel belongs to a different Run.')
   return { workspaceId, workflowId, search, run: pinned ?? requested, draftAlias: match[3] === 'draft' }
 }
 
@@ -146,8 +150,8 @@ export function boardSearchForRun(search: WorkspaceBoardSearch, workflowId: stri
     runNodeId: _node, runRelationshipId: _edge, runExchangeKey: _exchange, ...rest } = search
   void _run; void _version; void _semantics; void _node; void _edge; void _exchange
   const changedRun = search.workflowId !== workflowId || search.runId !== run?.runId
-    || search.workflowVersionId !== run?.workflowVersionId
-  if (changedRun) { delete rest.boardCiTicketId; delete rest.boardExecutionId; delete rest.boardWaitingActivationId; delete rest.browserSessionId; delete rest.browserTabId }
+    || search.workflowVersionId !== run?.workflowVersionId || !!search.boardRunId && search.boardRunId !== run?.runId
+  if (changedRun) { delete rest.boardRunId; delete rest.boardCiTicketId; delete rest.boardExecutionId; delete rest.boardWaitingActivationId; delete rest.browserSessionId; delete rest.browserTabId }
   return WorkspaceBoardSearchSchema.parse({ ...rest, workflowId, ...(run ? {
     runId: run.runId, workflowVersionId: run.workflowVersionId, executionSemanticsVersion: run.executionSemanticsVersion,
   } : {}) })
@@ -173,7 +177,7 @@ export function staysOnWorkflowBoard(current: { pathname: string; search: unknow
 function authoringSelection(search: WorkspaceBoardSearch): WorkspaceBoardSearch {
   const value = { ...search }
   for (const key of ['activityKind', 'activityAgentId', 'boardView', 'boardPanel', 'boardAgentTab',
-    'boardCiTicketId', 'browserSessionId', 'browserTabId', 'boardNodeId', 'boardExecutionId', 'boardWaitingActivationId', 'boardTeamId', 'boardMemory',
+    'boardRunId', 'boardCiTicketId', 'browserSessionId', 'browserTabId', 'boardNodeId', 'boardExecutionId', 'boardWaitingActivationId', 'boardTeamId', 'boardMemory',
     'boardBrowsers', 'browserTab'] as const) delete value[key]
   return value
 }

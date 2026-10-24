@@ -1,10 +1,12 @@
+import { useContext } from 'react'
+import { BoardRunNodeInspector } from '../../run-board'
 import { InfoHint } from '../../../shared/ui/InfoHint'
 import type { PinnedPanelNode } from './DraftCanvas'
 import { JobNodePanel } from '../../jobs'
 import { AgentFacts, Button, EmptyState, type AgentPanel } from '../../../shared/ui/nocturne'
 import {
   nodeTitle, removeNode, roleEvidence, editorAgents, type NextDraftEdit, agentSettingRows, useWorkflowBoard,
-  rebaseAgentFormTools,
+  rebaseAgentFormTools, RunDisplayedSnapshot, RunLiveNodes,
 } from '../../board-core'
 import { useGraphEditIntent } from './useGraphEditIntent'
 import { NodeBrowserField, NodeConnections, NodeWorkflowFields } from './AuthoringFields'
@@ -27,6 +29,10 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
   const graph = edit.graph
   const context = edit.context
   const runRecord = useSelectedRunRecord()
+  const displayed = useContext(RunDisplayedSnapshot)
+  const liveNodes = useContext(RunLiveNodes)
+  const runScope = displayed ? { workspaceId: displayed.workspaceId, workflowId: displayed.workflowId,
+    runId: displayed.runId, workflowVersionId: displayed.workflowVersionId, executionSemanticsVersion: 3 as const } : board?.run
   const { inspect, presentation, setOpenNode, change, report } = core
   const openAgent = (nodeId: string, next: AgentPanel = 'settings') => inspect(() => {
     presentation.getState().setFocusedNodeId(nodeId); presentation.getState().setFocusedEdgeId(undefined)
@@ -37,14 +43,19 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
   const panels = (nodeId: string, pinned?: PinnedPanelNode): AgentPanels => {
     const node = pinned ? {...pinned,id:nodeId} : graph.nodes.find((item) => item.id === nodeId)
     if (!node) return { chat: null, settings: null, info: null }
+    const inspection = displayed && displayed.nodes.some(item => item.id === node.id)
+      ? <BoardRunNodeInspector snapshot={displayed} nodeId={node.id}
+      executionId={board?.sidePanel?.kind === 'agent' ? board.sidePanel.executionId : undefined}
+      onInspect={(nextNodeId = node.id, executionId) => board?.selectSidePanel?.({ kind: 'agent', nodeId: nextNodeId, runId: displayed.runId, tab: 'details',
+        ...(executionId ? { executionId } : {}) })} /> : null
     if('jobDefinitionId' in node) {
-      const details=<JobNodePanel workspaceId={graph.workspaceId} definitionId={node.jobDefinitionId} definitionRevision={node.jobDefinitionRevision} definitionVersionId={node.jobDefinitionVersionId} workflowExecution={pinned?.kind==='job'?pinned.workflowExecution:undefined}/>
+      const details=inspection ?? <JobNodePanel workspaceId={graph.workspaceId} definitionId={node.jobDefinitionId} definitionRevision={node.jobDefinitionRevision} definitionVersionId={node.jobDefinitionVersionId} workflowExecution={pinned?.kind==='job'?pinned.workflowExecution:undefined}/>
       return {chat:details,info:details,settings:pinned?details:<fieldset disabled={edit.busy||reloading||editIntent.locked||!!board?.boardRunLive}><p>Saved job revision {node.jobDefinitionRevision}</p><Button onClick={()=>{setOpenNode(undefined);change(value=>removeNode(value,node.id))}}>Remove job node</Button><NodeWorkflowFields graph={graph} node={node} context={context} agentEdits={edit.agentEdits} change={change}/></fieldset>}
     }
     const pinnedAgent = pinned?.kind !== 'job' ? pinned : undefined
     const agent = agents.find((item) => item.id === node.agentId)
     const run = runNodeView(runRecord, Boolean(board?.run), node.id, node.agentId)
-    const statusLabel = board?.run ? [run.label, run.activity].filter(Boolean).join(' · ') : 'Draft'
+    const statusLabel = liveNodes?.get(node.id)?.label ?? (board?.run ? [run.label, run.activity].filter(Boolean).join(' · ') : 'Draft')
     const savedGraph = (context.savedDraft ?? context.draft).graph
     const savedNode = savedGraph.nodes.some((item) =>
       item.kind !== 'job' && item.id === node.id && item.agentId === node.agentId)
@@ -88,7 +99,8 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
             workflowForms: { ...current.workflowForms, removeNode: { nodeId: node.id, destinationParentId: '' } },
           }))} />
       </fieldset>,
-      info: <AgentInfoTabs scope={board?.run} agentId={node.agentId} details={<>
+      info: <AgentInfoTabs scope={runScope} agentId={node.agentId} details={<>
+        {inspection}
         <AgentFacts items={[
           { label: 'Status', value: statusLabel },
           { label: 'Role', value: role.role === 'master' ? 'Master' : role.role === 'orchestrator' ? 'Orchestrator' : role.role === 'coder' ? 'Worker' : 'Unknown' },

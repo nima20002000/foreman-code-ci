@@ -28,6 +28,18 @@ describe('shared Board surface URL state', () => {
     expect(pinned.search.boardExecutionId).toBe('execution');
   });
 
+  it.each(['boardExecutionId', 'boardWaitingActivationId'] as const)('keeps %s on the draft with its exact panel Run', field => {
+    const search = { ...selection, boardRunId: scope.runId, [field]: 'selected-target' };
+    const board = resolveWorkflowBoardLocation('/workspaces/workspace', search);
+    expect(board.run).toBeUndefined();
+    expect(boardSidePanelFromSearch(board.search)).toMatchObject({ kind: 'agent', nodeId: 'worker', runId: scope.runId });
+    expect(board.search[field]).toBe('selected-target');
+    expect(staysOnWorkflowBoard(at(selection), at(search))).toBe(true);
+    expect(boardSearchForRun(board.search, 'workflow', { ...scope, runId: 'other-run' }).boardRunId).toBeUndefined();
+    expect(() => resolveWorkflowBoardLocation('/workspaces/workspace', { ...search, runId: 'other-run',
+      workflowVersionId: 'other-version', executionSemanticsVersion: 3 })).toThrow('The panel belongs to a different Run.');
+  });
+
   it('rejects removed group-chat selections while retaining Agent chat links', () => {
     expect(WorkspaceBoardSearchSchema.safeParse({ workflowId: 'workflow', boardPanel: 'group_chat' }).success).toBe(false);
     for (const field of ['groupRunId', 'groupPostId', 'groupReceiptId']) {

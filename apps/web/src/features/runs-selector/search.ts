@@ -67,7 +67,7 @@ export function searchForSelectedRun(
   const next: Record<string, unknown> = { ...previous, workflowId: scope.workflowId }
   // Never leave another Run's graph/inspector pins beneath a new history selection.
   for (const key of ['runId', 'workflowVersionId', 'executionSemanticsVersion', 'runNodeId',
-    'runRelationshipId', 'runExchangeKey', 'activityKind', 'activityAgentId', 'boardCiTicketId', 'boardExecutionId', 'boardWaitingActivationId', SELECTED_RUN_PARAM]) delete next[key]
+    'runRelationshipId', 'runExchangeKey', 'activityKind', 'activityAgentId', 'boardRunId', 'boardCiTicketId', 'boardExecutionId', 'boardWaitingActivationId', SELECTED_RUN_PARAM]) delete next[key]
   if (runId !== null) next[SELECTED_RUN_PARAM] = runIdSchema.parse(runId)
   return next
 }

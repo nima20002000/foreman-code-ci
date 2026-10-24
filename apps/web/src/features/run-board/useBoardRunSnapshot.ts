@@ -1,31 +1,27 @@
-import { useEffect } from 'react'
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { isRunAccessError, runsSelectorApi } from '../runs-selector'
-import { isActiveCi } from '../workflow-board'
-import { runBoardCi } from './model'
+import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 
 export type BoardRun = { workspaceId: string; workflowId: string; runId: string; live: boolean }
 
-/** One snapshot read supplies both the Board overlay and its controls' immutable Run pins. */
 export function useBoardRunSnapshot(run: BoardRun | undefined, visible: boolean) {
   const read = useQuery({
     queryKey: ['board-run-overlay', run?.workspaceId, run?.workflowId, run?.runId],
     queryFn: ({ signal }) => runsSelectorApi.snapshot({ workspaceId: run!.workspaceId, workflowId: run!.workflowId, runId: run!.runId }, { signal }),
     enabled: !!run && visible,
-    refetchInterval: query => {
-      if (!visible || isRunAccessError(query.state.error)) return false
-      const result = query.state.data
-      const unfinishedCi = result?.snapshot.kind === 'available'
-        && [...runBoardCi(result.snapshot, result.activitySnapshot).values()].some(isActiveCi)
-      return run?.live || unfinishedCi ? 3000 : false
-    },
+    refetchInterval: query => !run?.live || isRunAccessError(query.state.error) ? false : 3000,
     staleTime: 0,
   })
-  const { refetch } = read
-  useEffect(() => {
-    // The summary and Activity arrive independently; finishing always takes a final Activity read.
-    if (run?.runId && !run.live && visible) void refetch({ cancelRefetch: false })
-  }, [run?.workspaceId, run?.workflowId, run?.runId, run?.live, visible, refetch])
-  return read
+  const denied = useProtectedAccessError(read)
+  const result = denied || read.isError ? undefined : read.data
+  const snapshot = run && result?.snapshot.kind === 'available' && result.snapshot.runId === run.runId ? result.snapshot : undefined
+  const activity = snapshot ? result?.activitySnapshot : undefined
+  const scope = useMemo<RepeatGraphScopeCurrent | undefined>(() => snapshot ? {
+    workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId, runId: snapshot.runId,
+    workflowVersionId: snapshot.workflowVersionId, executionSemanticsVersion: 3,
+  } : undefined, [snapshot])
+  return { snapshot, activity, scope }
 }
 

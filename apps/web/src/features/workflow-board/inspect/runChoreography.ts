@@ -145,15 +145,13 @@ function causes(handoff: Handoff, all: Iterable<Handoff>): Handoff[] {
  * Nothing here changes a fact; it only orders what is already recorded.
  */
 export function useRunChoreography(record: RepeatGraphCurrentState | undefined, edges: readonly RunEdge[] | undefined,
-  transfers?: readonly RunTransfer[], scopeKey = JSON.stringify(record?.scope)): RunChoreography {
-  const memory = useRef<Memory & { scopeKey: string | undefined }>({ scopeKey, primed: false, displayed: false, starts: new Map(), handoffs: new Map(), shown: new Map(), transitions: new Map(), landed: new Set() })
+  transfers?: readonly RunTransfer[]): RunChoreography {
+  const memory = useRef<Memory>({ primed: false, displayed: false, starts: new Map(), handoffs: new Map(), shown: new Map(), transitions: new Map(), landed: new Set() })
   const [tick, setTick] = useState(0)
   const views = useMemo(() => record ? runNodeDisplays(record) : undefined, [record])
   const lifecycles = useMemo(() => record ? runNodeDisplays(record, true) : undefined, [record])
   const found = useMemo(() => record && edges ? runHandoffs(record, edges, transfers) : [], [record, edges, transfers])
   const now = performance.now()
-  if (memory.current.scopeKey !== scopeKey) memory.current = { scopeKey, primed: false, displayed: false,
-    starts: new Map(), handoffs: new Map(), shown: new Map(), transitions: new Map(), landed: new Set() }
   const m = memory.current
   if (views) {
     const known = [...m.handoffs.values(), ...found.filter((handoff) => !m.handoffs.has(handoff.key))]
