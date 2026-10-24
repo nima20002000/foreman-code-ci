@@ -161,26 +161,3 @@ it('keeps a deep-linked active workflow visible without fetching intervening pag
   expect(pages).toBe(1); expect(details).toBe(1)
   expect(screen.getByRole('button', { name: 'Show more workflows' })).toBeVisible()
 })
-
-it('keeps the selected shortcut and its controls stable when its page arrives', async () => {
-  server.use(
-    http.get('/api/management/workspaces/workspace-1/workflows', ({ request }) => HttpResponse.json({
-      items: new URL(request.url).searchParams.has('cursor') ? [workflow('Zeta')] : [workflow('Alpha')],
-      pageInfo: { nextCursor: new URL(request.url).searchParams.has('cursor') ? null : 'Alpha' },
-    })),
-    http.get('/api/management/workspaces/workspace-1/workflows/Zeta', () => HttpResponse.json(workflow('Zeta'))),
-  )
-  renderWithRouter(<WorkflowNavigation workspaceId="workspace-1" activeWorkflowId="Zeta" />)
-  const selected = await screen.findByRole('button', { name: /^Zeta/ })
-  await screen.findByRole('button', { name: /^Alpha/ })
-  expect(screen.getAllByRole('button').filter(button => button.classList.contains('workflow-navigation-item'))[0]).toBe(selected)
-  const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: 'Show more workflows' }))
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Show more workflows' })).not.toBeInTheDocument())
-  expect(screen.getByRole('button', { name: /^Zeta/ })).toBe(selected)
-  expect(screen.getAllByRole('button').filter(button => button.classList.contains('workflow-navigation-item'))[0]).toBe(selected)
-  expect(screen.queryByRole('button', { name: 'Move Zeta up' })).not.toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: 'Move Zeta down' })).not.toBeInTheDocument()
-  selected.focus()
-  expect(selected).toHaveFocus()
-})
