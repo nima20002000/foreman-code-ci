@@ -217,7 +217,8 @@ it.each([false, true])('reorders only visible neighbors after the selected page 
   expect(visibleOrder()).toEqual(hasNeighbor ? ['Zeta', 'Alpha', 'Beta'] : ['Zeta', 'Alpha'])
   expect(screen.getByRole('button', { name: 'Move Alpha up' })).toBeDisabled()
   if (hasNeighbor) {
-    await user.click(screen.getByRole('button', { name: 'Move Alpha down' }))
+    screen.getByRole('button', { name: 'Move Alpha down' }).focus()
+    await user.keyboard('{Enter}')
     await waitFor(() => expect(visibleOrder()).toEqual(['Zeta', 'Beta', 'Alpha']))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Move Alpha up' })).toBeEnabled())
     expect(requests[0]).toMatchObject({ workflowIds: ['Beta', 'Alpha'], expectedRevision: 4 })
@@ -228,7 +229,6 @@ it.each([false, true])('reorders only visible neighbors after the selected page 
     expect(requests[1]).toMatchObject({ workflowIds: ['Alpha', 'Beta'], expectedRevision: 5 })
   } else {
     expect(screen.getByRole('button', { name: 'Move Alpha down' })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: 'Move Alpha down' }))
     screen.getByRole('button', { name: /^Alpha/ }).focus()
     await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
     expect(requests).toHaveLength(0)
