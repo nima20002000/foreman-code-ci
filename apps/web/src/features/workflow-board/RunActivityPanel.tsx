@@ -34,10 +34,7 @@ export function RunActivityPanel({ summaries, summariesReadAt = 0 }: {
   const { workspaceId, workflowId, run: selected, selectRun } = board
   const details = useRef<HTMLDetailsElement>(null)
   useEffect(() => {
-    if ((board.inspection.runRelationshipId || board.inspection.runExchangeKey) && details.current && !details.current.open) {
-      details.current.open = true
-      details.current.focus()
-    }
+    if ((board.inspection.runRelationshipId || board.inspection.runExchangeKey) && details.current) details.current.open = true
   }, [selected?.runId, board.inspection.runRelationshipId, board.inspection.runExchangeKey])
   const client = useQueryClient()
   const request = useRef(0)
@@ -138,7 +135,7 @@ export function RunActivityPanel({ summaries, summariesReadAt = 0 }: {
     <BoardChanges scope={boardScope(workspaceId, workflowId)} />
     {selected ? <>
       <Activities key={selected.runId} scope={selected} />
-      <details ref={details} tabIndex={-1} className="board-run-more"><summary>Run details and other runs</summary>{runParts}</details>
+      <details ref={details} className="board-run-more"><summary>Run details and other runs</summary>{runParts}</details>
     </> : runParts}
   </div>
 }

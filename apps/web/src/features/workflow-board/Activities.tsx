@@ -2,8 +2,6 @@ import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { defaultStringifySearch, useLocation, useNavigate, useRouter } from '@tanstack/react-router'
-import { runInspectionKey } from '@foreman-code/contracts/current'
-import { useBoardSelection } from '../board-core'
 import type { RepeatGraphScopeCurrent, RunActivityPublic, RunDirectionWait } from '@foreman-code/contracts/current'
 import { Alert, Button, Icon, IconButton, Select } from '../../shared/ui/nocturne'
 import { ApiError } from '../../shared/api/client'
@@ -240,7 +238,6 @@ function ActivityFeed({ scope, selection, address, focusAgentId }: { scope: RunA
 function groupRepeats(items: readonly RunActivityPublic[]) {
   const groups: { item: RunActivityPublic; count: number }[] = []
   const same = (a: RunActivityPublic, b: RunActivityPublic) => !a.ci && !b.ci && !a.workResult && !b.workResult && !a.usage && !b.usage
-    && a.refs.executionId === b.refs.executionId && a.refs.nodeExecutionId === b.refs.nodeExecutionId
     && a.summary === b.summary && a.detail === b.detail && a.status === b.status && JSON.stringify(a.actor ?? a.subject) === JSON.stringify(b.actor ?? b.subject)
   for (const item of items) {
     const last = groups.at(-1)
@@ -258,10 +255,9 @@ const clock = (value: string) => {
 /** Not a recorded event: the Run's live wait for the user, shown last until a direction is sent. */
 function DirectionWaitRow({ direction, showActor }: { direction: RunDirectionWait; showActor: boolean }) {
   const detail = direction.findings[0] ?? direction.summary
-  return <li className="board-activity-event" data-severity="warning" data-status="waiting"><span className="board-activity-dot" aria-hidden="true" />
-    <div><div role="group" aria-label="Activity time and actor" style={{ display: 'flex', flexWrap: 'wrap', columnGap: 8 }}>
-      <time dateTime={direction.since} title={new Date(direction.since).toLocaleString()} style={{ whiteSpace: 'normal' }}>{clock(direction.since)}</time>
-      {showActor ? <strong>{direction.agentName}</strong> : null}</div>
+  return <li data-severity="warning" data-status="waiting"><span className="board-activity-dot" aria-hidden="true" />
+    <time dateTime={direction.since} title={new Date(direction.since).toLocaleString()}>{clock(direction.since)}</time>
+    <div>{showActor ? <strong>{direction.agentName}</strong> : null}
       <div className="board-activity-line"><p>Waiting for your direction</p>
         <span className="board-activity-status is-warning">waiting</span></div>
       {detail ? <p className="board-activity-detail">{detail}</p> : null}
@@ -270,21 +266,15 @@ function DirectionWaitRow({ direction, showActor }: { direction: RunDirectionWai
 
 function ActivityRow({ item, count = 1, showActor = true }: { item: RunActivityPublic; count?: number; showActor?: boolean }) {
   const navigate = useNavigate()
-  const board = useBoardSelection()
-  const executionId = item.refs.executionId ?? item.refs.nodeExecutionId
   const ciTicketId = item.refs.ciTicketId ?? item.ci?.id
   const participant = item.actor ?? item.subject
   const label = participant ? 'agentId' in participant ? participant.agentName : `Job · ${participant.nodeName}` : 'Workflow'
-  return <li className="board-activity-event" data-severity={item.severity} data-status={item.status}><span className="board-activity-dot" aria-hidden="true" />
-    <div><div role="group" aria-label="Activity time and actor" style={{ display: 'flex', flexWrap: 'wrap', columnGap: 8 }}>
-      <time dateTime={item.occurredAt} title={new Date(item.occurredAt).toLocaleString()} style={{ whiteSpace: 'normal' }}>{clock(item.occurredAt)}</time>
-      {showActor ? <strong>{label}</strong> : null}</div>
+  return <li data-severity={item.severity} data-status={item.status}><span className="board-activity-dot" aria-hidden="true" />
+    <time dateTime={item.occurredAt} title={new Date(item.occurredAt).toLocaleString()}>{clock(item.occurredAt)}</time>
+    <div>{showActor ? <strong>{label}</strong> : null}
       <div className="board-activity-line"><p>{item.summary}{count > 1 ? <span className="board-activity-count"> ×{count}</span> : null}</p>
         {item.status !== 'unknown' ? <span className={`board-activity-status is-${item.severity}`}>{item.status.replaceAll('_', ' ')}</span> : null}</div>
       {item.detail ? <p className="board-activity-detail">{item.detail}</p> : null}
-      {item.status === 'failed' && executionId && board ? <Button size="sm" variant="ghost" onClick={() => board.selectInspection({
-        ...(participant ? { runNodeId: participant.nodeId } : {}), runExchangeKey: runInspectionKey({ executionId }),
-      })}>Inspect failure</Button> : null}
       {item.ci ? <p className="board-activity-detail">
         {item.ci.part ? `${item.ci.part} · ` : ''}
         {item.ci.partition ? `Partition ${item.ci.partition.index + 1} of ${item.ci.partition.count} · ` : ''}

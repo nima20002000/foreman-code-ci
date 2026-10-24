@@ -21,4 +21,3 @@ export function bindingLabel(binding: MemoryCardWorkBinding): string {
 }
 export const visibleTime = (value: string | number) => new Date(value).toLocaleString()
 export const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Couldn’t complete this request.'
-export const shortWorkId = (id: string) => id.replace(/^(?:run|execution|exec)-/, '').slice(0, 8)
