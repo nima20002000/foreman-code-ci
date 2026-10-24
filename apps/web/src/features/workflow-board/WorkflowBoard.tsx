@@ -245,7 +245,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     <PanelHeaderSlotContext.Provider value={panelHeaderSlot}><PanelFooterSlotContext.Provider value={panelFooterSlot}>
     <div ref={toolbar} className="unified-workflow-board" data-testid="unified-workflow-board" style={{ flexDirection: 'column' }}>
       <nav className="workflow-collaboration-toolbar" aria-label="Workflow views">
-        <span>{legacyRun || pickedRunId ? 'Selected Run' : 'Editing draft'}</span>
+        <span>{legacyRun || pickedRunId ? 'Selected Run' : boardRunLive ? 'Run in progress · editing locked' : 'Editing draft'}</span>
         <Button size="sm" variant="ghost" aria-pressed={side.view === 'graph'} onClick={() => side.selectView('graph')}>Graph</Button>
         <Button size="sm" variant="ghost" aria-pressed={side.view === 'overview'} onClick={() => side.selectView('overview')}>Overview</Button>
       </nav>
