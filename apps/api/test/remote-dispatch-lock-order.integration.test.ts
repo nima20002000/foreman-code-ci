@@ -52,16 +52,16 @@ describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock or
         await readerTransaction.query(`set local search_path to ${schema}`)
         await readerTransaction.query("set local lock_timeout='2s'")
         const readerPid = (await readerTransaction.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
-        pending = (async () => {
-          const value = await readReconciledDispatchIntent(readerTransaction, intent.operationId, true)
-          await readerTransaction.query('select id from runs where id=$1 for share', [intent.runId])
-          return value
-        })()
-        void pending.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
         await withTransaction({ client: credentials }, async credentialTransaction => {
           await credentialTransaction.query(`set local search_path to ${schema}`)
           await credentialTransaction.query("set local lock_timeout='2s'")
           await credentialTransaction.query('select id from runs where id=$1 for update', [intent.runId])
+          pending = (async () => {
+            const value = await readReconciledDispatchIntent(readerTransaction, intent.operationId, true)
+            await readerTransaction.query('select id from runs where id=$1 for share', [intent.runId])
+            return value
+          })()
+          void pending.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
           const waiting = await readUntil(async () => (await database.pool.query<{ waiting: boolean }>(
             'select cardinality(pg_blocking_pids($1))>0 as waiting', [readerPid],
           )).rows[0]!.waiting, value => value, { timeoutMs: 1000, description: 'the PostgreSQL lock wait' })
@@ -101,17 +101,17 @@ describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock or
         await readerTransaction.query(`set local search_path to ${schema}`)
         await readerTransaction.query("set local lock_timeout='2s'")
         const readerPid = (await readerTransaction.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
-        pending = authority.authorize(readerTransaction, { id: 'operator', name: 'Operator', audience: 'operator',
-        grants: [], expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null }, {
-        workspaceId: 'workspace', root, operationId: intent.operationId,
-        attempt: { executionId: 'unallocated-execution', attemptId: intent.attemptId,
-          placementHash: 'e'.repeat(64), keyRevision: null, authorizationRevision: null },
-      })
-        void pending.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
         await withTransaction({ client: credentials }, async credentialTransaction => {
           await credentialTransaction.query(`set local search_path to ${schema}`)
           await credentialTransaction.query("set local lock_timeout='2s'")
           await credentialTransaction.query('select id from runs where id=$1 for update', [intent.runId])
+          pending = authority.authorize(readerTransaction, { id: 'operator', name: 'Operator', audience: 'operator',
+          grants: [], expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null }, {
+          workspaceId: 'workspace', root, operationId: intent.operationId,
+          attempt: { executionId: 'unallocated-execution', attemptId: intent.attemptId,
+            placementHash: 'e'.repeat(64), keyRevision: null, authorizationRevision: null },
+        })
+          void pending.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
           const waiting = await readUntil(async () => (await database.pool.query<{ waiting: boolean }>(
             'select cardinality(pg_blocking_pids($1))>0 as waiting', [readerPid],
           )).rows[0]!.waiting, value => value, { timeoutMs: 1000, description: 'the PostgreSQL lock wait' })

@@ -1,5 +1,5 @@
-import { INSTALLATION_NAMES } from '../../packages/contracts/src/installationNames.mjs'
 #!/usr/bin/env node
+import { INSTALLATION_NAMES } from '../../packages/contracts/src/installationNames.mjs'
 import { diagnosticWarning } from '../diagnostic-warning.mjs'
 import { spawn, execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'

@@ -20,7 +20,7 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const digest = /^[a-f0-9]{64}$/;
 const controls = new Set(['runtime/browser/manifest.json', 'runtime/browser/runtime-lock.json', 'runtime/browser/LICENSES.txt',
   'scripts/browser-runtime-install.mjs', 'apps/worker/src/browserRuntimeInstall.mjs', 'scripts/worker-artifact-files.mjs',
-  'scripts/worker-snapshot-policy.mjs', 'runtime/browser/licenses/MIT.txt', 'runtime/browser/credits.py', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/contracts/package.json', 'apps/ci/package.json']);
+  'scripts/worker-snapshot-policy.mjs', 'runtime/browser/licenses/MIT.txt', 'runtime/browser/credits.py', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/contracts/package.json', 'packages/contracts-node/package.json', 'apps/ci/package.json']);
 const safePath = path => typeof path === 'string' && /^[a-zA-Z0-9_@.+/[\]-]+$/.test(path)
   && path.split('/').every(part => part && part !== '.' && part !== '..');
 const invariant = (condition, message) => { if (!condition) throw new Error(`Browser runtime assembly: ${message}`); };
@@ -252,10 +252,11 @@ export async function copyNativeLicenses(inputs, repository, unit, readSource = 
 async function bundleNativeHost({ repository, unit, snapshot }) {
   const require = createRequire(join(repository, 'apps/worker/package.json')), { build } = require('esbuild');
   const contracts = JSON.parse(await snapshot.read('packages/contracts/package.json')).exports;
+  const nodeContracts = JSON.parse(await snapshot.read('packages/contracts-node/package.json')).exports;
   const ci = JSON.parse(await snapshot.read('apps/ci/package.json')).exports;
   const result = await build({ absWorkingDir: repository, entryPoints: ['apps/api/src/modules/browser-runtime/hostFactory.ts'],
     outfile: join(unit, 'native-host.mjs'), bundle: true, platform: 'node', format: 'esm', target: 'node22', metafile: true,
-    legalComments: 'linked', sourcemap: false, alias: workerPackageAliases({ contracts, ci }),
+    legalComments: 'linked', sourcemap: false, alias: workerPackageAliases({ contracts, 'contracts-node': nodeContracts, ci }),
     define: { 'process.env.WS_NO_BUFFER_UTIL': '"1"', 'process.env.WS_NO_UTF_8_VALIDATE': '"1"' },
     banner: { js: "import { createRequire as runtimeRequire } from 'node:module'; const require = runtimeRequire(import.meta.url);" },
     plugins: [{ name: 'browser-runtime-exact-source', setup(builder) {
