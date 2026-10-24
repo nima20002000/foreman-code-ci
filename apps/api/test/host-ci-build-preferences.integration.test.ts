@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { CI_HOST_NAMESPACE, CI_HOST_START_PROTOCOL_VERSION, CiComputersOutputSchema, CiGetOutputSchema, CiHostRequestSchema,
   CiRunOutputSchema, CiRunRecordSchema, type CiHostReply, type CiHostRequest, type CiHostRun } from '@foreman-code/contracts'
@@ -166,9 +167,17 @@ it('honors persisted MCP build participation and priority while retaining assign
         const pending = await writer.callTool({ name: 'ci_cancel', arguments: input })
         expect(pending.isError).toBe(true)
         expect(decodeMcpToolResult(pending)).toMatchObject({ error: { code: 'CI_CANCEL_PENDING' } })
+        // Exercise the retry-before-acknowledgement ordering instead of relying on MCP response timing.
+        await ci!.dispatch()
+        await ci!.drain()
+        expect((await get(input.ticketId)).run.state).toBe('running')
         cancelAcknowledgements.add(input.ticketId)
       }
       // Cancel every partition before waiting for the whole group to settle.
+      await delay(2500)
+      await ci!.dispatch()
+      await ci!.drain()
+      expect((await get(ticketIds[0]!)).run.state).toBe('canceled')
       const completed = await getSettled(ticketIds[0]!)
       expect(completed.wait).toMatchObject({ tickets: ticketIds.length, settledTickets: ticketIds.length })
       expect((completed.partitions ?? [completed.run]).map(run => run.state))

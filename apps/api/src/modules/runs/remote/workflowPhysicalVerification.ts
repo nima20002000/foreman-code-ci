@@ -1,6 +1,5 @@
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { RemoteNativeIdentity } from '@foreman-code/contracts/remote-execution'
-import type { NativeCaptureLane } from '../../../shared/nativeCapture.js'
 import { isDeepStrictEqual } from 'node:util'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import { HarnessExecutionSchema, NativeSessionReferenceSchema, type HarnessExecution, type NativeSessionReference } from '@foreman-code/contracts'
@@ -9,13 +8,13 @@ import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { RemoteWorkflowPhysicalAckSchema, type RemoteWorkflowPhysicalReadout,type RemoteWorkflowPhysicalAck } from '@foreman-code/contracts/remote-workflow-physical'
 import type { AcceptedNodePlacement } from '@foreman-code/contracts/node-placement'
 import type { RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
-import type { DeviceEndpoint } from '../../devices/index.js'
+import type { DeviceEndpoint } from '../../devices/deviceEndpoint.js'
 import { deviceRequestTimeoutMs, waitForDeviceRetry } from '../../devices/deviceRequestRetry.js'
 import { DeviceApplicationError, deviceApplicationFailure } from '../../devices/deviceApplicationError.js'
 import { isDeviceLinkDrop, waitForDeviceReconnect } from '../../devices/deviceReconnect.js'
 import { DeviceConnectionError } from '../../devices/deviceWire.js'
 import type { WorkflowOriginalNativeSource, WorkflowNativeCapture } from '../../interactions/workflowNativeCapture.js'
-import type { RemoteNativeBatchPhysicalVerification, VerifiedRemoteOriginalSource } from '../../placement/index.js'
+import type { RemoteNativeBatchPhysicalVerification, VerifiedRemoteOriginalSource } from '../../placement/remoteNativeSource.js'
 import { readAcceptedPlacement, readNativePlacement } from '../../placement/persistence.js'
 import { readNativeExecutionBinding } from '../../placement/executionBinding.js'
 import { sourceMaterializationDigest } from '../../sources/index.js'
@@ -31,7 +30,7 @@ import { remoteWorkflowProcessDigest, remoteWorkflowSourceDigest, remoteWorkflow
 import { DomainError } from '../../errors.js'
 import { assertRemoteReviewerReceipt } from '../../placement/remoteReviewerAuthority.js'
 import { readRetainedRemoteReviewer } from '../../interactions/retainedRemoteReviewer.js'
-import type { ReviewNativeProofRecord } from '../../interactions/index.js'
+import type { ReviewNativeProofRecord } from '../../interactions/reviewNativeProof.js'
 import { transferContextForBinding } from '../../byte-transfer/index.js'
 import type { TransferContext } from '@foreman-code/contracts/byte-transfer'
 import { assertRepeatCanonicalReceiptLocked,requireRepeatCanonicalReceiptBeforeCommit } from '../../run-graph/repeatReceipts.js'
@@ -46,7 +45,7 @@ export interface RemoteWorkflowMainLifetime {
   session: NativeSessionReference
   lifetimeGeneration: number
   closureGeneration: string
-  lane: NativeCaptureLane | null
+  lane: { id: string; token: string; connectionGeneration: number; providerId: string | null } | null
   review?: { jobId: string; correlationId: string }
   assertCurrent(): void
 }

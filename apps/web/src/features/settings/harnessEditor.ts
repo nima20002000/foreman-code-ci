@@ -1,13 +1,13 @@
 import {
   SupportedHarnessConfigurationSchema, withAdvancedDefaults,
-  type RecordedHarnessConfiguration, type AgentHarness,
+  type HarnessConfiguration, type AgentHarness,
 } from '@foreman-code/contracts'
 
 import { FieldValidationError } from './fieldValidation'
 
 type Harness = AgentHarness
 interface HarnessDraft {
-  configuration: RecordedHarnessConfiguration
+  configuration: HarnessConfiguration
   shellEnvironmentText: string
   mcpText: string
 }
@@ -17,7 +17,7 @@ export interface HarnessEditor extends HarnessDraft {
   drafts?: Partial<Record<Harness, HarnessDraft>>
 }
 
-export function createHarnessEditor(value: RecordedHarnessConfiguration): HarnessEditor {
+export function createHarnessEditor(value: HarnessConfiguration): HarnessEditor {
   const configuration = withAdvancedDefaults(value)
   if (configuration.harness === 'opencode') return { configuration, shellEnvironmentText: '', mcpText: '' }
   return {
@@ -28,7 +28,7 @@ export function createHarnessEditor(value: RecordedHarnessConfiguration): Harnes
   }
 }
 
-export function switchHarnessEditor(editor: HarnessEditor, next: Harness, preset?: RecordedHarnessConfiguration): HarnessEditor {
+export function switchHarnessEditor(editor: HarnessEditor, next: Harness, preset?: HarnessConfiguration): HarnessEditor {
   if (editor.configuration.harness === next) return editor
   if (editor.configuration.harness === 'opencode') throw new Error('A retired harness is read-only.')
   const restored = editor.drafts?.[next] ?? (preset?.harness === next ? createHarnessEditor(preset) : undefined)

@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { resolveProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
@@ -39,10 +38,10 @@ const EnvironmentSchema = z.object({
   FOREMAN_CODE_STUCK_EXECUTION_IDLE_MS: z.coerce.number().int().positive()
     .default(DEFAULT_STUCK_EXECUTION_IDLE_MS),
   CODEX_BINARY: z.string().trim().min(1).default('codex'),
-  [INSTALLATION_NAMES.environment.LAPTOP_EXECUTION_ENABLED]: z.enum(['0', '1']).default('0'),
-  [INSTALLATION_NAMES.environment.LOCAL_PRODUCTION]: z.enum(['0', '1']).default('0'),
-  [INSTALLATION_NAMES.environment.ENABLE_EXPERIMENTAL_CODEX_APP_SERVER]: z.enum(['0', '1']).optional(),
-  [INSTALLATION_NAMES.environment.ENABLE_EXPERIMENTAL_CLAUDE_SDK]: z.enum(['0', '1']).optional(),
+  FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: z.enum(['0', '1']).default('0'),
+  FOREMAN_CODE_LOCAL_PRODUCTION: z.enum(['0', '1']).default('0'),
+  FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: z.enum(['0', '1']).optional(),
+  FOREMAN_CODE_ENABLE_EXPERIMENTAL_CLAUDE_SDK: z.enum(['0', '1']).optional(),
 })
 
 export interface ApiConfig {
@@ -79,7 +78,7 @@ export interface ApiConfig {
 export function loadConfig(environment: NodeJS.ProcessEnv): ApiConfig {
   environment = resolveProductEnvironment(environment)
   const parsed = EnvironmentSchema.parse(environment)
-  if (parsed[INSTALLATION_NAMES.environment.LOCAL_PRODUCTION] === '1'
+  if (parsed.FOREMAN_CODE_LOCAL_PRODUCTION === '1'
     && (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(parsed.HOST)
       || !['127.0.0.1', 'localhost', '[::1]'].includes(new URL(parsed.DATABASE_URL).hostname))) {
     throw new Error('Local production requires a loopback API and database.')
@@ -89,8 +88,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv): ApiConfig {
     remoteExecutionEnvironment: Object.fromEntries(RemoteExecutionEnvironmentVariableSchema.options
       .filter(key => environment[key] !== undefined).map(key => [key, environment[key]])),
     workerExecution: {
-      enabled: parsed[INSTALLATION_NAMES.environment.LAPTOP_EXECUTION_ENABLED] === '1',
-      managedBy: environment[INSTALLATION_NAMES.environment.LAPTOP_EXECUTION_ENABLED] === undefined ? 'settings' : 'startup',
+      enabled: parsed.FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED === '1',
+      managedBy: environment.FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED === undefined ? 'settings' : 'startup',
     },
     browserOrigin,
     browserStateDirectory: parsed.BROWSER_STATE_DIRECTORY,

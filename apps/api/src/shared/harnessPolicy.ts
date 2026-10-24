@@ -1,11 +1,9 @@
-import { RETIRED_OPENCODE_MESSAGE, type HarnessConfiguration, type RecordedHarnessConfiguration } from '@foreman-code/contracts'
-import type { MaintainedHarness } from '@foreman-code/contracts/computer-maintenance'
+import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import { DomainError } from '../modules/errors.js'
 
-
 /**
- * Static control descriptors per harness. Code outside `modules/harnesses/` asks these instead of comparing
- * provider names: input identity, file delivery, application MCP startup and supported session controls.
+ * Shared control descriptors per harness. Runtime and control-plane callers ask these instead of comparing
+ * provider names: whether a harness can add input to an exact active turn, and whether it can compact a session.
  * This policy imports no control-plane services so Main and Worker can share it.
  */
 
@@ -16,22 +14,15 @@ export type HarnessCompactDescriptor = 'native' | 'unavailable'
 export interface HarnessCapabilityDescriptors {
   readonly steer: HarnessSteerDescriptor
   readonly compact: HarnessCompactDescriptor
-  readonly inputIdentity: 'turn' | 'message' | 'unavailable'
-  readonly files: 'turn_mcp' | 'session_bridge' | 'unavailable'
-  readonly applicationMcp: 'session_config' | 'startup_config' | 'unavailable'
-  readonly autoCompact: boolean
 }
 
 /** Codex app-server steers through the protocol-qualified `turn/steer` method. */
-export const CODEX_CAPABILITY_DESCRIPTORS: HarnessCapabilityDescriptors = { steer: 'native_expected_turn', compact: 'native',
-  inputIdentity: 'turn', files: 'turn_mcp', applicationMcp: 'session_config', autoCompact: false }
+export const CODEX_CAPABILITY_DESCRIPTORS: HarnessCapabilityDescriptors = { steer: 'native_expected_turn', compact: 'native' }
 
 /** Claude has no expected-turn steer; callers use Queue or Interrupt and send. */
-export const CLAUDE_CAPABILITY_DESCRIPTORS: HarnessCapabilityDescriptors = { steer: 'unavailable', compact: 'native',
-  inputIdentity: 'message', files: 'session_bridge', applicationMcp: 'startup_config', autoCompact: true }
+export const CLAUDE_CAPABILITY_DESCRIPTORS: HarnessCapabilityDescriptors = { steer: 'unavailable', compact: 'native' }
 
-const NO_CAPABILITIES: HarnessCapabilityDescriptors = { steer: 'unavailable', compact: 'unavailable',
-  inputIdentity: 'unavailable', files: 'unavailable', applicationMcp: 'unavailable', autoCompact: false }
+const NO_CAPABILITIES: HarnessCapabilityDescriptors = { steer: 'unavailable', compact: 'unavailable' }
 
 /** Descriptors for a harness name; an unknown or retired harness has none. */
 export function harnessCapabilityDescriptors(harness: string): HarnessCapabilityDescriptors {
@@ -55,28 +46,4 @@ export function supportsExpectedTurnSteer(subject: Parameters<typeof capabilityD
 /** Saved OpenCode history stays readable; nothing that names it may execute or be written. */
 export function retiredHarnessError(): DomainError {
   return new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
-}
-
-/** Narrow a saved configuration at execution admission without altering the recorded snapshot. */
-export function assertActiveHarnessConfiguration(configuration: RecordedHarnessConfiguration): asserts configuration is HarnessConfiguration {
-  if (configuration.harness === 'opencode') throw retiredHarnessError()
-}
-
-
-/** Native storage and CLI contracts used by computer maintenance. */
-const MAINTENANCE_CAPABILITIES = {
-  codex: {
-    homeEnvironmentVariable: 'CODEX_HOME', homeDirectory: '.codex', update: 'npm',
-    plugins: { installCommand: 'add', scopeArguments: [], records: 'cache', cliResult: 'exit_code', marketplace: 'local_override' },
-    mcp: { scopeArguments: [], registration: 'arguments', read: 'cli' },
-  },
-  claude: {
-    homeEnvironmentVariable: 'CLAUDE_CONFIG_DIR', homeDirectory: '.claude', update: 'native',
-    plugins: { installCommand: 'install', scopeArguments: ['--scope', 'user'], records: 'user', cliResult: 'json_outcome', marketplace: 'native' },
-    mcp: { scopeArguments: ['--scope', 'user'], registration: 'json', read: 'user_config' },
-  },
-} as const
-
-export function harnessMaintenanceCapabilities(harness: MaintainedHarness) {
-  return MAINTENANCE_CAPABILITIES[harness]
 }

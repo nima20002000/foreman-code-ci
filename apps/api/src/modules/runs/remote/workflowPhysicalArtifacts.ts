@@ -11,7 +11,7 @@ import { assertGraphTransaction, poisonGraphTransaction } from '../../run-graph/
 import type { SqlTransaction } from '../../../infrastructure/transaction.js'
 import { transferContextForBinding } from '../../byte-transfer/index.js'
 import type { PostgresFileRepository } from '../../files/postgres.js'
-import type { DistributedPublicationLink } from '../../files/index.js'
+import type { DistributedPublicationLink } from '../../files/distributed/publicationLedger.js'
 import { digest } from '../../files/tools/context.js'
 import { fileScopeIdentity } from '../../files/requests.js'
 import type { PostgresArtifactPublicationAuthority } from './nativeArtifactAuthority.js'

@@ -6,7 +6,7 @@ import { CI_WAIT_MAX_SECONDS, CiRunRecordSchema, CiGetOutputSchema, CiGetInputSc
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { afterEach, expect, it, vi } from 'vitest'
-import { registerForemanMcp } from '../../src/mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import { ciCapabilities } from '../../src/mcp/shared/ciTools.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
@@ -59,7 +59,7 @@ function fixture() {
   const services = { ci, commands: { recordDenied: vi.fn(async () => undefined),
     recordAudit: vi.fn(async () => undefined) } } as unknown as OperatorServices
   const app = Fastify()
-  registerForemanMcp(app, { access, operator: services })
+  registerGraphqlMcp(app, { access, operator: services })
   const rpc = (payload: Record<string, unknown>, token = 'reader') => app.inject({ method: 'POST', url: '/mcp',
     headers: { authorization: `Bearer ${token}`, accept: 'application/json, text/event-stream' }, payload })
   const call = async (input: Record<string, unknown>, id: string | number = 1, token = 'reader') => {

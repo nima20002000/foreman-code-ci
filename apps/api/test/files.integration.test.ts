@@ -24,7 +24,7 @@ import { registerFileRoutes } from '../src/routes/files.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { fileFixtures, fileMetadata } from './helpers/fileFixtures.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 /** Real authenticated HTTP, PostgreSQL allocations and disk bytes; no native sessions or paid models. */
 describe.skipIf(!postgresEnabled)('FIL-03 temporary file HTTP and repository integration', () => {
@@ -40,10 +40,10 @@ describe.skipIf(!postgresEnabled)('FIL-03 temporary file HTTP and repository int
     const applied = await database.pool.query('select 1 from application_migrations where version=$1', [fileStorageMigration.version])
     if (!applied.rowCount) {
       const client = await database.pool.connect()
-      try { await withTransaction({ client }, async transaction => {
-        await transaction.query(fileStorageMigration.sql)
-        await transaction.query('insert into application_migrations(version) values($1)', [fileStorageMigration.version])
-      }) } finally { client.release() }
+      try {
+        await beginTransaction(client); await client.query(fileStorageMigration.sql)
+        await client.query('insert into application_migrations(version) values($1)', [fileStorageMigration.version]); await commitTransaction(client)
+      } catch (error) { await rollbackTransaction(client); throw error } finally { client.release() }
     }
     root = await mkdtemp(join(homedir(), '.fil03-http-test-'))
     access = new PostgresAccessService(database.pool)
