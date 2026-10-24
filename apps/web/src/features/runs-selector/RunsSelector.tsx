@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react'
-import { Button, IconButton } from '../../shared/ui/nocturne/Button'
+import { Button } from '../../shared/ui/nocturne/Button'
 import { Icon } from '../../shared/ui/nocturne/Icon'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { RunsWindow } from './RunsWindow'
@@ -95,8 +95,10 @@ export function RunsSelector({ selection, className = '', triggerLabel = 'Runs' 
       }}>
       {triggerLabel} <Icon name="down" size={13} />
     </Button>
-    {identity.runId !== null || selection.invalid ? <IconButton label="Return to workflow" size="sm" variant="ghost"
-      disabled={!selection.active} onClick={() => choose(null)}><Icon name="arrow" size={14} style={{ transform: 'rotate(180deg)' }} /></IconButton> : null}
+    {/* Visible words, not a bare arrow: this is how a person leaves an older Run for the Board. */}
+    {identity.runId !== null || selection.invalid ? <Button size="sm" variant="ghost"
+      leading={<Icon name="arrow" size={14} style={{ transform: 'rotate(180deg)' }} />}
+      disabled={!selection.active} onClick={() => choose(null)}>Return to workflow</Button> : null}
     {selectedMessage && <span role="status" className="runs-selector-selection-status">{selectedMessage}</span>}
     {open && <RunsWindow id={id} scope={geometryScope} anchor={trigger} close={() => close(true)}>
       <div ref={surface} role="menu" tabIndex={-1} aria-label="Runs" className="n-menu-list runs-selector-menu"

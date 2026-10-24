@@ -54,10 +54,9 @@ it.each([
   // The generic Start fixture has a fixed old clock; this newly admitted Run starts after history.
   fixture.mock.runs.get('run-current-1')!.run.startedAt = new Date(Date.parse(fixture.after.createdAt) + 1000).toISOString()
   await mounted.cache.invalidateQueries()
-  expect(screen.getByRole('region', { name: 'Selected Run board' })).toHaveAttribute('data-run-id', scope.runId)
-  await userEvent.click(screen.getByRole('button', { name: 'Runs' }))
-  await userEvent.click(await screen.findByRole('button', { name: 'Return to workflow' }))
   expect(await screen.findByRole('region', { name: 'Workflow authoring' })).toBeVisible()
+  expect(mounted.router.state.location.search).not.toHaveProperty('selectedRunId')
+  expect(mounted.router.state.location.search).not.toHaveProperty('runId')
   expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
   await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeEnabled())
 }, 15_000)
