@@ -424,7 +424,7 @@ export type HarnessDefaults = z.infer<typeof HarnessDefaultsSchema>;
 export const DEFAULT_HARNESS_DEFAULTS: HarnessDefaults = HarnessDefaultsSchema.parse({
   codex: {
     harness: "codex",
-    model: "gpt-6.1-sol",
+    model: "gpt-5.6-luna",
     reasoningEffort: "medium",
     sandbox: "read-only",
     serviceTier: "standard",
