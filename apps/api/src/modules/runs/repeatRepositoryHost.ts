@@ -18,7 +18,8 @@ import {
   isReadOnlyGraphTransaction
 } from '../run-graph/connection.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
+import { assertRepeatCanonicalReceiptLocked, requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
+import { canonicalRepeatEffectReceipt } from '../run-graph/repeatEffects.js'
 import { assertNativeWorkflowConfiguration } from '../harnesses/nativeWorkflowConfiguration.js'
 import type { WorkspaceLocationService } from '../workspaces/location.js'
 import type { RunOwnership } from './ownership.js'
@@ -121,8 +122,8 @@ export class RepeatRepositoryFactory {
       if (!sameRepeatValue(prior.version, version)) return repeatConflict('RUN_PIN_CONFLICT')
       return prior.store
     }
-    const host: RepeatRepositoryHost = { openLocked: (sql, scope, record, actualVersion) =>
-      this.openLocked(owner, sql, scope, record, actualVersion) }
+    const host: RepeatRepositoryHost = { openLocked: (sql, scope, record, actualVersion, observation) =>
+      this.openLocked(owner, sql, scope, record, actualVersion, observation) }
     const store = new RepeatRunRepository(owner, host, version)
     this.stores.set(owner, { version, store })
     return store
@@ -210,9 +211,10 @@ export class RepeatRepositoryFactory {
   }
 
   private async openLocked(owner: RunOwnership, sql: SqlTransaction, scope: RepeatScope,
-    record: unknown, version: WorkflowVersionCurrent): Promise<RepeatLockedHooks> {
+    record: unknown, version: WorkflowVersionCurrent, observation = false): Promise<RepeatLockedHooks> {
     const run = await this.pinnedRunLocked(owner, sql, scope, record, version)
-    const publication = await this.openPublication(owner, sql, scope)
+    const publication = observation ? this.observationPublication(owner, sql, scope)
+      : await this.openPublication(owner, sql, scope)
     const locked = this.lockedRun(owner, sql, scope, run, version)
     const hooks: RepeatLockedHooks = {
       run,
@@ -223,6 +225,32 @@ export class RepeatRepositoryFactory {
     }
     requireRepeatNativeHooks(hooks.native)
     return hooks
+  }
+
+  /** Proof-only observations retain exact receipts and commit checks without opening a graph writer.
+   * Mutations still validate the entire committed projection before their first write. */
+  private observationPublication(owner: RunOwnership, sql: SqlTransaction, scope: RepeatScope): RepeatCanonicalPublication {
+    const unavailable = async (): Promise<never> => {
+      throw new DomainError('RUN_READ_ONLY', 'A Run observation cannot publish changes.', 409)
+    }
+    return { sql, scope, publishEffectLocked: unavailable, publishNativeLocked: unavailable,
+      assertNativeReceiptLocked: unavailable,
+      assertEffectReceiptLocked: async effect => {
+        owner.assertOwned()
+        const receipt = canonicalRepeatEffectReceipt(scope, effect)
+        await assertRepeatCanonicalReceiptLocked(sql, receipt)
+        requireRepeatCanonicalReceiptBeforeCommit(sql, receipt)
+      },
+      assertLaunchReceiptLocked: async (claim, digest) => {
+        owner.assertOwned()
+        if (!sameRepeatValue(claim.scope, scope) || repeatDigest(claim) !== digest) return repeatConflict('REPEAT_LAUNCH_IDENTITY_CONFLICT')
+        await assertRepeatCanonicalReceiptLocked(sql, {
+          scope, evidence: { sourceKind: 'execution', sourceId: repeatId('repeat-native', scope.runId,
+            claim.ref.occurrence?.occurrenceId ?? 'outside', claim.executionId, 'launch', digest), sourceRevision: '1' },
+          sourceDigest: digest, effect: { kind: 'execution.launch', entityId: claim.executionId, digest },
+        })
+      },
+    }
   }
 
   /** The accepted Run record, parsed and checked against the scope, the physical row and the graph head. */
