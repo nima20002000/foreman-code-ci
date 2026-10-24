@@ -82,13 +82,8 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     selectRun(scope)
   }, [selectRun, requestedRun?.runId, releaseBrowser])
   const selectedRun = useSelectedRun({ workspaceId, workflowId })
-  // The Run painted on the draft's nodes is the Board itself: choosing it (Runs, Running) shows the Board, not a page.
-  const [paintedRunId, setPaintedRunId] = useState<string>()
-  const paintedRef = useRef(paintedRunId)
-  paintedRef.current = paintedRunId
   const navigationSelection = useMemo(() => ({ ...selectedRun,
-    selectRun: (chosen: string | null) => {
-      const runId = chosen !== null && chosen === paintedRef.current ? null : chosen
+    selectRun: (runId: string | null) => {
       if (runId !== selectedRun.identity.runId) releaseBrowser()
       selection.current.generation++
       return selectedRun.selectRun(runId)
@@ -147,11 +142,11 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     openMemoryCard: (cardId?: string) => setMemoryOpen(true, cardId),
     canvasVisible: side.view === 'graph', teamNodeId: side.teamNodeId, selectTeam: side.selectTeam,
     openLocation: () => setLocationOpen(true), openRuns: () => setRunsOpen(true), activeRuns, liveRunId, authoringActive: current,
-    boardRunLive, boardRunControls: side.view === 'graph' ? boardRunControls : undefined, paintedRunId,
+    boardRunLive, boardRunControls,
     // Starting from an older Run's view returns to the Board, where the new Run shows.
     showRunOnBoard: (runId: string) => { setStartedRunId(runId); if (!current) void navigationSelection.selectRun(null) },
     navigationControls: current && side.view === 'graph' ? <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /> : undefined,
-  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, boardRunLive, boardRunControls, paintedRunId, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam])
+  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, boardRunLive, boardRunControls, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam])
   const hosts = useMemo(() => ({ sidePanelHost, runCaptionHost, runActionHost }), [sidePanelHost, runCaptionHost, runActionHost])
   const authoring = useMemo<WorkflowBoardAuthoring>(() => ({ registerAuthoringActions,
     // A shown Run moves agents exactly as the draft Board does (owner rule: one Board, the same rules).
@@ -206,7 +201,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         {(current || detailsScope && !runUnreadable) ? <IconButton label="Activities" onClick={() => setRunsOpen(true)}><Icon name="history" size={16} /></IconButton> : null}
         {runControlsScope ?
           <SelectedRunControls key={boardSelection.identity.runId} visible={!side.memoryOpen}
-            scope={runControlsScope} runActionRef={setRunActionHost} /> : current && side.view === 'overview' ? boardRunControls : null}
+            scope={runControlsScope} runActionRef={setRunActionHost} /> : null}
       </header> : null
   return <BoardSelectionContext.Provider value={value}><BoardHostsContext.Provider value={hosts}><BoardAuthoringContext.Provider value={authoring}>
     <PanelHeaderSlotContext.Provider value={panelHeaderSlot}><PanelFooterSlotContext.Provider value={panelFooterSlot}>
@@ -226,7 +221,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
       {boardToolbar}
       <div className="workflow-collaboration-canvas" hidden={side.view !== 'graph'} inert={side.view !== 'graph'}>
       <RunBoardSlot selection={boardSelection} shown={shownBoard}>
-        <BoardRunOverlay run={boardRun} visible={current && side.view === 'graph' && !side.memoryOpen} onPainted={setPaintedRunId}>
+        <BoardRunOverlay run={boardRun} visible={current && side.view === 'graph' && !side.memoryOpen}>
         <div className="workflow-board-authoring" onClickCapture={authoringEvent} onKeyDownCapture={authoringEvent} onSubmitCapture={authoringEvent}>
           {children}
           {current && locationOpen ? <WorkspaceExecutionLocationSettings workspaceId={workspaceId} presentation="dialog"

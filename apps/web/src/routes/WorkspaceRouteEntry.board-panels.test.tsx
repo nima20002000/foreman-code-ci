@@ -441,7 +441,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     }
   }, 15_000)
 
-  it.each(['running', 'queued'] as const)('keeps the draft Board when it opens during a %s Run, with editing locked and no Run page', async executionState => {
+  it.each(['running', 'queued'] as const)('shows a %s Run when the Board opens, and returns to the draft on request without being pulled back', async executionState => {
     const fixture = getMockFixture(scope.workspaceId)!
     server.use(
       http.get('/api/workspaces/workspace-1', () => HttpResponse.json({
@@ -456,10 +456,14 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     const listed = await runsSelectorApi.list({ ...scope, limit: 20 })
     expect(listed.items.find(run => run.runId === 'run-a')).toMatchObject({ status: executionState })
     const { router } = await mount()
-    // One Board: opening during a live Run keeps the draft Board, with the Run shown on it, never a separate page.
+    // Opening the Board while a Run is live shows that Run at once.
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ selectedRunId: 'run-a' }))
+    expect(await savedY()).toBeVisible()
+    await choose(null)
     const editor = await authoring()
     expect(editor).toBeVisible()
-    await waitFor(() => expect(screen.getByTitle('Rename workflow')).toBeDisabled())
+    expect(router.state.location.search.selectedRunId).toBeUndefined()
+    // Only the first opening follows the live Run; the owner's choice of the draft stays.
     await new Promise(resolve => setTimeout(resolve, 500))
     expect(router.state.location.search.selectedRunId).toBeUndefined()
     expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
