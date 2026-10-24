@@ -46,7 +46,7 @@ test('desktop launch preserves the normal user environment without job ownership
 
 test('desktop launch drops job temporary overrides when no original directory was recorded', () => {
   const source = { PATH: '/user/bin', TMPDIR: '/job/tmp', TMP: '/job/tmp', TEMP: '/job/tmp',
-    FOREMAN_CODE_HEAVY_JOB_TOKEN: 'owned-job' }
+    GRAPHQL_HEAVY_JOB_TOKEN: 'owned-job' }
   assert.deepEqual(desktopLaunchEnvironment(source), { PATH: '/user/bin' })
   assert.equal(source.TMPDIR, '/job/tmp')
 })
@@ -61,8 +61,8 @@ test('a desktop child can create temporary files after its launching build job i
     await mkdir(job)
     const environment = desktopLaunchEnvironment({ ...process.env,
       TMPDIR: job, TMP: job, TEMP: job,
-      FOREMAN_CODE_HEAVY_JOB_TOKEN: 'owned-job',
-      FOREMAN_CODE_HEAVY_BASE_TMPDIR: base,
+      GRAPHQL_HEAVY_JOB_TOKEN: 'owned-job',
+      GRAPHQL_HEAVY_BASE_TMPDIR: base,
     })
     child = spawn(process.execPath, ['-e', `
       const { mkdirSync, mkdtempSync } = require('node:fs');
@@ -139,9 +139,9 @@ test('production updates retire the browser-access setting while retaining nativ
   const path = join(directory, 'operator.json')
   const owned = localProductionEnvironment('/owner/home', 'a'.repeat(64))
   const native = { CODEX_BINARY: '/opt/owner/codex' }
-  const retired = { FOREMAN_CODE_DEV_BROWSER_ACCESS: '1' }
+  const retired = { GRAPHQL_DEV_BROWSER_ACCESS: '1' }
   try {
-    assert.equal(Object.hasOwn(owned, 'FOREMAN_CODE_DEV_BROWSER_ACCESS'), false)
+    assert.equal(Object.hasOwn(owned, 'GRAPHQL_DEV_BROWSER_ACCESS'), false)
     const first = await preserveOperatorConfiguration(path, { ...owned, ...native, ...retired }, owned, () => {})
     assert.deepEqual(first, { ...native, ...owned })
     assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), native)
@@ -158,10 +158,10 @@ test('renamed installer settings retain operator values and the existing databas
   const directory = await mkdtemp(join(tmpdir(), 'production-renamed-settings-'))
   const path = join(directory, 'operator.json')
   const password = 'a'.repeat(64)
-  const owned = { FOREMAN_CODE_LOCAL_PRODUCTION: '1', FOREMAN_CODE_APP_MCP_DIRECTORY: '/installed/mcp',
+  const owned = { GRAPHQL_LOCAL_PRODUCTION: '1', GRAPHQL_APP_MCP_DIRECTORY: '/installed/mcp',
     GRAPHQL_PRODUCTION_DB_PASSWORD: password }
-  const previous = { FOREMAN_CODE_LOCAL_PRODUCTION: '1', FOREMAN_CODE_APP_MCP_DIRECTORY: '/installed/mcp',
-    GRAPHQL_PRODUCTION_DB_PASSWORD: password, FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0',
+  const previous = { GRAPHQL_LOCAL_PRODUCTION: '1', GRAPHQL_APP_MCP_DIRECTORY: '/installed/mcp',
+    GRAPHQL_PRODUCTION_DB_PASSWORD: password, GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0',
     CODEX_BINARY: '/opt/owner cli/codex' }
   const validate = environment => {
     assert.equal(readProductEnvironment(environment, 'LOCAL_PRODUCTION'), '1')
@@ -171,12 +171,12 @@ test('renamed installer settings retain operator values and the existing databas
   }
   try {
     const environment = await preserveOperatorConfiguration(path, previous, owned, validate)
-    assert.deepEqual(environment, { ...owned, FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0',
+    assert.deepEqual(environment, { ...owned, GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0',
       CODEX_BINARY: previous.CODEX_BINARY })
     assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), {
-      FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0', CODEX_BINARY: previous.CODEX_BINARY,
+      GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0', CODEX_BINARY: previous.CODEX_BINARY,
     })
-    for (const name of ['FOREMAN_CODE_LOCAL_PRODUCTION', 'GRAPHQL_PRODUCTION_DB_PASSWORD']) {
+    for (const name of ['GRAPHQL_LOCAL_PRODUCTION', 'GRAPHQL_PRODUCTION_DB_PASSWORD']) {
       await writeFile(path, JSON.stringify({ [name]: 'override' }))
       await assert.rejects(preserveOperatorConfiguration(path, previous, owned, validate), /managed by the installer/)
     }
@@ -188,8 +188,8 @@ test('renamed installer settings retain operator values and the existing databas
 test('existing operator configuration loads frozen settings without previous environment', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'production-existing-settings-'))
   const path = join(directory, 'operator.json')
-  const settings = { FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0' }
-  const owned = { FOREMAN_CODE_LOCAL_PRODUCTION: '1' }
+  const settings = { GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0' }
+  const owned = { GRAPHQL_LOCAL_PRODUCTION: '1' }
   try {
     await writeFile(path, JSON.stringify(settings))
     const environment = await preserveOperatorConfiguration(path, undefined, owned, () => undefined)
@@ -203,8 +203,8 @@ test('existing operator configuration loads frozen settings without previous env
 test('configuration validation fails before publishing frozen operator settings', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'production-settings-validation-'))
   const path = join(directory, 'operator.json')
-  const owned = { FOREMAN_CODE_LOCAL_PRODUCTION: '1' }
-  const settings = { FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0' }
+  const owned = { GRAPHQL_LOCAL_PRODUCTION: '1' }
+  const settings = { GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0' }
   try {
     await preserveOperatorConfiguration(path, settings, owned, () => undefined)
     assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), settings)
@@ -222,23 +222,23 @@ test('updates retain operator settings separately from installer isolation setti
   const directory = await mkdtemp(join(tmpdir(), 'production-settings-'))
   const path = join(directory, 'operator.json')
   const owned = { HOST: '127.0.0.1', NODE_ENV: 'production', GRAPHQL_PRODUCTION_DB_PASSWORD: 'a'.repeat(64) }
-  const previous = { ...owned, HOST: '0.0.0.0', FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '1',
+  const previous = { ...owned, HOST: '0.0.0.0', GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '1',
     CODEX_BINARY: '/opt/native CLI/codex', HARNESS_TIMEOUT_MS: '600000' }
   const validate = environment => {
     assert.equal(environment.HOST, '127.0.0.1')
-    assert.equal(environment.FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER, '1')
+    assert.equal(environment.GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER, '1')
     assert.equal(environment.HARNESS_TIMEOUT_MS, '600000')
   }
   try {
     const first = await preserveOperatorConfiguration(path, previous, owned, validate)
     await publish(join(directory, 'production.env'), renderEnvironment(first))
     const next = await preserveOperatorConfiguration(path, await readEnvironment(join(directory, 'production.env')),
-      { ...owned, FOREMAN_CODE_LOCAL_PRODUCTION: '1' }, validate)
+      { ...owned, GRAPHQL_LOCAL_PRODUCTION: '1' }, validate)
     assert.equal(next.CODEX_BINARY, previous.CODEX_BINARY)
     assert.equal(next.GRAPHQL_PRODUCTION_DB_PASSWORD, owned.GRAPHQL_PRODUCTION_DB_PASSWORD)
-    assert.equal(next.FOREMAN_CODE_LOCAL_PRODUCTION, '1')
+    assert.equal(next.GRAPHQL_LOCAL_PRODUCTION, '1')
     assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), {
-      FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '1', CODEX_BINARY: previous.CODEX_BINARY,
+      GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '1', CODEX_BINARY: previous.CODEX_BINARY,
       HARNESS_TIMEOUT_MS: '600000',
     })
     assert.equal((await stat(path)).mode & 0o777, 0o600)
@@ -279,9 +279,9 @@ test('first migration and later updates preserve quoted, escaped and multiline o
     await publish(envFile, renderEnvironment(migrated))
     assert.deepEqual(await readEnvironment(envFile), { ...settings, ...owned })
     const updated = await preserveOperatorConfiguration(path, await readEnvironment(envFile),
-      { ...owned, FOREMAN_CODE_LOCAL_PRODUCTION: '1' }, validate)
+      { ...owned, GRAPHQL_LOCAL_PRODUCTION: '1' }, validate)
     await publish(envFile, renderEnvironment(updated))
-    assert.deepEqual(await readEnvironment(envFile), { ...settings, ...owned, FOREMAN_CODE_LOCAL_PRODUCTION: '1' })
+    assert.deepEqual(await readEnvironment(envFile), { ...settings, ...owned, GRAPHQL_LOCAL_PRODUCTION: '1' })
     assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), settings)
   } finally {
     await rm(directory, { recursive: true, force: true })

@@ -20,7 +20,7 @@ describe('actual SDK MCP control evidence', () => {
     }
   })
   it.each(['graphql', 'foreman-code'])('recognizes %s with the frozen token reference and binds HTTP receipts to the observed name', (serverName) => {
-    for (const token of ['FOREMAN_CODE_MCP_TOKEN']) {
+    for (const token of ['GRAPHQL_MCP_TOKEN']) {
       const stdio = decodeClaudeMcpControl([{ name: serverName, status: 'connected', config: {
         type: 'stdio', env: { [token]: 'private-token' },
       } }], 'generation', now)
@@ -48,11 +48,11 @@ describe('actual SDK MCP control evidence', () => {
     expect(claudeMcpDetection(snapshot, { serverName: 'graphql', url: 'http://127.0.0.1:3000/mcp' }).state).toBe(state)
   })
   it('withholds credential values, token URLs and command arguments from public inspection', () => {
-    const snapshot = decodeClaudeMcpControl([{ name: 'graphql', status: 'connected', source: 'dynamic', config: { type: 'stdio', command: '/local/node', args: ['--token', 'private-argument'], env: { FOREMAN_CODE_MCP_TOKEN: 'private-environment' }, headers: { Authorization: 'private-header' } } },
+    const snapshot = decodeClaudeMcpControl([{ name: 'graphql', status: 'connected', source: 'dynamic', config: { type: 'stdio', command: '/local/node', args: ['--token', 'private-argument'], env: { GRAPHQL_MCP_TOKEN: 'private-environment' }, headers: { Authorization: 'private-header' } } },
       { name: 'other', status: 'connected', config: { type: 'http', url: 'http://user:password@host/mcp?token=private-url' } }], 'generation', now)
     expect(JSON.stringify(snapshot)).not.toMatch(/private-|password/)
     expect(snapshot.servers[0]?.configuration?.argumentCount).toBe(2)
-    expect(claudeMcpDetection(snapshot, { serverName: 'graphql' }).credentialEnvironmentVariable).toBe('FOREMAN_CODE_MCP_TOKEN')
+    expect(claudeMcpDetection(snapshot, { serverName: 'graphql' }).credentialEnvironmentVariable).toBe('GRAPHQL_MCP_TOKEN')
     expect(snapshot.servers[1]?.configuration?.url).toBeUndefined()
   })
   it('rejects malformed/unbounded native status instead of labeling a saved entry connected', () => {
@@ -62,7 +62,7 @@ describe('actual SDK MCP control evidence', () => {
   })
   it('does not infer a managed header ACK from configured headers, source labels or tools', () => {
     const snapshot = decodeClaudeMcpControl([{ name: 'graphql', status: 'connected', source: 'dynamic',
-      config: { type: 'http', url: 'http://127.0.0.1:3000/mcp', headers: { Authorization: 'private-header' }, env: { FOREMAN_CODE_MCP_TOKEN: 'private-env' } },
+      config: { type: 'http', url: 'http://127.0.0.1:3000/mcp', headers: { Authorization: 'private-header' }, env: { GRAPHQL_MCP_TOKEN: 'private-env' } },
       tools: [{ name: 'context_get' }] }], 'generation', now)
     expect(claudeMcpDetection(snapshot, { serverName: 'graphql', url: 'http://127.0.0.1:3000/mcp' })).toMatchObject({
       credentialEnvironmentVariable: null, credentialArrangement: { kind: 'unknown' },

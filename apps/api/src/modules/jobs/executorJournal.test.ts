@@ -299,7 +299,7 @@ describe('installed actual Job factory with native/process doubles', () => {
     vi.spyOn(processes, 'spawnNativeProcess').mockImplementation((binary, argv, options) => {
       expect(binary).toBe(f.candidate.fingerprint.runtimeExecutable)
       expect(options.env).toEqual(f.candidate.controllerEnvironment)
-      expect(options.env).not.toHaveProperty('HOME'); expect(options.env).not.toHaveProperty('SSH_AUTH_SOCK'); expect(options.env).not.toHaveProperty('FOREMAN_CODE_HEAVY_JOB_TOKEN')
+      expect(options.env).not.toHaveProperty('HOME'); expect(options.env).not.toHaveProperty('SSH_AUTH_SOCK'); expect(options.env).not.toHaveProperty('GRAPHQL_HEAVY_JOB_TOKEN')
       expect([`job:${f.execution.operationId}:${f.execution.owner.grantId}:${f.execution.owner.epoch}`,
         `job:${f.execution.operationId}:${f.execution.owner.grantId}:${f.execution.owner.epoch}:control`,
         `job:${f.execution.operationId}:${f.execution.owner.grantId}:${f.execution.owner.epoch}:wait`]).toContain(options.recovery?.owner)

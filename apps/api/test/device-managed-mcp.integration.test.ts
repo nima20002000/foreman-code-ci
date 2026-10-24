@@ -76,7 +76,7 @@ it('applies paired-device MCP through authenticated Operator MCP with denial, re
     })))
     expect(readback).toMatchObject({ hostRef, presets: { graphql: 'installed' } })
     expect(readback.servers.map(server => server.name)).toContain('example')
-    const legacy = nativeConnection({ ...appLauncherConnection(), environmentVariables: ['FOREMAN_CODE_MCP_TOKEN'] })
+    const legacy = nativeConnection({ ...appLauncherConnection(), environmentVariables: ['GRAPHQL_MCP_TOKEN'] })
     await writeFile(join(f.directory, 'codex.json'), JSON.stringify({
       graphql: { ...legacy, disabled_tools: ['interaction_respond'] },
       example: { url: 'https://example.test/mcp' },
@@ -86,7 +86,7 @@ it('applies paired-device MCP through authenticated Operator MCP with denial, re
       name: 'harness_mcp_detection_get', arguments: detectionArgs,
     }))
     expect(legacyDetection).toMatchObject({ detection: { serverName: 'graphql',
-      credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN', state: 'status_unavailable' } })
+      credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN', state: 'status_unavailable' } })
     await worker.ensureReady(['codex'])
     const migrated = HarnessMcpListResultSchema.parse(decodeMcpToolResult(await client.callTool({
       name: 'harness_mcp_servers_list', arguments: { harness: 'codex', hostRef },
@@ -94,7 +94,7 @@ it('applies paired-device MCP through authenticated Operator MCP with denial, re
     expect(migrated.servers.map(server => server.name)).toEqual(['example', 'foreman-code'])
     expect(migrated.presets).toMatchObject({ graphql: 'installed' })
     const native = await f.adapters.codex.read(AbortSignal.timeout(5000))
-    expect(native.user['foreman-code']).toMatchObject({ env_vars: ['FOREMAN_CODE_MCP_TOKEN'],
+    expect(native.user['foreman-code']).toMatchObject({ env_vars: ['GRAPHQL_MCP_TOKEN'],
       disabled_tools: ['interaction_respond'] })
     await worker.ensureReady(['codex'])
     expect(f.writes()).toBe(2)
@@ -103,7 +103,7 @@ it('applies paired-device MCP through authenticated Operator MCP with denial, re
       name: 'harness_mcp_detection_get', arguments: detectionArgs,
     }))
     expect(detection).toMatchObject({ detection: { serverName: 'foreman-code', state: 'status_unavailable',
-      credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN' }, runnerId: hostRef.deviceId })
+      credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN' }, runnerId: hostRef.deviceId })
     const stored = await pool.query('select host_ref,status from harness_mcp_change_plans where id=$1', [applied.id])
     expect(stored.rows).toEqual([{ host_ref: hostRef, status: 'applied' }])
     const audit = await pool.query('select target_key from management_audit where action=$1 and outcome=$2',

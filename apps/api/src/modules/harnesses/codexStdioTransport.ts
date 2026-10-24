@@ -495,7 +495,7 @@ export class CodexStdioTransport {
 
   private async receive(line: string): Promise<void> {
     let message: unknown
-    try { message = redactKnownSecrets(JSON.parse(line), [this.environment[INSTALLATION_NAMES.environment.MCP_TOKEN] ?? '', this.environment[INSTALLATION_NAMES.environment.PRODUCT_MCP_TOKEN] ?? '']) } catch {
+    try { message = redactKnownSecrets(JSON.parse(line), [this.environment[INSTALLATION_NAMES.environment.MCP_TOKEN] ?? '', this.environment[INSTALLATION_NAMES.privateEnvironment.productMcpToken] ?? '']) } catch {
       this.onNotification('protocol/malformed', { reason: 'invalid_json' }); return
     }
     if (!isObject(message)) { this.onNotification('protocol/malformed', { reason: 'invalid_envelope' }); return }

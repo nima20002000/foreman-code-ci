@@ -44,7 +44,7 @@ describe.skipIf(process.platform === 'win32')('PR17 Codex native recovery', () =
     worker.environment = { agentId: 'agent-a', variables: { ...worker.environment!.variables, GRAPHQL_OPERATOR_MCP_TOKEN: 'fixture-scoped-operator' } }
     await assert.rejects(codexManager(f).createSession(worker), (error: unknown) => errorCode(error) === 'CODEX_ENVIRONMENT_INVALID')
     await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'graphql', enabled: true, required: true,
-      transport: { type: 'streamable_http', url: 'http://127.0.0.1:4100/mcp', bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } }))
+      transport: { type: 'streamable_http', url: 'http://127.0.0.1:4100/mcp', bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } }))
     const source = input(f.directory)
     const operator: OperatorNativeSessionStart = {
       kind: 'operator', correlationId: 'operator-turn', workingDirectory: f.directory,

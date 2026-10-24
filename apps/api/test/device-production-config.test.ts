@@ -3,9 +3,9 @@ import { readDeviceListenerConfig } from '../src/modules/devices/productionConfi
 
 it('keeps the device-only listener disabled unless explicitly enabled with complete separate TLS configuration', () => {
   expect(readDeviceListenerConfig({}, 3000)).toBeUndefined()
-  expect(readDeviceListenerConfig({ FOREMAN_CODE_DEVICE_LISTENER_ENABLED: '0' }, 3000)).toBeUndefined()
-  expect(() => readDeviceListenerConfig({ FOREMAN_CODE_DEVICE_LISTENER_ENABLED: 'true' }, 3000)).toThrow('0 or 1')
-  const enabled = { FOREMAN_CODE_DEVICE_LISTENER_ENABLED: '1', DEVICE_LISTENER_HOST: '0.0.0.0', DEVICE_LISTENER_PORT: '3443',
+  expect(readDeviceListenerConfig({ GRAPHQL_DEVICE_LISTENER_ENABLED: '0' }, 3000)).toBeUndefined()
+  expect(() => readDeviceListenerConfig({ GRAPHQL_DEVICE_LISTENER_ENABLED: 'true' }, 3000)).toThrow('0 or 1')
+  const enabled = { GRAPHQL_DEVICE_LISTENER_ENABLED: '1', DEVICE_LISTENER_HOST: '0.0.0.0', DEVICE_LISTENER_PORT: '3443',
     DEVICE_LISTENER_TLS_CERT_FILE: '/approved/certificate.pem', DEVICE_LISTENER_TLS_KEY_FILE: '/approved/key.pem' }
   expect(readDeviceListenerConfig(enabled, 3000)).toEqual({ host: '0.0.0.0', port: 3443,
     certificateFile: '/approved/certificate.pem', privateKeyFile: '/approved/key.pem' })
@@ -15,7 +15,7 @@ it('keeps the device-only listener disabled unless explicitly enabled with compl
 })
 
 it('retains only the explicit public WSS endpoint and approved public CA path', () => {
-  const enabled = { FOREMAN_CODE_DEVICE_LISTENER_ENABLED: '1', DEVICE_LISTENER_HOST: '0.0.0.0', DEVICE_LISTENER_PORT: '3443',
+  const enabled = { GRAPHQL_DEVICE_LISTENER_ENABLED: '1', DEVICE_LISTENER_HOST: '0.0.0.0', DEVICE_LISTENER_PORT: '3443',
     DEVICE_LISTENER_TLS_CERT_FILE: '/approved/certificate.pem', DEVICE_LISTENER_TLS_KEY_FILE: '/approved/key.pem',
     DEVICE_LISTENER_ADVERTISED_ENDPOINT: 'wss://main.example:3443/device/connect', DEVICE_LISTENER_TLS_TRUST_CERT_FILE: '/approved/public-ca.pem' }
   expect(readDeviceListenerConfig(enabled, 3000)).toMatchObject({ advertisedEndpoint: enabled.DEVICE_LISTENER_ADVERTISED_ENDPOINT, trustCertificateFile: enabled.DEVICE_LISTENER_TLS_TRUST_CERT_FILE })

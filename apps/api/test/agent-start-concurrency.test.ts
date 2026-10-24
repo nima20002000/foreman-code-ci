@@ -149,7 +149,7 @@ it('announces a new native session after persisted readback and before waiting f
     credential: { principalId: 'startup-principal', expiresAt: new Date(Date.now() + 300_000).toISOString(),
       environment: { agentId: f.get().agentId, variables: {} } },
     detection: ScopedMcpDetectionSchema.parse({ detection: { harness: 'codex', serverName: 'graphql',
-      state: 'connected', endpointMatches: true, credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN', checkedAt: f.at },
+      state: 'connected', endpointMatches: true, credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN', checkedAt: f.at },
       runnerId: 'synthetic-runner', workingDirectory: input.workingDirectory,
       providerVersion: f.session.providerVersion, nativeFilters: {} }),
   })

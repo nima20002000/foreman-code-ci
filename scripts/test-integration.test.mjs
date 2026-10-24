@@ -330,10 +330,10 @@ test('discovery rejects symlinked test files and parent directories', () => {
 
 test('stale or forged heavy-job tokens do not count as queue admission', () => {
   const start = readFileSync(`/proc/${process.pid}/stat`, 'utf8').split(') ')[1].split(' ')[19]
-  const environment = { FOREMAN_CODE_HEAVY_JOB_COMMON: '/git/common', FOREMAN_CODE_HEAVY_JOB_TOKEN: 'owned-token' }
+  const environment = { GRAPHQL_HEAVY_JOB_COMMON: '/git/common', GRAPHQL_HEAVY_JOB_TOKEN: 'owned-token' }
   const owner = { token: 'owned-token', pid: process.pid, start }
   assert.equal(hasActiveHeavyJobToken(environment, '/git/common', owner), true)
-  assert.equal(hasActiveHeavyJobToken({ ...environment, FOREMAN_CODE_HEAVY_JOB_TOKEN: 'stale' }, '/git/common', owner), false)
+  assert.equal(hasActiveHeavyJobToken({ ...environment, GRAPHQL_HEAVY_JOB_TOKEN: 'stale' }, '/git/common', owner), false)
   assert.equal(hasActiveHeavyJobToken(environment, '/other/common', owner), false)
   assert.equal(hasActiveHeavyJobToken(environment, '/git/common', { ...owner, start: 'stale' }), false)
   assert.equal(hasActiveHeavyJobToken(environment, '/git/common', null), false)
@@ -489,7 +489,7 @@ test('integration shards use their CI slot CPU and memory shares rather than the
   assert.match(plan.reason, /CI slot share/)
   assert.equal(integrationShardPlan(environment, { ...shardResources, availableMemoryBytes: 3 * 1024 ** 3 }).shards, 2)
   assert.throws(() => integrationShardPlan({ ...environment, FOREMAN_CODE_CI_CPU_COUNT: '0' }, shardResources), /CPU count/)
-  assert.equal(integrationShardPlan({ ...environment, FOREMAN_CODE_INTEGRATION_SHARDS: '20' }, shardResources).shards, 4)
+  assert.equal(integrationShardPlan({ ...environment, GRAPHQL_INTEGRATION_SHARDS: '20' }, shardResources).shards, 4)
 })
 
 test('a sixteen-CPU host with a 4.4 GiB CI slot runs two integration shards', () => {
@@ -526,7 +526,7 @@ test('unknown or invalid resource measurements retain twelve without ignoring kn
 })
 
 test('explicit shard requests run at most at the computed resource cap', () => {
-  for (const variable of ['FOREMAN_CODE_INTEGRATION_SHARDS']) {
+  for (const variable of ['GRAPHQL_INTEGRATION_SHARDS']) {
     assert.equal(integrationShardPlan({ [variable]: '16' }, shardResources).shards, 16)
     const smaller = integrationShardPlan({ [variable]: '8' }, shardResources)
     assert.equal(smaller.shards, 8)
@@ -540,7 +540,7 @@ test('explicit shard requests run at most at the computed resource cap', () => {
 })
 
 test('resource-derived capacity can exceed the old explicit ceiling on larger machines', () => {
-  const plan = integrationShardPlan({ FOREMAN_CODE_INTEGRATION_SHARDS: '80' }, {
+  const plan = integrationShardPlan({ GRAPHQL_INTEGRATION_SHARDS: '80' }, {
     ...shardResources, cpuCount: 96, availableMemoryBytes: 144 * 1024 ** 3, maxConnections: 1600,
   })
   assert.equal(plan.limit, 96)
@@ -746,7 +746,7 @@ test('admission recognizes legacy and secondary slots and rejects forged, stale 
     mkdirSync(running)
     const start = readFileSync(`/proc/${process.pid}/stat`, 'utf8').split(') ')[1].split(' ')[19]
     const owner = { common, token: 'owned-token', pid: process.pid, start }
-    const environment = { FOREMAN_CODE_HEAVY_JOB_COMMON: common, FOREMAN_CODE_HEAVY_JOB_TOKEN: owner.token }
+    const environment = { GRAPHQL_HEAVY_JOB_COMMON: common, GRAPHQL_HEAVY_JOB_TOKEN: owner.token }
     writeFileSync(legacy, JSON.stringify(owner))
     assert.equal(hasHeavyJobAdmission(environment, common), true)
     writeFileSync(legacy, JSON.stringify({ ...owner, token: 'another-slot' }))
@@ -754,8 +754,8 @@ test('admission recognizes legacy and secondary slots and rejects forged, stale 
     writeFileSync(secondary, JSON.stringify(owner))
     writeFileSync(join(running, '000000000001-malformed'), '{')
     assert.equal(hasHeavyJobAdmission(environment, common), true)
-    assert.equal(hasHeavyJobAdmission({ ...environment, FOREMAN_CODE_HEAVY_JOB_TOKEN: 'forged' }, common), false)
-    assert.equal(hasHeavyJobAdmission({ ...environment, FOREMAN_CODE_HEAVY_JOB_COMMON: '/other/common' }, common), false)
+    assert.equal(hasHeavyJobAdmission({ ...environment, GRAPHQL_HEAVY_JOB_TOKEN: 'forged' }, common), false)
+    assert.equal(hasHeavyJobAdmission({ ...environment, GRAPHQL_HEAVY_JOB_COMMON: '/other/common' }, common), false)
     for (const invalid of [{ ...owner, start: 'stale' }, { ...owner, common: '/other/common' }, { ...owner, pid: 0 }]) {
       writeFileSync(secondary, JSON.stringify(invalid))
       assert.equal(hasHeavyJobAdmission(environment, common), false)
@@ -821,9 +821,9 @@ test('Job integration shards require and respect both reservation and qualificat
     FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS: '1', FOREMAN_CODE_VERIFICATION_MAX_INTEGRATION_SHARDS: '1' }
   assert.equal(reservedIntegrationShards(job), 1)
   assert.throws(() => reservedIntegrationShards({ FOREMAN_CODE_VERIFICATION_ROOT: '/source' }), /require reserved/)
-  assert.throws(() => reservedIntegrationShards({ ...job, FOREMAN_CODE_INTEGRATION_SHARDS: '2' }), /exceed/)
+  assert.throws(() => reservedIntegrationShards({ ...job, GRAPHQL_INTEGRATION_SHARDS: '2' }), /exceed/)
   assert.throws(() => reservedIntegrationShards({ ...job, FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS: '2',
-    FOREMAN_CODE_INTEGRATION_SHARDS: '2' }), /exceed/)
+    GRAPHQL_INTEGRATION_SHARDS: '2' }), /exceed/)
 })
 
 test('computed capacity preserves Job reservations and qualification checks', () => {
@@ -833,12 +833,12 @@ test('computed capacity preserves Job reservations and qualification checks', ()
   const plan = integrationShardPlan(job, { ...shardResources, cpuCount: 4 })
   assert.equal(plan.shards, 4)
   assert.match(plan.reason, /CI reservation 16, qualification 16/)
-  assert.equal(integrationShardPlan({ ...job, FOREMAN_CODE_INTEGRATION_SHARDS: '9' },
+  assert.equal(integrationShardPlan({ ...job, GRAPHQL_INTEGRATION_SHARDS: '9' },
     { ...shardResources, cpuCount: 4 }).shards, 4)
   assert.equal(integrationShardPlan({ ...job, FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS: '4' },
     shardResources).shards, 4)
   assert.throws(() => integrationShardPlan({ ...job, FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS: '4',
-    FOREMAN_CODE_INTEGRATION_SHARDS: '8' }, shardResources), /exceed/)
+    GRAPHQL_INTEGRATION_SHARDS: '8' }, shardResources), /exceed/)
   assert.throws(() => integrationShardPlan({ ...job, FOREMAN_CODE_VERIFICATION_MAX_INTEGRATION_SHARDS: '4' },
     shardResources), /exceed/)
 })
@@ -1282,11 +1282,11 @@ test('a lost database pool reports unexecuted files while gate checks still fini
 
 test('environment selectors remain mutually exclusive when passed to the exported runner options', () => {
   const file = 'apps/api/test/one.integration.test.ts'
-  assert.deepEqual(options([], { FOREMAN_CODE_INTEGRATION_START_AT: file }),
+  assert.deepEqual(options([], { GRAPHQL_INTEGRATION_START_AT: file }),
     { startAt: file, failedFrom: null, files: null })
-  assert.throws(() => options(['--files', file], { FOREMAN_CODE_INTEGRATION_FAILED_LOG: '/tmp/failed.log' }), /Usage/)
-  assert.throws(() => options([], { FOREMAN_CODE_INTEGRATION_START_AT: file,
-    FOREMAN_CODE_INTEGRATION_FAILED_LOG: '/tmp/failed.log' }), /Choose either/)
+  assert.throws(() => options(['--files', file], { GRAPHQL_INTEGRATION_FAILED_LOG: '/tmp/failed.log' }), /Usage/)
+  assert.throws(() => options([], { GRAPHQL_INTEGRATION_START_AT: file,
+    GRAPHQL_INTEGRATION_FAILED_LOG: '/tmp/failed.log' }), /Choose either/)
 })
 
 test('retained process ownership stops extras, exclusive files and retries', async () => {

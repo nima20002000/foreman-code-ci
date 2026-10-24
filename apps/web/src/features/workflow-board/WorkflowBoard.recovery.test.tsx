@@ -91,7 +91,7 @@ const actionRegion = () => screen.getByRole('region', { name: 'Selected Run acti
 const action = (name: string) => within(actionRegion()).getByRole('button', { name })
 const writes = (f: Fixture) => f.mock.calls.filter((call) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(call.method))
 async function start(f: Fixture, user: ReturnType<typeof userEvent.setup>) {
-  const controls = within(screen.getByRole('region', { name: 'Workflow authoring' })).getByRole('group', { name: 'Workflow controls' })
+  const controls = within(screen.getByRole('banner', { name: 'Board toolbar' })).getByRole('group', { name: 'Workflow controls' })
   const button = within(controls).getByRole('button', { name: 'Start saved version' })
   await waitFor(() => expect(button, button.title).toBeEnabled()); await user.click(button)
   await waitFor(() => expect(f.mock.runs.size).toBe(1))
@@ -125,7 +125,7 @@ function edit(f: Fixture) {
     nodes: graph.nodes.map((node) => ({ ...node, initialPrompt: 'Instructions staged while recovery is unresolved' })),
   })))
 }
-const saveButton = () => within(screen.getByRole('region', { name: 'Workflow authoring' })).getByRole('button', { name: /^Save workflow$/ })
+const saveButton = () => within(screen.getByRole('banner', { name: 'Board toolbar' })).getByRole('button', { name: /^Save workflow$/ })
 const editCalls = (f: Fixture, actionName: string) => f.mock.calls.filter((call) => call.method === 'POST'
   && call.path.endsWith('/definition/edits') && (call.body as { action?: string }).action === actionName)
 

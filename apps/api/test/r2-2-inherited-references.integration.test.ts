@@ -72,7 +72,7 @@ async function fixture({ readOnly }: { readOnly: boolean }) {
   const seam = "const agent = process.env.TEST_AGENT_ID || 'agent-a'"
   assert.equal(binary.split(seam).length, 2)
   await writeFile(f.binary, binary.replace(seam,
-    `log({ referenceCredentialKeys: Object.keys(process.env).filter((key) => /GRAPHQL.*(?:TOKEN|CREDENTIAL)/.test(key) && key !== 'FOREMAN_CODE_HEAVY_JOB_TOKEN') })\n${seam}`))
+    `log({ referenceCredentialKeys: Object.keys(process.env).filter((key) => /GRAPHQL.*(?:TOKEN|CREDENTIAL)/.test(key) && key !== 'GRAPHQL_HEAVY_JOB_TOKEN') })\n${seam}`))
   const config: ApiConfig = {
     host: '127.0.0.1', port: 4100, readinessTimeoutMs: 2000,
     database: { connectionString: process.env.TEST_DATABASE_URL!, maxConnections: 4, connectionTimeoutMs: 2000, queryTimeoutMs: 5000 },

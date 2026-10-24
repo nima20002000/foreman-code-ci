@@ -73,7 +73,7 @@ async function scopedRequest(message) {
 }
 
 function hasScopedCredential() {
-  return environment[INSTALLATION_NAMES.environment.PRODUCT_MCP_TOKEN] !== undefined
+  return environment[INSTALLATION_NAMES.environment.MCP_TOKEN] !== undefined
 }
 
 function toolValue(name, result) {

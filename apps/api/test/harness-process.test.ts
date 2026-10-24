@@ -5,14 +5,14 @@ import { runJsonlProcess } from '../src/modules/harnesses/process.js'
 
 describe('native harness process boundary', () => {
   it('injects only an Agent-owned App token after preflight without changing parent env or argv', async () => {
-    const previous = process.env.FOREMAN_CODE_MCP_TOKEN
-    delete process.env.FOREMAN_CODE_MCP_TOKEN
+    const previous = process.env.GRAPHQL_MCP_TOKEN
+    delete process.env.GRAPHQL_MCP_TOKEN
     const events: Array<{ type: string; payload: Record<string, unknown> }> = []
     const controller = new AbortController()
     try {
       const result = await runJsonlProcess({
         binary: process.execPath,
-        args: ['-e', 'console.log(JSON.stringify({type:"proof", present:Boolean(process.env.FOREMAN_CODE_MCP_TOKEN), argv:process.argv}))'],
+        args: ['-e', 'console.log(JSON.stringify({type:"proof", present:Boolean(process.env.GRAPHQL_MCP_TOKEN), argv:process.argv}))'],
         cwd: process.cwd(),
         signal: controller.signal,
         expectedAgentId: 'agent-a',
@@ -25,10 +25,10 @@ describe('native harness process boundary', () => {
       expect(events[0]).toMatchObject({ type: 'proof', payload: { type: 'proof', present: true } })
       expect((events[0]?.payload.argv as string[]).join(' ')).not.toContain('secret-fixture')
       expect(JSON.stringify(events)).not.toContain('secret-fixture')
-      expect(process.env.FOREMAN_CODE_MCP_TOKEN).toBeUndefined()
+      expect(process.env.GRAPHQL_MCP_TOKEN).toBeUndefined()
     } finally {
-      if (previous === undefined) delete process.env.FOREMAN_CODE_MCP_TOKEN
-      else process.env.FOREMAN_CODE_MCP_TOKEN = previous
+      if (previous === undefined) delete process.env.GRAPHQL_MCP_TOKEN
+      else process.env.GRAPHQL_MCP_TOKEN = previous
     }
   })
 

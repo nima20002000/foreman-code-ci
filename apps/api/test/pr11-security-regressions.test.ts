@@ -20,7 +20,7 @@ import { redactKnownSecrets, redactSecretText } from '../src/modules/harnesses/s
 const endpoint = 'http://127.0.0.1:3000/mcp'
 const matching: NativeMcpEntryEvidence = {
   name: 'graphql', transport: 'streamable-http', endpoint,
-  credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN',
+  credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN',
 }
 const context = { harness: 'codex' as const, runnerId: 'runner-local', workingDirectory: process.cwd() }
 function detection(entry: NativeMcpEntryEvidence) {
@@ -29,15 +29,15 @@ function detection(entry: NativeMcpEntryEvidence) {
 
 describe('PR #11 secret and launch boundaries', () => {
   it('does not inherit an ambient App token into inspection commands', async () => {
-    const previous = process.env.FOREMAN_CODE_MCP_TOKEN
-    process.env.FOREMAN_CODE_MCP_TOKEN = 'ambient-pr11-secret'
+    const previous = process.env.GRAPHQL_MCP_TOKEN
+    process.env.GRAPHQL_MCP_TOKEN = 'ambient-pr11-secret'
     try {
-      const result = await runCommand(process.execPath, ['-e', 'console.log(Boolean(process.env.FOREMAN_CODE_MCP_TOKEN))'], process.cwd())
+      const result = await runCommand(process.execPath, ['-e', 'console.log(Boolean(process.env.GRAPHQL_MCP_TOKEN))'], process.cwd())
       assert.equal(result.stdout.trim(), 'false')
-      assert.equal(process.env.FOREMAN_CODE_MCP_TOKEN, 'ambient-pr11-secret')
+      assert.equal(process.env.GRAPHQL_MCP_TOKEN, 'ambient-pr11-secret')
     } finally {
-      if (previous === undefined) delete process.env.FOREMAN_CODE_MCP_TOKEN
-      else process.env.FOREMAN_CODE_MCP_TOKEN = previous
+      if (previous === undefined) delete process.env.GRAPHQL_MCP_TOKEN
+      else process.env.GRAPHQL_MCP_TOKEN = previous
     }
   })
 
@@ -46,7 +46,7 @@ describe('PR #11 secret and launch boundaries', () => {
     const events: unknown[] = []
     const result = await runJsonlProcess({
       binary: process.execPath,
-      args: ['-e', `const value = process.env.FOREMAN_CODE_MCP_TOKEN;
+      args: ['-e', `const value = process.env.GRAPHQL_MCP_TOKEN;
 console.log(JSON.stringify({type:'proof', nested:[{unrelated:value}], [value]:value}));
 console.log('raw ' + value);
 console.log('["' + [...value].map(c => '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('') + '"]');
@@ -69,7 +69,7 @@ setTimeout(() => process.stderr.write(value.slice(7) + '\\n'), 10);`],
       const events: unknown[] = []
       await runJsonlProcess({
         binary: process.execPath,
-        args: ['-e', `console.log(JSON.stringify({type:'proof', suffix:process.env.FOREMAN_CODE_MCP_TOKEN.endsWith(${JSON.stringify(agentId)}), argv:process.argv}))`],
+        args: ['-e', `console.log(JSON.stringify({type:'proof', suffix:process.env.GRAPHQL_MCP_TOKEN.endsWith(${JSON.stringify(agentId)}), argv:process.argv}))`],
         cwd: process.cwd(), signal: new AbortController().signal, expectedAgentId: agentId,
         beforeSpawn: async () => ({ agentId, variables: { GRAPHQL_MCP_TOKEN: `private-pr11-${agentId}` } }),
         onSpawn: () => undefined, onEvent: async (event) => { events.push(event) },

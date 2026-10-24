@@ -20,7 +20,7 @@ describe('Operator chat installation evidence', () => {
     const inspect = vi.fn(async () => ({ harness: 'codex' as const, ...context, workingDirectory: directory,
       providerVersion: 'fixture-only', inspectedAt: new Date().toISOString(), entry: { name: 'foreman-code',
         transport: 'stdio' as const, automaticEndpoint: true, enabled: true,
-        credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN' } }))
+        credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN' } }))
     const owner = new PostgresOperatorChatAuthority({} as never, {} as never, {} as never, '/main/operator', endpoint,
       () => ({ inspect }))
     expect(await owner.setup(manager, signal)).toMatchObject({ status: 'configured', routing: 'automatic' })
@@ -54,7 +54,7 @@ describe('Operator chat installation evidence', () => {
       const inspect = vi.spyOn(manager, 'inspectMcpConfiguration').mockResolvedValue({
         cwd: '/operator', providerVersion: '0.154.0', serverName: 'graphql', configured: {
           enabled: true, automaticEndpoint: true, transport: 'stdio', url: null,
-          bearerTokenEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN',
+          bearerTokenEnvironmentVariable: 'GRAPHQL_MCP_TOKEN',
         },
       } as never)
       expect(await owner.setup(manager, signal)).toMatchObject({ status: 'configured' })

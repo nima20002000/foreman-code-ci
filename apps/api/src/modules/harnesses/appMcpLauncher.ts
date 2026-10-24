@@ -13,7 +13,7 @@ import { sha256Hex } from '../../shared/hash.js'
 
 /** One native entry serves every role; the credential decides Operator, Orchestrator or Coder. */
 export const APP_MCP_SERVER_NAME = PRODUCT_SLUG
-export const APP_MCP_TOKEN = INSTALLATION_NAMES.environment.PRODUCT_MCP_TOKEN
+export const APP_MCP_TOKEN = INSTALLATION_NAMES.environment.MCP_TOKEN
 /** Leave twenty seconds after the relay budgets for local HTTP and native reply delivery. */
 export const APP_MCP_TIMEOUTS = {
   startup_timeout_sec: 60,

@@ -108,7 +108,7 @@ async function uploadBridge(format: 'json' | 'sse' = 'json') {
     process.send('ready')
   `)
   const child = spawn(process.execPath, ['--import', clock, launcher], {
-    env: { ...process.env, FOREMAN_CODE_MCP_TOKEN: token, },
+    env: { ...process.env, GRAPHQL_MCP_TOKEN: token, },
     stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
   })
   cleanup.push(async () => {

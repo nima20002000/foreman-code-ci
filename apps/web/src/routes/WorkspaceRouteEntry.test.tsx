@@ -49,7 +49,8 @@ async function researcherButton() {
 }
 async function workflowBoard(name: string) {
   const board = await screen.findByRole('region', { name: 'Workflow authoring' }, { timeout: 3000 })
-  expect(await within(board).findByRole('heading', { name })).toBeVisible()
+  const toolbar = await screen.findByRole('banner', { name: 'Board toolbar' })
+  expect(await within(toolbar).findByRole('heading', { name })).toBeVisible()
   return board
 }
 async function renderWorkspace(initialEntry: string) {
@@ -206,8 +207,8 @@ describe('WorkspaceRouteEntry integration', () => {
     const entry = '/workspaces/workspace-1?workflowId=workflow-content-pipeline'
     const first = await renderWorkspace(entry)
     const user = userEvent.setup()
-    const before = await workflowBoard('Research to review')
-    await user.click(within(before).getByRole('button', { name: 'Research to review' }))
+    await workflowBoard('Research to review')
+    await user.click(within(screen.getByRole('banner', { name: 'Board toolbar' })).getByRole('button', { name: 'Research to review' }))
     const name = screen.getByRole('textbox', { name: 'Workflow name' })
     await user.clear(name)
     await user.type(name, 'Activities persisted workflow{Enter}')

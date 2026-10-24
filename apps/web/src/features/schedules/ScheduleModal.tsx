@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type RefObject } from 'react'
 import { useStore } from 'zustand'
+import { flushSync } from 'react-dom'
 import type { ScheduleGetInput } from '@foreman-code/contracts/schedules'
 import { Button, Dialog, LoadingState, Select, Switch, TextField } from '../../shared/ui/nocturne'
 import { ApiError } from '../../shared/api/client'
@@ -18,9 +19,11 @@ const modes: readonly { value: ScheduleMode; label: string }[] = [
 ]
 const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const
 
-export function ScheduleModal({ scope, store, returnFocusRef }: {
+export type ScheduleNavigation = { onSelectRun?(runId: string): void; onReviewWorkflow?(): void }
+
+export function ScheduleModal({ scope, store, returnFocusRef, onSelectRun, onReviewWorkflow }: {
   scope: ScheduleGetInput; store: ScheduleEditorStore; returnFocusRef: RefObject<HTMLButtonElement | null>
-}) {
+} & ScheduleNavigation) {
   const state = useStore(store)
   const query = useWorkflowSchedule(scope, state.open)
   const write = useScheduleCommand(scope)
@@ -85,6 +88,13 @@ export function ScheduleModal({ scope, store, returnFocusRef }: {
   })
   function close() {
     if (!locked) void requestLeave(() => store.getState().hide())
+  }
+  function leaveFor(action: () => void) {
+    if (!locked) void requestLeave(() => {
+      // Remove the dialog before the Board's navigation guard checks for open contextual editors.
+      flushSync(() => store.getState().hide())
+      action()
+    })
   }
   function reload() {
     if (!locked) void requestLeave(() => {
@@ -178,7 +188,9 @@ export function ScheduleModal({ scope, store, returnFocusRef }: {
       {draft ? <>
         <p className="schedule-next" role="status">Next run {query.isError ? 'unavailable' : nextAt
           ? <time dateTime={nextAt} title={nextLabel ?? undefined}>{nextLabel}</time> : 'not scheduled'}</p>
-        <ScheduleLastAttempt scope={scope} open={state.open} />
+        <ScheduleLastAttempt scope={scope} open={state.open} historyOpen={state.historyOpen} toggleHistory={state.toggleHistory}
+          onSelectRun={onSelectRun ? runId => leaveFor(() => onSelectRun(runId)) : undefined}
+          onReviewWorkflow={onReviewWorkflow ? () => leaveFor(onReviewWorkflow) : undefined} />
       </> : null}
       {(failure || state.errors.form) && <div className="schedule-feedback"><p role="alert">{state.errors.form ?? failure}{!state.errors.form && explanation ? <> {explanation}</> : null}</p>
         {conflict && <Button size="sm" onClick={reload}>Reload</Button>}</div>}

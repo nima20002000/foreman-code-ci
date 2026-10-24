@@ -64,7 +64,7 @@ describe('scoped MCP credential mechanism evidence', () => {
   it('does not turn an unknown static HTTP entry or explicit unknown into credential evidence', async () => {
     const value = evidence()
     value.entry!.credentialArrangement = { kind: 'unknown' }
-    value.entry!.credentialEnvironmentVariable = 'FOREMAN_CODE_MCP_TOKEN'
+    value.entry!.credentialEnvironmentVariable = 'GRAPHQL_MCP_TOKEN'
     expect((await inspect(value)).detection).toMatchObject({ state: 'misconfigured', credentialArrangement: { kind: 'unknown' } })
     delete value.entry!.credentialEnvironmentVariable
     delete value.entry!.credentialArrangement
@@ -74,9 +74,9 @@ describe('scoped MCP credential mechanism evidence', () => {
     const value = evidence()
     value.harness = harness
     delete value.entry!.credentialArrangement
-    value.entry!.credentialEnvironmentVariable = 'FOREMAN_CODE_MCP_TOKEN'
+    value.entry!.credentialEnvironmentVariable = 'GRAPHQL_MCP_TOKEN'
     const result = await new McpDetectionService({ inspect: async () => value }, endpoint, 'graphql').inspect({ ...input, harness })
-    expect(result.detection).toMatchObject({ state: 'connected', credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN',
-      credentialArrangement: { kind: 'environment_variable', environmentVariable: 'FOREMAN_CODE_MCP_TOKEN' } })
+    expect(result.detection).toMatchObject({ state: 'connected', credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN',
+      credentialArrangement: { kind: 'environment_variable', environmentVariable: 'GRAPHQL_MCP_TOKEN' } })
   })
 })

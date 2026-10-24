@@ -1,5 +1,4 @@
 /** Pure helpers and limits shared by the Codex app-server session manager layers. */
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { hasWorkflowRequest, sessionStartConfiguration, sessionStartOwner, sessionStartSystemPrompt } from '../sessionStart.js'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { isSupportedAppMcpTokenName } from '../appMcpLauncher.js'
@@ -57,7 +56,7 @@ export function credentialIdentity(input: NativeSessionStart): string {
 export function validateEnvironmentVariables(input?: NativeSessionStart['environment']): void {
   for (const key of Object.keys(input?.variables ?? {})) {
     // Operator and Worker credentials use the admitted App token; the server resolves its role.
-    if (key !== INSTALLATION_NAMES.environment.MCP_TOKEN && isControllerEnvironmentVariable(key)) {
+    if (!isSupportedAppMcpTokenName(key) && isControllerEnvironmentVariable(key)) {
       throw new HarnessExecutionError('CODEX_ENVIRONMENT_INVALID', 'An Agent environment cannot contain application-global secrets.')
     }
   }

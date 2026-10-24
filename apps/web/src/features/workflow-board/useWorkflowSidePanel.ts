@@ -52,9 +52,16 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
       search: previous => {
         if (previous.workflowId && previous.workflowId !== workflowId) return previous
         const selected = keepRun(previous)
-        // The rail owns inspection after a legacy deep link has been opened.
-        // Clearing those aliases also makes Back to Board stay closed.
+        const exchange = readRunInspectionKey(selected.runExchangeKey)
+        const sameExecution = selected.runNodeId === (next.kind === 'agent' ? next.nodeId : undefined)
+          && exchange.executionId === (next.kind === 'agent' ? next.executionId : undefined)
+        // Closing or changing the panel clears its filters; Details carries the exact history selection.
         delete selected.runNodeId; delete selected.runRelationshipId; delete selected.runExchangeKey
+        if (next.kind === 'agent' && next.tab === 'details' && (selected.runId || selected.selectedRunId)) {
+          selected.runNodeId = next.nodeId
+          selected.runExchangeKey = runInspectionKey({ executionId: next.executionId,
+            ...(sameExecution ? { occurrenceId: exchange.occurrenceId } : {}) })
+        }
         if (next.kind === 'none') delete selected.boardPanel
         else selected.boardPanel = next.kind
         if (next.kind === 'agent' || next.kind === 'browser') {

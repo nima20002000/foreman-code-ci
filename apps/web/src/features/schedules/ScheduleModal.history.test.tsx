@@ -17,7 +17,8 @@ const weekly: WorkflowSchedule = {
   policy: 'latest_saved', revision: 3, nextOccurrenceAt: '2099-08-31T09:00:00.000Z',
 }
 
-function mount(latest: ScheduleOccurrence | null, schedule: WorkflowSchedule = weekly) {
+function mount(latest: ScheduleOccurrence | null, schedule: WorkflowSchedule = weekly,
+  navigation: { onSelectRun?(runId: string): void; onReviewWorkflow?(): void } = {}) {
   let persisted = latest
   let reads = 0
   server.use(
@@ -30,7 +31,7 @@ function mount(latest: ScheduleOccurrence | null, schedule: WorkflowSchedule = w
   )
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   clients.push(client)
-  render(<QueryClientProvider client={client}><ScheduleClockButton {...scope} isSaved /></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><ScheduleClockButton {...scope} isSaved {...navigation} /></QueryClientProvider>)
   return {
     user: userEvent.setup(),
     reads: () => reads,
@@ -89,7 +90,7 @@ describe('schedule Last attempt feedback', () => {
       : 'The schedule was disabled before this attempt could start.')
   })
 
-  it('links an accepted exhausted Once to its persisted Run in a new tab', async () => {
+  it('links an accepted exhausted Once to its persisted Run in this Board', async () => {
     const runId = 'accepted/run?one&two'
     const once: WorkflowSchedule = {
       ...scope, mode: 'once', localDate: '2099-08-24', time: '09:00', timezone: 'UTC', enabled: true,
@@ -99,14 +100,102 @@ describe('schedule Last attempt feedback', () => {
     const section = await open(view.user)
     expect(await within(section).findByText('Accepted')).toBeVisible()
     expect(screen.getByText('Next run', { exact: false })).toHaveTextContent('Next run not scheduled')
-    const link = within(section).getByRole('link', { name: 'View Run (opens in a new tab)' })
+    const link = within(section).getByRole('link', { name: 'View Run' })
     const url = new URL(link.getAttribute('href')!, window.location.origin)
     expect(url.pathname).toBe(`/workspaces/${scope.workspaceId}`)
     expect(url.searchParams.get('workflowId')).toBe(scope.workflowId)
     expect(url.searchParams.get('selectedRunId')).toBe(runId)
-    expect(link).toHaveAttribute('target', '_blank')
-    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(link).not.toHaveAttribute('target')
     expect(screen.getByRole('switch', { name: 'Enabled' })).toBeChecked()
+  })
+
+  it('opens earlier rejected and missed attempts through paginated history', async () => {
+    const view = mount({ ...occurrence, status: 'skipped', reason: 'overlap' })
+    server.use(http.get(`${schedulePath(scope)}/occurrences`, ({ request }) => {
+      const query = new URL(request.url).searchParams
+      if (query.get('limit') === '1') return HttpResponse.json({ items: [{ ...occurrence, status: 'skipped', reason: 'overlap' }], pageInfo: { nextCursor: 'older' } })
+      const older = query.get('cursor') === 'older'
+      return HttpResponse.json({ items: [{ ...occurrence, dueAt: older ? '2099-08-10T09:00:00.000Z' : dueAt,
+        id: older ? scheduleOccurrenceId(scope.workflowId, '2099-08-10T09:00:00.000Z') : occurrence.id, status: older ? 'missed' : 'rejected',
+        reason: older ? 'outside_grace' : 'workflow_not_executable' }], pageInfo: { nextCursor: older ? null : 'older' } })
+    }))
+    const section = await open(view.user)
+    await within(section).findByText('Skipped')
+    await view.user.click(screen.getByRole('button', { name: 'Attempt history' }))
+    const history = await screen.findByRole('region', { name: 'Schedule attempt history' })
+    expect(await within(history).findByText('Rejected')).toBeVisible()
+    await view.user.click(within(history).getByRole('button', { name: 'Older attempts' }))
+    expect(await within(history).findByText('Missed')).toBeVisible()
+    expect(within(history).getByText('Rejected')).toBeVisible()
+  })
+
+  it('closes Schedule and uses the Board Run selection callback', async () => {
+    const onSelectRun = vi.fn()
+    const view = mount({ ...occurrence, status: 'accepted', reason: null, runId: 'saved-run', workflowVersionId: 'saved-version' }, weekly, { onSelectRun })
+    const section = await open(view.user)
+    await view.user.click(await within(section).findByRole('link', { name: 'View Run' }))
+    await waitFor(() => expect(onSelectRun).toHaveBeenCalledWith('saved-run'))
+    expect(screen.queryByRole('dialog', { name: 'Schedule' })).not.toBeInTheDocument()
+  })
+
+  it('returns to newest attempts after the bounded history evicts its first page', async () => {
+    const view = mount({ ...occurrence, status: 'skipped', reason: 'overlap' })
+    const historyReads: (string | null)[] = []
+    server.use(http.get(`${schedulePath(scope)}/occurrences`, ({ request }) => {
+      const query = new URL(request.url).searchParams
+      if (query.get('limit') === '1') return HttpResponse.json({ items: [], pageInfo: { nextCursor: null } })
+      const cursor = query.get('cursor'), page = Number(cursor ?? 0)
+      historyReads.push(cursor)
+      const due = new Date(Date.parse(dueAt) - page * 86_400_000).toISOString()
+      return HttpResponse.json({ items: [{ ...occurrence, id: scheduleOccurrenceId(scope.workflowId, due), dueAt: due,
+        status: 'accepted', reason: null, runId: `history-run-${page}`, workflowVersionId: 'saved-version' }],
+      pageInfo: { nextCursor: page < 6 ? String(page + 1) : null } })
+    }))
+    await open(view.user)
+    await view.user.click(screen.getByRole('button', { name: 'Attempt history' }))
+    const history = await screen.findByRole('region', { name: 'Schedule attempt history' })
+    await within(history).findByRole('link', { name: 'View Run' })
+    for (let page = 1; page <= 5; page++) {
+      await view.user.click(within(history).getByRole('button', { name: 'Older attempts' }))
+      await waitFor(() => expect(history.querySelector(`a[href*="history-run-${page}"]`)).toBeInTheDocument())
+    }
+    expect(within(history).getAllByRole('listitem')).toHaveLength(5)
+    expect(history.querySelector('a[href*="history-run-0"]')).not.toBeInTheDocument()
+    await view.user.click(within(history).getByRole('button', { name: 'Newest attempts' }))
+    await waitFor(() => expect(history.querySelector('a[href*="history-run-0"]')).toBeInTheDocument())
+    expect(within(history).getAllByRole('listitem')).toHaveLength(1)
+    expect(historyReads).toEqual([null, '1', '2', '3', '4', '5', null])
+    expect(within(history).getByRole('button', { name: 'Older attempts' })).toBeEnabled()
+  })
+
+  it('refreshes reopened history to include new nonlatest attempts without losing schedule edits', async () => {
+    const view = mount(null)
+    let arrived = false
+    server.use(http.get(`${schedulePath(scope)}/occurrences`, ({ request }) => {
+      if (new URL(request.url).searchParams.get('limit') === '1') return HttpResponse.json({ items: [], pageInfo: { nextCursor: null } })
+      return HttpResponse.json({ items: arrived ? [{ ...occurrence, status: 'missed', reason: 'outside_grace' }] : [],
+        pageInfo: { nextCursor: null } })
+    }))
+    await open(view.user)
+    await view.user.click(screen.getByRole('button', { name: 'Attempt history' }))
+    await within(await screen.findByRole('region', { name: 'Schedule attempt history' })).findByText('No attempts yet.')
+    await view.user.click(screen.getByRole('button', { name: 'Attempt history' }))
+    arrived = true
+    await view.user.click(screen.getByRole('button', { name: 'Attempt history' }))
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '10:15' } })
+    const history = await screen.findByRole('region', { name: 'Schedule attempt history' })
+    await view.user.click(within(history).getByRole('button', { name: 'Newest attempts' }))
+    expect(await within(history).findByText('Missed')).toBeVisible()
+    expect(screen.getByLabelText('Time')).toHaveValue('10:15')
+  })
+
+  it('offers a direct workflow repair action for an unexecutable saved workflow', async () => {
+    const onReviewWorkflow = vi.fn()
+    const view = mount({ ...occurrence, status: 'rejected', reason: 'workflow_not_executable' }, weekly, { onReviewWorkflow })
+    const section = await open(view.user)
+    await view.user.click(await within(section).findByRole('button', { name: 'Review workflow' }))
+    await waitFor(() => expect(onReviewWorkflow).toHaveBeenCalledOnce())
+    expect(screen.queryByRole('dialog', { name: 'Schedule' })).not.toBeInTheDocument()
   })
 
   it('shows an empty history and only polls while open', async () => {

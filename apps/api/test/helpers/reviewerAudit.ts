@@ -297,7 +297,7 @@ export async function reviewerFixture(options: {
     async prepare(input) {
       prepared.push(input.purpose ?? 'workflow')
       return { credential, detection: { detection: { harness: 'codex', serverName: 'graphql', state: 'connected', endpointMatches: true,
-        credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN', checkedAt: now },
+        credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN', checkedAt: now },
       runnerId: 'fixture', workingDirectory: input.workingDirectory, providerVersion: session.providerVersion, nativeFilters: {} } }
     },
     async renew(id, actual) {
