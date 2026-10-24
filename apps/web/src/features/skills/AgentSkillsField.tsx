@@ -10,7 +10,7 @@ import './skills.css'
 function SkillBody({ workspaceId, skill }: { workspaceId: string; skill: SkillSummary }) {
   const query = useSkillQuery(workspaceId, skill.skillId, skill.version)
   if (query.isPending) return <LoadingState label="Loading instructions…" rows={2} />
-  if (query.isError) return <p className="n-field-error" role="alert">Instructions could not be loaded. {query.error.message} <Button size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>Retry instructions</Button></p>
+  if (query.isError) return <p className="n-field-error" role="alert">Instructions could not be loaded. {query.error.message}</p>
   return <SkillTextPreview text={query.data.version.instructions} />
 }
 

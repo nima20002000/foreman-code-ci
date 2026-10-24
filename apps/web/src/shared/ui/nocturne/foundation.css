@@ -44,13 +44,10 @@
 /* Actions */
 /* Buttons are flat: one solid fill per variant, no gradients or glows. Only colors transition, so a hover never
    passes through a transparent frame (a gradient-to-color swap flashed the page background through the button). */
-.n-button { position: relative; display: inline-flex; min-height: 34px; min-width: 34px; align-items: center; justify-content: center; gap: 7px; padding: 6px 13px;
+.n-button { display: inline-flex; min-height: 34px; min-width: 34px; align-items: center; justify-content: center; gap: 7px; padding: 6px 13px;
   border: 1px solid var(--n-border-strong); border-radius: 8px; background: var(--n-raised); color: var(--n-text);
   font: 500 12.5px/1.4 var(--n-font); text-decoration: none; cursor: pointer; white-space: normal;
   transition: background-color var(--n-fast), border-color var(--n-fast), color var(--n-fast); }
-.n-button-label, .n-button-leading { display: inline-grid; align-items: center; justify-items: center; }
-.n-button-label > span, .n-button-leading > span { grid-area: 1 / 1; }
-.n-button-spinner { position: absolute; inset-inline-start: calc(50% - 7.5px); }
 .n-button:hover:not(:disabled) { background-color: var(--n-hover); border-color: var(--n-control-border); }
 .n-button:active:not(:disabled) { transform: translateY(.5px); }
 .n-button--primary { background: var(--n-accent); border-color: transparent; color: var(--n-accent-ink); font-weight: 600;

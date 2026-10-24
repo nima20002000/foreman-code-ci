@@ -22,13 +22,13 @@ import { useDeliveryDraftPin } from './useDeliveryDraftPin'
 import { type ExecutionChatSource, type ExecutionChatTarget } from './executionChatSource'
 import { ExecutionNativeMessage } from './ExecutionNativeMessage'
 import { useExecutionChatStream } from './useExecutionChatStream'
+import { executionChatDraftKey } from './executionChatDraft'
 
 export type ExecutionChatPanelProps = {
   visible: boolean; target: ExecutionChatTarget; name: string; source: ExecutionChatSource
   /** Supplied only by the qualified current-turn observer, never inferred from transcript history. */
   nativeTurnId?: string; unavailableReason?: string; attachments?: ConversationAttachments; attachmentControl?: ReactNode
   sessionMode?: SessionMode; appliedSessionMode?: SessionMode
-  onOpenContinuation?(receipt: ChatDeliveryReceipt): void; onOpenGroup?(postId: string): void
   /** The Agent chat that continues a finished execution's session; shown in place of this panel when it takes no input. */
   followUp?: ReactNode
   onRecover?(recovery: DirectRecovery): void
@@ -41,7 +41,7 @@ export function ExecutionChatPanel(props: ExecutionChatPanelProps) {
 function ExecutionChatContent(props: ExecutionChatPanelProps) {
   const cache = useQueryClient(), serialized = JSON.stringify(props.target)
   const target = useMemo(() => JSON.parse(serialized) as ExecutionChatTarget, [serialized])
-  const draftKey = `execution-chat:${serialized}`, inputRef = useRef<HTMLTextAreaElement>(null)
+  const draftKey = executionChatDraftKey(target), inputRef = useRef<HTMLTextAreaElement>(null)
   const detailAbort = useRef(new AbortController())
   useEffect(() => () => detailAbort.current.abort(), [])
   const draft = useConversationDraftStore(store => store.drafts[draftKey] ?? '')
@@ -103,7 +103,7 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
     return { input, before: reply >= 0 ? reply
       : messages.findIndex(message => !!message.createdAt && message.createdAt > input.createdAt) }
   })
-  const retainedProps = { target, receipts, onDenied: revoke, onRecover: props.onRecover, controlsReason, onOpenGroup: props.onOpenGroup, onOpenContinuation: props.onOpenContinuation,
+  const retainedProps = { target, receipts, onDenied: revoke, onRecover: props.onRecover, controlsReason,
     onCancel: delivery.pendingControl ? undefined : (receipt: ChatDeliveryReceipt) => delivery.cancel(receipt.id), onRefresh: delivery.refresh, state: retained }
   const retainedAt = (index: number) => placed.filter(item => item.before === index).map(({ input }) =>
     <RetainedInput key={input.receiptId} input={input} {...retainedProps} />)
@@ -132,7 +132,7 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
       {retainedAt(-1)}
     </>}</ConversationViewport>
     <ChatDeliveryReceipts receipts={receipts.filter(receipt => receipt.state === 'queued' || receipt.state === 'unknown')} controlsReason={controlsReason} onCancel={delivery.pendingControl ? undefined : receipt => delivery.cancel(receipt.id)}
-      onRefresh={delivery.refresh} onOpenContinuation={props.onOpenContinuation} />
+      onRefresh={delivery.refresh} />
     {pin.stale ? <Button onClick={pin.refresh}>Refresh target</Button> : null}
     {delivery.feedback ? <p role="alert">{delivery.feedback}</p> : null}
     {delivery.pending ? <p role="status">Delivery is not confirmed. <Button onClick={() => void delivery.reconcile()}>Check status</Button>

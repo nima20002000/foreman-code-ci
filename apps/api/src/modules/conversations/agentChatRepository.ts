@@ -181,15 +181,7 @@ export interface NewAgentConversation {
 }
 
 export class PostgresAgentChatRepository extends ConversationRepositoryCore<AgentConversationRow> {
-  private settledProjection?: (tx: TransactionSql, input: { row: AgentConversationRow; requestId: string;
-    result: ExecutionResult; nativeMessageId?: string }) => Promise<void>
   constructor(pool: pg.Pool, private readonly accountBindings?: AcceptedProviderAccountBindings) { super(pool, 'agent') }
-
-  /** Installed once by C's feature composition. The native terminal journal and pending projection commit together. */
-  setCommittedChatProjection(project: NonNullable<PostgresAgentChatRepository['settledProjection']>): void {
-    if (this.settledProjection) throw new Error('The committed Agent chat projection is already installed.')
-    this.settledProjection = project
-  }
 
   private async acceptAccount(sql: Queryable, row: AgentConversationRow) {
     if (!this.accountBindings) return
@@ -885,7 +877,6 @@ export class PostgresAgentChatRepository extends ConversationRepositoryCore<Agen
         record=record - 'nativeNonSubmission',cancel_requested=false,pending_interaction=null,
         turn_state=$2,last_error=$3,last_result=$4::jsonb,revision=revision+1,updated_at=now()
         where id=$1`, [id, result.outcome === 'failed' ? 'error' : 'idle', result.error?.message ?? null, JSON.stringify(result)])
-      await this.settledProjection?.(client, { row, requestId, result, ...(nativeMessageId ? { nativeMessageId } : {}) })
       return true
     })
   }

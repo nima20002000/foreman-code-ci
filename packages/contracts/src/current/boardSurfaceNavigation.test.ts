@@ -14,7 +14,6 @@ describe('shared Board surface URL state', () => {
       boardExecutionId: 'execution', boardMemory: 'true' });
     expect(boardSidePanelFromSearch(search)).toEqual({ kind: 'agent', nodeId: 'worker', tab: 'settings', executionId: 'execution' });
     expect(boardSidePanelFromSearch({ ...search, boardPanel: 'browser' })).toEqual({ kind: 'browser', nodeId: 'worker', executionId: 'execution' });
-    expect(boardSidePanelFromSearch({ ...search, boardPanel: 'group_chat' })).toEqual({ kind: 'group_chat' });
     expect(search.boardMemory).toBe(true);
     expect(boardSidePanelFromSearch({ workflowId: 'workflow' })).toEqual({ kind: 'none' });
   });
@@ -29,6 +28,14 @@ describe('shared Board surface URL state', () => {
     expect(pinned.search.boardExecutionId).toBe('execution');
   });
 
+  it('rejects removed group-chat selections while retaining Agent chat links', () => {
+    expect(WorkspaceBoardSearchSchema.safeParse({ workflowId: 'workflow', boardPanel: 'group_chat' }).success).toBe(false);
+    for (const field of ['groupRunId', 'groupPostId', 'groupReceiptId']) {
+      expect(WorkspaceBoardSearchSchema.safeParse({ ...selection, [field]: 'group-selection' }).success).toBe(false);
+    }
+    expect(boardSidePanelFromSearch({ ...selection, boardAgentTab: 'chat' })).toEqual({ kind: 'agent', nodeId: 'worker', tab: 'chat' });
+  });
+
   it('clears an execution only when the selected Run or version changes', () => {
     const search = WorkspaceBoardSearchSchema.parse({ ...boardSearchForRun(selection, 'workflow', scope), boardExecutionId: 'execution' });
     expect(boardSearchForRun(search, 'workflow', scope).boardExecutionId).toBe('execution');
@@ -40,9 +47,7 @@ describe('shared Board surface URL state', () => {
 
   it('retains drafts across rail, view, modal and Run changes while preserving departure guards', () => {
     const search = WorkspaceBoardSearchSchema.parse({ ...boardSearchForRun(selection, 'workflow', scope), boardExecutionId: 'execution' });
-    for (const boardPanel of ['group_chat', 'browser'] as const) {
-      expect(staysOnWorkflowBoard(at(search), at({ ...search, boardPanel, boardView: 'overview', boardMemory: true }))).toBe(true);
-    }
+    expect(staysOnWorkflowBoard(at(search), at({ ...search, boardPanel: 'browser', boardView: 'overview', boardMemory: true }))).toBe(true);
     expect(staysOnWorkflowBoard(at(search), at({ ...search, boardNodeId: 'other-node', boardAgentTab: 'chat' }))).toBe(true);
     expect(staysOnWorkflowBoard(at(search), at(boardSearchForRun(search, 'workflow', { ...scope, runId: 'other-run' })))).toBe(true);
     expect(staysOnWorkflowBoard(at(search), at({ ...search, agentId: 'other-authoring-agent' }))).toBe(false);

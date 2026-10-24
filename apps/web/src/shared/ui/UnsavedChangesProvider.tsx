@@ -68,7 +68,6 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
   }, [phase, request, activeEditors, finish, revision, failure])
   const remaining = request ? activeEditors(request.ids) : []
   const active = remaining.at(-1)?.editor
-  const discardOnly = active?.discardOnly && !active.uncertain
   const busy = phase === 'working' || Boolean(active?.busy)
   const act = async (choice: 'save' | 'discard') => {
     if (working.current || busy) return
@@ -81,15 +80,14 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
     finally { working.current = false; setPhase('settled') }
   }
   return <UnsavedChangesContext.Provider value={context}>{children}
-    <Dialog open={Boolean(request)} title={discardOnly ? "Discard unsaved changes?" : "Save changes before leaving?"} role="alertdialog" size="sm" busy={busy}
+    <Dialog open={Boolean(request)} title="Save changes before leaving?" role="alertdialog" size="sm" busy={busy}
       description={active ? `You have unsaved changes in ${active.label}.` : 'Your changes have been resolved.'}
       onOpenChange={(open) => { if (!open && !working.current) finish(false) }}
       footer={<>
-        <Button disabled={busy} onClick={() => finish(false)}>Keep editing</Button>
         <Button disabled={busy || active?.uncertain} onClick={() => void act('discard')}>Discard</Button>
-        {!discardOnly ? <Button variant="primary" disabled={busy || active?.saveDisabled} onClick={() => void act('save')}>
+        <Button variant="primary" disabled={busy || active?.saveDisabled} onClick={() => void act('save')}>
           {busy ? 'Saving…' : active?.uncertain ? 'Retry original save' : active ? 'Save' : 'Continue'}
-        </Button> : null}
+        </Button>
       </>}>
       {active?.uncertain ? <Alert tone="warning" title="The previous save is unconfirmed. Retry it before leaving or discarding." /> : null}
       {failure || active?.error ? <Alert live tone="danger" title={failure ?? active?.error ?? ''} /> : null}

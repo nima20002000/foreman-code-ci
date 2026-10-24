@@ -178,7 +178,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
     const override = row.override == null ? undefined : GraphqlToolOverrideSchema.parse(row.override)
     const subject = row.purpose === 'consultation'
       ? await readConsultationCredentialSubject(this.pool, principal.id) : undefined
-    const implemented = [...memoryBoardTools('write'), 'workflow_chat_read', 'workflow_chat_post', ...(row.browser?.enabled ? browserAgentTools : [])] as const
+    const implemented = [...memoryBoardTools('write'), ...(row.browser?.enabled ? browserAgentTools : [])] as const
     const harness = HarnessConfigurationSchema.parse(row.harness)
     const readOnly = isReadOnlyHarnessConfiguration(harness)
     const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null, implemented).filter(tool => {
