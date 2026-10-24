@@ -33,7 +33,7 @@ it('lets an explicit or unavailable placement return to inherited Main', async (
 it('lists restricted choices and paired computers that cannot run the agent, and explains instead of selecting them', async () => {
   const change = vi.fn()
   render(<NodePlacementField options={[{ label: 'Laptop', placement: saved, unavailableReason: 'Root access restricted' }]}
-    unavailableComputers={[{ name: 'Studio', reason: 'Claude isn’t signed in on Studio.' }]} onChange={change} />)
+    unavailableComputers={[{ hostRef: saved.hostRef, name: 'Studio', reason: 'Claude isn’t signed in on Studio.' }]} onChange={change} />)
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), screen.getByRole('option', { name: 'Laptop · unavailable' }))
   expect(screen.getByText('Root access restricted')).toBeInTheDocument()
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), screen.getByRole('option', { name: 'Studio · unavailable' }))
