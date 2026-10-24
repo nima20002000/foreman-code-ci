@@ -20,7 +20,7 @@ export const CURRENT_NATIVE_ACTIVITIES_SQL = `
   with latest_workflow_executions as materialized (
     select distinct on (x.workflow_node_id) x.execution_id,x.workflow_node_id
     from run_repeat_executions x
-      join harness_executions xe on xe.id=x.execution_id and xe.record #> '{input,tick}' is null
+      join harness_executions xe on xe.id=x.execution_id and xe.tick_index is null
       left join run_repeat_occurrences o on o.occurrence_id=x.occurrence_id and o.run_id=x.run_id
       left join run_work_activations w on w.activation_id=x.work_activation_id and w.run_id=x.run_id
     where x.run_id=$1 and ($2::text[] is null or x.workflow_node_id=any($2))

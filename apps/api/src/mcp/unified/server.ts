@@ -17,7 +17,7 @@ import type { BugReportService } from '../../modules/bug-reports/service.js'
 import type { PostgresCommandCoordinator } from '../../modules/commands/postgres.js'
 import { createMemoryBoardTools } from '../operator/tools/memoryBoards.js'
 import { OPERATOR_TOOLS } from '../operator/catalog.js'
-import { OPERATOR_CATALOG_TOOLS, registerOperatorDiscoveryTools } from '../operator/discovery.js'
+import { OPERATOR_CATALOG_TOOLS, operatorListedTool, registerOperatorDiscoveryTools } from '../operator/discovery.js'
 import { registerAppTools } from '../app/server.js'
 import { registerCiTools } from '../shared/ciTools.js'
 import { operatorRequestTools, operatorToolCatalog, operatorDiscoveryCaller } from '../operator/server.js'
@@ -153,6 +153,8 @@ export async function createForemanMcpServer(context: ForemanMcpContext, request
   const call = ToolCall.safeParse(requestBody)
   const requestedTool = call.success && call.data.params.name !== 'operator_get_capabilities' && !OPERATOR_CATALOG_TOOLS.has(call.data.params.name)
     ? call.data.params.name : undefined
+  const coreOnly = requestBody !== null && typeof requestBody === 'object' && 'method' in requestBody
+    && (requestBody.method === 'tools/list' || requestBody.method === 'initialize')
   const server = new McpServer({ name: PRODUCT_SLUG, title: MCP_DISPLAY_NAME, version: '1.0.0' }, { instructions: roleInstructions(context.role) })
   cacheToolSchemaConversions(server, 'unified')
   stripMcpInputSchemas(server)
@@ -164,7 +166,7 @@ export async function createForemanMcpServer(context: ForemanMcpContext, request
       registered.catalog = installOperatorPresentation(server)
       const selected = requestedTool !== undefined && registered.tools.some(tool => tool.name === requestedTool)
       for (const tool of registered.tools) {
-        if (!selected || tool.name === requestedTool) tool.register(server)
+        if ((!selected || tool.name === requestedTool) && (!coreOnly || operatorListedTool(tool.name))) tool.register(server)
       }
       if (!selected) {
         registerOperatorDiscoveryTools(server, () => registered.catalog, operatorDiscoveryCaller({

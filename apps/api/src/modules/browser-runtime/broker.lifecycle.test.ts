@@ -176,6 +176,31 @@ it('binds a preparation command to its original saved assignment and does not re
   expect(f.driver.openProfile).toHaveBeenCalledTimes(1)
 })
 
+it.each(['process', 'tabs'] as const)('retries recovered conversation cleanup before preparing a replacement after losing its %s', async lost => {
+  const f = fixture()
+  const subject: AgentSubject = { kind: 'conversation', agent: execution().agent, conversationId: 'conversation' }
+  const input = f.request(subject, 'first-turn'), first = ready(await f.broker.prepare(input)).session
+  if (lost === 'process') vi.mocked(f.driver.reconnectProfile).mockResolvedValueOnce(null)
+  else vi.mocked(f.driver.restoreTab).mockResolvedValueOnce(null)
+  const cleanup = vi.fn(async () => undefined).mockRejectedValueOnce(new Error('Media cleanup still pending'))
+  const recovered = new BrowserBroker({ ...f.broker.options, closeSessionResources: cleanup })
+  await recovered.recover()
+  expect(recovered.read(first.id)).toMatchObject({ session: { state: 'closed' }, tabs: [] })
+  const next = { ...input, commandId: 'next-turn' }
+  expect(await recovered.prepare(next)).toEqual({ kind: 'unavailable', reason: 'profile_busy', retryable: true })
+  expect(f.driver.createTab).toHaveBeenCalledTimes(1)
+  expect(await f.journal.loadSessions()).toContainEqual(expect.objectContaining({ session: expect.objectContaining({ id: first.id }), closing: true }))
+  const replacement = ready(await recovered.prepare(next)).session
+  expect(replacement.id).not.toBe(first.id)
+  expect(replacement).toMatchObject({ subject, profileId: first.profileId, state: 'ready' })
+  expect(cleanup).toHaveBeenCalledTimes(2)
+  expect(cleanup).toHaveBeenCalledWith(first.id)
+  expect(await f.journal.loadSessions()).toContainEqual(expect.objectContaining({ session: expect.objectContaining({ id: first.id }), closing: false }))
+  expect(ready(await recovered.prepare(next)).session.id).toBe(replacement.id)
+  expect(await recovered.prepare(input)).toEqual({ kind: 'unavailable', reason: 'profile_busy', retryable: false })
+  expect(f.driver.createTab).toHaveBeenCalledTimes(2)
+})
+
 it.each(['profile', 'disabled'] as const)('retires a conversation browser when its accepted assignment becomes %s', async change => {
   const f = fixture()
   const subject: AgentSubject = { kind: 'conversation', agent: execution().agent, conversationId: 'conversation' }

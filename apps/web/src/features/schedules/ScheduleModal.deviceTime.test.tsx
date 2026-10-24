@@ -37,6 +37,36 @@ async function open(user: ReturnType<typeof userEvent.setup>) {
 afterEach(() => { clients.splice(0).forEach((client) => client.clear()); vi.unstubAllGlobals() })
 
 describe('device-local Schedule modal', () => {
+  it('explains that a first schedule is inactive until saved and shows its persisted next run after saving', async () => {
+    const { user, saves } = mount(null)
+    await open(user)
+    expect(screen.getByText('Not saved yet. Save to activate this schedule.')).toBeVisible()
+    expect(screen.queryByText('Next run not scheduled')).not.toBeInTheDocument()
+    expect(saves).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await open(user)
+    expect(screen.queryByText('Not saved yet. Save to activate this schedule.')).not.toBeInTheDocument()
+    expect(screen.getByText('Next run', { exact: false }).querySelector('time')).toHaveAttribute('datetime')
+  })
+  it('labels the weekly and Once clock with the device timezone and preserves that calendar when saved', async () => {
+    mockDeviceTimezone('Asia/Tokyo')
+    const { user, saves } = mount(null)
+    await open(user)
+    expect(screen.getByLabelText('Time on this device')).toHaveAccessibleDescription('Asia/Tokyo')
+    await user.click(screen.getByRole('tab', { name: 'Once' }))
+    const time = screen.getByLabelText('Time on this device')
+    expect(time).toHaveAccessibleDescription('Asia/Tokyo')
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2099-08-24' } })
+    fireEvent.change(time, { target: { value: '13:15' } })
+    await user.click(screen.getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(saves).toHaveLength(1))
+    expect(saves[0]?.schedule).toMatchObject({ mode: 'once', localDate: '2099-08-24', time: '04:15', timezone: 'UTC' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await open(user)
+    expect(screen.getByLabelText('Time on this device')).toHaveValue('13:15')
+    expect(screen.getByLabelText('Time on this device')).toHaveAccessibleDescription('Asia/Tokyo')
+  })
   it.each([
     ['Asia/Tokyo', '2099-08-25', '00:30'],
     ['America/Los_Angeles', '2099-08-24', '08:30'],
@@ -48,7 +78,7 @@ describe('device-local Schedule modal', () => {
     await open(user)
     expect(screen.queryByRole('combobox', { name: 'Timezone' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Date')).toHaveValue(date)
-    expect(screen.getByLabelText('Time')).toHaveValue(time)
+    expect(screen.getByLabelText('Time on this device')).toHaveValue(time)
     const nextElement = screen.getByRole('dialog').querySelector('time')!
     expect(nextElement).toHaveAttribute('datetime', next)
     expect(nextElement.textContent).toBe(new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }).format(new Date(next)))
@@ -62,8 +92,8 @@ describe('device-local Schedule modal', () => {
       policy: 'latest_saved', revision: 1, nextOccurrenceAt: '2099-08-25T03:30:00.000Z' })
     await open(user)
     expect(screen.getByText(/Saved: Mo at 23:30 \(America\/New_York\)/)).toBeVisible()
-    expect(screen.getByLabelText('Time')).toHaveValue('12:30')
-    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '13:15' } })
+    expect(screen.getByLabelText('Time on this device')).toHaveValue('12:30')
+    fireEvent.change(screen.getByLabelText('Time on this device'), { target: { value: '13:15' } })
     expect(screen.getByText(/Changes use this device \(Asia\/Tokyo\)/)).toBeVisible()
     await user.click(screen.getByRole('button', { name: /^Save$/ }))
     await waitFor(() => expect(saves).toHaveLength(1))
