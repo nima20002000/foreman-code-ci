@@ -10,7 +10,6 @@ export function MemoryCard({ card, nodes, onOpen }: { card: Card; nodes: readonl
   return <article className="memory-card" data-status={card.status}>
     {waiting && <p className="memory-card-flag">Needs you</p>}
     <Button variant="ghost" className="memory-card-title" onClick={onOpen}>{card.title}</Button>
-    {card.body && <p className="memory-card-body">{card.body}</p>}
     {card.reason && <p className="memory-card-reason">
       {waiting && <span className="memory-card-reason-label">To do: </span>}{card.reason}</p>}
     <p className="memory-card-meta">
