@@ -754,12 +754,13 @@ describe('latest Run on the draft Board', () => {
     const slot = control('Start saved version').parentElement!
     const run = await start(mock, user)
     runningNodes(mock, run.id); await mounted.query.invalidateQueries()
-    await waitFor(() => expect(first).toHaveTextContent('Running'))
-    expect(second).toHaveTextContent('Queued')
-    expect(first.querySelector('.n-agent')).toHaveAttribute('data-state', 'running')
-    expect(authoring()).toBe(editor)
-    expect(canvasNode(graph.nodes[0]!.id)).toBe(first)
-    expect(canvasNode(graph.nodes[1]!.id)).toBe(second)
+    await waitFor(() => expect(canvasNode(graph.nodes[0]!.id)).toHaveTextContent('Running'))
+    const liveFirst = canvasNode(graph.nodes[0]!.id), liveSecond = canvasNode(graph.nodes[1]!.id)
+    expect(liveSecond).toHaveTextContent('Queued')
+    expect(liveFirst.querySelector('.n-agent')).toHaveAttribute('data-state', 'running')
+    expect.soft(authoring()).toBe(editor)
+    expect.soft(liveFirst).toBe(first)
+    expect.soft(liveSecond).toBe(second)
     expect(mounted.router.state.location.href).toBe(href)
     expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
     expect(control('Stop').closest('[aria-label="Workflow controls"]')).toBe(slot)
@@ -776,8 +777,8 @@ describe('latest Run on the draft Board', () => {
     await mounted.query.invalidateQueries()
     const line = authoring().querySelector(`[data-testid="rf__edge-${graph.edges[0]!.id}"]`)!
     await waitFor(() => expect(line.querySelector('.n-signal-edge-flight')).toHaveTextContent('Handoff'))
-    await waitFor(() => expect(second).toHaveTextContent('Running'))
-    expect(first).toHaveTextContent('Completed')
+    await waitFor(() => expect(liveSecond).toHaveTextContent('Running'))
+    expect(liveFirst).toHaveTextContent('Completed')
     expect(line.querySelector('.n-signal-edge-flight')).toBeNull()
   }, 30_000)
 
@@ -791,8 +792,8 @@ describe('latest Run on the draft Board', () => {
     const mounted = await mount(mock, href)
     await screen.findByRole('region', { name: 'Workflow authoring' })
     const graph = useGraphDraftStore.getState().nextDrafts[key]!.graph
+    await waitFor(() => expect(canvasNode(graph.nodes[0]!.id)).toHaveTextContent('Running'))
     const first = canvasNode(graph.nodes[0]!.id)
-    await waitFor(() => expect(first).toHaveTextContent('Running'))
     await waitFor(() => expect(control('Stop')).toBeEnabled())
     const slot = control('Stop').closest('section')!, parent = slot.parentElement!, index = [...parent.children].indexOf(slot)
     expect(mounted.router.state.location.href).toBe(href)
@@ -859,8 +860,9 @@ describe('latest Run on the draft Board', () => {
     await waitFor(() => expect(control('Start saved version')).toBeEnabled())
     const latest = await start(mock, user, 2)
     runningNodes(mock, latest.id); await mounted.query.invalidateQueries()
-    const editor = authoring(), node = useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!
+    const node = useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!
     await waitFor(() => expect(canvasNode(node.id)).toHaveTextContent('Running'))
+    const editor = authoring()
     await user.click(screen.getByRole('button', { name: 'Runs' }))
     await user.click(await within(await screen.findByRole('menu', { name: 'Runs' })).findByRole('menuitemradio', { name: new RegExp(older.id) }))
     expect(await screen.findByRole('region', { name: 'Selected Run board' })).toHaveAttribute('data-run-id', older.id)
@@ -897,7 +899,7 @@ describe('latest Run on the draft Board', () => {
       expect(within(panel).getByRole('textbox', { name: 'Name' })).toBeDisabled()
     } else if (action === 'keyboard undo') {
       const before = structuredClone(useGraphDraftStore.getState().nextDrafts[key]!.graph)
-      await user.click(screen.getByRole('button', { name: 'Graph', exact: true }))
+      await user.click(screen.getByRole('button', { name: 'Graph' }))
       await user.keyboard('{Control>}z{/Control}')
       expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).toEqual(before)
     } else expect(screen.getByRole('button', { name: action })).toBeDisabled()

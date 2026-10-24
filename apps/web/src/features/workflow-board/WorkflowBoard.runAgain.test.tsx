@@ -36,7 +36,7 @@ it.each([
   const scope = selectState(state, outcome)
   const original = structuredClone(fixture.mock.runs.get(scope.runId))
   measureBoardWire(fixture.mock)
-  await mountMeasuredBoard(`${boardHref(scope)}&boardView=graph`)
+  const mounted = await mountMeasuredBoard(`${boardHref(scope)}&boardView=graph`)
   await screen.findByRole('region', { name: 'Selected Run board' })
   const toolbar = within(await screen.findByRole('banner', { name: 'Board toolbar' }))
   const run = await toolbar.findByRole('button', { name: 'Start saved version' })
@@ -51,6 +51,9 @@ it.each([
     workspaceId: scope.workspaceId, workflowId: scope.workflowId, workflowVersionId: fixture.after.id,
   })
   expect(fixture.mock.runs.get(scope.runId)).toEqual(original)
+  // The generic Start fixture has a fixed old clock; this newly admitted Run starts after history.
+  fixture.mock.runs.get('run-current-1')!.run.startedAt = new Date(Date.parse(fixture.after.createdAt) + 1000).toISOString()
+  await mounted.cache.invalidateQueries()
   expect(screen.getByRole('region', { name: 'Selected Run board' })).toHaveAttribute('data-run-id', scope.runId)
   await userEvent.click(screen.getByRole('button', { name: 'Runs' }))
   await userEvent.click(await screen.findByRole('button', { name: 'Return to workflow' }))
