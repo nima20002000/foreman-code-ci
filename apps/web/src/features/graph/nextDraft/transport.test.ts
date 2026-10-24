@@ -5,13 +5,13 @@ import { createNextDraftApi } from './transport'
 import { createCurrentBoardMock } from '../../../shared/mocks/currentBoard'
 import { nativeNode } from '../../../shared/mocks/nativeFixtureTypes'
 import { CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/current'
-import { currentWorkflowFixture as makeWave25Fixture } from '../../../shared/mocks/currentWorkflow'
+import { currentWorkflowFixture as makeCurrentFixture } from '../../../shared/mocks/currentWorkflow'
 import { activeWorkflowNode, type DraftRequest } from '../../board-core'
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 describe('workflow HTTP client boundary', () => {
   function harness(historicalTools = false) {
-    const saved = makeWave25Fixture('transport')
+    const saved = makeCurrentFixture('transport')
     if (historicalTools) saved.version.definition = { ...saved.version.definition,
       nodes: saved.version.definition.nodes.map(node => ({ ...nativeNode(node), graphqlTools: {
         add: ['context_get', 'workflow_chat_post'], remove: ['workflow_chat_read'],

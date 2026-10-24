@@ -19,9 +19,10 @@ export function editorAgents(edit: NextDraftEdit): Agent[] {
   return [...new Map([...draftAgents(edit.context), ...Object.values(edit.agentEdits ?? {})].map((agent) => [agent.id, agent])).values()]
 }
 function content(agent: Agent) {
+  const tools = agent[INSTALLATION_NAMES.fields.agentTools]
   return { prompt: agent.prompt ?? {}, assignedSkills: agent.assignedSkills ?? [], description: agent.description ?? null, role: agent.role ?? null,
     ...(agent.productRole ? { productRole: agent.productRole } : {}),
-    ...(agent[INSTALLATION_NAMES.fields.agentTools] ? { [INSTALLATION_NAMES.fields.agentTools]: activeForemanTools(agent[INSTALLATION_NAMES.fields.agentTools]) } : {}),
+    ...(tools ? { [INSTALLATION_NAMES.fields.agentTools]: activeForemanTools(tools) } : {}),
     ...(agent.nativeTools ? { nativeTools: agent.nativeTools } : {}) }
 }
 /** Compare the fields the existing Agent writer persists, including its defaults. */
@@ -168,6 +169,7 @@ export function stageAgentEdits(edit: NextDraftEdit) {
       throw new Error('The Agent form no longer matches its displayed configuration. Reload before staging.')
     }
     if (!source && agent.configurationVersionId) throw new Error('Reload the Agent revision before staging its settings.')
-    return StagedAgentSchema.parse({ agent: { ...agent, ...(agent[INSTALLATION_NAMES.fields.agentTools] ? { [INSTALLATION_NAMES.fields.agentTools]: activeForemanTools(agent[INSTALLATION_NAMES.fields.agentTools]) } : {}) }, baseRevision: source?.metadataRevision ?? null })
+    const tools = agent[INSTALLATION_NAMES.fields.agentTools]
+    return StagedAgentSchema.parse({ agent: { ...agent, ...(tools ? { [INSTALLATION_NAMES.fields.agentTools]: activeForemanTools(tools) } : {}) }, baseRevision: source?.metadataRevision ?? null })
   })
 }

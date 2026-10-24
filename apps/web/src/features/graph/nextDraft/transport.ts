@@ -125,12 +125,13 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
     /** Saves one draft-only Agent and its configuration through the shared Agent service, without the workflow graph. */
     async createAgent(workspaceId: string, agent: Agent) {
       if (!agent.productRole) throw new Error('Select an explicit Agent product role.')
+      const tools = agent[INSTALLATION_NAMES.fields.agentTools]
       const result = await client.request(`/api/management/workspaces/${part(workspaceId)}/agents`, AgentMutationResultSchema, { method: 'POST', body: {
         commandId: `draft-agent:${agent.id}`, agentId: agent.id, name: agent.name, productRole: agent.productRole,
         configuration: SupportedHarnessConfigurationSchema.parse(agent.harnessConfiguration),
         ...(agent.harnessProfileSelection ? { harnessProfileSelection: agent.harnessProfileSelection } : {}),
         prompt: agent.prompt ?? {}, assignedSkills: agent.assignedSkills ?? [],
-        ...(agent[INSTALLATION_NAMES.fields.agentTools] ? { [INSTALLATION_NAMES.fields.agentTools]: activeForemanTools(agent[INSTALLATION_NAMES.fields.agentTools]) } : {}), ...(agent.nativeTools ? { nativeTools: agent.nativeTools } : {}),
+        ...(tools ? { [INSTALLATION_NAMES.fields.agentTools]: activeForemanTools(tools) } : {}), ...(agent.nativeTools ? { nativeTools: agent.nativeTools } : {}),
         ...(agent.description ? { description: agent.description } : {}), ...(agent.role ? { role: agent.role } : {}),
       } satisfies Omit<z.input<typeof AgentCreateInputSchema>, 'workspaceId'> })
       return { agent: result.value.agent, metadataRevision: result.value.metadataRevision }
