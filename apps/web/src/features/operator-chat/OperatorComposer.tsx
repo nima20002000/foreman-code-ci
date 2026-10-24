@@ -9,9 +9,9 @@ import type { ComposerSessionControls } from '../conversations/sessionControls/u
 import { ChatPrimaryActions } from '../conversations/ChatPrimaryActions'
 import '../conversations/chatAttachments.css'
 
-export function OperatorComposer({ conversationId, context, attachmentControl, deliveryControl, fileDropProps, hasAttachments = false,
+export function OperatorComposer({ conversationId, context, attachmentControl, fileDropProps, hasAttachments = false,
   sendDisabled = false, isSending = false, onSubmit, onNewChat, onCancel, sessionControls }: {
-  conversationId: string; context?: ReactNode; attachmentControl?: ReactNode; deliveryControl?: ReactNode; hasAttachments?: boolean;
+  conversationId: string; context?: ReactNode; attachmentControl?: ReactNode; hasAttachments?: boolean;
   sendDisabled?: boolean; isSending?: boolean; sessionControls?: ComposerSessionControls;
   fileDropProps?: ReturnType<typeof useFileDrop>['dropTargetProps'];
   onSubmit(content: string, mode?: SessionMode): void; onNewChat(): void; onCancel?: () => void;
@@ -74,7 +74,6 @@ export function OperatorComposer({ conversationId, context, attachmentControl, d
           }
         }} />
       <div className="operator-composer-actions">
-        {deliveryControl}
         <ChatPrimaryActions appearance="icon" stopLabel="Stop response" {...(onCancel ? { onStop: onCancel } : {})}>
           <IconButton label="Send message" type="submit" disabled={cannotSend} className="operator-composer-send" loading={pending}><Icon name="arrow" className="operator-send-arrow" size={17} /></IconButton>
         </ChatPrimaryActions>

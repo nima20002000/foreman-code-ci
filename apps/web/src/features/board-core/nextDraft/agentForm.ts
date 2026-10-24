@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
-import { AssignedSkillSchema, GraphqlToolDefaultsSchema, GraphqlToolOverrideSchema, HarnessConfigurationSchema, withBrowserToolDefaults } from '@foreman-code/contracts'
+import { AssignedSkillSchema, RecordedGraphqlToolDefaultsSchema, RecordedGraphqlToolOverrideSchema, HarnessConfigurationSchema, withBrowserToolDefaults } from '@foreman-code/contracts'
 import { sameWorkflowValue, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 
 // Raw form state is browser-only, including unfinished JSON. Publication still
@@ -14,7 +14,7 @@ export const AgentFormSchema = z.object({ base: z.string().refine((value) => { t
   instructions: z.string().optional(), skills: z.array(AssignedSkillSchema).optional(),
   editor: HarnessFormSchema.extend({ drafts: z.object({ codex: HarnessFormSchema.optional(),
     claude: HarnessFormSchema.optional() }).strict().optional() }),
-  graphqlTools: z.object({ defaults: GraphqlToolDefaultsSchema.optional(), override: GraphqlToolOverrideSchema.optional() }).strict().optional(),
+  graphqlTools: z.object({ defaults: RecordedGraphqlToolDefaultsSchema.optional(), override: RecordedGraphqlToolOverrideSchema.optional() }).strict().optional(),
 }).strict()
 export type AgentForm = z.infer<typeof AgentFormSchema>
 

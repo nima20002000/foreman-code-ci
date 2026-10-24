@@ -18,7 +18,7 @@ export const OPERATOR_CORE_TOOLS: ReadonlySet<string> = new Set([
   'workflow_list', 'workflow_get',
   'agent_list', 'agent_get',
   'run_list', 'run_get', 'run_start', 'run_stop',
-  'workflow_chat_read', 'workflow_chat_post', 'agent_chat_read', 'agent_chat_send',
+  'agent_chat_read', 'agent_chat_send',
   'interaction_list', 'interaction_respond', 'bug_report',
 ])
 export const TOOL_RUN = 'tool_run'

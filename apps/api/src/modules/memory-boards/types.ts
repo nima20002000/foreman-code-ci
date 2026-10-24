@@ -69,8 +69,6 @@ export interface MemoryBoardAuthority {
   node(tx: SqlTransaction, node: AgentNodeRef, scope: MemoryBoardScope): Promise<void>
   work(tx: SqlTransaction, work: LogicalWorkRef): Promise<ResolvedWork>
   currentWork(tx: SqlTransaction, subject: AgentSubject): Promise<ResolvedWork | null>
-  sourcePost(tx: SqlTransaction, postId: string, scope: MemoryBoardScope,
-    caller: ManagementPrincipal | AgentSubject): Promise<void>
   /** Recheck authoritative saved node/work/execution identity at engine seams. */
   lifecycle(tx: SqlTransaction, agent: AgentIdentity, work: LogicalWorkRef,
     executionId?: string): Promise<void>
@@ -85,6 +83,6 @@ export interface MemoryBoardDependencies {
 }
 export interface MutationContext {
   actor: Actor; principalId: string; subject?: AgentSubject
-  caller: ManagementPrincipal | AgentSubject; tool: MemoryTool
+  tool: MemoryTool
 }
 export type Operation = MemoryBoardMutation & { commandId: string }

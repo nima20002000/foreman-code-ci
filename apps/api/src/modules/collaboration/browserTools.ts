@@ -1,5 +1,5 @@
 import { COLLABORATION_AGENT_TOOLS, BrowserTargetSelectionSchema, BrowserTargetResultSchema, type GraphqlAgentTool,
-  type GraphqlToolOverride } from '@foreman-code/contracts'
+  type RecordedGraphqlToolOverride } from '@foreman-code/contracts'
 import { z } from 'zod'
 import type { OperatorRequestContext } from '../../mcp/operator/types.js'
 import type { OperatorToolDefinition } from '../../mcp/operator/definition.js'
@@ -11,7 +11,7 @@ export const browserAgentTools = Object.keys(COLLABORATION_AGENT_TOOLS)
 
 /** A chat's browser switch turns its browser tools on, as saving the node with the browser on does,
  * unless the node turns a tool off. */
-export function chatToolOverride(override: GraphqlToolOverride | undefined, browser?: { enabled: boolean }) {
+export function chatToolOverride(override: RecordedGraphqlToolOverride | undefined, browser?: { enabled: boolean }) {
   if (!browser?.enabled) return override
   const removed = new Set(override?.remove ?? [])
   return { add: [...new Set([...override?.add ?? [], ...browserAgentTools.filter(tool => !removed.has(tool))])],

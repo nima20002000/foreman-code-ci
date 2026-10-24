@@ -151,8 +151,8 @@ describe.skipIf(!postgresEnabled)('ENG04-B unified current workflow HTTP/MCP', (
     expect(CurrentWorkflowSaveResultSchema.parse((await httpSave(t)).json()).replayed).toBe(true)
     const conflict = await httpSave(t, { ...t.input, graph: { ...t.input.graph, name: 'different input' } })
     expect(conflict.statusCode).toBe(409); expect(conflict.json()).toMatchObject({ error: { code: 'COMMAND_ID_CONFLICT' } })
-    const next = { ...t.input, commandId: randomUUID(), expectedRevision: first.value.revision,
-      expectedWorkflowVersionId: first.value.currentVersionId, graph: { ...first.value.version.definition, name: 'Next exact immutable version' } }
+    const next = CurrentWorkflowSaveInputSchema.parse({ ...t.input, commandId: randomUUID(), expectedRevision: first.value.revision,
+      expectedWorkflowVersionId: first.value.currentVersionId, graph: { ...first.value.version.definition, name: 'Next exact immutable version' } })
     const second = CurrentWorkflowSaveResultSchema.parse((await httpSave(t, next)).json())
     expect(second.value.currentVersionId).not.toBe(first.value.currentVersionId)
     const historical = await t.app.inject({ method: 'GET', url: `${t.url}?workflowVersionId=${first.value.currentVersionId}`, headers: graphHeaders(t.writer.token) })
@@ -345,11 +345,11 @@ describe.skipIf(!postgresEnabled)('ENG04-B unified current workflow HTTP/MCP', (
     const reopen = await t.app.inject({ method: 'GET', url: `${t.url}/edits?draftId=${scope.draftId}&intentId=${scope.intentId}`, headers: graphHeaders(t.writer.token) })
     expect(reopen.statusCode, reopen.body).toBe(200)
     expect(graphRpcValue((await t.call(CURRENT_WORKFLOW_TOOLS.editRead, { ...scope, action: 'read_edits' })).result)).toEqual(reopen.json())
-    const direct = await httpSave(t, intent.saveInput)
+    const direct = await t.app.inject({ method: 'PUT', url: t.url, headers: graphHeaders(t.writer.token), payload: intent.saveInput })
     expect(direct.statusCode).toBe(409); expect(direct.json()).toMatchObject({ error: { code: 'GRAPH_EDIT_USE_INTENT' } })
-    const layout = { ...t.input, commandId: randomUUID(), expectedRevision: first.value.revision,
+    const layout = CurrentWorkflowSaveInputSchema.parse({ ...t.input, commandId: randomUUID(), expectedRevision: first.value.revision,
       expectedWorkflowVersionId: first.value.currentVersionId, graph: { ...first.value.version.definition,
-        nodes: first.value.version.definition.nodes.map((node) => ({ ...node, position: { x: 103, y: 207 } })) } }
+        nodes: first.value.version.definition.nodes.map((node) => ({ ...node, position: { x: 103, y: 207 } })) } })
     const moved = CurrentWorkflowSaveResultSchema.parse((await httpSave(t, layout)).json())
     expect(moved.value.revision).toBe(first.value.revision); expect(moved.value.currentVersionId).toBe(first.value.currentVersionId)
     const advance = { ...scope, action: 'stop_and_save', commandId: intent.advanceCommandId }
@@ -428,9 +428,9 @@ describe.skipIf(!postgresEnabled)('ENG04-B unified current workflow HTTP/MCP', (
     expect(Object.hasOwn(detailHttp.json().run, 'repeat')).toBe(false)
     expect(Object.hasOwn(detailHttp.json().run, 'authorizationPrincipalId')).toBe(false)
     expect(Object.hasOwn(detailHttp.json().run, 'executionLocation')).toBe(false)
-    const move = { ...t.input, commandId: randomUUID(), expectedRevision: saved.value.revision,
+    const move = CurrentWorkflowSaveInputSchema.parse({ ...t.input, commandId: randomUUID(), expectedRevision: saved.value.revision,
       expectedWorkflowVersionId: saved.value.currentVersionId, graph: { ...saved.value.version.definition,
-        nodes: saved.value.version.definition.nodes.map((node) => ({ ...node, position: { x: 81, y: 92 } })) } }
+        nodes: saved.value.version.definition.nodes.map((node) => ({ ...node, position: { x: 81, y: 92 } })) } })
     const moved = await httpSave(t, move)
     expect(moved.statusCode, moved.body).toBe(200)
     expect(CurrentWorkflowSaveResultSchema.parse(moved.json()).value.currentVersionId).toBe(saved.value.currentVersionId)
@@ -473,8 +473,8 @@ describe.skipIf(!postgresEnabled)('ENG04-B unified current workflow HTTP/MCP', (
     expect(secondRpc.result?.isError).not.toBe(true)
     const second = CurrentWorkflowSaveResultSchema.parse(graphRpcValue(secondRpc.result))
     const { repeat: removed, ...without } = second.value.version.definition; void removed
-    const finalInput = { ...t.input, commandId: randomUUID(), expectedRevision: second.value.revision,
-      expectedWorkflowVersionId: second.value.currentVersionId, graph: without }
+    const finalInput = CurrentWorkflowSaveInputSchema.parse({ ...t.input, commandId: randomUUID(), expectedRevision: second.value.revision,
+      expectedWorkflowVersionId: second.value.currentVersionId, graph: without })
     const finalHttp = await httpSave(t, finalInput)
     expect(finalHttp.statusCode, finalHttp.body).toBe(200)
     const third = CurrentWorkflowSaveResultSchema.parse(finalHttp.json())

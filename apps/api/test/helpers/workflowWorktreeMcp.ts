@@ -4,7 +4,7 @@ import type { Client } from '@modelcontextprotocol/client'
 import { expect } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import {
-  CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
+  CurrentWorkflowReadResultSchema, CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema,
   SavedManagedWorkflowCommandResultSchema,
   makeCurrentWorkflowFixture, type CurrentWorkflowSaveInput,
 } from '@foreman-code/contracts/current'
@@ -54,7 +54,7 @@ export async function setup(options: {
         workspaceId, workflowId: created.value.workflow.id, commandId: randomUUID(), executionSemanticsVersion: 3,
         expectedRevision: created.value.revision, expectedWorkflowVersionId: null,
         expectedAgentConfigurationVersionIds: base.f.version.agentConfigurationVersionIds,
-        graph,
+        graph: CurrentWorkflowSaveInputSchema.shape.graph.parse(graph),
       }
       return { input, created, saveInput }
     }

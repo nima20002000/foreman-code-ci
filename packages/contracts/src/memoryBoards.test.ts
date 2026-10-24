@@ -28,18 +28,13 @@ describe('memory board public contracts', () => {
       currentCard: { ...fixture.card, status: 'done', completionKind: 'completed' } }).success).toBe(false);
   });
 
-  it('rejects cross-scope links, duplicate work selections and forged note source posts', () => {
+  it('rejects cross-scope links, duplicate work selections and empty note updates', () => {
     const mutation = { kind: 'card_update', boardId: 'board', cardId: 'card', patch: {},
       workSelections: [{ kind: 'next_activation', node: fixture.node }] };
     expect(MemoryBoardMutationContextSchema.safeParse({ board: fixture.board, mutation, currentCard: fixture.card }).success).toBe(true);
     expect(MemoryBoardMutationSchema.safeParse({ ...mutation, workSelections: [...mutation.workSelections, ...mutation.workSelections] }).success).toBe(false);
     expect(MemoryBoardMutationContextSchema.safeParse({ board: fixture.board, currentCard: fixture.card,
       mutation: { ...mutation, workSelections: [{ kind: 'next_activation', node: { ...fixture.node, workflowId: 'other' } }] } }).success).toBe(false);
-    const note = { kind: 'note_create', boardId: 'board', text: 'Keep this context', sourcePostId: 'post' };
-    expect(MemoryBoardMutationContextSchema.safeParse({ board: fixture.board, mutation: note,
-      sourcePost: { id: 'post', workspaceId: 'workspace', workflowId: 'other' } }).success).toBe(false);
-    expect(MemoryBoardMutationContextSchema.safeParse({ board: fixture.board, mutation: note,
-      sourcePost: { id: 'post', workspaceId: 'workspace', workflowId: 'workflow' } }).success).toBe(true);
     expect(MemoryBoardMutationSchema.safeParse({ kind: 'note_update', boardId: 'board', noteId: 'note', patch: {} }).success).toBe(false);
   });
 

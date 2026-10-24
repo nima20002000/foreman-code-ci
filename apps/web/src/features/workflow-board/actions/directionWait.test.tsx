@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { RunDirectionWait } from '@foreman-code/contracts/current'
-import { readWorkflowDraft, workflowDraftKey } from '../../workflow-chat'
+import type { WorkflowExecutionChatTarget } from '@foreman-code/contracts'
+import { appendExecutionChatDraft, executionChatDraftKey, getConversationDraft, useConversationDraftStore } from '../../conversations'
 import { DirectionWaitNotice } from './directionWait'
-import { acceptFindingsDirection, mentionInGroupChat } from './directionWaitModel'
+import { acceptFindingsDirection } from './directionWaitModel'
 
 const direction: RunDirectionWait = { workflowNodeId: 'node-master', agentId: 'agent-master', agentName: 'Master',
   executionId: 'execution-held', findings: ['Paris worker returned no facts'], findingsCount: 1,
@@ -27,15 +28,18 @@ describe('direction wait notice', () => {
     expect(hint).not.toHaveTextContent('Run controls')
   })
 
-  it('writes the accept reply to the Master into the group chat draft and keeps what was typed', () => {
-    const scope = { workspaceId: 'workspace-direction', workflowId: 'workflow-direction' }
-    mentionInGroupChat(scope, direction)
-    const key = workflowDraftKey(scope)
-    expect(readWorkflowDraft(key).body).toBe('@Master ')
-    mentionInGroupChat(scope, direction, acceptFindingsDirection)
-    mentionInGroupChat(scope, direction, acceptFindingsDirection)
-    const draft = readWorkflowDraft(key)
-    expect(draft.body).toBe(`@Master ${acceptFindingsDirection}`)
-    expect(draft.mentions).toEqual([{ workflowNodeId: 'node-master', start: 0, end: 7 }])
+  it('writes the accept reply into the exact Agent execution draft and keeps what was typed', () => {
+    const target: WorkflowExecutionChatTarget = { kind: 'workflow_execution', agent: {
+      workspaceId: 'workspace-direction', workflowId: 'workflow-direction',
+      workflowNodeId: direction.workflowNodeId, agentId: direction.agentId,
+    }, execution: { runId: 'run-direction', workflowVersionId: 'version-direction',
+      executionId: direction.executionId, attempt: 1 } }
+    const key = executionChatDraftKey(target)
+    useConversationDraftStore.getState().setDraft(key, 'Keep this question')
+    appendExecutionChatDraft(target, acceptFindingsDirection)
+    appendExecutionChatDraft(target, acceptFindingsDirection)
+    expect(getConversationDraft(key)).toBe(`Keep this question ${acceptFindingsDirection}`)
+    expect(getConversationDraft(executionChatDraftKey({ ...target,
+      execution: { ...target.execution, executionId: 'another-execution' } }))).toBe('')
   })
 })

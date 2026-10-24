@@ -10,8 +10,8 @@ import {
   RespondToInteractionRequestSchema,
   RespondToInteractionResponseSchema,
   HarnessExecutionSchema,
-  GraphqlToolDefaultsSchema,
-  GraphqlToolOverrideSchema,
+  RecordedGraphqlToolDefaultsSchema,
+  RecordedGraphqlToolOverrideSchema,
   effectiveGraphqlTools,
   type GraphqlAgentTool,
   type AgentSubject,
@@ -174,11 +174,11 @@ export class PostgresAppInteractionService implements AppInteractionService {
       throw new DomainError('MCP_TOOL_DISCOVERY_FAILED', 'The pinned Agent role is unavailable.', 503)
     }
     const role = row.role
-    const defaults = row.defaults == null ? undefined : GraphqlToolDefaultsSchema.parse(row.defaults)
-    const override = row.override == null ? undefined : GraphqlToolOverrideSchema.parse(row.override)
+    const defaults = row.defaults == null ? undefined : RecordedGraphqlToolDefaultsSchema.parse(row.defaults)
+    const override = row.override == null ? undefined : RecordedGraphqlToolOverrideSchema.parse(row.override)
     const subject = row.purpose === 'consultation'
       ? await readConsultationCredentialSubject(this.pool, principal.id) : undefined
-    const implemented = [...memoryBoardTools('write'), 'workflow_chat_read', 'workflow_chat_post', ...(row.browser?.enabled ? browserAgentTools : [])] as const
+    const implemented = [...memoryBoardTools('write'), ...(row.browser?.enabled ? browserAgentTools : [])] as const
     const harness = HarnessConfigurationSchema.parse(row.harness)
     const readOnly = isReadOnlyHarnessConfiguration(harness)
     const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null, implemented).filter(tool => {

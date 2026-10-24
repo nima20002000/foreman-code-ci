@@ -22,12 +22,12 @@ import { asWorkflowChatTarget, commandReceipt, controlDigest, controlId, readCon
   replayControlCommand, workflowTargetRunId } from './workflowControlRecords.js'
 import type { WorkflowChatLockedTarget, WorkflowChatTarget, WorkflowExecutionChatDependencies } from './workflowControlTypes.js'
 
-/** HTTP, Group chat and MCP use this one durable Run-owned admission boundary. */
+/** HTTP and MCP use this one durable Run-owned admission boundary. */
 export class WorkflowExecutionChatService implements ExecutionChatPort {
-  private readonly groupDeliveries: PostgresChatDeliveryRepository
+  private readonly deliveries: PostgresChatDeliveryRepository
   private readonly notifications: WorkflowChatNotifications
   constructor(private readonly pool: pg.Pool, private readonly dependencies: WorkflowExecutionChatDependencies) {
-    this.groupDeliveries = new PostgresChatDeliveryRepository(pool)
+    this.deliveries = new PostgresChatDeliveryRepository(pool)
     this.notifications = new WorkflowChatNotifications(pool)
   }
   private now() { return this.dependencies.now?.() ?? new Date().toISOString() }
@@ -58,17 +58,16 @@ export class WorkflowExecutionChatService implements ExecutionChatPort {
       return message
     })
   }
-  async qualify(principal: Principal, request: ChatSendRequest, channelContext?: string): Promise<DeliveryQualification> {
+  async qualify(principal: Principal, request: ChatSendRequest): Promise<DeliveryQualification> {
     const target = asWorkflowChatTarget(request.target)
     return this.dependencies.owner.transaction(target, async context => {
       authorizeWorkflowChat(await readLiveManagementPrincipal(context.sql, principal.id), target, 'agent_chat:write')
       await readWorkflowChatIdentity(context.sql, target)
       const prepared = await qualifyWorkflowChatSendLocked(context, request, {
         id: controlId('chat-delivery', principal.id, request.commandId ?? this.commandId()), principalId: principal.id,
-        ...(channelContext ? { channelContext } : {}),
       }, this.dependencies.owner)
       return { appliedIntent: prepared.appliedIntent, ownerBinding: {
-        agentIdentity: context.agent, configurationVersionId: context.agent.configurationVersionId,
+        configurationVersionId: context.agent.configurationVersionId,
         ...(context.native ? { nativeSessionId: context.native.nativeSessionId,
           ownerRequestId: context.native.ownerRequestId,
           ...(context.native.nativeTurnId ? { nativeTurnId: context.native.nativeTurnId } : {}),
@@ -82,27 +81,27 @@ export class WorkflowExecutionChatService implements ExecutionChatPort {
     const replay = await this.replay(principal, target, request.commandId, digest, 'agent_chat:write')
     if (replay) return ChatDeliveryReceiptSchema.parse(replay)
     await this.dependencies.assertAttachments(principal, request)
-    const prepared = await this.groupDeliveries.find(principal.id, request.commandId)
+    const prepared = await this.deliveries.find(principal.id, request.commandId)
     const id = prepared?.receipt.id ?? controlId('chat-delivery', principal.id, request.commandId)
     const admitted = await this.dependencies.owner.transaction(target, async context => {
       await this.checkContext(context, principal, target, 'agent_chat:write', request.commandId)
       const stored = await replayControlCommand(context.sql, principal.id, request.commandId, digest)
       if (stored) return { receipt: ChatDeliveryReceiptSchema.parse(stored.receipt), replayed: true }
       if (prepared) {
-        await this.groupDeliveries.adoptPreparedLocked(context.sql, principal.id, request, async command => {
+        await this.deliveries.adoptPreparedLocked(context.sql, principal.id, request, async command => {
           if (command.receipt.appliedIntent !== 'next_turn') {
             const retained = command.ownerBinding
             const native = context.native
             if (!native || retained.nativeSessionId !== native.nativeSessionId
               || retained.ownerRequestId !== native.ownerRequestId || retained.nativeTurnId !== native.nativeTurnId
               || retained.inputMessageId !== native.inputMessageId) {
-              throw new DomainError('CHAT_TARGET_CHANGED', 'The native target changed after the Group message was accepted.', 409)
+              throw new DomainError('CHAT_TARGET_CHANGED', 'The native target changed after the message was accepted.', 409)
             }
           }
           const qualified = await qualifyWorkflowChatSendLocked(context, request,
             { id, principalId: principal.id }, this.dependencies.owner)
           if (qualified.appliedIntent !== command.receipt.appliedIntent) throw new DomainError(
-            'CHAT_TARGET_CHANGED', 'The native target changed after the Group message was accepted.', 409)
+            'CHAT_TARGET_CHANGED', 'The native target changed after the message was accepted.', 409)
           return true
         })
       }
