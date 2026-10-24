@@ -687,7 +687,9 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
     const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
     const run = await start(mock, user), scope = mock.currents.get(run.id)!.scope
-    await chooseRun(user, run.id)
+    // A saved Run link still opens its exact details; choosing the painted Run from Runs keeps the draft Board.
+    await act(async () => { await mounted.router.navigate({ to: '/workspaces/$workspaceId', params: { workspaceId: mock.workspaceId },
+      search: { workflowId: scope.workflowId, selectedRunId: run.id } }) })
     await screen.findByRole('region', { name: 'Selected Run board' })
     await user.click(screen.getByRole('button', { name: 'Activities' }))
     mock.controls.loseStopReply = true
@@ -760,6 +762,89 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
 })
 
 describe('latest Run on the draft Board', () => {
+  it('paints a finished Run only on its own saved version, clearing retained node badges after a new save and reopen', async () => {
+    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
+    const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
+    const run = await start(mock, user)
+    runningNodes(mock, run.id)
+    const current = mock.currents.get(run.id)!
+    mock.settle(run.id)
+    mock.currents.set(run.id, RepeatGraphCurrentStateSchema.parse({ ...mock.currents.get(run.id),
+      state: { ...mock.currents.get(run.id)!.state,
+        executions: current.state.executions.map(execution => ({ ...execution, state: 'completed', resultOutcome: 'succeeded' })) } }))
+    await mounted.query.invalidateQueries()
+    const nodeId = useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!.id
+    await waitFor(() => expect(canvasNode(nodeId)).toHaveTextContent('Completed'))
+    expect(canvasNode(nodeId).querySelector('.n-agent')).toHaveAttribute('data-state', 'completed')
+    await waitFor(() => expect(control('Start saved version')).toBeEnabled())
+    act(() => useGraphDraftStore.getState().changeNextDraft(key, graph => ({ ...graph,
+      nodes: graph.nodes.map(node => ({ ...node, initialPrompt: 'New saved instructions' })) })))
+    const version = await save(mock, user, 2)
+    expect(version.id).not.toBe(run.workflowVersionId)
+    expect(version.definition.nodes[0]!.id).toBe(nodeId)
+    await waitFor(() => expect(canvasNode(nodeId)).not.toHaveTextContent('Completed'))
+    expect(canvasNode(nodeId).querySelector('.n-agent')).not.toHaveAttribute('data-state', 'completed')
+    const href = mounted.router.state.location.href
+    mounted.unmount(); mounted.query.clear(); useGraphDraftStore.getState().clearAllDrafts()
+    const reopened = await mount(mock, href)
+    await screen.findByRole('region', { name: 'Workflow authoring' })
+    await waitFor(() => expect(control('Start saved version')).toBeEnabled())
+    await waitFor(() => expect(reopened.query.isFetching()).toBe(0))
+    expect(canvasNode(nodeId)).toBeVisible()
+    expect(canvasNode(nodeId)).not.toHaveTextContent('Completed')
+    expect(canvasNode(nodeId).querySelector('.n-agent')).not.toHaveAttribute('data-state', 'completed')
+  }, 30_000)
+
+  it.each(['Runs', 'Running'] as const)('choosing the painted latest Run through %s keeps the draft Board while an older Run opens history', async navigation => {
+    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
+    const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
+    const older = await start(mock, user)
+    mock.settle(older.id); await mounted.query.invalidateQueries()
+    await waitFor(() => expect(control('Start saved version')).toBeEnabled())
+    const latest = await start(mock, user, 2)
+    runningNodes(mock, latest.id); await mounted.query.invalidateQueries()
+    const node = useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!
+    await waitFor(() => expect(canvasNode(node.id)).toHaveTextContent('Running'))
+    const editor = authoring(), paintedNode = canvasNode(node.id)
+    if (navigation === 'Runs') await chooseRun(user, latest.id)
+    else await user.click(within(screen.getByRole('group', { name: 'Board controls' })).getByText('Running'))
+    expect(mounted.router.state.location.search.selectedRunId).toBeUndefined()
+    expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
+    expect(editor).toBeVisible()
+    expect(canvasNode(node.id)).toBe(paintedNode)
+    expect(within(screen.getByRole('group', { name: 'Board controls' })).getByRole('status')).toHaveTextContent('Running')
+    await chooseRun(user, older.id)
+    expect(await screen.findByRole('region', { name: 'Selected Run board' })).toHaveAttribute('data-run-id', older.id)
+    expect(mounted.router.state.location.search.selectedRunId).toBe(older.id)
+    expect(await screen.findByRole('group', { name: `${node.name}, saved agent, read only` })).toBeVisible()
+    expect(editor).not.toBeVisible()
+  }, 30_000)
+
+  it('keeps the live Board Stop visible in Overview and returns it to the Graph Run slot', async () => {
+    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
+    const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
+    const slot = controls(), runSlot = control('Start saved version').parentElement!
+    const run = await start(mock, user)
+    runningNodes(mock, run.id); await mounted.query.invalidateQueries()
+    await waitFor(() => expect(control('Stop')).toBeEnabled())
+    expect(control('Stop')).toBeVisible()
+    expect(runSlot).toContainElement(control('Stop'))
+    const views = within(screen.getByRole('navigation', { name: 'Workflow views' }))
+    await user.click(views.getByRole('button', { name: 'Overview' }))
+    const toolbar = await screen.findByRole('banner', { name: 'Board toolbar' })
+    await waitFor(() => expect(within(toolbar).getByRole('button', { name: 'Stop' })).toBeEnabled())
+    expect(within(toolbar).getByRole('button', { name: 'Stop' })).toBeVisible()
+    expect(screen.getAllByRole('button', { name: 'Stop' })).toHaveLength(1)
+    await user.click(views.getByRole('button', { name: 'Graph' }))
+    await waitFor(() => expect(control('Stop')).toBeEnabled())
+    expect(control('Stop')).toBeVisible()
+    expect(controls()).toBe(slot)
+    expect(runSlot).toContainElement(control('Stop'))
+    expect(screen.getAllByRole('button', { name: 'Stop' })).toHaveLength(1)
+    expect(mounted.router.state.location.search.selectedRunId).toBeUndefined()
+    expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
+  }, 30_000)
+
   it('Start keeps the draft nodes and URL while showing the new Run states and handoff lights', async () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
     const { key } = await create(mock, user); stageShape(key, 'sequential', mock); await save(mock, user, 1)

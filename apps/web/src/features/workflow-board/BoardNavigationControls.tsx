@@ -16,9 +16,12 @@ export function BoardNavigationControls({ workspaceId, workflowId, selection, ru
   const saved = useQuery({ queryKey: boardDraftContextKey(workspaceId, workflowId),
     queryFn: ({ signal }) => nextDraftApi.context(workspaceId, workflowId, { signal }), staleTime: 3000 })
   return <Toolbar label="Board controls">
-    {board?.liveRunId && selection.identity.runId === null ? <Button size="sm" variant="ghost" className="board-live-run"
-      title="A Run of this workflow is running. Show it." onClick={() => void selection.selectRun(board.liveRunId!)}>
-      <span className="board-live-run-dot" aria-hidden="true" />Running</Button> : null}
+    {/* A live Run painted on this Board needs no page to show it: Running is only a status here. */}
+    {board?.liveRunId && selection.identity.runId === null ? board.liveRunId === board.paintedRunId
+      ? <span role="status" className="board-live-run"><span className="board-live-run-dot" aria-hidden="true" />Running</span>
+      : <Button size="sm" variant="ghost" className="board-live-run"
+        title="A Run of an earlier saved version is running. Show it." onClick={() => void selection.selectRun(board.liveRunId!)}>
+        <span className="board-live-run-dot" aria-hidden="true" />Running</Button> : null}
     <RunsSelector selection={selection} triggerLabel={runsLabel} />
     <ScheduleClockButton workspaceId={workspaceId} workflowId={workflowId} isSaved={Boolean(saved.data?.draft.baseWorkflowVersionId)} />
     <WorkflowFilesButton workspaceId={workspaceId} workflowId={workflowId} />
