@@ -11,8 +11,12 @@ export class HostHarnessProfileEvidenceRepository {
     return row ? HostHarnessProfileEvidenceSchema.parse(row.record) : null
   }
   async latest(instanceId: string, revision: number, client?: pg.ClientBase): Promise<HostHarnessProfileEvidence | null> {
-    const result = await (client ?? this.pool).query<{ record: unknown }>('select record from harness_instance_profile_evidence where instance_id=$1 and instance_revision=$2 order by created_at desc,check_id desc limit 1', [instanceId, revision])
-    return result.rows[0] ? HostHarnessProfileEvidenceSchema.parse(result.rows[0].record) : null
+    return (await this.latestCheck(instanceId, revision, client))?.proof ?? null
+  }
+  async latestCheck(instanceId: string, revision: number, client?: pg.ClientBase) {
+    const result = await (client ?? this.pool).query<{ check_id: string; record: unknown }>('select check_id,record from harness_instance_profile_evidence where instance_id=$1 and instance_revision=$2 order by created_at desc,check_id desc limit 1', [instanceId, revision])
+    const row = result.rows[0]
+    return row ? { checkId: row.check_id, proof: HostHarnessProfileEvidenceSchema.parse(row.record) } : null
   }
   async append(client: pg.ClientBase, checkId: string, value: HostHarnessOverride, proof: HostHarnessProfileEvidence): Promise<void> {
     await client.query(`insert into harness_instance_profile_evidence(check_id,instance_id,instance_revision,record)

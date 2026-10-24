@@ -28,6 +28,9 @@
 .memory-card-flag { display: inline-block; margin: 0 0 4px; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600;
   line-height: 18px; text-transform: uppercase; letter-spacing: .04em; color: var(--memory-status); background: var(--memory-status-bg); }
 .memory-card-title { width: 100%; min-height: 0; padding: 0; text-align: start; justify-content: start; white-space: normal; font-weight: 600; line-height: 1.35; }
+.memory-card-title::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.memory-card-body { display: -webkit-box; margin: 4px 0 0; overflow: hidden; font-size: 12px; line-height: 1.4; color: var(--text-muted);
+  white-space: pre-line; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .memory-card-reason { margin: 4px 0 0; font-size: 12px; line-height: 1.4; color: var(--text); }
 .memory-card[data-status='blocked'] .memory-card-reason { color: var(--memory-status); }
 .memory-card-reason-label { font-weight: 600; color: var(--memory-status); }

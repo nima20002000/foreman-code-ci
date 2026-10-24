@@ -48,7 +48,7 @@ function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpe
     {card.linkedNodes.length > 0 && <div><h4>Linked nodes</h4><ul>{card.linkedNodes.map((node) =>
       <li key={`${node.workflowId}/${node.workflowNodeId}/${node.agentId}`}>{nodeLabel(node, nodes)}</li>)}</ul></div>}
     <div><h4>Linked work</h4>
-      <p>{detail.workSummary.activeBindings} active obligations · {detail.workSummary.armedClaims} next-activation claims</p>
+      {detail.workSummary.activeBindings || detail.workSummary.armedClaims ? <p>{detail.workSummary.activeBindings} working on it now · {detail.workSummary.armedClaims} set to pick it up next</p> : null}
       {detail.bindings.length === 0 && detail.claims.length === 0 && <p>No work obligations. Assigning an owner does not start an agent.</p>}
       <ul className="memory-work-list">{bindings.data.pages.flatMap(page => page.items).map((binding) => {
         const currentHealth = health.find((item) => item.bindingId === binding.id)

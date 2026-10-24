@@ -1,3 +1,5 @@
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { SourceRootSetupInputSchema, SourceRootBindResultSchema, type SourceRootSetupInput } from '@foreman-code/contracts/source-admission'
 import { sameComputer } from './sameComputer'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -6,6 +8,7 @@ import {
 } from '@foreman-code/contracts/workspace-root-policies'
 import {
   WorkspaceBoundLocationReadbackSchema, WorkspaceBoundLocationSetInputSchema, WorkspaceBoundLocationSetResultSchema,
+  WorkspaceRootConfigurationAdoptSchema, WorkspaceRootConfigurationAdoptResultSchema,
   WorkspaceBoundLocationValidationSchema, WorkspaceBoundLocationBrowseResultSchema,
   type WorkspaceBoundLocationReadback, type WorkspaceBoundLocationSetInput,
 } from '@foreman-code/contracts/workspace-bound-location'
@@ -36,6 +39,20 @@ export function useWorkspaceRootChoices(workspaceId: string, enabled = true) {
       if (result.workspaceId !== workspaceId || result.policies.some(value => value.workspaceId !== workspaceId)) invalid('Root choices belong to another workspace.')
       return result
     } })
+}
+export function useAdoptWorkspaceRootConfiguration(workspaceId: string) {
+  const client = useQueryClient(), generation = useHarnessSessionEpoch()
+  return useMutation({ mutationKey: [...locationMutationKey(workspaceId), generation, 'root-adopt'],
+    mutationFn: async (input: { hostRef: WorkspaceRootSelection['hostRef']; commandId: string }) => {
+      const result = await apiClient.request(`${path(workspaceId)}/root-configurations/adopt`, WorkspaceRootConfigurationAdoptResultSchema,
+        { method: 'POST', body: WorkspaceRootConfigurationAdoptSchema.parse({ ...input, workspaceId }) })
+      if (!sameComputer(result.value.hostRef, input.hostRef)) invalid('Computer folder settings belong to another host.')
+      return result
+    },
+    onSuccess: async () => {
+      if (generation === sessionGeneration()) await client.invalidateQueries({ queryKey: boundLocationKeys.choices(workspaceId) })
+    },
+  })
 }
 export function useBoundWorkspaceLocation(workspaceId: string, enabled = true) {
   useHarnessSessionEpoch()
@@ -140,6 +157,29 @@ export function useSetBoundWorkspaceLocation(workspaceId: string) {
       void client.invalidateQueries({ queryKey: boundLocationKeys.scope(workspaceId, generation) })
       void client.invalidateQueries({ queryKey: queryKeys.managedWorkspace(workspaceId) })
       void client.invalidateQueries({ queryKey: queryKeys.managedWorkspaces })
+      void client.invalidateQueries({ queryKey: ['node-placement-choices', generation],
+        predicate: query => query.queryKey[3] === workspaceId })
+    },
+  })
+}
+
+export function useSetupWorkspaceSourceRoot(workspaceId: string) {
+  const client = useQueryClient(), generation = useHarnessSessionEpoch()
+  return useMutation({ mutationKey: [...locationMutationKey(workspaceId), generation, 'source-setup'],
+    mutationFn: async (input: SourceRootSetupInput) => {
+      if (input.workspaceId !== workspaceId) invalid('Project setup belongs to another workspace.')
+      const result = await apiClient.request(`${path(workspaceId)}/source-roots/setup`, SourceRootBindResultSchema,
+        { method: 'POST', body: SourceRootSetupInputSchema.parse(input) })
+      if (result.value.binding.workspaceId !== workspaceId || result.value.binding.accessMode !== input.accessMode
+        || !sameWorkflowValue(result.value.selection, input.selection)) invalid('Project setup returned another root binding.')
+      return result
+    },
+    onSuccess: async () => {
+      if (generation !== sessionGeneration()) return
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['workbench', 'source-roots', generation, workspaceId] }),
+        client.invalidateQueries({ queryKey: ['node-placement-choices', generation], predicate: query => query.queryKey[3] === workspaceId }),
+      ])
     },
   })
 }

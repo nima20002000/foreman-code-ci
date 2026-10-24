@@ -39,6 +39,9 @@ export const SourceRootBindInputSchema = z.object({ workspaceId: IdSchema, comma
   source: SourcePinSchema, selection: SourceRootSelectionSchema,
   expectedBindingRevision: z.number().int().nonnegative(), accessMode: z.enum(['read-only', 'exclusive-write']),
 }).strict()
+/** Capture the workspace project when needed and bind it to the selected saved root policy. */
+export const SourceRootSetupInputSchema = SourceRootBindInputSchema.omit({ source: true, expectedBindingRevision: true }).strict()
+export type SourceRootSetupInput = z.infer<typeof SourceRootSetupInputSchema>
 export const SourceRootRecordSchema = z.object({ version: z.literal(1), source: SourcePinSchema,
   selection: SourceRootSelectionSchema, binding: RootBindingSchema, ownerPrincipalId: IdSchema,
   authorizedByPrincipalId: IdSchema, registration: z.object({ workerInstallationId: z.uuid(), keyRevision: z.number().int().positive(), authorizationRevision: z.number().int().positive() }).strict().nullable(), attestationId: IdSchema, attestationDigest: SourceHashSchema,

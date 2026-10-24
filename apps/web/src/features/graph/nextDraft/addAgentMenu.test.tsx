@@ -62,8 +62,7 @@ it('offers the three roles and adds a Worker from its Settings profile in one cl
   expect(created!.agent.configurationVersionId).toBeUndefined()
   expect(draft().graph.nodes.at(-1)).toMatchObject({ agentId: created!.agent.id, name: 'Worker 3' })
   expect(screen.queryByRole('complementary', { name: 'Add node' })).toBeNull()
-  // The menu stays open so several Agents can be added in a row.
-  expect(screen.getByRole('menu', { name: 'Add agent' })).toBeInTheDocument()
+  expect(screen.queryByRole('menu', { name: 'Add agent' })).not.toBeInTheDocument()
 })
 
 it('starts an empty Board without a first-agent prompt and lets the plus add its only Master', async () => {
@@ -75,7 +74,7 @@ it('starts an empty Board without a first-agent prompt and lets the plus add its
   const [master] = stageAgentEdits(draft())
   expect(master).toMatchObject({ agent: { name: 'Master', productRole: 'master' } })
   expect(draft().graph.hierarchy?.masterNodeId).toBe(draft().graph.nodes[0]!.id)
-  // The menu stays open after adding, now with the Master entry unavailable.
+  await user.click(screen.getByRole('button', { name: 'Add agent' }))
   expect(screen.getByRole('menuitem', { name: 'Master' })).toHaveAttribute('aria-disabled', 'true')
   expect(screen.getByRole('menuitem', { name: 'Master' })).toHaveAccessibleDescription('This workflow already has a Master.')
 })
