@@ -180,7 +180,7 @@ missing decision, a counter, elapsed time or animation.
 
 ## Exact exports for dependent lanes
 
-Import from **`@graphql/contracts/wave25`**, never local copied definitions:
+Import from **`@foreman-code/contracts/current`**, never local copied definitions:
 
 | Consumers | Exports (matching TypeScript types omit `Schema`) |
 | --- | --- |
@@ -204,10 +204,10 @@ No worker expands a glob or edits an unlisted shared file without a revised owne
 
 | Owner | Exclusive production/test paths | Behavior |
 | --- | --- | --- |
-| A — core, Pro | Existing `apps/api/src/modules/runs/{oneShotGraph,oneShotNode,oneShotResolution,topology}.ts`; NEW `apps/api/src/modules/runs/{repeatGraph,repeatNode,repeatResolution,repeatPostgres,repeatRuntime}.ts`; NEW `apps/api/src/infrastructure/repeatOccurrenceMigration.ts`; NEW `apps/api/test/eng04-a-repeat-core.test.ts`; A0 `packages/contracts/src/wave25/{repeat.ts,repeat.test.ts}` and this contract document. | One engine, durable occurrence/input/result/route/effect storage, constraints/migration SQL, occurrence-local joins/completion, recovery/Stop/approval fencing. A supplies narrow integration instructions for shell-owned repository/wiring files. No API transport or UI implementation. |
-| B — HTTP/Operator MCP, GPT Web xhigh | Existing `apps/api/src/modules/workflows/{management,postgres}.ts`; NEW `apps/api/src/modules/repeats/{authoring,readback}.ts`, `apps/api/src/routes/repeats.ts`, `apps/api/src/mcp/operator/repeats.ts`; NEW `packages/contracts/src/wave25/{repeatAuthoring,repeatReadback}.ts` and matching tests; NEW `apps/api/test/eng04-b-repeat-http-mcp.test.ts`. | Shared authenticated authoring/admission/readback adapters; strict v3 candidate/configuration validation; grants, all affected-workflow authority, revision/idempotency/audit, meaningful-edit protection, denied callers and persisted parity. Uses A's occurrence store; never independently progresses occurrences. New endpoint schemas must consume A0 types, not revise them. |
+| A — core, Pro | Existing `apps/api/src/modules/runs/{oneShotGraph,oneShotNode,oneShotResolution,topology}.ts`; NEW `apps/api/src/modules/runs/{repeatGraph,repeatNode,repeatResolution,repeatPostgres,repeatRuntime}.ts`; NEW `apps/api/src/infrastructure/repeatOccurrenceMigration.ts`; NEW `apps/api/test/eng04-a-repeat-core.test.ts`; A0 `packages/contracts/src/current/{repeat.ts,repeat.test.ts}` and this contract document. | One engine, durable occurrence/input/result/route/effect storage, constraints/migration SQL, occurrence-local joins/completion, recovery/Stop/approval fencing. A supplies narrow integration instructions for shell-owned repository/wiring files. No API transport or UI implementation. |
+| B — HTTP/Operator MCP, GPT Web xhigh | Existing `apps/api/src/modules/workflows/{management,postgres}.ts`; NEW `apps/api/src/modules/repeats/{authoring,readback}.ts`, `apps/api/src/routes/repeats.ts`, `apps/api/src/mcp/operator/repeats.ts`; NEW `packages/contracts/src/current/{repeatAuthoring,repeatReadback}.ts` and matching tests; NEW `apps/api/test/eng04-b-repeat-http-mcp.test.ts`. | Shared authenticated authoring/admission/readback adapters; strict v3 candidate/configuration validation; grants, all affected-workflow authority, revision/idempotency/audit, meaningful-edit protection, denied callers and persisted parity. Uses A's occurrence store; never independently progresses occurrences. New endpoint schemas must consume A0 types, not revise them. |
 | C — same-board UI, GPT Web xhigh | NEW `apps/web/src/features/repeats/{RepeatEditor.tsx,RepeatStatus.tsx,repeatModel.ts,useRepeatAuthoring.ts,client.ts,index.ts,repeats.css}` and co-located `*.test.ts(x)` only. | Flat scope/entry/exit/cap/outcome authoring and truthful basic occurrence/limit state on the existing board; local staging and explicit Stop-and-save/Discard through existing protocol. TanStack Query owns server facts, Zustand only local edits, URL owns linkable selection. No new page, run-history rewrite, shared style/token changes, or second fact store. |
-| D — qualification fixtures, GPT Web xhigh | NEW `apps/api/test/eng04-repeat-{identity,joins,replay,stop,approval,postgres,provider-shaped}.test.ts`, `apps/api/test/helpers/eng04RepeatFixtures.ts`; NEW `packages/contracts/src/wave25/repeat.regression.test.ts`. | Deterministic and PostgreSQL/provider-shaped fixtures, exact input/result provenance, cap/early exit, cross-occurrence joins, duplicate/restart cuts, Stop/approval uncertainty, legacy compatibility and snapshot/delta parity. No production edits, shared fixture edits, service allocation or native/browser claims. |
+| D — qualification fixtures, GPT Web xhigh | NEW `apps/api/test/eng04-repeat-{identity,joins,replay,stop,approval,postgres,provider-shaped}.test.ts`, `apps/api/test/helpers/eng04RepeatFixtures.ts`; NEW `packages/contracts/src/current/repeat.regression.test.ts`. | Deterministic and PostgreSQL/provider-shaped fixtures, exact input/result provenance, cap/early exit, cross-occurrence joins, duplicate/restart cuts, Stop/approval uncertainty, legacy compatibility and snapshot/delta parity. No production edits, shared fixture edits, service allocation or native/browser claims. |
 
 ### Shell-exclusive cross-cutting integration
 
@@ -217,7 +217,7 @@ The following are deliberately **not jointly owned** by A/B/C/D:
   `apps/api/src/modules/run-graph/*` and `apps/api/src/modules/interactions/*`:
   integrate A's durable/recovery effects with B's admission/readback and existing native fences.
   A owns repeat semantics and supplies exact proposed hunks; shell alone edits these shared files.
-* Existing `packages/contracts/src/index.ts`, `packages/contracts/src/wave25/index.ts`,
+* Existing `packages/contracts/src/index.ts`, `packages/contracts/src/current/index.ts`,
   `wave25/{workflow,protocol,storage,authoring,fixtures,consumerFixture,reliability,meaningfulEdit,editIntent,boardNavigation}.ts`
   and `packages/contracts/src/management/*`: version/union/export/protocol/meaningful-edit wiring.
   A0's single barrel append is the sole already-supplied exception. No worker independently

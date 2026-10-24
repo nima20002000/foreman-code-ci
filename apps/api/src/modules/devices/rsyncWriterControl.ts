@@ -4,7 +4,7 @@ import { RsyncControlRequestSchema, RsyncControlResponseSchema, TransferIntentSc
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { DeviceApplicationResult } from '@foreman-code/contracts/device-application'
 import { authenticatedTransferAuthority, transferContextForBinding, type AcceptedTransferAuthority } from '../byte-transfer/carrier.js'
-import type { RsyncWriterOwnership } from '../byte-transfer/rsyncWriterOwnership.js'
+import type { RsyncWriterOwnership } from '../byte-transfer/index.js'
 import type { DeviceExtensionContext, DeviceExtensionRegistration } from './deviceApplicationChannel.js'
 
 /** Wrap the existing staging handler on the same authenticated W07 namespace.

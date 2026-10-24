@@ -17,7 +17,7 @@ afterEach(() => {
 
 it('converges without another managed native session until configuration changes', async () => {
   const f = await managedMcpNativeFixture()
-  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', join(f.directory, 'mcp'))
+  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', join(f.directory, 'mcp'))
   const installed = createInstalledWorkerManagedMcp(f.options)
   const read = vi.spyOn(f.native.adapter, 'read')
   try {
@@ -43,7 +43,7 @@ it('converges without another managed native session until configuration changes
 
 it('retries failed native readiness without caching it as ready', async () => {
   const f = await managedMcpNativeFixture()
-  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', join(f.directory, 'mcp'))
+  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', join(f.directory, 'mcp'))
   const installed = createInstalledWorkerManagedMcp(f.options)
   f.native.failRead = new DomainError('MCP_CONFIG_UNAVAILABLE', 'Native configuration is unavailable.', 503)
   try {

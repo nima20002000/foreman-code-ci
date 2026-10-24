@@ -8,8 +8,8 @@ import { ClaudeInteractionBridge } from '../harnesses/claudeSdk/interactions.js'
 import type { ClaudeCallbackIdentity } from '../harnesses/claudeSdk/interactions.js'
 import type { ClaudeNativeSessionManager } from '../harnesses/claudeSdk/sessionManager.js'
 import { DomainError } from '../errors.js'
-import type { FileToolOperation } from '../files/tools/types.js'
-import type { ClaudeCallbackJournal } from '../harnesses/claudeSdk/callbackJournal.js'
+import type { FileToolOperation } from '../files/index.js'
+import type { ClaudeCallbackJournal } from '../harnesses/index.js'
 
 interface AdmittedMessage {
   request: WorkerConversationRpcRequest
