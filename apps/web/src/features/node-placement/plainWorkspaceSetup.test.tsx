@@ -24,7 +24,11 @@ it('sets up a plain folder on Paired computer and refreshes the Computer picker 
     rootPolicyId: '66666666-6666-4666-8666-666666666666', rootPolicyRevision: '1', locationRevision: '1',
     projectRoot: '/projects/shared/empty-workspace', cwdPolicy: 'project-root', relativeCwd: '',
     instanceId: 'profile', instanceRevision: '1', harnessInstallationId: 'codex' }
+  const managed = { workspace: { id: workspaceId, name: 'Empty' }, revision: 1,
+    archivedAt: null, executionLocation: { runnerId: 'runner-local', rootPath: '/main/empty' }, locationRevision: 1,
+    locationValidation: { status: 'ready', checkedAt: '2026-10-01T00:00:00Z' } }
   server.use(
+    http.get(`*/api/management/workspaces/${workspaceId}`, () => HttpResponse.json(managed)),
     http.get('*/api/management/workspaces/:workspaceId/workflows/:workflowId/nodes/:nodeId/placement-choices', () => HttpResponse.json({
       ...scope, pending: false, choices: ready ? [{ id: 'paired', label: 'Paired computer · codex', placement, availability: 'ready', reason: null }] : [],
       unavailableComputers: ready ? [] : [{ hostRef: workerRoot.hostRef, name: 'Paired computer', reason: 'This workspace’s project isn’t set up on Paired computer yet.' }],
@@ -54,9 +58,7 @@ it('sets up a plain folder on Paired computer and refreshes the Computer picker 
   }
   useBoundLocationDraftStore.getState().reset()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  client.setQueryData(queryKeys.managedWorkspace(workspaceId), { workspace: { id: workspaceId, name: 'Empty' }, revision: 1,
-    archivedAt: null, executionLocation: { runnerId: 'runner-local', rootPath: '/main/empty' }, locationRevision: 1,
-    locationValidation: { status: 'ready', checkedAt: '2026-10-01T00:00:00Z' } })
+  client.setQueryData(queryKeys.managedWorkspace(workspaceId), managed)
   const view = render(<QueryClientProvider client={client}><Picker /></QueryClientProvider>)
   try {
     const user = userEvent.setup()

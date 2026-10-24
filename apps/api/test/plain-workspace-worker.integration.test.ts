@@ -12,14 +12,11 @@ import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('plain workspace Worker placement', () => {
   it('sets up an empty folder, discovers Paired computer and accepts its Run without capturing source', async () => {
-    const f = await fixture()
+    const f = await fixture({ plainWorkspace: true })
     let app: ReturnType<typeof buildApp> | undefined
     try {
       const workspaceId = f.saveInput.workspaceId
       const pool = f.base.db.pool
-      await pool.query("update workspaces set record=record-'repository' where id=$1", [workspaceId])
-      await pool.query('delete from source_root_bindings where workspace_id=$1', [workspaceId])
-      await pool.query('delete from source_root_catalog where workspace_id=$1', [workspaceId])
       const evidence = new HostHarnessProfileEvidenceRepository(pool)
       const discovery = new ProductionPlacementChoiceDiscovery(pool, () => ({
         roots: f.placement.policies, sources: f.placement.sources,
