@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { expect, it, vi } from 'vitest'
-import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
+import { SavedNodePlacementSchema, type SavedNodePlacement } from '@foreman-code/contracts/node-placement'
 import { server } from '../../mocks/server'
 import { NodePlacementField } from './NodePlacementField'
 import { usePlacementChoices } from './usePlacementChoices'
@@ -12,8 +12,8 @@ import { savedPlacementFixture as placement } from './fixtures'
 
 it('renders readable recovered folder choices from discovery and keeps real setup failures visible', async () => {
   const scope = { workspaceId: 'workspace', workflowId: 'workflow', nodeId: 'node', agentConfigurationVersionId: 'configuration' }
-  const recovered = { ...placement, projectRoot: `/runtime/${'a'.repeat(64)}`,
-    rootBinding: { rootId: 'root-recovered', bindingRevision: 3 } }
+  const recovered = SavedNodePlacementSchema.parse({ ...placement, projectRoot: `/runtime/${'a'.repeat(64)}`,
+    rootBinding: { rootId: '60000000-0000-4000-8000-000000000001', bindingRevision: 3 } })
   const failure = 'The project folder could not be read.'
   server.use(http.get('*/api/management/workspaces/:workspaceId/workflows/:workflowId/nodes/:nodeId/placement-choices',
     () => HttpResponse.json({ ...scope, pending: false, choices: [
