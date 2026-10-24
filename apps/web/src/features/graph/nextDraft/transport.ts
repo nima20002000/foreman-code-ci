@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { AgentMutationResultSchema, StagedAgentSchema, type GraphValidationResultSchema, type AgentCreateInputSchema, type AgentUpdateInput } from '@foreman-code/contracts/management'
 import { SupportedHarnessConfigurationSchema, type Agent } from '@foreman-code/contracts'
 import {
@@ -129,7 +130,7 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
         configuration: SupportedHarnessConfigurationSchema.parse(agent.harnessConfiguration),
         ...(agent.harnessProfileSelection ? { harnessProfileSelection: agent.harnessProfileSelection } : {}),
         prompt: agent.prompt ?? {}, assignedSkills: agent.assignedSkills ?? [],
-        ...(agent.graphqlTools ? { graphqlTools: agent.graphqlTools } : {}), ...(agent.nativeTools ? { nativeTools: agent.nativeTools } : {}),
+        ...(agent[INSTALLATION_NAMES.fields.agentTools] ? { [INSTALLATION_NAMES.fields.agentTools]: agent[INSTALLATION_NAMES.fields.agentTools] } : {}), ...(agent.nativeTools ? { nativeTools: agent.nativeTools } : {}),
         ...(agent.description ? { description: agent.description } : {}), ...(agent.role ? { role: agent.role } : {}),
       } satisfies Omit<z.input<typeof AgentCreateInputSchema>, 'workspaceId'> })
       return { agent: result.value.agent, metadataRevision: result.value.metadataRevision }
@@ -284,7 +285,7 @@ function createDraftAgentWriter(client: ApiClient) {
         const configure = operations.find((item) => item.type === 'agent.configure' && item.agentId === operation.agentId)
         const content = configure?.type === 'agent.configure' ? {
           prompt: configure.prompt, assignedSkills: configure.assignedSkills,
-          ...(configure.graphqlTools ? { graphqlTools: configure.graphqlTools } : {}),
+          ...(configure[INSTALLATION_NAMES.fields.agentTools] ? { [INSTALLATION_NAMES.fields.agentTools]: configure[INSTALLATION_NAMES.fields.agentTools] } : {}),
           ...(configure.nativeTools ? { nativeTools: configure.nativeTools } : {}),
           ...(configure.description ? { description: configure.description } : {}), ...(configure.role ? { role: configure.role } : {}),
         } : { prompt: {}, assignedSkills: [] }
@@ -304,7 +305,7 @@ function createDraftAgentWriter(client: ApiClient) {
           ...(edit.configure ? { configuration: SupportedHarnessConfigurationSchema.parse(edit.configure.configuration), prompt: edit.configure.prompt,
             ...(edit.configure.productRole ? { productRole: edit.configure.productRole } : {}),
             assignedSkills: edit.configure.assignedSkills, description: edit.configure.description ?? null,
-            ...(edit.configure.graphqlTools ? { graphqlTools: edit.configure.graphqlTools } : {}),
+            ...(edit.configure[INSTALLATION_NAMES.fields.agentTools] ? { [INSTALLATION_NAMES.fields.agentTools]: edit.configure[INSTALLATION_NAMES.fields.agentTools] } : {}),
             ...(edit.configure.nativeTools ? { nativeTools: edit.configure.nativeTools } : {}),
             role: edit.configure.role ?? null } : {}),
         }

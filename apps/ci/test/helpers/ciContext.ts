@@ -3,7 +3,7 @@ import { constants } from 'node:fs'
 import { open, type FileHandle } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { ReadObservation } from '@foreman-code/contracts'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import { anchored, createCiContext, type CiLogger, type CiPlatform, type CiServerPorts, type MainCiContext,
   type SqlQuery } from '../../src/environment.js'
 

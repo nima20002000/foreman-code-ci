@@ -1,7 +1,7 @@
 import type { OperatorChatSetup } from '@foreman-code/contracts'
 import { ExecutionReadinessNotice } from './ExecutionReadinessNotice'
 import { Button } from '../../shared/ui/nocturne'
-import { ChatNotice } from '../conversations/ChatNotice'
+import { ChatNotice } from '../chat-core'
 import { ApiError } from '../../shared/api/client'
 
 export function OperatorSetupNotice({ data, checking, failed, error, onRetry }: {

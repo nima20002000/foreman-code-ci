@@ -1,6 +1,7 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import {
-  agentTemplateForRole, DEFAULT_HARNESS_DEFAULTS, memoryBoardTools, nativeToolsSummary, newAgentGraphqlTools,
-  operatorHarnessDefaults, type AgentDefaults, type HarnessConfiguration,
+  agentTemplateForRole, DEFAULT_HARNESS_DEFAULTS, memoryBoardTools, nativeToolsSummary, newAgentForemanTools,
+  operatorHarnessDefaults, type AgentDefaults, type RecordedHarnessConfiguration,
 } from '@foreman-code/contracts'
 import type { SettingsAgentRole } from '@foreman-code/contracts/management'
 import { Button, ErrorState, LoadingState, Select, SettingRow, SettingsSection, Switch } from '../../shared/ui/nocturne'
@@ -50,16 +51,16 @@ export function AgentRoleSettings({ role, onEditPrompt }: { role: SettingsAgentR
     delete next.harnessProfileSelection
     change(next)
   }
-  const tools = role === 'operator' ? [] : template.graphqlTools ?? newAgentGraphqlTools(role)
+  const tools = role === 'operator' ? [] : template[INSTALLATION_NAMES.fields.agentTools] ?? newAgentForemanTools(role)
   const changeMemory = (memory: Memory) => {
     if (role === 'operator') return
     const kept = tools.filter(tool => !(memoryBoardTools('write') as string[]).includes(tool))
-    const graphqlTools = [...kept, ...(memory === 'none' ? [] : memoryBoardTools(memory))]
-    const defaults = newAgentGraphqlTools(role)
-    const next = { ...template, graphqlTools } as Template
+    const foremanTools = [...kept, ...(memory === 'none' ? [] : memoryBoardTools(memory))]
+    const defaults = newAgentForemanTools(role)
+    const next = { ...template, [INSTALLATION_NAMES.fields.agentTools]: foremanTools } as Template
     // Back at the role's built-in tools: keep following the built-in list instead of pinning a copy.
-    if (saved && !('graphqlTools' in saved && saved.graphqlTools) && graphqlTools.length === defaults.length
-      && defaults.every(tool => graphqlTools.includes(tool))) delete (next as { graphqlTools?: unknown }).graphqlTools
+    if (saved && !(INSTALLATION_NAMES.fields.agentTools in saved && saved[INSTALLATION_NAMES.fields.agentTools]) && foremanTools.length === defaults.length
+      && defaults.every(tool => foremanTools.includes(tool))) delete (next as { [INSTALLATION_NAMES.fields.agentTools]?: unknown })[INSTALLATION_NAMES.fields.agentTools]
     change(next)
   }
   const operator = role === 'operator' ? draft.operator : undefined
@@ -75,7 +76,7 @@ export function AgentRoleSettings({ role, onEditPrompt }: { role: SettingsAgentR
           onChange={event => changeHarness(event.target.value as 'codex' | 'claude')} />
       </SettingRow>
       <HarnessBasicFields value={template.harness} issues={form.issues}
-        onChange={(harness: HarnessConfiguration) => change({ ...template, harness })} />
+        onChange={(harness: RecordedHarnessConfiguration) => change({ ...template, harness })} />
     </SettingsSection>
     <SettingsSection title="Tools" description={`Native tools: ${nativeToolsSummary(template.nativeTools)}.`}>
       {role === 'operator' ? null : <SettingRow title="Memory board" description="What this role can do with workspace memory.">

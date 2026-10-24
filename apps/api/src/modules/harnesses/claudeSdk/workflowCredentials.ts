@@ -6,7 +6,7 @@ import { componentLogger } from '../../diagnostics/index.js'
 import { appMcpServerName } from '../appMcpLauncher.js'
 import { hasWorkflowRequest } from '../sessionStart.js'
 import type { ExecutionCredentialPrepareInput, McpDetectionService, NativeMcpInspector } from '../mcpDetection.js'
-import type { Wave25WorkerCredentialService } from '../../interactions/current/credentials.js'
+import type { CurrentWorkerCredentialService } from '../../interactions/index.js'
 import type { productionClaudeManager } from './production.js'
 import { assertClaudeCredentialEndpoint } from './mcpInspection.js'
 
@@ -17,7 +17,7 @@ export async function prepareClaudeWorkflowCredentials(options: {
   claude: Pick<ReturnType<typeof productionClaudeManager>, 'manager' | 'inspectionStart'>
   inspector: NativeMcpInspector
   detection: Pick<McpDetectionService, 'preflight'>
-  credentials: Pick<Wave25WorkerCredentialService, 'issueForConsultation' | 'issueForReviewer' | 'issueForExecution'
+  credentials: Pick<CurrentWorkerCredentialService, 'issueForConsultation' | 'issueForReviewer' | 'issueForExecution'
     | 'revokeSupersededForExecution' | 'revoke'>
   runnerId: string
   endpoint: string

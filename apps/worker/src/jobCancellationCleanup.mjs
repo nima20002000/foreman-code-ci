@@ -8,7 +8,7 @@ import { SignedJobCancellationGrantSchema, SignedJobCancellationClosureSchema,
   jobCancellationClosureMessage } from '../../../packages/contracts/src/jobCancellationRecovery.ts';
 import { WorkerPairingConfigurationSchema } from '../../../packages/contracts/src/deviceIdentity.ts';
 import { RemoteJobOperationReceiptRecordSchema } from '../../../packages/contracts/src/remoteJobExecution.ts';
-import { publicKeyFingerprint } from '../../../packages/contracts/src/deviceIdentityNode.ts';
+import { publicKeyFingerprint } from '../../../packages/contracts-node/src/deviceIdentityNode.ts';
 import { RemoteOperationJournal } from '@foreman-code/api/worker/runs';
 import { releaseMaterializationClaimForCancellation, preparationChildrenClosed, sourceBindingHash, sourceMaterializationDigest, anchored, identity as filesystemIdentity, openPrivateRoot, openChildDirectory } from '@foreman-code/api/worker/sources';
 import { InstalledJobRuntimeConfigurationRecordSchema, isPreparatoryVerificationOwner, JobNativeOwnerSchema, readVerificationQuotaPool } from '@foreman-code/api/worker/jobs';

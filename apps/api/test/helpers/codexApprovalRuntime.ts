@@ -13,7 +13,7 @@ import { vi } from 'vitest'
 import { AgentConfigurationVersionSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION,
   DEFAULT_HARNESS_DEFAULTS, type ResolvedSkill, type CodexHarnessConfiguration } from '@foreman-code/contracts'
 import { ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
-import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../../src/modules/runs/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { CodexAppServerSessionManager } from '../../src/modules/harnesses/codexAppServer.js'
@@ -21,8 +21,8 @@ import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../../src/modules/interactions/runtimePorts.js'
-import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
-import { Wave25WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
+import { CurrentInteractionRepository } from '../../src/modules/interactions/current/repository.js'
+import { CurrentWorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
 import { registerApprovalCheckpointResume } from '../../src/modules/runs/approvalCheckpointRegistration.js'
 import { continuationValidator } from '../../src/modules/runs/continuation.js'
 import { LangGraphWorkflowEngine } from '../../src/modules/runs/engine.js'
@@ -126,8 +126,8 @@ export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'u
           // Production always wires the collaboration hooks; a saved hierarchy requires them.
           collaboration: createWorkflowCollaborationHooks(),
           ...(options.preparePlacementExecution ? { preparePlacementExecution: options.preparePlacementExecution } : {}) } })
-      const repository = new Wave25InteractionRepository(db.pool, new ReviewNativeProofServices(reviewCapture.verify)), budgets = new PostgresApprovalBudgetRepository(db.pool)
-      const credentials = new Wave25WorkerCredentialService(db.pool, access)
+      const repository = new CurrentInteractionRepository(db.pool, new ReviewNativeProofServices(reviewCapture.verify)), budgets = new PostgresApprovalBudgetRepository(db.pool)
+      const credentials = new CurrentWorkerCredentialService(db.pool, access)
       const launchCredentials = providerLaunchCredentials(runs, locations, managers, credentials, (manager) => {
         if (!(manager instanceof CodexAppServerSessionManager)) throw new Error('Expected Codex native manager')
         return codexMcpInspectorAdapter(manager)

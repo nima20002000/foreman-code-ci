@@ -10,7 +10,7 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { JobWorkflowNodeSchema } from '@foreman-code/contracts/job-workflow'
 import { makeCurrentWorkflowFixture, WorkflowRunCurrentSchema, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import type { SqlQuery } from '../src/infrastructure/transaction.js'
-import { credentialAuthority, assertWave25WorkerBinding } from '../src/modules/interactions/current/credentialAuthority.js'
+import { credentialAuthority, assertCurrentWorkerBinding } from '../src/modules/interactions/current/credentialAuthority.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
 import { approvalFixture } from './helpers/approvalFixture.js'
 
@@ -94,20 +94,20 @@ describe.each(['sequential', 'repeat'] as const)('ENG06 %s retry credential auth
     const binding = bindingFor(row)
     const initialBinding = { ...binding, approval_native_session_id: null, approval_connection_generation: null }
     const { sql } = database(row, binding, true, initialBinding)
-    await expect(assertWave25WorkerBinding(sql, 'startup-principal')).resolves.toBeUndefined()
+    await expect(assertCurrentWorkerBinding(sql, 'startup-principal')).resolves.toBeUndefined()
   })
 
   it('denies credentials revoked between the initial lookup and authority read', async () => {
     const row = nativeRow(form)
     const binding = bindingFor(row)
     const { sql } = database(row, { ...binding, live: false }, true, binding)
-    await expect(assertWave25WorkerBinding(sql, 'revoked-principal')).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
+    await expect(assertCurrentWorkerBinding(sql, 'revoked-principal')).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
   })
 
   it.each(['running', 'waiting'] as const)('keeps attempt two eligible while %s in its exact session', async (state) => {
     const row = nativeRow(form); row.execution.state = state
     addJob(row)
-    await expect(assertWave25WorkerBinding(database(row).sql, 'fresh-retry-principal')).resolves.toBeUndefined()
+    await expect(assertCurrentWorkerBinding(database(row).sql, 'fresh-retry-principal')).resolves.toBeUndefined()
   })
 
   it.each([[1, 2], [2, 1], [2, 3]])('rejects JSON attempt %i paired with indexed attempt %i', async (recordAttempt, indexedAttempt) => {
@@ -119,7 +119,7 @@ describe.each(['sequential', 'repeat'] as const)('ENG06 %s retry credential auth
     const row = nativeRow(form), job = addJob(row)
     row.execution.workflowNodeId = job.id
     await expect(credentialAuthority(database(row).sql, row.execution.id, 'workflow')).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
-    await expect(assertWave25WorkerBinding(database(row).sql, 'job-native-principal')).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
+    await expect(assertCurrentWorkerBinding(database(row).sql, 'job-native-principal')).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
   })
 })
 
@@ -151,7 +151,7 @@ describe('ENG06 retry credentials retain authority and native fences', () => {
   ]
   it.each(invalidBindings)('rejects a retry binding with %s', async (_name, mutate) => {
     const row = nativeRow(), binding = bindingFor(row); mutate(binding)
-    await expect(assertWave25WorkerBinding(database(row, binding).sql, 'retry-principal')).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
+    await expect(assertCurrentWorkerBinding(database(row, binding).sql, 'retry-principal')).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
   })
 
   it('permits only a finalized successful designated retry to act as reviewer', async () => {
@@ -174,9 +174,9 @@ describe('ENG06 retry credentials retain authority and native fences', () => {
     row.execution.state = 'completed'; row.execution.finishedAt = row.execution.createdAt; row.execution.result = { outcome: 'succeeded' }; row.finalized = true
     const binding = bindingFor(row)
     binding.purpose = 'reviewer'; binding.approval_review_job_id = 'exact-review-job'; binding.approval_review_lease_fence = '2'
-    await expect(assertWave25WorkerBinding(database(row, binding).sql, 'reviewer-principal')).resolves.toBeUndefined()
+    await expect(assertCurrentWorkerBinding(database(row, binding).sql, 'reviewer-principal')).resolves.toBeUndefined()
     const stale = database(row, binding, false)
-    await expect(assertWave25WorkerBinding(stale.sql, 'reviewer-principal')).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
+    await expect(assertCurrentWorkerBinding(stale.sql, 'reviewer-principal')).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
     expect(stale.query).toHaveBeenCalledWith(expect.stringContaining('select 1 from review_jobs'),
       ['exact-review-job', row.execution.id, '2'])
   })

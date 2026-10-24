@@ -1,10 +1,11 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { execFileSync, spawn } from 'node:child_process';
 import { cp, mkdir, readFile, writeFile, lstat, readdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PACKAGE_MANAGER, RELEASE_AGE_MINUTES, sha256 } from './seed-policy.mjs';
 
-const imageRoot = '/opt/graphql-ci';
+const imageRoot = INSTALLATION_NAMES.paths.ciRoot;
 export const VERIFICATION_SCRATCH = '/job-scratch';
 const corepack = '/usr/local/lib/node_modules/corepack/dist/corepack.js';
 
@@ -169,17 +170,17 @@ export async function startTestDatabase(environment) {
   const root = `${VERIFICATION_SCRATCH}/postgres`;
   await mkdir(`${root}/socket`, { recursive: true, mode: 0o700 });
   await writeFile(`${root}/password`, 'graphql_test_disposable_only\n', { mode: 0o600 });
-  const env = { ...environment, PGPASSWORD: 'graphql_test_disposable_only', LC_ALL: 'C.UTF-8' };
-  execFileSync(`${POSTGRES}/initdb`, ['-D', `${root}/data`, '-U', 'graphql_test_admin', '--pwfile', `${root}/password`,
+  const env = { ...environment, PGPASSWORD: INSTALLATION_NAMES.database.testPassword, LC_ALL: 'C.UTF-8' };
+  execFileSync(`${POSTGRES}/initdb`, ['-D', `${root}/data`, '-U', INSTALLATION_NAMES.database.testAdmin, '--pwfile', `${root}/password`,
     '-A', 'scram-sha-256', '-E', 'UTF8', '--locale=C.UTF-8', '--no-sync'], { env, stdio: ['ignore', 'ignore', 'inherit'] });
   const server = spawn(`${POSTGRES}/postgres`, ['-D', `${root}/data`, '-h', '127.0.0.1', '-p', '55439', '-k', `${root}/socket`,
     '-c', 'max_connections=800', '-c', 'max_locks_per_transaction=512', '-c', 'fsync=off', '-c', 'synchronous_commit=off',
     '-c', 'full_page_writes=off', '-c', 'dynamic_shared_memory_type=mmap', '-c', 'log_min_messages=warning'], { env, stdio: ['ignore', 'ignore', 'inherit'] });
   const exited = new Promise(resolve => server.once('exit', resolve));
-  const psql = (database, sql) => execFileSync(`${POSTGRES}/psql`, ['-h', '127.0.0.1', '-p', '55439', '-U', 'graphql_test_admin',
+  const psql = (database, sql) => execFileSync(`${POSTGRES}/psql`, ['-h', '127.0.0.1', '-p', '55439', '-U', INSTALLATION_NAMES.database.testAdmin,
     '-d', database, '-v', 'ON_ERROR_STOP=1', '-qc', sql], { env, stdio: ['ignore', 'ignore', 'inherit'] });
   for (let attempt = 0; ; attempt++) {
-    try { execFileSync(`${POSTGRES}/pg_isready`, ['-q', '-h', '127.0.0.1', '-p', '55439', '-U', 'graphql_test_admin', '-d', 'postgres'], { env, stdio: 'ignore' }); break; }
+    try { execFileSync(`${POSTGRES}/pg_isready`, ['-q', '-h', '127.0.0.1', '-p', '55439', '-U', INSTALLATION_NAMES.database.testAdmin, '-d', 'postgres'], { env, stdio: 'ignore' }); break; }
     catch (error) {
       if (attempt >= 120 || server.exitCode !== null) throw new Error('The disposable test PostgreSQL did not start.', { cause: error });
       await new Promise(resolve => setTimeout(resolve, 250));
@@ -187,7 +188,7 @@ export async function startTestDatabase(environment) {
   }
   psql('postgres', 'CREATE DATABASE graphql_test_control');
   psql('postgres', "COMMENT ON DATABASE postgres IS 'graphql-disposable-test-server'");
-  psql('graphql_test_control', "COMMENT ON DATABASE graphql_test_control IS 'graphql-disposable-test-server'; REVOKE CREATE ON SCHEMA public FROM PUBLIC");
+  psql(INSTALLATION_NAMES.database.testControl, "COMMENT ON DATABASE graphql_test_control IS 'graphql-disposable-test-server'; REVOKE CREATE ON SCHEMA public FROM PUBLIC");
   return { stop: async () => { if (server.exitCode === null) server.kill('SIGINT'); await exited; } };
 }
 

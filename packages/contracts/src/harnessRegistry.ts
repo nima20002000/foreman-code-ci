@@ -1,7 +1,7 @@
 import { optionalCommandId } from './management/commands.js'
 import { ClaudeQualificationProofSchema } from './claudeQualification.js'
 import { z } from 'zod'
-import { HarnessConfigurationSchema, SupportedHarnessConfigurationSchema, type HarnessConfiguration } from './index.js'
+import { RecordedHarnessConfigurationSchema, SupportedHarnessConfigurationSchema, type RecordedHarnessConfiguration } from './index.js'
 import { DevicePresenceSchema } from './deviceConnection.js'
 import { DeviceSessionBindingSchema } from './deviceConnection.js'
 import { RecordedHarnessQualificationSchema } from './harnessQualification.js'
@@ -13,7 +13,7 @@ const HarnessInstanceAvailabilitySchema = z.enum(['available', 'disabled', 'unkn
 export const ConfiguredHarnessInstanceSchema = z.object({
   instanceId: Identity, instanceRevision: Identity, driverId: Identity, enabled: z.boolean(),
   // Unrecognized configuration stays unavailable; raw unknown data is never exposed to clients.
-  configuration: z.lazy(() => HarnessConfigurationSchema).nullable(),
+  configuration: z.lazy(() => RecordedHarnessConfigurationSchema).nullable(),
   availability: HarnessInstanceAvailabilitySchema, retirementMessage: z.string().optional(), driverRevision: Identity.optional(),
 }).strict()
 export type ConfiguredHarnessInstanceDto = z.infer<typeof ConfiguredHarnessInstanceSchema>
@@ -68,7 +68,7 @@ export const HarnessRegistryReadbackSchema = z.object({
 export type HarnessRegistryReadback = z.infer<typeof HarnessRegistryReadbackSchema>
 
 
-function validateHostEnvironment(configuration: HarnessConfiguration, context: z.RefinementCtx, prefix: string[]): void {
+function validateHostEnvironment(configuration: RecordedHarnessConfiguration, context: z.RefinementCtx, prefix: string[]): void {
   if (configuration.harness !== 'codex') return
   for (const [key, text] of Object.entries(configuration.advanced?.shellEnvironment.set ?? {})) {
     if (/(?:API.?KEY|TOKEN|PASSWORD|SECRET|AUTHORIZATION|CREDENTIAL|COOKIE|PRIVATE.?KEY)/i.test(key)
@@ -90,7 +90,7 @@ export type HostHarnessOverrideSave = z.infer<typeof HostHarnessOverrideSaveSche
 export const HostHarnessOverrideSchema = z.object({
   instanceId: z.uuid(), revision: z.number().int().positive(), instanceRevision: Identity,
   target: HostHarnessOverrideTargetSchema, presetId: Identity, enabled: z.boolean(), driverId: Identity,
-  configuration: z.lazy(() => HarnessConfigurationSchema), configurationFingerprint: Identity,
+  configuration: z.lazy(() => RecordedHarnessConfigurationSchema), configurationFingerprint: Identity,
   qualification: z.enum(['unqualified', 'qualifying', 'qualified', 'installation-changed', 'disabled', 'retired']),
   qualificationFailure: z.object({ code: Identity, message: z.string().min(1).max(500) }).strict().optional(),
   retirementMessage: z.string().optional(),

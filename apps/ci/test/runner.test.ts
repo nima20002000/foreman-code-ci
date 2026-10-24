@@ -96,6 +96,9 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
       join(origin, 'scripts/ci-affected.mjs'))
     await copyFile(new URL('../../../scripts/worker-snapshot-policy.mjs', import.meta.url),
       join(origin, 'scripts/worker-snapshot-policy.mjs'))
+    await mkdir(join(origin, 'packages/verification-runner'), { recursive: true })
+    await copyFile(new URL('../../../packages/verification-runner/runtime-files.mjs', import.meta.url),
+      join(origin, 'packages/verification-runner/runtime-files.mjs'))
     await mkdir(join(origin, 'packages/contracts/src'), { recursive: true })
     for (const file of ['ciImportGraph.mjs', 'ciCoverage.mjs']) {
       await copyFile(new URL(`../../../packages/contracts/src/${file}`, import.meta.url),
@@ -151,6 +154,7 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
     + ' || { [ "$2" = --dir ] && [ "$3" = apps/api ] && [ "$5" = vitest ]; }; then\n'
     + '  [ -f "$TMPDIR/database-ready" ] || exit 11\nfi\n'
     + 'if [ "$*" = "pnpm --filter @foreman-code/contracts build" ]; then exit 0; fi\n'
+    + 'if [ "$*" = "pnpm --filter @foreman-code/contracts-node build" ]; then exit 0; fi\n'
     + (options.watchdogReason ? `if [ -n "\${CI_WATCHDOG_MESSAGE_FILE:-}" ]; then printf '%s' '${JSON.stringify({ message: options.watchdogReason })}' > "$CI_WATCHDOG_MESSAGE_FILE"; echo '[ci-watchdog] ${options.watchdogReason}'; fi\n` : '')
     + 'if [ "$2" != install ] && [ "$2" != fetch ] && [ "$2" != db:up ]; then '
     + `${options.pause ? 'read -r pauseInput; ' : ''}exit ${options.suiteExit ?? 0}; fi\n`)

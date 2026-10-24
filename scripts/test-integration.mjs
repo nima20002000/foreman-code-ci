@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { diagnosticWarning } from './diagnostic-warning.mjs'
 import { exclusiveIntegrationFiles, integrationCpuCost,
   requirements } from '../packages/contracts/src/integrationScheduling.mjs'
@@ -592,7 +593,10 @@ export async function runIntegration(argv = [], {
     const contractsBuild = spawnSync('corepack', ['pnpm', '--dir', 'packages/contracts', 'build'],
       { cwd: root, stdio: 'inherit', env })
     if (contractsBuild.status !== 0) throw new Error('Integration contracts build failed')
-    // The CI package compiles against the contracts output.
+    const nodeBuild = spawnSync('corepack', ['pnpm', '--dir', 'packages/contracts-node', 'build'],
+      { cwd: root, stdio: 'inherit', env })
+    if (nodeBuild.status !== 0) throw new Error('Integration Node contracts build failed')
+    // The CI package compiles against both contracts packages.
     const ciBuild = spawnSync('corepack', ['pnpm', '--dir', 'apps/ci', 'build'], { cwd: root, stdio: 'inherit', env })
     if (ciBuild.status !== 0) throw new Error('Integration CI package build failed')
   }
@@ -604,7 +608,7 @@ export async function runIntegration(argv = [], {
   const { runnable, unavailable } = partitionIntegrationCapabilities(selected, environment)
   const testNamePattern = readProductEnvironment(env, 'INTEGRATION_TEST_NAME_PATTERN')
   const diagnostic = Boolean(startAt || failedFrom || files || testNamePattern)
-  const profilesPath = resolve(profilePath ?? env.GRAPHQL_TEST_PROFILE_PATH ?? join(root, '.logs', 'test-profiles.json'))
+  const profilesPath = resolve(profilePath ?? env[INSTALLATION_NAMES.environment.TEST_PROFILE_PATH] ?? join(root, '.logs', 'test-profiles.json'))
   const profiles = readProfiles(profilesPath)
   // TEST_DATABASE_URL only selects the loopback server; every slot still gets
   // its own disposable database there, so the run stays fully parallel.

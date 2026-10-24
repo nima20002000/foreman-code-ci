@@ -59,7 +59,7 @@ describe.skipIf(!enabled)('local human production native recovery', { timeout: 2
       await repository.beginTurn(conversation.id, { requestId, content: 'Original native pending turn' }, owner.principal.id)
       const session = await manager.createSession({ kind: 'operator', correlationId, configuration,
         workingDirectory: directory, environment: { agentId: configuration.operatorId,
-          variables: { FOREMAN_CODE_MCP_TOKEN: 'operator-cleanup-disabled' } } }, signal)
+          variables: { GRAPHQL_MCP_TOKEN: 'operator-cleanup-disabled' } } }, signal)
       await repository.bind(conversation.id, requestId, session.providerVersion, session.nativeSessionId)
       let reportPending!: (pending: PendingNativeInteraction) => void
       let rejectPending!: (error: unknown) => void
