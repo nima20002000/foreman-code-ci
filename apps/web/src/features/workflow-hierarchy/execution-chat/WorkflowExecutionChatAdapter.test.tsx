@@ -118,7 +118,7 @@ it('requires an explicit Run and execution choice and never follows a successor 
   expect(screen.queryByRole('region', { name: 'Execution conversation' })).not.toBeInTheDocument()
 })
 
-it('opens a finished Run Agent chat without asking which of its executions to open', async () => {
+it('requires an explicit attempt choice for a finished Run and keeps history switching available', async () => {
   const choice = selected()
   if (choice.kind !== 'selected') throw new Error('Expected selected fixture')
   const candidate = (executionId: string) => ({ target: { ...choice.target, execution: { ...fixture.execution, executionId } },
@@ -129,9 +129,11 @@ it('opens a finished Run Agent chat without asking which of its executions to op
   server.use(http.get(`${base}/target`, ({ request }) => HttpResponse.json(new URL(request.url).searchParams.get('executionId')
     ? { ...choice, state: 'idle' } : choices)))
   mount({ runId: 'run' })
+  fireEvent.click(await screen.findByRole('button', { name: 'Execution execution · Attempt 1' }))
   expect(await screen.findByText('Working on the task.')).toBeInTheDocument()
   expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"executionId":"execution"')
-  expect(screen.queryByText('Choose the exact execution to open.')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Choose another execution' }))
+  expect(await screen.findByRole('button', { name: 'Execution check · Attempt 1' })).toBeInTheDocument()
 })
 
 it('retains transient status, hides denied history through a failed retry, and resumes only after a successful read', async () => {
@@ -171,4 +173,21 @@ it('mounts outside-run chat only for an unpinned current workflow and performs n
   fireEvent.click(screen.getByRole('button', { name: 'Toggle chat' }))
   await screen.findByRole('region', { name: 'Outside run conversation' })
   await waitFor(() => expect(wire.resolutions).toHaveLength(count + 1))
+})
+
+it('recovers a missing exact execution by explicitly clearing only its attempt pin', async () => {
+  const wire = install()
+  wire.controls.status = 404
+  mount({ runId: 'run', workflowVersionId: 'version', executionId: 'missing-execution' })
+  await screen.findByRole('alert')
+  expect(screen.getByLabelText('Chat selection')).toHaveTextContent('missing-execution')
+  wire.controls.status = 200
+  const choice = selected()
+  if (choice.kind !== 'selected') throw new Error('Expected selected fixture')
+  wire.controls.resolution = { kind: 'selection_required', items: [choice], revision: 1, nextCursor: null, hasMore: false }
+  fireEvent.click(screen.getByRole('button', { name: 'Choose another execution' }))
+  expect(await screen.findByRole('button', { name: 'Execution execution · Attempt 1' })).toBeInTheDocument()
+  expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"runId":"run"')
+  expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"workflowVersionId":"version"')
+  expect(screen.getByLabelText('Chat selection')).not.toHaveTextContent('missing-execution')
 })
