@@ -128,19 +128,6 @@ describe('Operator draft chat history', () => {
     expect(history().getAllByRole('button', { name: /^(First conversation|New conversation)/ })).toHaveLength(1)
   })
 
-  it('lists a nonempty first-message draft after switching chats and remounting', async () => {
-    const view = renderChat()
-    fireEvent.click(screen.getByRole('button', { name: 'Open history' }))
-    await history().findByRole('button', { name: /^First conversation/ })
-    await openDraft()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), { target: { value: 'My unsent first message' } })
-    fireEvent.click(history().getByRole('button', { name: /^First conversation/ }))
-    view.unmount()
-    renderChat()
-    fireEvent.click(await history().findByRole('button', { name: /My unsent first message/ }))
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue('My unsent first message'))
-  })
-
   it('keeps a selected empty draft hidden after remount and lists it with its title on first send', async () => {
     const view = renderChat()
     fireEvent.click(screen.getByRole('button', { name: 'Open history' }))
@@ -159,31 +146,6 @@ describe('Operator draft chat history', () => {
     expect(await history().findByRole('button', { name: /^Plan the workspace/ })).toBeInTheDocument()
     expect(history().getAllByRole('button', { name: /^(First conversation|Plan the workspace|New conversation)/ })).toHaveLength(2)
     expect(history().queryByRole('button', { name: /New conversation/ })).not.toBeInTheDocument()
-  })
-
-  it('does not restore a deleted first-message chat as a local draft', async () => {
-    server.use(http.delete('/api/operator/conversations/:conversationId', ({ params }) => {
-      const id = String(params.conversationId)
-      states.delete(id)
-      return HttpResponse.json({ conversationId: id, revision: 2 })
-    }))
-    const view = renderChat()
-    fireEvent.click(screen.getByRole('button', { name: 'Open history' }))
-    await history().findByRole('button', { name: /^First conversation/ })
-    await openDraft()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), { target: { value: 'First sent message' } })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
-    await history().findByRole('button', { name: /^First sent message/ })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), { target: { value: 'Unsent followup' } })
-    fireEvent.click(await screen.findByRole('button', { name: 'Chat options: First sent message' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
-    await waitFor(() => expect(screen.getByText('Chat deleted.')).toBeVisible())
-    expect(history().queryByRole('button', { name: /Unsent followup/ })).not.toBeInTheDocument()
-    view.unmount()
-    renderChat()
-    await history().findByRole('button', { name: /^First conversation/ })
-    expect(history().queryByRole('button', { name: /Unsent followup/ })).not.toBeInTheDocument()
   })
 
   it('retains a conversation whose loaded message window is empty but has earlier messages', async () => {

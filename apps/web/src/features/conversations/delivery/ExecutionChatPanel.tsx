@@ -30,7 +30,7 @@ export type ExecutionChatPanelProps = {
   nativeTurnId?: string; unavailableReason?: string; attachments?: ConversationAttachments; attachmentControl?: ReactNode
   sessionMode?: SessionMode; appliedSessionMode?: SessionMode
   /** The Agent chat that continues a finished execution's session; shown in place of this panel when it takes no input. */
-  followUp?(inputs: ReactNode): ReactNode
+  followUp?: ReactNode
   onRecover?(recovery: DirectRecovery): void
 }
 
@@ -110,13 +110,12 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
   // A finished execution takes no new turn here; its Agent chat continues the same session with its history.
   const closed = state?.state === 'idle' && target.kind === 'workflow_execution' && !presentation.capabilities.queue
   // Messages still in doubt keep their status and recovery controls in view before handing over to that chat.
-  const unsettled = !!delivery.pending || !!delivery.pendingControl
+  const unsettled = !!delivery.pending || !!delivery.pendingControl || retained.items.length > 0
     || receipts.some(receipt => receipt.state === 'queued' || receipt.state === 'unknown')
   if (denied || delivery.denied) return <Alert tone="warning" title="Chat access unavailable"><Button onClick={() => {
     detailAbort.current = new AbortController(); setDenied(false); delivery.refresh()
   }}>Refresh access</Button></Alert>
-  if (closed && !unsettled && props.followUp) return <>{delivery.feedback ? <p role="alert">{delivery.feedback}</p> : null}{props.followUp(<><RetainedInputsStatus state={retained} />{retained.items.map(input =>
-    <RetainedInput key={input.receiptId} input={input} {...retainedProps} />)}</>)}</>
+  if (closed && !unsettled && props.followUp) return <>{delivery.feedback ? <p role="alert">{delivery.feedback}</p> : null}{props.followUp}</>
   return <section className="agent-conversation" aria-label="Selected execution chat">
     {/* The Board's chat tab already names the Run attempt above this panel. */}
     <header className="agent-chat-identity"><h2>{props.name}</h2></header>

@@ -8,6 +8,9 @@ const ciPath = (workspaceId: string) => `/api/management/workspaces/${encodeURIC
 
 /** The Board's reads of a Run's CI: the same service as the Operator's ci_list, ci_get testStatus and ci_logs_read. */
 export const runCiApi = {
+  cancel: (input: { workspaceId: string; ticketId: string; commandId: string }) =>
+    apiClient.request(`${ciPath(input.workspaceId)}/${encodeURIComponent(input.ticketId)}?${new URLSearchParams(
+      { commandId: input.commandId })}`, CiCancelOutputSchema, { method: 'DELETE' }),
   list: (input: OperatorCiListInput, options?: RequestOptions) => {
     const query = new URLSearchParams({ runId: input.runId })
     if (input.executionId) query.set('executionId', input.executionId)
@@ -16,9 +19,6 @@ export const runCiApi = {
   tests: (input: { workspaceId: string; ticketId: string; status?: readonly CiTestStatus[] }, options?: RequestOptions) =>
     apiClient.request(`${ciPath(input.workspaceId)}/${encodeURIComponent(input.ticketId)}/tests${input.status
       ? `?${new URLSearchParams({ status: input.status.join(',') })}` : ''}`, CiTestsOutputSchema, options),
-  cancel: (input: { workspaceId: string; ticketId: string; commandId: string }) =>
-    apiClient.request(`${ciPath(input.workspaceId)}/${encodeURIComponent(input.ticketId)}?${new URLSearchParams({ commandId: input.commandId })}`,
-      CiCancelOutputSchema, { method: 'DELETE' }),
   get: (input: { workspaceId: string; ticketId: string }, options?: RequestOptions) =>
     apiClient.request(`${ciPath(input.workspaceId)}/${encodeURIComponent(input.ticketId)}?logTail=false`, CiGetOutputSchema, options),
   logTail: (input: { workspaceId: string; ticketId: string }, options?: RequestOptions) =>
@@ -27,7 +27,7 @@ export const runCiApi = {
 }
 
 const ACTIVE: readonly CiRunJob['ci']['state'][] = ['queued', 'starting', 'running']
-export const isActiveCiJob = (job: CiRunJob) => ACTIVE.includes(job.ci.state)
+export const isActiveCiJob = (job: Pick<CiRunJob, 'ci'>) => ACTIVE.includes(job.ci.state)
 /** A finished ticket still collecting results keeps the Board's CI reads refreshing after its Run completes. */
 export const ciJobRefreshing = (job: CiRunJob) => isActiveCiJob(job) || job.collection === 'pending'
 

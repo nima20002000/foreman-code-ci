@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefCallback, type RefObject } from 'react'
+import { useCallback, useId, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefCallback, type RefObject } from 'react'
 import type { BoardSidePanel } from '@foreman-code/contracts/current'
 import type { HierarchyReport } from '@foreman-code/contracts'
 import { Button, Icon, IconButton } from '../../shared/ui/nocturne'
+import { raiseFloating, useFloatingZ } from '../../shared/ui/floatingStack'
 import { placeBeside } from '../../shared/ui/floatingWindow'
 import { useManagedWorkflowQuery } from '../../shared/api/query'
 import { useSidePanelScroll } from './sidePanelPresentation'
@@ -74,6 +75,8 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
   const attach = useCallback((element: HTMLDivElement | null) => { setHost(element); bodyRef(element) }, [bodyRef])
   useSidePanelScroll(host, JSON.stringify([scope, runId, selection]), modalOpen)
   const active = selection.kind !== 'none'
+  const stackId = useId()
+  const zIndex = useFloatingZ(stackId, active && !modalOpen)
   // Open next to the node that opened it; keep the user's position while it stays open.
   useLayoutEffect(() => {
     const panel = panelRef.current
@@ -179,7 +182,8 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
   const title = selection.kind === 'browser' ? 'Browser'
     : agentName ? agentName.name ?? agentName.label ?? 'Agent' : 'Agent'
   return <aside ref={panelRef} tabIndex={-1} className="workflow-floating-panel" aria-label="Workflow side panel"
-    hidden={!active || modalOpen} inert={!active || modalOpen}>
+    hidden={!active || modalOpen} inert={!active || modalOpen} style={{ zIndex }}
+    onPointerDownCapture={() => raiseFloating(stackId)} onFocusCapture={() => raiseFloating(stackId)}>
     {/* One compact row: title and close; the view tabs sit in the footer, below the composer. */}
     <header onPointerDown={drag}>
       <h2>{title}</h2>
