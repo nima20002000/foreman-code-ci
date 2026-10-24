@@ -110,6 +110,11 @@ export function createMainBrowserRemote(options: {
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 262_144, perMessageDeflate: false })
   return {
     profiles: transport, sessions: transport, media: (binding: BrowserInstallationBinding) => hub.source(binding),
+    async status(computerId: string) {
+      const binding = await options.pairing.current(computerId)
+      const response = await (await capture(binding)).request({ operation: 'runtime-status' })
+      return BrowserRuntimeStatusSchema.parse(response.payload)
+    },
     async ready(computerId: string) {
       const binding = await options.pairing.current(computerId)
       if (binding.connectionId.startsWith('offline:')) return false

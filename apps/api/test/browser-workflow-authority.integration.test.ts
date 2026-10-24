@@ -138,6 +138,7 @@ it('evicts a released browser owner only after its host confirms cleanup', async
   const browser = createProductionBrowser({ pool: db.pool, stateDirectory: db.directory, binding: () => null,
     assertHostOwnership: async () => undefined, reportFailure: () => undefined,
     remote: () => ({ profiles: { endpoint: unused }, sessions: { invoke: unused }, ready: async () => true,
+      status: async computerId => ({ computerId, ready: true, phase: 'ready', reason: null }),
       media: () => { throw new Error('This lifecycle fixture does not open media.') }, prepare: unused,
       release: async input => ({ sessionId: input.sessionId, state: closed ? 'closed' : 'pending', reason: null }),
     }) })

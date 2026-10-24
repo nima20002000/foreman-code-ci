@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AgentSubject, BrowserSession } from '@foreman-code/contracts'
+import type { AgentSubject, BrowserSession, BrowserRuntimeStatus } from '@foreman-code/contracts'
 import { BrowserSidebar, type BrowserSidebarStatus, type BrowserSidebarTab, tabLabel } from '../features/agent-browser'
 import { useBrowserSidebar, useBrowserSidebarTabs } from '../features/workflow-board'
 import { useWorkflowBoard } from '../features/board-core'
@@ -59,7 +59,7 @@ function useBrowserActivity(sessions: readonly BrowserSession[]) {
   }))
 }
 
-/** The Board's right-hand browser sidebar: every live Agent browser in this workflow's selected Run, one tab per Agent. */
+/** The Board's floating browser window: every live Agent browser in this workflow's selected Run, one tab per Agent. */
 export function WorkflowBrowserSidebar({ workspaceId, workflowId, runId, workflowVersionId }: WorkflowBrowserSidebarProps) {
   const sidebar = useBrowserSidebar(workspaceId, workflowId)
   const board = useWorkflowBoard()
@@ -112,7 +112,8 @@ export function WorkflowBrowserSidebar({ workspaceId, workflowId, runId, workflo
   const notice = listed.error ? <p className="browser-sidebar-notice" role="alert">{errorMessage(listed.error, 'Agent browsers could not be read.')}</p>
     : listed.data?.unreachable.length ? <p className="browser-sidebar-notice">{listed.data.unreachable.join(', ')} could not be reached; its browsers are not shown.</p>
       : null
-  return <BrowserSidebar tabs={tabs} selectedId={selectedId} notice={<>{notice}{hidden.length ? <section aria-label="Reopen browsers">
+  return <BrowserSidebar tabs={tabs} selectedId={selectedId} notice={<>{notice}{listed.data?.unavailable.map(({ name, runtime }) =>
+      <BrowserRuntimeNotice key={runtime.computerId} name={name} runtime={runtime} />)}{hidden.length ? <section aria-label="Reopen browsers">
       {hidden.map(nodeId => <button key={nodeId} type="button" onClick={() => sidebar.open(nodeId)}>Reopen {nodeName(nodeId)} browser</button>)}
     </section> : null}</>}
     emptyText={hidden.length ? 'Active browsers are hidden. Reopen an Agent browser above.' : runId ? 'No agent browsers are active in this run.' : 'No agent browsers are active in this workflow.'}
@@ -124,13 +125,24 @@ export function WorkflowBrowserSidebar({ workspaceId, workflowId, runId, workflo
     {choices.length ? <Select label="Browser context" value={primary?.id}
       onChange={event => { const browserSessionId = event.currentTarget.value
         void navigate({ to: location.pathname, replace: true, search: previous => ({ ...previous, browserSessionId, browserTabId: undefined }) })
-      }} options={choices.map(session => ({ value: session.id, label: `${session.subject?.kind === 'execution'
-        ? `Run ${session.subject.execution.runId} · attempt ${session.subject.execution.attempt}`
-        : session.subject?.kind === 'coordinator_consultation' ? `Run ${session.subject.binding.runId} · consultation` : 'Agent chat'} · ${session.id}` }))} /> : null}
+      }} options={choices.map(session => ({ value: session.id, label: `${workflow.data?.workflow.name ?? 'Workflow'} · ${nodeName(selectedId!)} · ${session.startedAt
+        ? new Date(session.startedAt).toLocaleString() : 'Start time unavailable'} · ${session.subject?.kind === 'execution'
+        ? `Attempt ${session.subject.execution.attempt}` : session.subject?.kind === 'coordinator_consultation' ? 'Consultation' : 'Agent chat'}` }))} /> : null}
     {selectedId ? <SidebarBrowser key={`${selectedId}:${primary?.id ?? ''}`} workspaceId={workspaceId} workflowId={workflowId}
       nodeId={selectedId} session={primary} runId={runId} workflowVersionId={workflowVersionId}
       onOpenSettings={() => board?.selectSidePanel?.({ kind: 'agent', nodeId: selectedId, tab: 'settings' })} /> : null}
   </BrowserSidebar>
+}
+
+function BrowserRuntimeNotice({ name, runtime }: { name: string; runtime: BrowserRuntimeStatus }) {
+  const sandbox = runtime.phase === 'failed' && /No usable sandbox|can(?:not|'t) start.*sandbox/i.test(runtime.reason ?? '')
+  const profileAction = /Install.*(?:AppArmor|foreman-browser-runtime)/i.test(runtime.reason ?? '') ? 'Install' : 'Check'
+  return <div className="browser-sidebar-notice" role="status">
+    <p>{sandbox ? `${name}'s agent browser isn't installed yet: Chromium can't start its sandbox. ${profileAction} the Foreman AppArmor profile on ${name}.`
+      : runtime.phase === 'starting' ? `${name}'s agent browser is starting.`
+        : `${name}'s agent browser isn't available yet (${runtime.phase}). Repair or update its browser runtime.`}</p>
+    <details><summary>Browser runtime details</summary><p>{runtime.reason ?? 'No failure reason was reported.'}</p></details>
+  </div>
 }
 
 /** The selected tab's browser. A live session pins the exact Agent subject; without one, the node's browser in this Run. */
