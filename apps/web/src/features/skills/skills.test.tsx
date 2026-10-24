@@ -502,3 +502,38 @@ describe('Skill users', () => {
     await waitFor(() => expect(screen.queryByText(/still use an older version/)).toBeNull())
   })
 })
+
+it('retries instruction preview while preserving the skill selection', async () => {
+  seedSkill('workspace-a', 'Retry guide', 'Recovered instructions')
+  server.use(http.get('/api/management/workspaces/:workspaceId/skills/:skillId/versions/:version', () => HttpResponse.json({ error: { code: 'FORBIDDEN', message: 'Denied.' } }, { status: 403 }), { once: true }))
+  wrap(<AgentSkillsField workspaceId="workspace-a" value={[]} onChange={vi.fn()} />)
+  const user = userEvent.setup()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled())
+  await user.click(screen.getByRole('button', { name: 'Add' }))
+  await user.click(screen.getByRole('button', { name: 'Preview Retry guide' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Instructions could not be loaded.')
+  await user.click(screen.getByRole('button', { name: 'Retry instructions' }))
+  expect(await screen.findByLabelText('Instructions preview')).toHaveTextContent('Recovered instructions')
+  expect(screen.getByRole('button', { name: 'Hide preview of Retry guide' })).toBeVisible()
+})
+
+it.each(['loading', 'error', 'denied', 'empty'])('keeps New skill cancellable while workspaces are %s', async state => {
+  const pending = deferred<void>()
+  server.use(http.get('/api/management/workspaces', async () => {
+    if (state === 'loading') await pending.promise
+    return state === 'error' || state === 'denied'
+      ? HttpResponse.json({ error: { code: state === 'denied' ? 'FORBIDDEN' : 'UNAVAILABLE', message: 'Workspaces unavailable.' } }, { status: state === 'denied' ? 403 : 503 })
+      : HttpResponse.json({ items: [], pageInfo: { nextCursor: null } })
+  }))
+  const cancel = vi.fn()
+  wrap(<NewSkillPage onSaved={vi.fn()} onCancel={cancel} />)
+  try {
+    if (state === 'empty') {
+      await screen.findByText('No workspace available')
+      expect(screen.getByRole('link', { name: 'Create or choose a workspace' })).toHaveAttribute('href', '/workspaces')
+    } else if (state === 'error') await screen.findByText('Workspaces could not be loaded')
+    else if (state === 'denied') await screen.findByText('Access unavailable')
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(cancel).toHaveBeenCalledOnce()
+  } finally { pending.resolve(undefined) }
+})
