@@ -1,7 +1,7 @@
 import { CI_HOST_NAMESPACE, CiHostStatusSchema, type CiHostStatus } from '@foreman-code/contracts'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import type { CiContext, DeviceEndpoint } from './environment.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 
 const lastStatus = new Map<string, CiHostStatus>()

@@ -3,7 +3,7 @@ import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { CI_SHARING_REQUESTERS_LIMIT, CiRunOutputSchema, CiRunRecordSchema, type CiRunInput, type CiRunOutput,
   type CiRunRecord, type CiSharing } from '@foreman-code/contracts'
 import type { CiContext, SqlQuery } from './environment.js'
-import { sha256Hex } from '@foreman-code/contracts-node/server-kit'
+import { sha256Hex } from '@foreman-code/contracts/server-kit'
 
 /** Who asked for a ticket group: an Operator or another principal, and the Agent execution when an Agent asked. */
 export interface CiRequester { principalId: string; executionId: string | null }

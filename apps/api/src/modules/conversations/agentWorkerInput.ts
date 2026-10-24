@@ -1,4 +1,3 @@
-import { capabilityDescriptorsOf } from '../harnesses/index.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { SessionPreferencesSchema, sessionTaskContent, type AgentConfigurationVersion } from '@foreman-code/contracts'
@@ -71,12 +70,12 @@ export async function assertAgentWorkerRequests(sql: Pick<pg.PoolClient, 'query'
     ...retainedTransition, ...settings }
   const turn = { binding, admissionId, prompt, correlationId,
     ...(request.sessionMode ? { sessionMode: request.sessionMode } : {}), ...settings }
-  if (!session && capabilityDescriptorsOf(binding).inputIdentity === 'message') {
+  if (!session && binding.harness === 'claude') {
     assertWorkerChatRequestSize({ method: 'conversation.initial-turn', ...opening, ...turn })
     return
   }
   assertWorkerChatRequestSize({ method: 'conversation.open', ...opening,
     mode: session ? 'attach' : 'create', ...(session ? { source: session } : {}) })
   assertWorkerChatRequestSize({ method: 'conversation.start-turn', ...turn,
-    ...(session ? { session } : {}), ...(capabilityDescriptorsOf(binding).files === 'turn_mcp' ? { fileInputs: true } : {}) })
+    ...(session ? { session } : {}), ...(binding.harness === 'codex' ? { fileInputs: true } : {}) })
 }

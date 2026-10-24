@@ -3,7 +3,7 @@ import { McpServer } from '@modelcontextprotocol/server'
 import { cacheToolSchemaConversions } from '../shared/schemaCache.js'
 import { stripMcpInputSchemas } from '../shared/inputSchemas.js'
 import { z } from 'zod'
-import { AgentRunStatusSchema, FOREMAN_AGENT_TOOLS } from '@foreman-code/contracts'
+import { AgentRunStatusSchema, GRAPHQL_AGENT_TOOLS } from '@foreman-code/contracts'
 
 import { invokeAppTool } from './invoke.js'
 import {
@@ -91,7 +91,7 @@ function registerAppToolDefinitions(server: McpServer, context: AppRequestContex
 
   const runStatus = context.interactions.runStatus?.bind(context.interactions)
   if (runStatus) server.registerTool('run_status_get', {
-    description: FOREMAN_AGENT_TOOLS.run_status_get.description
+    description: GRAPHQL_AGENT_TOOLS.run_status_get.description
       + ' Use it during loops to look for failed or stuck nodes, failing CI and repeated errors.',
     inputSchema: z.object({}).strict(),
     outputSchema: AgentRunStatusSchema,

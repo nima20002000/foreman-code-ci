@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { readCiInstalledStorage } from '@foreman-code/ci/ciInstalledStorage'
 import { verificationCapacityFixture } from '../helpers/verificationCapacityFixture.js'
-import { InstalledVerificationRuntimeConfigurationSchema } from '@foreman-code/contracts-node/installed-runtime-node'
+import { InstalledVerificationRuntimeConfigurationSchema } from '@foreman-code/contracts/installed-runtime-node'
 import { DEVICE_RESOURCE_CONTROL_RESERVE } from '@foreman-code/contracts/device-resources'
 
 function configuration() {

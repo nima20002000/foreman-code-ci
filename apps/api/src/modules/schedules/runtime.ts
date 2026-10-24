@@ -1,6 +1,6 @@
 import type pg from 'pg'
-import type { CurrentRunProductionBinding } from '../runs/index.js'
-import type { LangGraphWorkflowEngine } from '../runs/index.js'
+import type { CurrentRunProductionBinding } from '../runs/currentProduction.js'
+import type { LangGraphWorkflowEngine } from '../runs/engine.js'
 import { admitRepeatRun } from '../runs/repeatStartAdmission.js'
 import type { WorkspaceLocationService } from '../workspaces/index.js'
 import { WorkflowScheduleDispatcher } from './dispatcher.js'

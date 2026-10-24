@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { ActivitySnapshotV1 } from '@foreman-code/contracts'
-import { chatBackgroundWork } from '../chat-core'
+import { chatBackgroundWork } from './chatWorkStatus'
 
 it('marks retained native activity unconfirmed while history observation is pending', () => {
   const snapshot = { schemaVersion: 1, scope: { kind: 'operator_chat', conversationId: 'conversation' },

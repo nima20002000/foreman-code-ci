@@ -7,7 +7,7 @@ import type { ActivityTextOperation } from '@foreman-code/contracts/activity-tex
 import { afterEach, beforeEach, describe, it, vi } from 'vitest'
 
 import { createNativeTextStream } from '../src/modules/conversations/nativeTextStream.js'
-import { completedNativeAssistantMessage } from '../src/modules/harnesses/index.js'
+import { completedNativeAssistantMessage } from '../src/modules/conversations/operatorText.js'
 import { normalizeCodexNotification } from '../src/modules/harnesses/codexNormalization.js'
 import { NativeDeliveryError } from '../src/modules/harnesses/errors.js'
 import { isObject, type JsonObject } from '../src/modules/harnesses/codexStdioTransport.js'
@@ -112,7 +112,7 @@ describe.skipIf(process.platform === 'win32')('Codex assistant text across start
         if (submissions === 1) throw new Error('The identity write failed.')
       },
     }))
-    void result.catch(() => { /* ignore: observe rejection while driving the provider; the original result is awaited below. */ })
+    void result.catch(() => undefined)
     const nativeTurn = await until(async () => {
       if (!(await calls(f.directory)).some((entry) => isObject(entry.wire) && entry.wire.method === 'turn/start')) return false
       return (await state(f.directory, session.nativeSessionId)).turns[0]
@@ -177,7 +177,7 @@ describe.skipIf(process.platform === 'win32')('Codex assistant text across start
         }
         textStream.flush()
       })()
-      void result.catch(() => { /* ignore: observe rejection while driving the provider; the original result is awaited below. */ })
+      void result.catch(() => undefined)
       try {
         const nativeTurn = await until(async () => {
           const requests = await calls(f.directory)

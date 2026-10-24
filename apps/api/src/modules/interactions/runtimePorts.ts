@@ -7,7 +7,7 @@ import type { AgentConfigurationVersion, AgentHarness, DurableInteraction, Nativ
 import type { WorkflowArtifactOutputsV1 } from '@foreman-code/contracts/workflow-artifact-result'
 
 import type { NativeHarnessSessionManager } from '../harnesses/port.js'
-import type { RunOwnership } from '../runs/index.js'
+import type { RunOwnership } from '../runs/ownership.js'
 
 export interface NativeManagerOwnershipContext {
   reviewJob?: ReviewJob

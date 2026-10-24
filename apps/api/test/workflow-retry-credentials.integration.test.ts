@@ -3,8 +3,8 @@ import { EventEmitter, once } from 'node:events'
 import { CodexHarnessConfigurationSchema } from '@foreman-code/contracts'
 import { DomainError } from '../src/modules/errors.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
-import { assertCurrentWorkerBinding } from '../src/modules/interactions/current/credentialAuthority.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { assertWave25WorkerBinding } from '../src/modules/interactions/current/credentialAuthority.js'
 import { beforeGraphCommit, ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { WorkflowNativeProofServices } from '../src/modules/runs/workflowNativeProof.js'
 import { postgresEnabled } from './helpers/database.js'
@@ -74,11 +74,11 @@ describe.skipIf(!postgresEnabled)('fresh authority for a same-slot technical ret
       const currentIssued = issued.find((item) => item.principal.id === current.principal_id)
       expect(currentIssued !== undefined).toBe(true)
       const access = new PostgresAccessService(f.base.db.pool)
-      const credentials = new CurrentWorkerCredentialService(f.base.db.pool, access)
+      const credentials = new Wave25WorkerCredentialService(f.base.db.pool, access)
       // The same shared predicate is used by the App endpoint, renewal and the
       // terminal-credential sweep; none may reject a live retry merely for being attempt two.
       await credentials.reconcileTerminalCredentials()
-      await expect(assertCurrentWorkerBinding(f.base.db.pool, current.principal_id)).resolves.toBeUndefined()
+      await expect(assertWave25WorkerBinding(f.base.db.pool, current.principal_id)).resolves.toBeUndefined()
       const principal = await access.authenticate(currentIssued!.token, 'worker')
       expect(principal).toMatchObject({ id: current.principal_id, agentId: retry.execution.agentId,
         audience: 'worker', revokedAt: null, grants: [{ actions: ['bug_reports:report', 'interactions:read'], scope: {

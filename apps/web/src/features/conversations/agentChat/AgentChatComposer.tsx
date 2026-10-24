@@ -2,7 +2,8 @@ import { useLayoutEffect, useId, type ReactNode, type RefObject } from 'react'
 import { ArrowUp, CornerDownLeft, Square } from 'lucide-react'
 import { parseSessionCommand, type SessionMode } from '@foreman-code/contracts'
 import { IconButton, Textarea, Tooltip } from '../../../shared/ui/nocturne'
-import { useComposerDraft } from '../useComposerDraft'
+import { useConversationDraftStore } from '../conversationDraftStore'
+import { useSlashCommandMenu } from '../sessionControls/useSlashCommandMenu'
 
 export function AgentChatComposer({ name, draftKey, inputRef, disabled, reason, controlReason, pending, controlPending,
   hasAttachments, attachmentControl, actions, canStop, stopReason, onStop, onSubmit, deliveryActions, sessionCommands = true }: {
@@ -14,12 +15,12 @@ export function AgentChatComposer({ name, draftKey, inputRef, disabled, reason, 
   deliveryActions?: ReactNode; sessionCommands?: boolean
 }) {
   const id = useId()
-  const { draft, command, menu, change } = useComposerDraft(draftKey, content => submit(content), {
-    allowNew: true, sessionCommands,
-  })
+  const draft = useConversationDraftStore(store => store.drafts[draftKey] ?? '')
+  const setDraft = useConversationDraftStore(store => store.setDraft)
+  const command = parseSessionCommand(draft)
   const controlOnly = command.kind === 'compact' || command.kind === 'mode'
   const blocked = disabled || (controlOnly ? controlPending : pending) || !!reason || (!draft.trim() && !hasAttachments) || draft.length > 32_000
-  function submit(content = draft) {
+  const submit = (content = draft) => {
     const submitted = parseSessionCommand(content)
     const sessionCommand = submitted.kind === 'compact' || submitted.kind === 'mode' || submitted.kind === 'new'
     const unavailable = sessionCommand ? controlReason : reason
@@ -27,6 +28,7 @@ export function AgentChatComposer({ name, draftKey, inputRef, disabled, reason, 
     if (disabled || inFlight || unavailable || (!content.trim() && !hasAttachments) || content.length > 32_000) return
     onSubmit(content, submitted.kind === 'plan-task' ? 'plan' : undefined)
   }
+  const menu = useSlashCommandMenu(draft, value => setDraft(draftKey, value), content => submit(content), true, sessionCommands)
   useLayoutEffect(() => {
     const input = inputRef.current
     if (!input) return
@@ -52,7 +54,7 @@ export function AgentChatComposer({ name, draftKey, inputRef, disabled, reason, 
       {attachmentControl}
       <Textarea label="Message" className="agent-chat-field" id={id} ref={inputRef} rows={1} value={draft} maxLength={32_000} disabled={disabled}
         placeholder={reason && reason.length > 64 ? 'Messaging unavailable' : reason ?? `Message ${name}…`} aria-describedby={`${id}-hint`} {...menu.inputProps}
-        onChange={event => change(event.currentTarget.value)}
+        onChange={event => { setDraft(draftKey, event.currentTarget.value); menu.reset() }}
         onKeyDown={event => {
           menu.onKeyDown(event)
           if (event.defaultPrevented || event.key !== 'Enter' || event.shiftKey || event.altKey || event.ctrlKey
