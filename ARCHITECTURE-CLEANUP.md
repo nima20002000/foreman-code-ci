@@ -403,12 +403,41 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   and new publications already require 3 through a trigger.
 
 ### PR 8: Execution core (#78 is part 1, draft)
-- [~] #13 `ApprovalExecutionCoordinator`: a typed dependencies object; `RunExecutionCapacity` and
-  `NativeCredentialLedger` extracted. The session lifecycle (`executionSessionLifecycle.ts`), consultations
-  (`executionConsultations.ts`), reviewer sessions (`executionReviewerSessions.ts`) and Stop/restart cancellation
-  (`executionCancellation.ts`) are now collaborators that share the coordinator through `ExecutionSessionHost`; the
-  coordinator keeps one-line delegates for its public methods. Still in the coordinator (about 2.3k lines): workflow
-  observation, attach/restore, run-owner sharing and the workflow-chat owner.
+- [~] #13 `ApprovalExecutionCoordinator`: split reconciled on `fix/re2-a13-coord`; changed-file lint passes, full verification blocked by base failures.
+  Session lifecycle and Run ownership, attachment/restoration and credential preparation, workflow
+  observation/settlement, consultations, reviewer sessions and cancellation now live in collaborators.
+  Workflow-chat capture/reconciliation has its own collaborator. An explicit internal `ExecutionSessionHost`
+  replaces the coordinator `Pick`; implementation state and collaborators are private, while the consumed
+  reviewer dispatcher and coordinator API remain public. Native calls and durable-write order are preserved.
+  Added public-API tests for shared Run-owner retention/release and successor ownership during chat transactions.
+  The merge preserves #34's `CurrentInteractionRepository` rename in both the coordinator and extracted host.
+  Startup/terminal observation fixtures now configure the injected manager resolver instead of replacing
+  coordinator methods moved by the split; their startup, credential and terminal assertions are retained.
+  Foreman CI on merge `ab1cd253d4`: affected unit `79925517-2380-41c4-84f0-cbd69b158f0c`,
+  startup/engine unit `c65985b2-8b78-4888-8b65-9c4e593cbae3`, affected integration
+  `bccf7114-1a62-499a-9a01-979a6435ab4d`, full typecheck `64ebbe75-32da-4f01-bce7-b891c303420c`,
+  full lint `97250c91-2c4a-4114-be60-226dac6f3ab0`. The startup fixture overrides caused two additional
+  failures and were corrected; targeted lint `e35f7b47-4ba2-4174-9bfe-6cbbbe9e7256` found one
+  `no-this-alias` error, corrected with a lexical accessor. No tests or assertions were removed.
+  Base `40a4cdbf03` comparisons: affected unit `0220b6d8-4802-4b76-b650-ae8e3e345fb4`, affected
+  integration `543a671c-aa2c-438d-8f01-91adf34d2ea4`, full typecheck
+  `4797eef0-5d55-46a3-a467-a56bb7b26b01`, full lint `e06a0312-f8b4-4572-a1c0-6bee2d1c4838`.
+  They reproduce the credential import cycle, seven remote-recovery fixture failures, MCP string parse errors,
+  worker artifact build failure, web mock typing errors and contracts unused-variable lint failure.
+  API typechecking stops at the base syntax errors; full lint stops at the base cycle before ESLint.
+  Re-run after the integration work repairs these base blockers. No local checks were run.
+  Follow-up merge onto `b79d2dccdb` preserves all integration-lane changes, including #16 active/retired
+  harness handling in `executionSessionAttachment.ts`, capability-based steer in workflow controls, and
+  module-boundary imports in every extracted collaborator. Behavior and durable-write ordering are unchanged.
+  Foreman CI on merge `6a9e91c656`: affected integration `a42f05e9-3d21-4d68-8d18-b5c7b778b0e1`
+  passes all four files (nine cases); changed-file lint `ac1b4f12-4867-4f68-8426-ecb788e3fe8b` passes
+  all 15 changed TypeScript files. Affected unit `bdd7f5df-e88f-400a-97ad-d75d690320d8` passes startup
+  concurrency and terminal ordering (28 cases); six suites cannot load through the existing credential import cycle.
+  Full typecheck `0b24e166-d2e6-427c-b8f9-a467dce2bee0` reports the same 37 API diagnostics as exact-base
+  `b79d2dccdb` ticket `f1cc1e43-17b6-40a8-9b01-8202845e4ac7`, none in changed files; non-API typecheck passes.
+  Full lint `198fce37-a558-4cc7-8285-17342ec27425` and exact-base lint
+  `9274e3e5-9905-47d3-a8e8-b4290c033e95` both stop at the existing import cycle and contracts unused variable.
+  Exact-base affected unit comparison: `56fb16e9-a5f3-4e8a-8acd-684e0523ad24`.
 - [~] #14 "repeat" is the universal run engine despite AGENTS.md. `runs/workflowRunMode.ts` names the three modes
   (`graph`, `handoff`, `hierarchy`; only explicit repeat blocks declare repeat). `executeRepeatRuntime` now takes a
   `WorkflowGraphMode` (`handoffGraphMode` or `workflowGraphMode`) instead of branching on `work`/`repeat`, the native
