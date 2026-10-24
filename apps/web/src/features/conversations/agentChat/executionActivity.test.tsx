@@ -196,14 +196,20 @@ describe('Board Agent chat live execution activity', () => {
 
   it('bounds live retention and rendering during polling', async () => {
     const state = runState()
+    let t0 = performance.now(); const lap = (label: string) => { const now = performance.now(); console.log(`DIAG ${label} ${Math.round(now - t0)}ms`); t0 = now }
     const mounted = mountChat(state)
+    lap('mount')
     mounted.mock.setExecutionActivity(state.context, livePage(numberedMessages(1, 200), '200'))
     const check = await screen.findByRole('region', { name: 'Loop 1 · Working' })
+    lap('first-render')
     for (const end of [250, 300, 350]) {
       await pollActivity(mounted, livePage(numberedMessages(end - 49, end), String(end)))
+      lap('poll')
       expect(await within(check).findByText(`Activity ${end}`)).toBeVisible()
+      lap('findByText')
       expect(activityData(mounted.client)?.items.length).toBeLessThanOrEqual(200)
       expect(within(check).getAllByRole('listitem', { hidden: true }).length).toBeLessThanOrEqual(200)
+      lap('listitems')
     }
     expect(within(check).getByText('Activity 350')).toBeVisible()
     expect(within(check).queryByText('Activity 1')).not.toBeInTheDocument()
