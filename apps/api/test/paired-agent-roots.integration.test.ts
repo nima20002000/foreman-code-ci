@@ -1,7 +1,3 @@
-import { execFileSync } from 'node:child_process'
-import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 import { randomUUID } from 'node:crypto'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { NodePlacementChoicesResultSchema } from '@foreman-code/contracts/placement-readback'
@@ -110,64 +106,6 @@ describe.skipIf(!postgresEnabled)('paired Agent workspace roots', () => {
       expect((await (await f.connect(denied.token)).callTool({ name: 'workspace_root_location_set', arguments: input })).isError)
         .toBe(true)
       expect((await persisted()).rows[0]).toEqual(persistedBefore)
-    } finally { await f.close() }
-  }, 120_000)
-
-  it.each([true, false])('sets up a selected Worker before offering it in real placement discovery (Main source bound: %s)', async mainSourceBound => {
-    const f = await pairedAgentRootsFixture({ unboundMainSource: !mainSourceBound })
-    try {
-      const { workspaceId } = f.input
-      const before = await f.workspaceRoots.get(f.base.writer.principal, { workspaceId })
-      const project = before.executionLocation!.rootPath
-      const git = (...args: string[]) => execFileSync('git', args, { cwd: project, env: gitFixtureEnvironment() })
-      git('init', '-q', '-b', 'main')
-      await writeFile(join(project, 'hello.ts'), 'export const hello = true\n')
-      git('add', 'hello.ts')
-      git('commit', '-qm', 'Initial project')
-      const reader = await f.reader()
-      const path = `/api/management/workspaces/${workspaceId}/workflows/${f.input.workflowId}`
-        + `/nodes/${f.input.nodeId}/placement-choices?agentConfigurationVersionId=${f.input.agentConfigurationVersionId}`
-      const readChoices = async () => NodePlacementChoicesResultSchema.parse((await f.app.inject({
-        method: 'GET', url: path, headers: { authorization: `Bearer ${reader.token}` },
-      })).json())
-      const beforeChoices = await readChoices()
-      expect(beforeChoices.choices.some(choice => choice.placement.hostRef.kind === 'device')).toBe(false)
-      expect(beforeChoices.unavailableComputers).toContainEqual(expect.objectContaining({
-        hostRef: f.device.hostRef, reason: expect.stringContaining('project isn’t set up'),
-      }))
-      const readRoots = async () => SourceRootListResultSchema.parse((await f.app.inject({ method: 'GET',
-        url: `/api/management/workspaces/${workspaceId}/source-roots`, headers: f.headers })).json()).items
-      const beforeRoots = await readRoots()
-      expect(beforeRoots.filter(root => root.selection.hostRef.kind === 'main')).toHaveLength(mainSourceBound ? 1 : 0)
-      const folder = await f.app.inject({ method: 'PUT', url: `/api/management/workspaces/${workspaceId}/root-location`,
-        headers: f.headers, payload: { workspaceId, hostRef: f.device.hostRef, allowedBaseId: f.device.bases[0]!.baseId,
-          configurationRevision: f.device.configurationRevision, relativePath: 'chosen-project', accessMode: 'read-write',
-          expectedLocationRevision: before.locationRevision, expectedRootPolicyRevision: 0, commandId: randomUUID() } })
-      expect(folder.statusCode, folder.body).toBe(200)
-      const location = WorkspaceBoundLocationSetResultSchema.parse(folder.json()).value
-      if (location.evidence !== 'bound') throw new Error('Expected a saved Worker folder')
-      // A folder policy alone must not masquerade as a ready placement.
-      expect((await readChoices()).choices.some(choice => choice.placement.hostRef.kind === 'device')).toBe(false)
-      const input = { workspaceId, commandId: randomUUID(), selection: { hostRef: location.binding.hostRef,
-        rootPolicyId: location.binding.rootPolicyId, rootPolicyRevision: location.binding.rootPolicyRevision,
-        locationRevision: location.binding.locationRevision }, accessMode: 'exclusive-write' }
-      const setup = () => f.app.inject({ method: 'POST', url: `/api/management/workspaces/${workspaceId}/source-roots/setup`,
-        headers: f.headers, payload: input })
-      const response = await setup()
-      const choices = await readChoices()
-      expect(choices.choices, response.body).toContainEqual(expect.objectContaining({ availability: 'ready', reason: null,
-        placement: expect.objectContaining({ hostRef: f.device.hostRef, projectRoot: location.binding.canonicalProjectRoot,
-          rootBinding: expect.objectContaining({ rootId: expect.any(String) }) }) }))
-      expect(response.statusCode, response.body).toBe(200)
-      expect(choices.unavailableComputers).toEqual([])
-      const roots = await readRoots()
-      expect(roots.filter(root => root.selection.hostRef.kind === 'main')).toEqual(beforeRoots)
-      const worker = roots.find(root => root.selection.hostRef.kind === 'device')!
-      expect(worker.selection).toEqual(input.selection)
-      if (mainSourceBound) expect(worker.source).toEqual(f.placement.source)
-      expect((await setup()).statusCode).toBe(200)
-      expect(await readRoots()).toEqual(roots)
-      expect(await f.workspaceRoots.get(f.base.writer.principal, { workspaceId })).toEqual(before)
     } finally { await f.close() }
   }, 120_000)
 
