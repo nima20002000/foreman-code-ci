@@ -1,9 +1,63 @@
 import { omitProperties } from '../../shared/omitProperties.js'
+import { randomUUID } from 'node:crypto'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import type { ChatDeliveryReceipt } from '@foreman-code/contracts'
+import {
+  WorkflowChatPostRequestSchema, type WorkflowChatPostRequest, type WorkflowChatPost,
+  type DeliveryTarget, type ChatDeliveryReceipt,
+} from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
+import type { ChannelScope } from './model.js'
 
-export const CHAT_PAGE_BYTES = 256 * 1024
+export const CHANNEL_PAGE_BYTES = 256 * 1024
+export const CHANNEL_BODY_BYTES = 16 * 1024
+
+export function channelCommand(raw: unknown, author: WorkflowChatPost['author']): WorkflowChatPostRequest & { commandId: string } {
+  const request = WorkflowChatPostRequestSchema.parse(raw)
+  if (!request.body.trim() || Buffer.byteLength(request.body, 'utf8') > CHANNEL_BODY_BYTES) {
+    throw new DomainError('CHAT_POST_INVALID', 'A Group post needs text and may contain at most 16 KiB of UTF-8 text.', 422)
+  }
+  if (author.kind === 'agent' && (request.mentions.length || request.deliveries.length)) {
+    throw new DomainError('CHAT_AGENT_MENTIONS_DENIED', 'Agent posts cannot wake another Agent. Post the reply without mentions.', 403)
+  }
+  if (author.kind === 'system') throw new DomainError('CHAT_ACTOR_INVALID', 'System posts come only from committed source facts.', 403)
+  const mentions = [...request.mentions].sort((a, b) => a.start - b.start)
+  let end = 0
+  for (const mention of mentions) {
+    if (mention.start < end || mention.end > request.body.length || mention.start >= mention.end
+      || splitsSurrogate(request.body, mention.start) || splitsSurrogate(request.body, mention.end)) {
+      throw new DomainError('CHAT_MENTION_INVALID', 'Mention spans must select complete, nonoverlapping text in the exact submitted body.', 422)
+    }
+    end = mention.end
+  }
+  const nodes = new Set(request.mentions.map(mention => mention.workflowNodeId))
+  const recipients = new Set<string>()
+  for (const delivery of request.deliveries) {
+    if (recipients.has(delivery.workflowNodeId) || !nodes.has(delivery.workflowNodeId)
+      || delivery.target.kind === 'operator_conversation'
+      || delivery.target.agent.workflowNodeId !== delivery.workflowNodeId) {
+      throw new DomainError('CHAT_RECIPIENT_INVALID', 'Each explicitly mentioned node needs exactly one Agent delivery.', 422)
+    }
+    assertTargetScope(delivery.target, request)
+    recipients.add(delivery.workflowNodeId)
+  }
+  if (recipients.size !== nodes.size) throw new DomainError('CHAT_RECIPIENT_REQUIRED', 'Resolve every mentioned Agent before posting.', 422)
+  return { ...request, commandId: request.commandId ?? randomUUID() }
+}
+
+function splitsSurrogate(text: string, at: number): boolean {
+  return at > 0 && at < text.length && /[\uD800-\uDBFF]/.test(text[at - 1]!) && /[\uDC00-\uDFFF]/.test(text[at]!)
+}
+
+export function assertTargetScope(target: DeliveryTarget, scope: ChannelScope): void {
+  if (target.kind === 'operator_conversation' || target.agent.workspaceId !== scope.workspaceId
+    || target.agent.workflowId !== scope.workflowId) {
+    throw new DomainError('CHAT_TARGET_SCOPE_MISMATCH', 'The selected target belongs to a different workflow.', 403)
+  }
+}
+
+export function recipientCommandId(postCommandId: string, nodeId: string): string {
+  return `group:${commandInputHash([postCommandId, nodeId]).slice(7)}`
+}
 
 export function receiptId(principalId: string, commandId: string): string {
   return `chat:${commandInputHash([principalId, commandId]).slice(7)}`

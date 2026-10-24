@@ -63,7 +63,6 @@ export function RemoveWorkspaceButton({ workspaceId, name, revision, renderTrigg
     <ConfirmDialog open={open} onOpenChange={(value) => { if (!value) close() }}
       title={`Remove ${name}?`}
       description="It leaves the workspace list. Folders the app created are deleted; folders you picked are kept. Run history stays. A workspace with active runs can’t be removed."
-      dismissalReason={attempt.current.unresolved ? 'Removal is unconfirmed. Retry checks the original removal before you can close this dialog.' : undefined}
       pending={mutation.isPending} confirmLabel={attempt.current.unresolved ? 'Retry removal' : 'Remove workspace'}
       error={mutation.isError ? mutation.error.message : attempt.current.unresolved && !mutation.isPending
         ? 'It may already be removed. Retry to check.' : undefined}

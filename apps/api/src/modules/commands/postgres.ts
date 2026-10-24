@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { TransactionSession, type SqlQuery } from '../../infrastructure/transaction.js'
+import { databaseDomainError } from '../../infrastructure/databaseErrors.js'
 import { lifecycleSessionPool } from '../../infrastructure/pool.js'
 export { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 
@@ -275,6 +276,7 @@ export class PostgresCommandCoordinator {
         }
       }
       const commitUncertain = committing && !(rolledBack && commitWasRejected(error))
+      failure = databaseDomainError(failure)
       let failureCode = failure instanceof DomainError ? failure.code : 'INTERNAL_ERROR'
       if (commitUncertain) failureCode = 'COMMAND_COMMIT_UNCERTAIN'
       if (!releaseError) {

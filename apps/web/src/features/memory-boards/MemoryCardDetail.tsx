@@ -16,6 +16,7 @@ interface Props {
   onBack(): void
   onEdit(card: Card, action: MemoryCardAction): void
   onOpenWork(binding: MemoryCardWorkBinding): void
+  onSourcePost?(postId: string): void
   onOpenHistoryWork?(change: MemoryChange): void
 }
 export function MemoryCardDetail({ client, boardId, cardId, ...props }: Props) {
@@ -27,7 +28,7 @@ export function MemoryCardDetail({ client, boardId, cardId, ...props }: Props) {
   </section>
   return <CardDetailBody {...props} client={client} detail={query.data} stale={query.isError} retry={() => void query.refetch()} />
 }
-function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpenWork, onOpenHistoryWork, onBack, stale, retry }: Omit<Props, 'boardId' | 'cardId'> & {
+function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpenWork, onSourcePost, onOpenHistoryWork, onBack, stale, retry }: Omit<Props, 'boardId' | 'cardId'> & {
   detail: Detail; stale: boolean; retry(): void
 }) {
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -70,6 +71,7 @@ function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpe
       {claims.hasNextPage && <Button loading={claims.isFetchingNextPage} loadingLabel="Loading activation claims…"
         onClick={() => void claims.fetchNextPage()}>Load more activation claims</Button>}
     </div>
+    {card.sourcePostId && <Button onClick={() => onSourcePost?.(card.sourcePostId!)} disabled={!onSourcePost}>Source message</Button>}
     <div className="n-actions">
       <Button disabled={!canWrite} onClick={() => onEdit(card, 'edit')}>Edit</Button>
       {card.status === 'done' ? <Button disabled={!canWrite} onClick={() => onEdit(card, 'reopen')}>Reopen in Todo</Button>
@@ -87,15 +89,13 @@ function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpe
 }
 function HistoryEntry({ entry, onOpenWork }: { entry: MemoryChange; onOpenWork?: (change: MemoryChange) => void }) {
   const text = (value: unknown) => typeof value === 'string' ? value : value === null || value === undefined ? 'None' : JSON.stringify(value)
-  const execution = entry.provenance?.execution ?? (entry.provenance?.subject?.kind === 'execution' ? entry.provenance.subject.execution : undefined)
-  const work = entry.provenance?.work ?? execution
   return <li>{entry.actor.displayName} updated this card · {visibleTime(entry.occurredAt)}
     {entry.changes && <ul>{Object.entries(entry.changes).map(([field, change]) => <li key={field}>
       <details><summary>{field} changed</summary><p className="memory-preserve-lines">Previously: {text(change.before)}</p>
         <p className="memory-preserve-lines">Saved: {text(change.after)}</p></details>
     </li>)}</ul>}
-    {work && <p>Run {work.runId.slice(0, 8)}
-      {execution ? ` · Execution ${execution.executionId.slice(0, 8)}` : ''}
+    {entry.provenance?.work && <p>Run {entry.provenance.work.runId.slice(0, 8)}
+      {entry.provenance.execution ? ` · Execution ${entry.provenance.execution.executionId.slice(0, 8)}` : ''}
       {onOpenWork && <Button size="sm" onClick={() => onOpenWork(entry)}>Open recorded work</Button>}</p>}
     {entry.provenance?.subject?.kind === 'coordinator_consultation' && <p>Consultation · {entry.provenance.subject.agent.displayName}</p>}
   </li>

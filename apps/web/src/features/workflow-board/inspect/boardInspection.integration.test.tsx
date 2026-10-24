@@ -187,8 +187,7 @@ describe('Run inspection inside the one mounted Board', () => {
     expect(within(dialog).getByRole('button', { name: /Show tests of build · build-api/ })).toBeVisible()
     responseStatus = 503
     await act(async () => { await cache.refetchQueries({ queryKey: [...runInspectionQueryKey(scope), 'ci-jobs'] }) })
-    expect(await within(dialog).findByText('The list shows the last jobs read. Try reading them again.')).toBeVisible()
-    expect(within(dialog).getByRole('button', { name: 'Retry CI jobs' })).toBeEnabled()
+    expect(await within(dialog).findByText('The list shows the last jobs read.')).toBeVisible()
     expect(within(dialog).getByRole('button', { name: /Show tests of build · build-api/ })).toBeVisible()
     for (const next of [status, 503]) {
       responseStatus = next

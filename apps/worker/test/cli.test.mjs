@@ -1,6 +1,7 @@
+import { standaloneInstallationSource } from '../../../packages/contracts/src/installationNames.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, copyFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -13,7 +14,8 @@ test('both CLIs provide static model-free help before argument, filesystem and r
   const source = join(directory, 'src'); await mkdir(source);
   // No manifest, contracts, enrollment or worker factory is present in this copy.
   for (const name of ['cli.mjs', 'install-cli.mjs', 'diagnostics.mjs', 'runtime.mjs', 'installation.mjs', 'browserRuntimeInstall.mjs', 'service.mjs', 'companionLauncher.mjs']) {
-    await copyFile(new URL(`../src/${name}`, import.meta.url), join(source, name));
+    await writeFile(join(source, name), standaloneInstallationSource(
+      await readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')));
   }
   const before = await readdir(directory);
   for (const entry of ['cli.mjs', 'install-cli.mjs']) {

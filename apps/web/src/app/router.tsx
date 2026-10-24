@@ -10,7 +10,7 @@ import { ComputerSettingsTabs, type ComputerSettingsTab } from '../features/sett
 import { ApprovalInboxSearchSchema, UrlSearchSelectionSchema, BrowserProfilesSettingsSearchSchema } from '@foreman-code/contracts'
 import { RunsSelectorSearchSchema } from '../features/runs-selector'
 import { RootShell } from './RootShell'
-import { ComputersSettingsSearchSchema, AgentSettingsSearchSchema, BugsSettingsSearchSchema, SkillSettingsSearchSchema } from '@foreman-code/contracts/management'
+import { AgentSettingsSearchSchema, BugsSettingsSearchSchema, SkillSettingsSearchSchema } from '@foreman-code/contracts/management'
 import { AppearanceSettingsRouteEntry, BugsSettingsRouteEntry, GeneralSettingsRouteEntry, NewSkillRouteEntry, SkillDetailRouteEntry, SkillsSettingsRouteEntry, SystemPromptSettingsRouteEntry, WorkspaceDefaultsSettingsRouteEntry } from '../routes/SettingsExperienceRoutes'
 
 import { ProviderAccountsSettingsSearchSchema } from '../features/provider-accounts'
@@ -92,7 +92,6 @@ const jobDetailsRedirectRoute = createRoute({
 const computersSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/computers',
-  validateSearch: ComputersSettingsSearchSchema,
   component: ComputersSettingsRouteEntry,
 })
 const browserProfilesSettingsRoute = createRoute({

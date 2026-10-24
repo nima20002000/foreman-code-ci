@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, rm, lstat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -13,16 +14,16 @@ const execute = promisify(execFile);
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 
 export function createCompanionService({ home, stateDirectory, node = process.execPath, factsProvider = hostFacts, executeSystemctl = execute }) {
-  const root = join(home, '.local/lib/graphql-worker');
-  const state = join(home, '.local/state/graphql-worker');
-  const unitPath = join(home, '.config/systemd/user/graphql-worker.service');
+  const root = join(home, INSTALLATION_NAMES.paths.workerApp);
+  const state = join(home, INSTALLATION_NAMES.paths.workerState);
+  const unitPath = join(home, INSTALLATION_NAMES.paths.workerUnit);
   const environment = { HOME: home, PATH: workerPath(home, node), XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS };
   async function plan() {
     if (stateDirectory !== state) throw new WorkerError('installation_invalid');
     await requireInstallationState({ root, stateDirectory });
     const release = await readInstalledRelease({ root, facts: await factsProvider(home, [root, state]), expected: { protocolVersion: 1, identityFormat: 1 } });
-    if (!release.manifest.files.some((file) => file.path === 'artifacts/graphql-worker.service.in')) throw new WorkerError('installation_invalid');
-    const unitText = renderUserService(await readFile(join(release.directory, 'artifacts/graphql-worker.service.in'), 'utf8'), {
+    if (!release.manifest.files.some((file) => file.path === INSTALLATION_NAMES.artifacts.workerService)) throw new WorkerError('installation_invalid');
+    const unitText = renderUserService(await readFile(join(release.directory, INSTALLATION_NAMES.artifacts.workerService), 'utf8'), {
       node, app: root, state, home, path: environment.PATH,
     });
     let retained;
@@ -33,12 +34,12 @@ export function createCompanionService({ home, stateDirectory, node = process.ex
     }
     const rollbackCommands = [];
     if (retained) {
-      rollbackCommands.push(['systemctl', '--user', 'stop', 'graphql-worker.service']);
+      rollbackCommands.push(['systemctl', '--user', 'stop', INSTALLATION_NAMES.services.worker]);
       rollbackCommands.push(['APPROVED_RETAINED_NODE', join(release.directory, 'src/install-cli.mjs'),
         'rollback', '--root', root, '--state', state, '--approve-stopped-update', 'yes']);
     }
     const value = { approvedUser: userInfo().username, artifactManifestSha256: release.manifestSha256, unitPath, unitText,
-      enableCommands: [['systemctl', '--user', 'daemon-reload'], ['systemctl', '--user', 'enable', '--now', 'graphql-worker.service']],
+      enableCommands: [['systemctl', '--user', 'daemon-reload'], ['systemctl', '--user', 'enable', '--now', INSTALLATION_NAMES.services.worker]],
       rollbackCommands,
       rollbackAvailable: !!retained,
       rollbackRuntimeApprovalRequired: !!retained,
@@ -62,7 +63,7 @@ export function createCompanionService({ home, stateDirectory, node = process.ex
       try { await writeFile(temporary, approved.unitText, { mode: 0o600, flag: 'wx' }); await rename(temporary, unitPath); }
       finally { await rm(temporary, { force: true }); }
       await executeSystemctl('/usr/bin/systemctl', ['--user', 'daemon-reload'], options);
-      await executeSystemctl('/usr/bin/systemctl', ['--user', 'enable', '--now', 'graphql-worker.service'], options);
+      await executeSystemctl('/usr/bin/systemctl', ['--user', 'enable', '--now', INSTALLATION_NAMES.services.worker], options);
       return { enabled: true };
     });
   }

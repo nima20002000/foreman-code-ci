@@ -6,9 +6,8 @@ import { getOperatorConversationHistory } from '../../shared/api/operatorChatHis
 import { identityChangedEvent, identityEpoch } from '../../shared/api/protectedChatStorage'
 import { sessionIsSwitching } from '../../shared/api/sessionBoundary'
 import { Button } from '../../shared/ui/nocturne'
-import { mergeChatMessages } from '../conversations/agentChat/model'
+import { mergeChatMessages, HistoryWindowNotice } from '../chat-core'
 import { ConversationHistory } from '../conversations'
-import { HistoryWindowNotice } from '../conversations/HistoryWindowNotice'
 import { useOperatorChatStore } from './operatorChatStore'
 
 function subscribeIdentity(listener: () => void) {

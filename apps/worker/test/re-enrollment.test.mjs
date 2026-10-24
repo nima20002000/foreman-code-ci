@@ -14,11 +14,11 @@ const { tsImport } = await import(require.resolve('tsx/esm/api'));
 const { enrollWorkerCode, pairingErrorMessage } = await tsImport('../src/enrollment.mjs', import.meta.url);
 const { ensurePairedManagedSetup } = await tsImport('../src/managedSetup.mjs', import.meta.url);
 const { inspectManagedInstallation, pairingTarget } = await tsImport('../src/managedInstallation.mjs', import.meta.url);
-const { openPrivateRoot } = await tsImport('../../api/src/modules/sources/privateFilesystem.ts', import.meta.url);
-const { qualifyApprovedRootAllowlist } = await tsImport('../../api/src/modules/sources/rootAttestation.ts', import.meta.url);
+const { openPrivateRoot } = await tsImport('@foreman-code/api/worker/sources', import.meta.url);
+const { qualifyApprovedRootAllowlist } = await tsImport('@foreman-code/api/worker/sources', import.meta.url);
 const { encodeWorkerEnrollmentCode } = await tsImport('../../../packages/contracts/src/deviceSetup.ts', import.meta.url);
 const { loadOrCreateWorkerIdentity, persistWorkerPairing, loadWorkerPairing, publicKeyFingerprint,
-  mainEnrollmentProofMessage } = await tsImport('../../../packages/contracts/src/deviceIdentityNode.ts', import.meta.url);
+  mainEnrollmentProofMessage } = await tsImport('../../../packages/contracts-node/src/deviceIdentityNode.ts', import.meta.url);
 
 async function fixture(t, { aliasedHome = false } = {}) {
   t.after(mockHostMounts(t.mock, persistentHostMounts));

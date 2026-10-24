@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 /** Explicit shared state of a Claude session manager and its small runtime helpers. */
 import { sessionStartConfiguration, sessionStartSystemPrompt } from '../sessionStart.js'
 import { SessionPreferencesSchema, nativeMcpServerAllowed, type AgentHarness, type NativeHarnessEvent,
@@ -58,7 +59,7 @@ export function createClaudeManagerContext(options: ClaudeNativeSessionManagerOp
 export function filterMcpServers(start: NativeSessionStart, servers: Readonly<Record<string, unknown>>) {
   const policy = sessionStartConfiguration(start).nativeTools
   return Object.fromEntries(Object.entries(servers).filter(([name]) =>
-    name === 'graphql-files' || nativeMcpServerAllowed(name, policy)))
+    name === INSTALLATION_NAMES.mcp.files || nativeMcpServerAllowed(name, policy)))
 }
 
 export function queryOptions(ctx: ClaudeManagerContext, start: NativeSessionStart, preferences = SessionPreferencesSchema.parse({})): Record<string, unknown> & { env: NodeJS.ProcessEnv } {
@@ -126,7 +127,7 @@ export function canonicalStart(start: NativeSessionStart): NativeSessionStart {
   const variables = { ...start.environment.variables }
   const token = readProductEnvironment(variables, 'MCP_TOKEN')
   for (const name of APP_MCP_TOKEN_NAMES) delete variables[name]
-  if (token !== undefined) variables.FOREMAN_CODE_MCP_TOKEN = token
+  if (token !== undefined) variables[INSTALLATION_NAMES.environment.MCP_TOKEN] = token
   return { ...start, environment: { ...start.environment, variables } }
 }
 

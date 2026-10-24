@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_HARNESS_DEFAULTS, activeGraphqlTools, memoryBoardTools, WORKFLOW_HIERARCHY_TOOLS, WorkflowHierarchyReadResultSchema,
-  WorkflowReportsPageSchema, type Agent, type WorkflowHierarchy } from '@foreman-code/contracts'
+import { DEFAULT_HARNESS_DEFAULTS, memoryBoardTools, WORKFLOW_HIERARCHY_TOOLS, WorkflowHierarchyReadResultSchema,
+  WorkflowReportsPageSchema, type WorkflowHierarchy } from '@foreman-code/contracts'
 import { AgentDefaultsUpdateResultSchema, AgentMutationResultSchema, ManagedAgentDefaultsSchema,
   ManagedAgentDetailSchema, type ManagementGrant } from '@foreman-code/contracts/management'
 import { CurrentManagedWorkflowSchema, CurrentWorkflowSaveResultSchema, SavedManagedWorkflowCommandResultSchema,
-  CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, CurrentEditStageInputSchema, WorkflowHierarchyUpdateResultSchema,
-  type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+  CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, WorkflowHierarchyUpdateResultSchema,
+  type CurrentEditStageInput, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/database.js'
 import { graphHeaders, graphRpc, graphRpcValue, graphCatalogNames } from './graph-composition-fixture.js'
@@ -67,14 +67,11 @@ async function readAgent(f: AppFixture, agentId: string) {
   return ManagedAgentDetailSchema.parse(reply.json())
 }
 function stageInput(saved: SavedWorkflow, graph: WorkflowDefinitionCurrent,
-  stagedAgents: Array<{ agent: Agent; baseRevision: number | null }>) {
+  stagedAgents: CurrentEditStageInput['stagedAgents']): CurrentEditStageInput {
   return { action: 'stage_edits', workspaceId: saved.workspaceId, workflowId: saved.workflowId,
     draftId: `editor-${randomUUID()}`, commandId: randomUUID(), executionSemanticsVersion: 3,
     expectedRevision: saved.revision, expectedWorkflowVersionId: saved.currentVersionId,
-    expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds, graph,
-    stagedAgents: stagedAgents.map(item => ({ ...item, agent: { ...item.agent,
-      ...(item.agent.graphqlTools ? { graphqlTools: activeGraphqlTools(item.agent.graphqlTools) } : {}),
-    } })) }
+    expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds, graph, stagedAgents }
 }
 async function editCommand(f: AppFixture, base: string, input: unknown, via: 'http' | 'mcp') {
   if (via === 'http') {
@@ -164,9 +161,9 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
     const f = await currentOperatorIntegration({ agentManagement: true, workflowHierarchy: true, approvalNodeIds: [] })
     try {
       const t = await createHierarchy(f, false), original = t.agents[0]!
-      const adopt = CurrentEditStageInputSchema.parse(stageInput(t.saved.value, { ...t.saved.value.version.definition, hierarchy: t.hierarchy }, [
+      const adopt = stageInput(t.saved.value, { ...t.saved.value.version.definition, hierarchy: t.hierarchy }, [
         { agent: { ...original.agent, productRole: 'master' }, baseRevision: original.metadataRevision },
-      ]))
+      ])
       const staged = await editCommand(f, t.base, adopt, 'mcp')
       expect((await readAgent(f, original.agent.id)).agent).toEqual(original.agent)
       expect((await t.read()).hierarchy).toBeNull()
@@ -188,10 +185,10 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
           outcomes: node.choice.outcomes.filter(item => item.target.kind !== 'edge' || !obsolete.has(item.target.relationshipId)),
         } } : node) },
         [[1, 0], [1, 2], [0, 3], [2, 3]])
-      const replacementStage = await editCommand(f, t.base, CurrentEditStageInputSchema.parse(stageInput(adopted, graph, [
+      const replacementStage = await editCommand(f, t.base, stageInput(adopted, graph, [
         { agent: { ...oldMaster.agent, productRole: 'orchestrator' }, baseRevision: oldMaster.metadataRevision },
         { agent: { ...replacement.agent, productRole: 'master' }, baseRevision: replacement.metadataRevision },
-      ])), 'http')
+      ]), 'http')
       expect((await readAgent(f, oldMaster.agent.id)).agent.productRole).toBe('master')
       expect((await readAgent(f, replacement.agent.id)).agent.productRole).toBe('orchestrator')
       const replaced = await publishEdits(f, t.base, replacementStage, 'mcp')
@@ -210,9 +207,9 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
       ordinary.edges = ordinary.edges.filter(edge => !removedRoutes.has(edge.id))
       ordinary.nodes = ordinary.nodes.map(node => node.choice ? { ...node, choice: { outcomes: node.choice.outcomes
         .filter(item => item.target.kind !== 'edge' || !removedRoutes.has(item.target.relationshipId)) } } : node)
-      const removalStage = await editCommand(f, t.base, CurrentEditStageInputSchema.parse(stageInput(replaced, ordinary, [
+      const removalStage = await editCommand(f, t.base, stageInput(replaced, ordinary, [
         { agent: { ...currentMaster.agent, productRole: 'orchestrator' }, baseRevision: currentMaster.metadataRevision },
-      ])), 'mcp')
+      ]), 'mcp')
       expect((await t.read()).hierarchy).toEqual(replacedHierarchy)
       const removed = await publishEdits(f, t.base, removalStage, 'http')
       expect((await t.read()).hierarchy).toBeNull()
@@ -285,9 +282,9 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
       const runUrl = `/api/management/workspaces/${workspaceId}/runs/${f.f.run.id}`
       const runBefore = await f.app.inject({ method: 'GET', url: runUrl, headers: graphHeaders(f.writer.token) })
       expect(runBefore.statusCode, runBefore.body).toBe(200)
-      const staged = await editCommand(f, base, CurrentEditStageInputSchema.parse(stageInput(saved, { ...saved.version.definition,
+      const staged = await editCommand(f, base, stageInput(saved, { ...saved.version.definition,
         handoffs: { contractVersion: 1 }, hierarchy: { version: 1, masterNodeId: 'reused-node', parents: [] },
-      }, [{ agent: { ...reused.agent, productRole: 'master' }, baseRevision: reused.metadataRevision }])), 'mcp')
+      }, [{ agent: { ...reused.agent, productRole: 'master' }, baseRevision: reused.metadataRevision }]), 'mcp')
       expect(staged.intent!.affected).toEqual(expect.arrayContaining([expect.objectContaining({ runId: f.f.run.id, workflowId: f.f.scope.workflowId })]))
       expect(staged.current.some(item => !item.settled)).toBe(true)
       expect((await readAgent(f, agentId)).agent).toEqual(reused.agent)
@@ -414,11 +411,11 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
           { workflowNodeId: 'node-3', parentNodeId: 'node-1' },
         ] },
       }, [[0, 1], [1, 2], [1, 3]])
-      const input = CurrentEditStageInputSchema.parse({ action: 'stage_edits', workspaceId, workflowId, draftId: randomUUID(),
+      const input: CurrentEditStageInput = { action: 'stage_edits', workspaceId, workflowId, draftId: randomUUID(),
         commandId: randomUUID(), executionSemanticsVersion: 3, expectedRevision: fresh.revision,
         expectedWorkflowVersionId: null, expectedAgentConfigurationVersionIds: {}, graph,
         stagedAgents: agents.map(agent => ({ agent, baseRevision: null })),
-      })
+      }
       const staged = await editCommand(f, base, input, via)
       for (const agent of agents) expect((await f.app.inject({ method: 'GET',
         url: `/api/management/workspaces/${workspaceId}/agents/${agent.id}`, headers: graphHeaders(f.writer.token) })).statusCode).toBe(404)
@@ -448,10 +445,10 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
       }
       existingGraph.nodes = existingGraph.nodes.map(node => node.id === 'node-1' ? { ...node,
         choice: { outcomes: [...node.choice!.outcomes, { outcome: 'legacy', target: { kind: 'edge' as const, relationshipId: 'legacy-route' } }] } } : node)
-      const legacyStage = await editCommand(f, base, CurrentEditStageInputSchema.parse({ ...stageInput(saved, existingGraph, [{
+      const legacyStage = await editCommand(f, base, { ...stageInput(saved, existingGraph, [{
         agent: { ...legacy.agent, name: 'Legacy renamed privately' }, baseRevision: legacy.metadataRevision,
       }]), expectedAgentConfigurationVersionIds: { ...saved.version.agentConfigurationVersionIds,
-        [legacy.agent.id]: legacy.agent.configurationVersionId } }), via)
+        [legacy.agent.id]: legacy.agent.configurationVersionId } }, via)
       expect(legacyStage.intent!.stagedDraft.stagedAgents!.find(item => item.agent.id === legacy.agent.id)!.agent.graphqlTools).toBeUndefined()
       expect((await readAgent(f, legacy.agent.id)).agent).toEqual(legacy.agent)
       await editCommand(f, base, { action: 'discard_edits', workspaceId, workflowId, draftId: legacyStage.intent!.draftId,

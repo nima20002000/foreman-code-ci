@@ -44,7 +44,7 @@ export function AppNavigationTrail({ activeWorkflowId }: { activeWorkflowId?: st
   const workspacePath = `/workspaces/${encodeURIComponent(workspaceId)}`
   const crumbs: Crumb[] = []
   if (segments[0] === 'workspaces' && workspaceId) {
-    crumbs.push({ label: 'Workspaces', to: '/workspaces' }, { label: workspaceName ?? 'Workspace', to: `${workspacePath}/settings`, pending: !workspaceName && !workspaceDenied && workspace.isPending })
+    crumbs.push({ label: 'Workspaces', to: '/workspaces' }, { label: workspaceName ?? 'Workspace', to: workspacePath, pending: !workspaceName && !workspaceDenied && workspace.isPending })
     if (workflowId) {
       crumbs.push({ label: 'Workflows', to: `${workspacePath}/workflows` },
         { label: workflowName ?? 'Workflow', to: `${workspacePath}/workflows/${encodeURIComponent(workflowId)}/draft`,
@@ -79,14 +79,12 @@ export function AppNavigationTrail({ activeWorkflowId }: { activeWorkflowId?: st
   const ancestors = segments[0] === 'settings' && segments[1] === 'harnesses'
     && (search.section === undefined || search.section === 'model')
     && crumbs.length > 2 ? crumbs.slice(0, 2) : crumbs.slice(0, -1)
-  const ordinaryBoard = workflowId && segments[4] !== 'runs' && !search.runId && !search.selectedRunId
-  const draftPath = `${workspacePath}/workflows/${encodeURIComponent(workflowId)}/draft`
-  const parent = ancestors.reverse().find(crumb => !(ordinaryBoard && crumb.to === draftPath) && (crumb.to !== location.pathname
-    || [...new Set([...Object.keys(search), ...Object.keys(crumb.search ?? {})])].some(key => search[key] !== crumb.search?.[key])))
+  const parent = ancestors.reverse().find(crumb => crumb.to !== location.pathname
+    || [...new Set([...Object.keys(search), ...Object.keys(crumb.search ?? {})])].some(key => search[key] !== crumb.search?.[key]))
     ?? { label: 'Workspaces', to: '/workspaces' }
   const back = () => {
     if (canGoBack) router.history.back()
-    else void router.navigate({ to: parent.to, search: parent.search ?? {}, replace: true })
+    else void router.navigate({ to: parent.to, search: parent.search ?? {} })
   }
   return <div className="app-navigation-trail">
     <button type="button" className="app-navigation-back" aria-label="Back" title="Back"

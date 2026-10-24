@@ -7,11 +7,11 @@ import {
   CollectionChallengeSchema, RESOURCE_TELEMETRY_CAPABILITY, TELEMETRY_LIMITS, telemetryCanonical,
   type ResourceCollector, type TelemetryIdentity, type TrustedTelemetryContext,
 } from '@foreman-code/contracts/resource-telemetry'
-import type { DeviceExtensionRegistration, DeviceApplicationRequestOptions } from '../../devices/deviceApplicationChannel.js'
+import type { DeviceExtensionRegistration, DeviceApplicationRequestOptions } from '../../devices/index.js'
 import { resourceTelemetryExtension } from './ports.js'
 import type { TelemetryClock } from './ports.js'
 import { ResourceTelemetryService, TelemetryRejected } from './service.js'
-import type { DeviceEndpoint } from '../../devices/deviceEndpoint.js'
+import type { DeviceEndpoint } from '../../devices/index.js'
 import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
 import { DomainError } from '../../errors.js'
 

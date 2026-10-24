@@ -1,7 +1,3 @@
-import { useEffect, useRef } from 'react'
-import { useSearch } from '@tanstack/react-router'
-import { ComputersSettingsSearchSchema } from '@foreman-code/contracts/management'
-import { askOperator } from '../operator-chat'
 import { Cloud } from 'lucide-react'
 import { DEFAULT_CIRCLE_ACCOUNT_ID, type CircleAccountRead, type CircleOrganizationRead } from '@foreman-code/contracts/management'
 import { useCircleAccountsQuery } from '../../shared/api/circleAccounts'
@@ -17,19 +13,10 @@ const ROLE_LABELS: Record<CircleOrganizationRead['schedulingRole'], string> = {
 /** One row per CircleCI organization. Long reasons live in tooltips, repeated ones are shown once. */
 export function CircleCiSummaryCard() {
   const query = useCircleAccountsQuery()
-  const selected = ComputersSettingsSearchSchema.parse(useSearch({ strict: false }))
-  const selectedRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (query.isSuccess && selected.circleAccountId) {
-      const item = selectedRef.current?.querySelector<HTMLElement>('[data-selected="true"]')
-      item?.scrollIntoView?.({ block: 'nearest' })
-      item?.focus({ preventScroll: true })
-    }
-  }, [query.isSuccess, selected.circleAccountId, selected.cloudAccount])
   const accounts = query.data?.value.accounts
   const second = accounts?.find(account => account.id !== DEFAULT_CIRCLE_ACCOUNT_ID)
   return <section className="circleci-summary" aria-label="CircleCI">
-    <div ref={selectedRef}><Card>
+    <Card>
       <header className="circleci-summary-header"><Cloud size={18} aria-hidden="true" /><h2>CircleCI</h2></header>
       {query.isPending && <div className="circleci-accounts" aria-busy="true"><Skeleton width="100%" height="4rem" /><Skeleton width="100%" height="4rem" /></div>}
       {query.isError && <Alert tone="danger" title="CircleCI accounts could not be read." live
@@ -37,17 +24,17 @@ export function CircleCiSummaryCard() {
           Retry CircleCI
         </Button>} />}
       {query.isSuccess && <div className="circleci-accounts">
-        <AccountSummary selectedAccount={selected.circleAccountId} selectedOrg={selected.cloudAccount} role="Primary" account={accounts?.find(account => account.id === DEFAULT_CIRCLE_ACCOUNT_ID)} />
-        <AccountSummary selectedAccount={selected.circleAccountId} selectedOrg={selected.cloudAccount} role={second?.role === 'primary' ? 'Second' : 'Standby'} account={second} />
+        <AccountSummary role="Primary" account={accounts?.find(account => account.id === DEFAULT_CIRCLE_ACCOUNT_ID)} />
+        <AccountSummary role={second?.role === 'primary' ? 'Second' : 'Standby'} account={second} />
       </div>}
-    </Card></div>
+    </Card>
   </section>
 }
 
-function AccountSummary({ role, account, selectedAccount, selectedOrg }: { role: 'Primary' | 'Second' | 'Standby'; account: CircleAccountRead | undefined; selectedAccount: string | undefined; selectedOrg: string | undefined }) {
+function AccountSummary({ role, account }: { role: 'Primary' | 'Second' | 'Standby'; account: CircleAccountRead | undefined }) {
   // Reasons repeat per organization ("org: Log in to …"); show each distinct one once.
   const reasons = [...new Set(account?.reasons.map(reason => reason.replace(/^[\w-]+: /, '').replace(/\s*\([^)]*\)/g, '')) ?? [])]
-  return <section className="circleci-account" aria-label={`${role} CircleCI account`} tabIndex={-1} data-selected={Boolean(selectedAccount && account?.id === selectedAccount && !selectedOrg)}>
+  return <section className="circleci-account" aria-label={`${role} CircleCI account`}>
     <header><h3>{role}</h3>
       {account && account.label !== role ? <span className="circleci-account-label">{account.label}</span> : null}
       {account && !account.tokenConfigured ? <Badge tone="warning">Setup needed</Badge>
@@ -56,18 +43,14 @@ function AccountSummary({ role, account, selectedAccount, selectedOrg }: { role:
     {account ? <>
       {reasons.map(reason => <p className="circleci-summary-note" key={reason}>{reason}</p>)}
       {account.orgs.length > 0 ? <ul className="circleci-orgs" aria-label={`${role} organizations`}>
-        {account.orgs.map(org => <OrganizationSummary key={`${org.circleAccountId}:${org.account}`} org={org} selected={selectedAccount === org.circleAccountId && selectedOrg === org.account} />)}
+        {account.orgs.map(org => <OrganizationSummary key={`${org.circleAccountId}:${org.account}`} org={org} />)}
       </ul> : reasons.length ? null : <p className="circleci-summary-note">No organizations yet.</p>}
     </> : <p className="circleci-summary-note">No {role.toLowerCase()} account registered.</p>}
-    {account && !account.ready || !account ? <>
-      <p className="circleci-summary-note">Configure the token locally on Main, log in to CircleCI, and follow the CI mirror project. Keep the token out of chat.</p>
-      <Button size="sm" onClick={() => askOperator(`Help set up CircleCI ${account?.id ?? role.toLowerCase()} (${account?.label ?? role})${selectedOrg && selectedAccount === account?.id ? `, organization ${selectedOrg}` : ''}. Read its current metadata and explain the local steps needed: `, { send: false })}>Set up with Operator</Button>
-    </> : null}
   </section>
 }
 
-function OrganizationSummary({ org, selected }: { org: CircleOrganizationRead; selected: boolean }) {
-  return <li title={org.schedulingReason} tabIndex={-1} data-selected={selected}>
+function OrganizationSummary({ org }: { org: CircleOrganizationRead }) {
+  return <li title={org.schedulingReason}>
     <strong>{org.account}</strong>
     <span>{org.running} {org.running === 1 ? 'job' : 'jobs'}</span>
     {org.credits

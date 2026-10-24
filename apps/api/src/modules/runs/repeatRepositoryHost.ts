@@ -1,5 +1,5 @@
 import { reconcileMemoryHandoffsLocked } from './memoryBoardHandoffs.js'
-import type { MemoryBoardService } from '../memory-boards/service.js'
+import type { MemoryBoardService } from '../memory-boards/index.js'
 import { applyMemoryEffectLocked, applyMemoryNativeLocked, prepareMemoryLaunchLocked, validateMemoryResultLocked } from './memoryBoardEffects.js'
 import { createMemoryBoardHooks } from './memoryBoardHooks.js'
 import { AgentConfigurationVersionSchema, SourceCapacityErrorDetailsSchema, type HarnessExecution, type ExecutionResult } from '@foreman-code/contracts'
@@ -10,7 +10,7 @@ import {
 import type { WorkflowNativeProofRecord } from './workflowNativeProof.js'
 import type { WorkflowResultEffectFailure } from './workflowResultEffectFailure.js'
 import { DomainError } from '../errors.js'
-import type { WorkflowCollaborationHooks } from '../collaboration/workflowHooks.js'
+import type { WorkflowCollaborationHooks } from '../collaboration/index.js'
 
 import {
   assertGraphTransaction,

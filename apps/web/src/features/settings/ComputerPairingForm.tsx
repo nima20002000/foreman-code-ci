@@ -22,7 +22,7 @@ const usePairingDraft = create<{ code: string; expired: boolean; expire(): void;
 }))
 /** This form never installs or logs in. The private pairing code lives only in the mutation result
  * until expiry/unmount, and is never put in the URL, a query cache or persistence. */
-export function ComputerPairingForm({ mainId, workerInstallationId, onDismiss }: { mainId: string; workerInstallationId?: string; onDismiss?(): void }) {
+export function ComputerPairingForm({ mainId }: { mainId: string }) {
   const code = usePairingDraft(state => state.code)
   const update = usePairingDraft(state => state.set)
   const expired = usePairingDraft(state => state.expired)
@@ -54,8 +54,7 @@ export function ComputerPairingForm({ mainId, workerInstallationId, onDismiss }:
   const mainFingerprint = main.data?.mainId === mainId ? main.data.mainPublicKeyFingerprint : undefined
   const existing = identity && computers.isSuccess
     ? computers.data.devices.find(value => value.workerInstallationId === identity.workerInstallationId) : undefined
-  const matchesComputer = !workerInstallationId || identity?.workerInstallationId === workerInstallationId
-  const canEnroll = matchesComputer && computers.isSuccess && !computers.isFetching && (!existing || existing.status === 'revoked')
+  const canEnroll = computers.isSuccess && !computers.isFetching && (!existing || existing.status === 'revoked')
   const input: Input | undefined = identity && endpoint && mainFingerprint && canEnroll
     ? { identityRequestCode: code.trim(), endpoint, scopes: ['connect', 'heartbeat'],
       ...(existing ? { expectedAuthorizationRevision: existing.authorizationRevision } : {}) } : undefined
@@ -118,7 +117,6 @@ export function ComputerPairingForm({ mainId, workerInstallationId, onDismiss }:
     {main.error ? <p role="alert">{main.error.message}</p> : null}
     {main.data && main.data.mainId !== mainId ? <p role="alert">The selected main changed. Reload this page.</p> : null}
     <Textarea label="Computer request code" value={code} disabled={locked} autoComplete="off" spellCheck={false} onChange={event => update(event.target.value)} />
-    {identity && !matchesComputer ? <p role="alert">This request code belongs to another computer. Copy the code from this computer’s companion.</p> : null}
     {identity === null ? <p role="alert">This is not a valid computer request code. Copy it again from the companion.</p> : null}
     {identity && !hasResult ? <details className="computer-details" open>
       <summary>Confirm details</summary>
@@ -146,7 +144,7 @@ export function ComputerPairingForm({ mainId, workerInstallationId, onDismiss }:
         <Button onClick={() => void copy()}>Copy pairing code</Button></div>
         {copied ? <p role="status">{copied === 'done' ? 'Copied. Paste it into the companion.' : 'Copy was blocked. Show the code and copy it manually.'}</p> : null}
       </> : null}
-      <Button onClick={() => { reset(); clear(); setResultTarget(undefined); setRevealed(false); setCopied(undefined); onDismiss?.() }}>{paired || revoked || superseded ? 'Done' : 'Discard pairing code'}</Button>
+      <Button onClick={() => { reset(); clear(); setResultTarget(undefined); setRevealed(false); setCopied(undefined) }}>{paired || revoked || superseded ? 'Done' : 'Discard pairing code'}</Button>
     </div>}
   </section>
 }
