@@ -24,13 +24,13 @@ import { mixedComputerPlacement } from './mixedComputerPlacement.js'
 import { privateFixtureDirectory } from './privateFixtureDirectory.js'
 import { removeFixtureDirectory } from './testResources.js'
 
-export async function pairedAgentRootsFixture(options: { managedBase?: boolean } = {}) {
+export async function pairedAgentRootsFixture(options: { managedBase?: boolean; unboundMainSource?: boolean } = {}) {
   const base = await currentOperatorIntegration({ fixture: makeCurrentWorkflowFixture(randomUUID(), 'sequential') })
   const directory = await privateFixtureDirectory('paired-agent-roots-')
   const clients: Client[] = []
   let app: ReturnType<typeof buildApp> | undefined
   try {
-    const placement = await mixedComputerPlacement(base, directory, { unconfiguredDeviceRoot: true })
+    const placement = await mixedComputerPlacement(base, directory, { unconfiguredDeviceRoot: true, ...(options.unboundMainSource ? { unboundMainSource: true } : {}) })
     const pool = base.db.pool
     const configurations = (await pool.query<{ record: unknown }>(
       'select record from workspace_root_host_configurations',

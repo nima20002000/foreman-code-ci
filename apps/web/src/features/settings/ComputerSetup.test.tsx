@@ -4,6 +4,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, expect, it } from 'vitest'
+import { SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
 import type { ApprovedRootAllowlist, WorkspaceRootSelection } from '@foreman-code/contracts/workspace-root-policies'
 import { server } from '../../mocks/server'
@@ -22,7 +23,7 @@ const main = boundRootReadback({ workspaceId: scope.workspaceId, hostRef: mainRo
 const placement = { ...savedPlacementFixture, hostRef: workerRoot.hostRef, projectRoot: '/projects/shared/studio-project' }
 const clients: QueryClient[] = []
 let writes: WorkspaceRootSelection[], reads: number, reason: string
-let allowlists: ApprovedRootAllowlist[], adoptions: unknown[]
+let allowlists: ApprovedRootAllowlist[], adoptions: unknown[], setups: unknown[]
 function AgentComputer() {
   const choices = usePlacementChoices(scope, 'setup-visit')
   const [value, onChange] = useState<SavedNodePlacement>()
@@ -37,7 +38,7 @@ function mount(compact = false) {
 }
 beforeEach(() => {
   useBoundLocationDraftStore.getState().reset()
-  allowlists = [mainRoot, workerRoot]; adoptions = []
+  allowlists = [mainRoot, workerRoot]; adoptions = []; setups = []
   writes = []; reads = 0; reason = 'This workspace’s project isn’t set up on Studio yet.'
   server.use(
     http.get('/api/devices', () => HttpResponse.json({ devices: [{ mainId: rootMainId, deviceId: workerRoot.applicationInstallationId,
@@ -68,11 +69,25 @@ beforeEach(() => {
       writes.push(input)
       return HttpResponse.json({ value: rootSetReadback(input, workerRoot), replayed: false })
     }),
+    http.post('/api/management/workspaces/workspace-1/source-roots/setup', async ({ request }) => {
+      const input = await request.json() as { selection: Record<string, unknown> }
+      setups.push(input)
+      const binding = rootSetReadback(writes.at(-1)!, workerRoot)
+      if (binding.evidence !== 'bound') throw new Error('Expected a saved folder')
+      const id = '77777777-7777-4777-8777-777777777777', digest = 'a'.repeat(64)
+      const value = SourceRootRecordSchema.parse({ version: 1, source: { approvedSourceId: id, snapshotId: id, manifestDigest: digest },
+        selection: input.selection, binding: { version: 1, mainId: rootMainId, deviceId: workerRoot.applicationInstallationId,
+          workerInstallationId: workerRoot.applicationInstallationId, workspaceId: scope.workspaceId, rootId: id, bindingRevision: 1,
+          locationRevision: binding.locationRevision, canonicalPath: '/runtime/worker/source', filesystem: workerRoot.runtimeFilesystem,
+          accessMode: 'exclusive-write', snapshotId: id, manifestDigest: digest }, ownerPrincipalId: 'owner', authorizedByPrincipalId: 'owner',
+        registration: binding.binding.registration, attestationId: id, attestationDigest: digest, boundAt: '2030-01-01T00:00:00.000Z' })
+      return HttpResponse.json({ value, replayed: false })
+    }),
     http.get('/api/management/workspaces/workspace-1/workflows/workflow-1/nodes/node-1/placement-choices', () => {
       reads++
       return HttpResponse.json({ ...scope, pending: false,
-        choices: writes.length ? [{ id: 'studio-choice', label: 'Studio · codex · /projects/shared/studio-project', placement, availability: 'ready', reason: null }] : [],
-        unavailableComputers: writes.length ? [] : [{ hostRef: workerRoot.hostRef, name: 'Studio', reason }] })
+        choices: setups.length ? [{ id: 'studio-choice', label: 'Studio · codex · /projects/shared/studio-project', placement, availability: 'ready', reason: null }] : [],
+        unavailableComputers: setups.length ? [] : [{ hostRef: workerRoot.hostRef, name: 'Studio', reason }] })
     }),
   )
 })
@@ -95,6 +110,8 @@ it.each([true, false])('sets up an unavailable Agent computer and refreshes plac
   expect(writes).toHaveLength(1)
   expect(adoptions).toEqual(adopted ? [] : [{ workspaceId: scope.workspaceId, hostRef: workerRoot.hostRef, commandId: expect.any(String) }])
   expect(writes[0]).toMatchObject({ hostRef: workerRoot.hostRef, relativePath: 'studio-project', expectedLocationRevision: 1, expectedRootPolicyRevision: 0 })
+  expect(setups).toEqual([{ workspaceId: scope.workspaceId, commandId: expect.any(String), accessMode: 'exclusive-write',
+    selection: { hostRef: workerRoot.hostRef, rootPolicyId: expect.any(String), rootPolicyRevision: '1', locationRevision: '1' } }])
   const ready = await screen.findByRole('option', { name: 'Studio' })
   expect(reads).toBeGreaterThan(1)
   await user.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), ready)
@@ -179,4 +196,19 @@ it('shows a failed computer configuration read and retries before offering that 
   expect(adoptions).toHaveLength(2)
   expect(adoptions[1]).toEqual(adoptions[0])
   expect(writes).toEqual([])
+})
+
+it('keeps setup open when project capture fails', async () => {
+  server.use(http.post('/api/management/workspaces/workspace-1/source-roots/setup', () =>
+    HttpResponse.json({ error: { code: 'SOURCE_CAPTURE_FAILED', message: 'Project capture failed.' } }, { status: 503 })))
+  mount()
+  const user = userEvent.setup()
+  await user.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), await screen.findByRole('option', { name: 'Studio · unavailable' }))
+  await user.click(screen.getByRole('button', { name: 'Set up on Studio' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Execution folder' })
+  await waitFor(() => expect(within(dialog).getByRole('combobox', { name: 'Computer and folder' })).toHaveDisplayValue(/Worker computer/))
+  await user.click(within(dialog).getByRole('button', { name: 'Use this folder' }))
+  expect(await within(dialog).findByText('Project capture failed.')).toBeVisible()
+  expect(screen.getByRole('option', { name: 'Studio · unavailable' })).toBeInTheDocument()
+  expect(writes).toHaveLength(1)
 })
