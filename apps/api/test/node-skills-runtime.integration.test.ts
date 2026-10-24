@@ -42,23 +42,18 @@ it('delivers independent node skill additions and removals to concurrent native 
     `select id,workflow_node_id as node,record->>'state' as state,attempt from harness_executions
       where run_id=$1 and workflow_node_id=any($2::text[]) order by workflow_node_id`,
     [f.run.id, [left!.id, right!.id]])
-  // Native startup is a chain of short database steps whose wall time scales with CI load. Each wait below
-  // bounds the time without an execution state change, so a stalled or serialized start still fails.
-  const startupProgress = async () => (await fixture.db.pool.query<{ id: string; state: string }>(
-    `select id,record->>'state' as state from harness_executions where run_id=$1 order by id`, [f.run.id]))
-    .rows.map(row => [row.id, row.state, instructions.has(row.id)])
   try {
-    const { rows: branches } = await readUntil(async () => {
+    const branches = await readUntil(async () => {
       const rows = (await branchExecutions()).rows
       for (const row of rows) {
         const execution = await runtime.runs.getExecution(row.id)
         expect(execution?.result?.outcome, 'Node skill overrides must reach native execution without startup failure')
           .not.toBe('failed')
       }
-      return { rows, progress: await startupProgress() }
+      return rows
     },
-      ({ rows }) => rows.length === 2 && rows.every(row => row.state === 'running' && instructions.has(row.id)),
-      { timeoutMs: 10_000, description: 'both native branches running', progress: ({ progress }) => progress })
+      rows => rows.length === 2 && rows.every(row => row.state === 'running' && instructions.has(row.id)),
+      { timeoutMs: 10_000, description: 'both native branches running' })
     const leftId = branches.find(row => row.node === left!.id)!.id
     const rightId = branches.find(row => row.node === right!.id)!.id
     expect(instructions.get(leftId)).toContain('Shared instructions.')
@@ -74,10 +69,9 @@ it('delivers independent node skill additions and removals to concurrent native 
     runtime = fixture.compose()
     await runtime.engine.reconcile(error => { throw error })
     // The replay transport has no detached process; restart retries these interrupted native attempts.
-    const { rows: retries } = await readUntil(async () => ({
-      rows: (await branchExecutions()).rows.filter(row => row.attempt === 2), progress: await startupProgress() }),
-      ({ rows }) => rows.length === 2 && rows.every(row => row.state === 'running' && instructions.has(row.id)),
-      { timeoutMs: 10_000, description: 'both recovered native branches running', progress: ({ progress }) => progress })
+    const retries = await readUntil(async () => (await branchExecutions()).rows.filter(row => row.attempt === 2),
+      rows => rows.length === 2 && rows.every(row => row.state === 'running' && instructions.has(row.id)),
+      { timeoutMs: 10_000, description: 'both recovered native branches running' })
     for (const branch of branches) {
       expect(await runtime.runs.getExecution(branch.id)).toMatchObject({ state: 'completed',
         result: { outcome: 'failed', error: { code: 'EXECUTION_INTERRUPTED', retryable: true } } })

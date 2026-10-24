@@ -261,6 +261,18 @@ test('Main waits for explicit browser lease release and cancels admission drain 
   assert.deepEqual(rejected, ['beginDrain', 'cancelDrain']);
 });
 
+test('Main treats a missing browser host control channel as nothing to drain', async () => {
+  const calls = [];
+  const result = await waitForProductionBrowserDrain({ stateDirectory: '/fixture', commandId: 'same', timeoutMs: 1000,
+    request: async request => {
+      calls.push(request.operation);
+      throw Object.assign(new Error("ENOENT: no such file or directory, lstat '/fixture/browser/runtime-control.sock'"), { code: 'ENOENT' });
+    }, sleep: async () => undefined, log: () => undefined });
+  assert.equal(result.state, 'drained');
+  assert.equal(result.activeSessions, 0);
+  assert.deepEqual(calls, ['beginDrain']);
+});
+
 test('Main cutover drains before stop and restores runtime before the previous API selection', async t => {
   const directory = await fixture(t), events = [];
   const steps = { pendingMigrations: async () => [], stop: async () => { events.push('stop'); },
