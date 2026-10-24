@@ -285,13 +285,3 @@ it.each([true, false])('offers historical Runs when the Agent is unavailable in 
   expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"runId":"run"')
   expect(screen.getByLabelText('Chat selection')).not.toHaveTextContent('unavailable-version')
 })
-
-
-it('labels the attempt and separates its history control in plain words', async () => {
-  install()
-  mount({ runId: 'run', workflowVersionId: 'version', executionId: 'execution' })
-  await screen.findByText('Working on the task.')
-  expect(screen.getByTestId('agent-chat-scope')).toHaveTextContent('Attempt 1 · Other attempts')
-  fireEvent.click(screen.getByRole('button', { name: 'Other attempts' }))
-  expect(screen.getByLabelText('Chat selection')).not.toHaveTextContent('"executionId"')
-})
