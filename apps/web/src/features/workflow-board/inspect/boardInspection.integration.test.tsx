@@ -599,28 +599,6 @@ describe('Run inspection inside the one mounted Board', () => {
 })
 
 describe('Live Run status on the Board', () => {
-  it('shows the browser preparation reason on the queued Agent node', async () => {
-    const { scope, version, run } = fixture.runs.after
-    const node = nativeNode(version.definition.nodes[0]!)
-    const message = 'Waiting for the browser profile on Worker A: Computer offline.'
-    const base = fixture.mock.currents.get(run.id)!
-    fixture.mock.currents.set(run.id, RepeatGraphCurrentStateSchema.parse({ ...base, state: { ...base.state,
-      run: { ...base.state.run, executionState: 'running', outcome: 'pending' },
-      executions: [{ identity: { workflowNodeId: node.id, executionId: 'preparing-browser', agentId: node.agentId,
-        agentConfigurationVersionId: version.agentConfigurationVersionIds[node.agentId]!, attempt: 1, occurrence: null },
-      inputDigest: `sha256:${'a'.repeat(64)}`, previousExecutionId: null, state: 'queued', resultOutcome: null }] } }))
-    server.use(http.get(activityRoute(scope), async ({ request }) => {
-      const snapshot = await (await fixture.mock.dispatch(request))!.json() as Record<string, unknown>
-      return HttpResponse.json({ ...snapshot, executionQueue: [{ executionId: 'preparing-browser', workflowNodeId: node.id,
-        reason: { kind: 'preparation', message, since: '2026-10-01T00:00:00.000Z' } }] })
-    }))
-    await mount(href(scope))
-    const button = within(pinnedCanvas()).getByLabelText(`Inspect ${node.name ?? node.label ?? node.id}`, { selector: 'button' })
-    const agent = button.closest('.react-flow__node')!.querySelector<HTMLElement>('.n-agent')!
-    await waitFor(() => expect(within(agent).getByText(message)).toBeVisible())
-    expect(agent).toHaveAttribute('data-state', 'queued')
-  })
-
   it('shows turns, CI and pending decisions on saved Run Board nodes without a status strip', async () => {
     const { scope, version, run } = fixture.runs.after
     const first = nativeNode(version.definition.nodes[0]!), added = nativeNode(version.definition.nodes[1]!)

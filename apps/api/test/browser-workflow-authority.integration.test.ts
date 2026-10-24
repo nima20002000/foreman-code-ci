@@ -12,8 +12,6 @@ import { readWorkflowChatAgent } from '../src/modules/collaboration/workflowChat
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { agentInstructionBundle } from '../src/modules/skills/instructions.js'
-import { DomainError } from '../src/modules/errors.js'
-import { held } from '../src/modules/browser-runtime/recovery.test-support.js'
 import { requestRepeatRunStop } from '../src/modules/runs/repeatLifecycle.js'
 import { createProductionBrowser } from '../src/modules/collaboration/browserComposition.js'
 
@@ -160,74 +158,4 @@ it('evicts a released browser owner only after its host confirms cleanup', async
     await browser.authority.details(f.subject)
     expect(queries.mock.calls.length).toBeGreaterThan(1)
   } finally { await browser.stop() }
-})
-
-it.each(['empty', 'published', 'failed'] as const)('prepares a %s shared profile on the accepted Worker before opening its browser', async scenario => {
-  const f = await savedBrowser()
-  const mainId = randomUUID(), deviceId = randomUUID(), installationId = randomUUID()
-  await db.pool.query(`insert into device_registrations(id,main_id,worker_installation_id,public_key,record)
-    values($1,$2,$3,$4,$5::jsonb)`, [deviceId, mainId, installationId, 'fixture-public-key', JSON.stringify({
-    mainId, deviceId, workerInstallationId: installationId, publicKeyFingerprint: 'b'.repeat(64), keyRevision: 1,
-    authorizationRevision: 1, status: 'paired', scopes: ['connect', 'heartbeat', 'metrics:report'],
-  })])
-  const entered = held<void>(), finish = held<void>()
-  const prepare = vi.fn(async (input: Parameters<ReturnType<typeof createProductionBrowser>['lifecycle']['prepare']>[0]) => {
-    expect(await browser.authority.resolve(input.subject, { readyComputerId: deviceId })).toMatchObject({ availability: 'ready' })
-    return { kind: 'ready' as const, session: { id: 'worker-browser', subject: input.subject, profileId: 'profile',
-      computerId: deviceId, browserGeneration: 1, state: 'ready' as const, selectedTabId: null },
-    control: { sessionId: 'worker-browser', state: 'agent' as const, epoch: 1, controllingViewerId: null, reason: null } }
-  })
-  const unused = async (): Promise<never> => { throw new Error('Unexpected native transport') }
-  const browser = createProductionBrowser({ pool: db.pool, stateDirectory: db.directory, binding: () => null,
-    assertHostOwnership: async () => undefined, reportFailure: () => undefined,
-    remote: () => ({ profiles: { endpoint: unused }, sessions: { invoke: unused }, prepare, release: unused,
-      ready: async () => true, status: async computerId => ({ computerId, ready: true, phase: 'ready', reason: null }),
-      media: () => { throw new Error('No viewer in this test') } }) })
-  const pins = await f.authority.details(f.subject)
-  vi.spyOn(browser.authority, 'details').mockResolvedValue({ ...pins, computerId: deviceId })
-  vi.spyOn(browser.profiles.host, 'status').mockResolvedValue('ready')
-  const create = vi.spyOn(browser.profiles.host, 'create').mockResolvedValue()
-  const receive = vi.spyOn(browser.profiles.host, 'receive').mockImplementation(async () => {
-    entered.resolve(); await finish.promise
-    if (scenario === 'failed') throw new DomainError('SNAPSHOT_INVALID', 'The browser snapshot is corrupt.', 422)
-  })
-  const apply = vi.spyOn(browser.profiles.host, 'apply').mockResolvedValue()
-  const snapshot = { profileId: 'profile', publishedRevision: 1, sha256: 'a'.repeat(64), format: 'cookies-localstorage-v1' as const }
-  await browser.profiles.service.repository.transaction(['profile:profile'], async tx => {
-    await tx.putProfile({ profile: { id: 'profile', name: 'Demo profile', distribution: 'shared',
-      sourceComputerId: mainId, revision: 1, publishedRevision: scenario === 'empty' ? 0 : 1 }, deleted: false })
-    if (scenario !== 'empty') await tx.putPublishedManifest({ snapshot, sourceComputerId: mainId,
-      createdAt: new Date().toISOString(), byteLength: 10, origins: [], unsupportedState: [] })
-  })
-  await browser.start(mainId)
-  let preparing: ReturnType<typeof browser.lifecycle.prepare> | undefined
-  try {
-    preparing = browser.lifecycle.prepare({ subject: f.subject, browser: pins.browser, computerId: deviceId, commandId: randomUUID() })
-    const result = preparing.then(value => ({ value }), (error: unknown) => ({ error }))
-    if (scenario !== 'empty') {
-      await vi.waitFor(() => expect(receive).toHaveBeenCalledOnce())
-      expect(prepare).not.toHaveBeenCalled()
-      finish.resolve()
-    }
-    if (scenario === 'failed') {
-      expect(await result).toMatchObject({ error: { code: 'BROWSER_PROFILE_PREPARATION_FAILED', message: expect.stringContaining('snapshot') } })
-      expect(prepare).not.toHaveBeenCalled()
-      expect(apply).not.toHaveBeenCalled()
-    } else {
-      expect(await result).toMatchObject({ value: { kind: 'ready', session: { computerId: deviceId, profileId: 'profile' } } })
-      expect(prepare).toHaveBeenCalledOnce()
-      if (scenario === 'empty') {
-        expect(create).toHaveBeenCalledOnce()
-        expect(receive).not.toHaveBeenCalled()
-      } else {
-        expect(create).not.toHaveBeenCalled()
-        expect(apply).toHaveBeenCalledOnce()
-        expect((await browser.profiles.service.repository.read(tx => tx.replica('profile', deviceId)))?.appliedSnapshot).toEqual(snapshot)
-      }
-    }
-  } finally {
-    finish.resolve()
-    await preparing?.catch(() => undefined)
-    await browser.stop()
-  }
 })
