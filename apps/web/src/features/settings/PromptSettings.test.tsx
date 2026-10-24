@@ -356,3 +356,34 @@ it('removes the failed-save notification when a corrected prompt save succeeds',
   expect(await screen.findByText('System prompt saved')).toBeVisible()
   expect(screen.queryByText('Could not save system prompt')).not.toBeInTheDocument()
 })
+
+it('keeps the settings Discard action slot mounted through clean, dirty and pending saves', async () => {
+  let release!: () => void
+  const pending = new Promise<void>(resolve => { release = resolve })
+  server.use(
+    http.get('/api/management/settings/system-prompt', () => HttpResponse.json(snapshot('Original'))),
+    http.put('/api/management/settings/system-prompt', async ({ request }) => {
+      const input = PromptSettingUpdateInputSchema.parse(await request.json())
+      await pending
+      return HttpResponse.json({ value: snapshot(input.value.text, 4), replayed: false })
+    }),
+  )
+  mount('system-prompt')
+  const editor = await screen.findByRole('textbox', { name: 'System prompt' })
+  await waitFor(() => expect(editor).not.toHaveAttribute('readonly'))
+  try {
+    const discard = screen.getByRole('button', { name: 'Discard' })
+    expect(discard).toBeVisible()
+    expect(discard).toBeDisabled()
+    await userEvent.type(editor, ' updated')
+    expect(screen.getByRole('button', { name: 'Discard' })).toBe(discard)
+    expect(discard).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Save system prompt' }))
+    expect(discard).toBeVisible()
+    expect(discard).toBeDisabled()
+    release()
+    await screen.findByText('Prompt saved')
+    expect(screen.getByRole('button', { name: 'Discard' })).toBe(discard)
+    expect(discard).toBeDisabled()
+  } finally { release() }
+})
