@@ -1,6 +1,6 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { ApprovedSource, ApprovedSourcePin, SourceRootRecord, SourceRootSelection, SourceMaterializationRecord, VerifiedSourceWorkingTree } from '@foreman-code/contracts/source-admission'
+import type { ApprovedSource, ApprovedSourcePin, SourceRootRecord, SourceRootSelection, SourceRootSetupInput, SourceRootSetupResult, SourceMaterializationRecord, VerifiedSourceWorkingTree } from '@foreman-code/contracts/source-admission'
 import type { RootBinding } from '@foreman-code/contracts/source-materialization'
 import type { MaterializationAttempt } from './ports.js'
 
@@ -23,6 +23,8 @@ export interface RegisteredSourceRootPort {
 }
 export interface SourceAdmissionPort {
   isPlainWorkspace?(principal: ManagementPrincipal, workspaceId: string): Promise<boolean>
+  setupRoot(principal: ManagementPrincipal, source: 'http' | 'mcp', input: SourceRootSetupInput):
+    Promise<SourceRootSetupResult>
   bindRoot(principal: ManagementPrincipal, source: 'http' | 'mcp', input: {
     workspaceId: string; commandId: string; expectedBindingRevision: number
     source: ApprovedSourcePin; selection: SourceRootSelection; accessMode: RootBinding['accessMode']

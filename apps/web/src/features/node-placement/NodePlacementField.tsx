@@ -44,16 +44,6 @@ function SetupComputerButton({ workspaceId, computer, disabled, triggerRef, onSe
   }}>Set up on {computer.name}</Button>{setup.error ? <span role="alert">{setup.error.message}</span> : null}</>
 }
 
-/** Choice labels read "<computer> · <harness> · <folder>"; show the computer, and the folder only to tell two apart. */
-function optionLabels(options: readonly NodePlacementOption[]): string[] {
-  const hosts = options.map(option => option.label.split(' · ')[0] ?? option.label)
-  return options.map((option, index) => {
-    const host = hosts[index]!
-    const folder = option.placement.projectRoot.split('/').filter(Boolean).at(-1)
-    return hosts.filter(item => item === host).length > 1 && folder ? `${host} · ${folder}` : host
-  })
-}
-
 export function NodePlacementField({ workspaceId, value, options, unavailableComputers = [], onChange, disabled, optionsState = 'ready', note,
   inheritedWorktree }: NodePlacementFieldProps) {
   const [blocked, setBlocked] = useState<string>()
@@ -61,7 +51,6 @@ export function NodePlacementField({ workspaceId, value, options, unavailableCom
   const setupTrigger = useRef<HTMLButtonElement>(null)
   const selected = value ? options.findIndex((option) => sameWorkflowValue(option.placement, value)) : -1
   const current = selected >= 0 ? options[selected] : undefined
-  const labels = optionLabels(options)
   let selection = value ? selected < 0 ? 'retained' : String(selected) : 'inherited'
   if (blocked) selection = blocked
   const blockedComputer = blocked?.startsWith('computer:') ? unavailableComputers[Number(blocked.slice(9))] : undefined
@@ -82,7 +71,7 @@ export function NodePlacementField({ workspaceId, value, options, unavailableCom
         { value: 'inherited', label: inheritedWorktree ? 'Workflow default' : 'Main (default)' },
         ...(value && selected < 0 ? [{ value: 'retained', label: 'Saved computer', disabled: true }] : []),
         ...options.map((option, index) => ({ value: String(index),
-          label: option.unavailableReason ? `${labels[index]} · unavailable` : labels[index]! })),
+          label: option.unavailableReason ? `${option.label} · unavailable` : option.label })),
         ...unavailableComputers.map((computer, index) => ({ value: `computer:${index}`, label: `${computer.name} · unavailable` })),
       ]} onChange={(event) => {
         const choice = event.target.value

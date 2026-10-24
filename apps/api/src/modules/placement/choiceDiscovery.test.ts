@@ -57,23 +57,31 @@ function fixture(options: { driver?: 'codex' | 'claude'; host?: 'main' | 'device
     presetId: `${driver}-default`, enabled: true, driverId: driver, configuration: configuration.harness,
     configurationFingerprint: digest, qualification: 'qualified' })
   const sourceRoots = vi.fn(async () => [root])
+  const readRoots = vi.fn(async () => [policy])
   // The configuration read binds the version id and the workspace id; the source root read binds the workspace id alone.
   const query = vi.fn(async (_sql: string, values: unknown[] = []) => {
     if (values.length === 2 && values[0] === configuration.id) return { rows: [{ record: configuration }] }
-    if (values.length === 1 && values[0] === configuration.workspaceId) return { rows: (await sourceRoots()).map(record => ({ record })) }
+    if (values.length === 1 && values[0] === configuration.workspaceId) {
+      const policies = await readRoots()
+      return { rows: (await sourceRoots()).map(record => ({ record,
+        policy: policies.find(value => value.rootPolicyId === record.selection.rootPolicyId),
+      })) }
+    }
     return { rows: [] }
   })
   const pool = { connect: async () => ({ query, release: vi.fn() }) } as unknown as pg.Pool
-  const readRoots = vi.fn(async () => [policy])
-  const resolve = vi.fn(async () => policy)
-  const resolveSource = vi.fn(async () => root)
+  const resolve = vi.fn(async (_sql: unknown, _principal: unknown, selection: { rootPolicyId: string; rootPolicyRevision: string; locationRevision: string }) =>
+    (await readRoots()).find(value => value.rootPolicyId === selection.rootPolicyId
+      && value.rootPolicyRevision === selection.rootPolicyRevision && value.locationRevision === selection.locationRevision) ?? policy)
+  const resolveSource = vi.fn<SourceAdmissionPort['resolveRootBinding']>(async () => root)
+  const setupRoot = vi.fn(async () => ({ value: root, replayed: false }))
   const profiles = vi.fn(async () => [profile])
   const evidence = vi.fn(async () => ({ qualified: true }))
   const installations = vi.fn(() => [{ hostRef: policy.hostRef, installed: true,
     harnessInstallationId: profile.target.harnessInstallationId, installationFingerprint: digest }])
   const services = {
     roots: { read: readRoots, resolve } as unknown as WorkspaceRootPolicyPort,
-    sources: { resolveRootBinding: resolveSource } as unknown as SourceAdmissionPort,
+    sources: { resolveRootBinding: resolveSource, setupRoot } as unknown as SourceAdmissionPort,
     profiles: { list: profiles } as unknown as HarnessInstanceSettingsRepository,
     registry: { installations: { list: installations }, profileEvidence: evidence } as unknown as
       Pick<ProductionHarnessRegistry, 'installations' | 'profileEvidence'>,
@@ -82,25 +90,28 @@ function fixture(options: { driver?: 'codex' | 'claude'; host?: 'main' | 'device
   const input = { workspaceId: configuration.workspaceId, workflowId: workflow.scope.workflowId,
     nodeId: workflow.version.definition.nodes[0]!.id, agentConfigurationVersionId: configuration.id }
   return { service: new ProductionPlacementChoiceDiscovery(pool, () => services), input, principal,
-    policy, root, profile, configuration, readRoots, resolve, resolveSource, sourceRoots, profiles, evidence, installations }
+    policy, root, profile, configuration, readRoots, resolve, resolveSource, setupRoot, sourceRoots, profiles, evidence, installations }
 }
 
 it('discovers an authorized matching profile with the persisted root, source and revision pins', async () => {
   const f = fixture()
   const choices = (await f.service.list(f.principal, f.input)).choices
   expect(choices).toHaveLength(1)
-  expect(choices[0]).toMatchObject({ availability: 'ready', reason: null, placement: {
+  expect(choices[0]).toMatchObject({ availability: 'ready', reason: null, label: 'Main · project', placement: {
     hostRef: f.policy.hostRef, projectRoot: f.policy.canonicalProjectRoot, rootPolicyId: f.policy.rootPolicyId,
     rootPolicyRevision: f.policy.rootPolicyRevision, locationRevision: f.policy.locationRevision,
     instanceId: f.profile.instanceId, instanceRevision: f.profile.instanceRevision,
     harnessInstallationId: f.profile.target.harnessInstallationId, source: f.root.source,
     rootBinding: { rootId: f.root.binding.rootId, bindingRevision: 2 },
   } })
-  expect(f.resolveSource).toHaveBeenCalledOnce()
+  expect(f.resolveSource).toHaveBeenCalledWith(expect.anything(), f.principal, {
+    workspaceId: f.input.workspaceId, rootId: f.root.binding.rootId,
+    bindingRevision: f.root.binding.bindingRevision, source: f.root.source,
+  })
   expect(((await f.service.list(f.principal, f.input)).choices)[0]!.id).toBe(choices[0]!.id)
 })
 
-it.each(['main', 'device'] as const)('offers both identical qualified profiles on %s', async host => {
+it.each(['main', 'device'] as const)('offers one folder choice for identical qualified profiles on %s', async host => {
   const f = fixture({ host })
   const duplicate = { ...f.profile, instanceId: randomUUID() }
   const writable = { ...f.profile, instanceId: randomUUID(),
@@ -110,11 +121,10 @@ it.each(['main', 'device'] as const)('offers both identical qualified profiles o
   const result = await f.service.list(f.principal, f.input)
 
   expect(result.pending).toBe(false)
-  expect(result.choices).toHaveLength(2)
-  expect(result.choices.map(choice => choice.placement.instanceId).sort())
-    .toEqual([f.profile.instanceId, duplicate.instanceId].sort())
+  expect(result.choices).toHaveLength(1)
+  expect([f.profile.instanceId, duplicate.instanceId]).toContain(result.choices[0]!.placement.instanceId)
   expect(result.choices.every(choice => choice.availability === 'ready' && choice.reason === null)).toBe(true)
-  expect(new Set(result.choices.map(choice => choice.id)).size).toBe(2)
+  expect(new Set(result.choices.map(choice => choice.id)).size).toBe(1)
 })
 
 it.each([
@@ -177,7 +187,7 @@ it('keeps unqualified installations and revoked root authority unavailable with 
       source: f.root.source,
     }),
   })])
-  expect(f.resolveSource).toHaveBeenCalledTimes(1)
+  expect(f.resolveSource).toHaveBeenCalledTimes(2)
   expect(f.evidence).not.toHaveBeenCalled()
 })
 
@@ -187,42 +197,79 @@ it('propagates unexpected discovery failures', async () => {
   await expect(f.service.list(f.principal, f.input)).rejects.toThrow('database unavailable')
 })
 
-it.each([403, 404, 409, 410])('keeps valid sibling sources when one binding returns %s', async status => {
-  const f = fixture()
+it.each(['SOURCE_UNAVAILABLE', 'SOURCE_NOT_FOUND', 'SOURCE_ROOT_NOT_FOUND', 'SOURCE_ROOT_CONFLICT'])(
+  'automatically repairs %s through source setup and returns the new binding', async code => {
+    const f = fixture({ host: 'device' })
+    const repaired = structuredClone(f.root)
+    repaired.source.snapshotId = randomUUID()
+    repaired.binding.snapshotId = repaired.source.snapshotId
+    repaired.binding.bindingRevision++
+    f.resolveSource.mockRejectedValueOnce(new DomainError(code, 'Source is stale.', 410))
+    f.setupRoot.mockImplementation(async () => {
+      f.sourceRoots.mockResolvedValue([repaired])
+      f.resolveSource.mockResolvedValue(repaired)
+      return { value: repaired, replayed: false }
+    })
+
+    const result = await f.service.list(f.principal, f.input, 'http')
+
+    expect(result.choices).toEqual([expect.objectContaining({ availability: 'ready', reason: null,
+      label: expect.stringContaining(' · project'), placement: expect.objectContaining({ source: repaired.source,
+        rootBinding: { rootId: repaired.binding.rootId, bindingRevision: repaired.binding.bindingRevision } }) })])
+    expect(f.setupRoot).toHaveBeenCalledWith(f.principal, 'http', expect.objectContaining({
+      workspaceId: f.input.workspaceId, selection: f.root.selection, accessMode: f.root.binding.accessMode,
+    }))
+  })
+
+it('keeps valid sibling folders when source setup fails and shows the actual failure', async () => {
+  const f = fixture({ host: 'device' })
   const unavailable = structuredClone(f.root)
   unavailable.binding.rootId = randomUUID()
-  unavailable.source.snapshotId = randomUUID()
-  unavailable.binding.snapshotId = unavailable.source.snapshotId
+  unavailable.selection.rootPolicyId = randomUUID()
+  f.readRoots.mockResolvedValue([f.policy, { ...f.policy, rootPolicyId: unavailable.selection.rootPolicyId,
+    canonicalProjectRoot: '/projects/other' }])
   f.sourceRoots.mockResolvedValue([unavailable, f.root])
-  f.resolveSource.mockRejectedValueOnce(new DomainError('SOURCE_UNAVAILABLE', 'Source is unavailable.', status))
+  f.resolveSource.mockImplementation(async (_sql, _principal, input) => {
+    if (input.rootId === unavailable.binding.rootId) throw new DomainError('SOURCE_UNAVAILABLE', 'Source was released.', 410)
+    return f.root
+  })
+  f.setupRoot.mockRejectedValue(new DomainError('SOURCE_CAPTURE_FAILED', 'The project folder could not be read.', 409))
 
   const choices = (await f.service.list(f.principal, f.input)).choices
 
   expect(choices).toHaveLength(2)
-  expect(choices[0]).toMatchObject({ availability: 'unavailable',
-    reason: 'The approved source was released. Approve and bind the source again.', placement: {
-      source: unavailable.source,
-      rootBinding: { rootId: unavailable.binding.rootId, bindingRevision: unavailable.binding.bindingRevision },
-    } })
-  expect(choices[1]).toMatchObject({ availability: 'ready', placement: {
-    source: f.root.source,
-    rootBinding: { rootId: f.root.binding.rootId, bindingRevision: f.root.binding.bindingRevision },
-  } })
-  expect(f.resolveSource).toHaveBeenCalledTimes(2)
-  expect(f.evidence).toHaveBeenCalledOnce()
+  expect(choices[0]).toMatchObject({ availability: 'unavailable', reason: 'The project folder could not be read.',
+    placement: { source: unavailable.source, rootBinding: { rootId: unavailable.binding.rootId, bindingRevision: 2 } } })
+  expect(choices[1]).toMatchObject({ availability: 'ready', placement: { source: f.root.source } })
 })
 
-it('reports a missing binding without hiding its computer', async () => {
+it('does not try to repair source access denied by the caller’s grants', async () => {
   const f = fixture({ host: 'device' })
-  f.resolveSource.mockRejectedValue(new DomainError('SOURCE_ROOT_NOT_FOUND', 'The root binding was not found.', 404))
-
+  f.resolveSource.mockRejectedValue(new DomainError('ACCESS_DENIED', 'Source access denied.', 403))
   expect((await f.service.list(f.principal, f.input)).choices).toEqual([expect.objectContaining({
-    availability: 'unavailable', reason: 'The root binding was not found.',
-    placement: expect.objectContaining({ hostRef: f.policy.hostRef }),
+    availability: 'unavailable', reason: 'Source access denied.',
   })])
-  expect(f.evidence).not.toHaveBeenCalled()
+  expect(f.setupRoot).not.toHaveBeenCalled()
 })
 
+it('omits CI enrollment namespaces and deduplicates bindings for the same real project folder', async () => {
+  const f = fixture({ host: 'device' })
+  const ci = structuredClone(f.root)
+  ci.binding.rootId = randomUUID()
+  ci.selection.rootPolicyId = randomUUID()
+  const duplicate = structuredClone(f.root)
+  duplicate.binding.rootId = randomUUID()
+  duplicate.selection.rootPolicyId = randomUUID()
+  f.readRoots.mockResolvedValue([f.policy, { ...f.policy, rootPolicyId: ci.selection.rootPolicyId,
+    bindingPurpose: 'ci-enrollment', canonicalProjectRoot: `/managed/${'a'.repeat(64)}` },
+  { ...f.policy, rootPolicyId: duplicate.selection.rootPolicyId }])
+  f.sourceRoots.mockResolvedValue([ci, f.root, duplicate])
+
+  const choices = (await f.service.list(f.principal, f.input)).choices
+
+  expect(choices).toHaveLength(1)
+  expect(choices[0]).toMatchObject({ availability: 'ready', placement: { projectRoot: '/approved/project' } })
+})
 
 it('offers the current qualified installation for an unchanged saved profile revision', async () => {
   const f = fixture({ host: 'device' })
