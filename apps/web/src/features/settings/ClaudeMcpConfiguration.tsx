@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { useState } from 'react'
 import { APP_MCP_SERVER_NAMES, PRODUCT_SLUG } from '@foreman-code/contracts/product'
@@ -12,7 +11,6 @@ export function ClaudeMcpConfiguration({ value, onChange, appPreset = true }: {
   value: ClaudeHarnessConfiguration; onChange(value: ClaudeHarnessConfiguration): void; appPreset?: boolean;
 }) {
   const setup = useClaudeSetupOptions(appPreset)
-  const appEndpoint = setup.data?.[INSTALLATION_NAMES.fields.claudeMcp]
   const appConfigured = APP_MCP_SERVER_NAMES.some((server) => Object.hasOwn(value.mcpServers, server))
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
@@ -37,8 +35,8 @@ export function ClaudeMcpConfiguration({ value, onChange, appPreset = true }: {
   return <section className="harness-form-stack" aria-label="Claude MCP configuration">
     <h4>MCP connections <InfoHint label="MCP connections">Claude supports the Foreman Code app MCP connection. External MCP servers are not supported because their tool manifests cannot be verified. Save changes below to apply them to future configurations.</InfoHint></h4>
     {appPreset ? <div className="harness-section-heading"><div><strong>Foreman Code MCP</strong><InfoHint label="Foreman Code MCP">The app delivers a scoped credential at authorized execution. Adding this connection does not grant tool access or qualify Claude.</InfoHint></div>
-      <Button size="sm" disabled={!appEndpoint || appConfigured}
-        onClick={() => { if (appEndpoint) setServer(PRODUCT_SLUG, appEndpoint) }}>{appConfigured ? 'Foreman Code added' : 'Add Foreman Code MCP'}</Button>
+      <Button size="sm" disabled={!setup.data?.graphqlMcp || appConfigured}
+        onClick={() => { if (setup.data?.graphqlMcp) setServer(PRODUCT_SLUG, setup.data.graphqlMcp) }}>{appConfigured ? 'Foreman Code added' : 'Add Foreman Code MCP'}</Button>
     </div> : null}
     {appPreset && setup.isError ? <Alert tone="warning" title="Could not read the app MCP endpoint" action={<Button size="sm" onClick={() => void setup.refetch()}>Retry</Button>}>{setup.error.message}</Alert> : null}
     {Object.entries(value.mcpServers).map(([serverName, server]) => <div key={serverName} className="harness-policy-row">

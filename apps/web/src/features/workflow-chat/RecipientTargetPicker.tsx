@@ -1,7 +1,7 @@
 import type { AgentIdentity, DeliveryTarget, WorkflowChatPostRequest } from '@foreman-code/contracts'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { Button, Icon, IconButton, Select } from '../../shared/ui/nocturne'
-import { deliveryAction, type DeliveryPresentation } from '../chat-core'
+import { deliveryAction, type DeliveryPresentation } from '../conversations/delivery/deliveryAction'
 import { sameDeliveryTarget } from './draft'
 import { recipientProblem } from './recipientProblem'
 import { agentLabel } from './mentions'

@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -12,7 +11,6 @@ const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))
 const reportLimits = { logBytes: 2 ** 20, vitestBytes: 16 * 2 ** 20 }
 const unitCommands = [
   ['gate:contracts-unit', 'packages/contracts:test', '@foreman-code/contracts', 'test'],
-  ['gate:contracts-node-unit', 'packages/contracts-node:test', '@foreman-code/contracts-node', 'test'],
   ['gate:api-unit', 'apps/api:test', '@foreman-code/api', 'test'],
   ['gate:web-unit', 'apps/web:test:unit', '@foreman-code/web', 'test:unit'],
   ['gate:web-smoke', 'apps/web:test:run-graph-smoke', '@foreman-code/web', 'test:run-graph-smoke'],
@@ -22,9 +20,9 @@ const unitCommands = [
 
 export function createDenseItems({ root = repositoryRoot, env = process.env, inventory } = {}) {
   const portions = inventory ?? captureVerificationInventory(root, 'unit')
-  const unitWorkers = positiveInteger(Number(env[INSTALLATION_NAMES.environment.DENSE_UNIT_WORKERS] ?? 2), 'Dense unit workers', 12)
-  const timeoutMs = positiveInteger(Number(env[INSTALLATION_NAMES.environment.DENSE_ITEM_TIMEOUT_MS] ?? 1_800_000), 'Dense item timeout')
-  const idleTimeoutMs = positiveInteger(Number(env[INSTALLATION_NAMES.environment.DENSE_IDLE_TIMEOUT_MS] ?? 60_000), 'Dense idle timeout')
+  const unitWorkers = positiveInteger(Number(env.GRAPHQL_DENSE_UNIT_WORKERS ?? 2), 'Dense unit workers', 12)
+  const timeoutMs = positiveInteger(Number(env.GRAPHQL_DENSE_ITEM_TIMEOUT_MS ?? 1_800_000), 'Dense item timeout')
+  const idleTimeoutMs = positiveInteger(Number(env.GRAPHQL_DENSE_IDLE_TIMEOUT_MS ?? 60_000), 'Dense idle timeout')
   const environment = { ...env, FOREMAN_CODE_VERIFICATION_UNIT_WORKERS: String(unitWorkers),
     FOREMAN_CODE_TEST_MAX_WORKERS: String(unitWorkers) }
   const items = unitCommands.map(([id, key, filter, script]) => {
@@ -154,7 +152,7 @@ export async function runDense(argv = [], {
   try {
     integration = await integrationRunner([], {
       env, extraItems: items, reportDirectory: reports,
-      profilePath: env[INSTALLATION_NAMES.environment.TEST_PROFILE_PATH] ?? join(root, '.logs', 'test-profiles.json'),
+      profilePath: env.GRAPHQL_TEST_PROFILE_PATH ?? join(root, '.logs', 'test-profiles.json'),
       executeExtra: (item, context, controls) => executeDenseItem(item, context,
         { directory: reports, execute, shouldStop: controls?.shouldStop }),
     })

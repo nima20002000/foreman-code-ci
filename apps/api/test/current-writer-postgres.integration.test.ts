@@ -5,7 +5,7 @@ import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { graphHeaders, graphRpcValue } from './graph-composition-fixture.js'
 import { commandInputHash } from '../src/modules/commands/postgres.js'
 import { writerFixture, type WriterFixture } from './writer-fixtures.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 // Current V3 publication SQL fences. Authenticated Create/Save/read/Start,
 // grants, revision conflicts and replay are additionally covered in the B suite.
@@ -69,13 +69,14 @@ describe.skipIf(!postgresEnabled)('ENG04 current V3 writer PostgreSQL contract',
     candidate.contentHash = `sha256:${createHash('sha256').update(content).digest('hex')}`
     const sql = await db.pool.connect()
     try {
-      await expect(withTransaction({ client: sql }, async transaction => {
-      await transaction.query(`insert into workflow_versions(id,workspace_id,workflow_id,version,entry_node_id,record,execution_semantics_version)
+      await beginTransaction(sql)
+      await sql.query(`insert into workflow_versions(id,workspace_id,workflow_id,version,entry_node_id,record,execution_semantics_version)
         values($1,$2,$3,$4,$5,$6::jsonb,3)`, [candidate.id, candidate.workspaceId, candidate.workflowId,
         number, candidate.entryNodeId, JSON.stringify(candidate)])
-      await transaction.query('select eng04_publish_current_workflow($1,$2,$3::jsonb,$4,$5,$6)',
+      await sql.query('select eng04_publish_current_workflow($1,$2,$3::jsonb,$4,$5,$6)',
         [t.writer.principal.id, 'http', JSON.stringify(input), commandInputHash(input), candidate.id, content])
-      })).rejects.toMatchObject({ code: 'PGC04' })
+      await expect(commitTransaction(sql)).rejects.toMatchObject({ code: 'PGC04' })
+      await rollbackTransaction(sql)
     } finally { sql.release() }
     expect(await snapshot(t)).toEqual(before)
   })

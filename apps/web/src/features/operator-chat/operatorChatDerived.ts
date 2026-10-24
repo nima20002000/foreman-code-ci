@@ -1,6 +1,6 @@
 import type { RefObject } from 'react'
 import type { OperatorConversationState, OperatorConversationSummary } from '@foreman-code/contracts'
-import { selectLiveTextTimeline } from '../chat-core'
+import { selectLiveTextTimeline } from '../conversations/chatTimeline'
 import type { useOperatorChatSetup } from '../../shared/api/operatorChatSetup'
 import type { useProviderAccounts } from '../provider-accounts'
 import { newerOperatorSummaries, operatorTurnStatus, summarizeOperatorConversation } from './operatorChatStatus'
@@ -32,9 +32,10 @@ export function deriveOperatorMessaging({ conversation, preferences, preferences
   const pendingHandoff = Boolean(settings && conversation?.settings
     && (settings.harness !== conversation.settings.harness || requestedAccountId !== conversationAccountId)
     && (conversation.messages.length > 0 || conversation.hasEarlierMessages))
-  const setupReady = setup.isSuccess && setup.data.status === 'configured' && setup.data.harness === settings?.harness
+  const acceptedReady = hasAcceptedConversation && Boolean(conversation?.settings && conversation.conversation.operatorConfigurationVersionId)
+  const setupReady = acceptedReady || setup.isSuccess && setup.data.status === 'configured' && setup.data.harness === settings?.harness
     && Boolean(setup.data.configurationVersionId)
-  const settingsReady = Boolean(preferences.query.data) && !preferencesDenied && !preferences.form.isDirty && !preferences.form.isSaving && !preferences.form.uncertain
+  const settingsReady = !preferencesDenied && (acceptedReady || Boolean(preferences.query.data) && !preferences.form.isDirty && !preferences.form.isSaving && !preferences.form.uncertain)
   return { settings, retired, messageSettings, pendingHandoff, setupReady, settingsReady }
 }
 

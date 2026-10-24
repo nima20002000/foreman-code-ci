@@ -2,7 +2,7 @@ import {
   GraphDigestSchema, GraphIdSchema, RepeatGraphEffectCurrentSchema, RepeatGraphScopeCurrentSchema,
   type RepeatGraphScopeCurrent, type RepeatGraphEffectCurrent,
 } from '@foreman-code/contracts/current'
-import type { RepeatEffect } from '../runs/index.js'
+import type { RepeatEffect } from '../runs/repeatPostgres.js'
 import { repeatId } from '../runs/repeatResolution.js'
 import type { RepeatCanonicalReceipt } from './repeatReceipts.js'
 

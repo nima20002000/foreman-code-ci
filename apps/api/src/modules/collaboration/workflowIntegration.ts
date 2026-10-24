@@ -1,6 +1,6 @@
 import { BoardDigestSchema, type CoordinatorConsultationBinding, type HarnessExecution } from '@foreman-code/contracts'
 import type { AcceptedWorkflowRunCurrent, WorkflowVersionCurrent } from '@foreman-code/contracts/current'
-import type { RunOwnership } from '../runs/index.js'
+import type { RunOwnership } from '../runs/ownership.js'
 import type { CollaborationPorts } from './ports.js'
 import { createWorkflowCollaborationHooks } from './workflowHooks.js'
 import { WorkflowMemoryContext } from './workflowPreparation.js'

@@ -4,7 +4,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { registerForemanMcp } from '../../mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../../mcp/unified/transport.js'
 import { DomainError } from '../errors.js'
 import { logIgnoredError } from './ignoredError.js'
 import { CI_GET_ACTIONS } from '../jobs/ciAuthority.js'
@@ -14,7 +14,7 @@ it('reads retained sanitized failures over authenticated MCP and denies an inval
     expiresAt: '2099-01-01T00:00:00Z', revokedAt: null,
     grants: [{ actions: ['capabilities:read'], scope: {} }] }
   const app = Fastify({ logger: false })
-  registerForemanMcp(app, { access: { authenticate: async (token: string) => {
+  registerGraphqlMcp(app, { access: { authenticate: async (token: string) => {
     if (token !== 'fixture-token') throw new DomainError('AUTH_REQUIRED', 'Invalid bearer.', 401)
     return principal
   } } as never, operator: {} as never })
@@ -63,7 +63,7 @@ it('returns persisted reassignment and repair facts through MCP while denying a 
   const get = vi.fn(async () => structuredClone({ run: record, partitions: [record] }))
   const deniedAudit = vi.fn(async () => undefined)
   const app = Fastify({ logger: false })
-  registerForemanMcp(app, { access: { authenticate: async (token: string) => token === 'owner'
+  registerGraphqlMcp(app, { access: { authenticate: async (token: string) => token === 'owner'
     ? principal : { ...principal, id: 'reader', grants: [{ actions: ['capabilities:read'], scope: {} }] } } as never,
   operator: { ci: { get }, commands: { recordDenied: deniedAudit, recordAudit: async () => undefined } } as never })
   const client = new Client({ name: 'ci-diagnostics-fixture', version: '1' })

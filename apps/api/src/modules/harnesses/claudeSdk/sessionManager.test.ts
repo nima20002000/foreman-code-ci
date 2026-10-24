@@ -47,7 +47,8 @@ describe('Claude native session manager admission', () => {
       expect((await f.manager.reconcile(session, 'execution:reactivated')).terminalResult?.output).toBe('revised')
     } finally { await f.manager.dispose?.() }
   })
-  it.each(['DATABASE_URL', 'TEST_DATABASE_URL', 'PGPASSWORD', 'GRAPHQL_PRODUCTION_DB_PASSWORD'])(
+  it.each(['DATABASE_URL', 'TEST_DATABASE_URL', 'PGPASSWORD', 'GRAPHQL_PRODUCTION_DB_PASSWORD',
+    'FOREMAN_CODE_PRODUCTION_DB_PASSWORD'])(
     'rejects scoped %s before SDK inspection or resume', async key => {
       const selected = { ...start, environment: { agentId: 'operator', variables: { [key]: 'test-only-credential' } } }
       for (const operation of ['inspection', 'resume']) {

@@ -11,7 +11,7 @@ import { CiHostRequestSchema } from '@foreman-code/contracts';
 import { runCiInstallSmoke } from '../src/ciInstallSmoke.mjs';
 const require = createRequire(new URL('../../api/package.json', import.meta.url));
 const { tsImport } = await import(require.resolve('tsx/esm/api'));
-const { HostCiRunner, systemHostCiPorts } = await tsImport('@foreman-code/api/worker/ci', import.meta.url);
+const { HostCiRunner, systemHostCiPorts } = await tsImport('../../api/src/modules/ci/runner.ts', import.meta.url);
 
 test('update smoke waits for busy capacity and uses a valid focused integration start', async () => {
   const requests = [];
