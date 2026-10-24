@@ -34,14 +34,12 @@ async function cardMutation(tx: SqlTransaction, authority: MemoryBoardAuthority,
   if (!creating && Object.keys(operation.patch).length === 0 && operation.workSelections === undefined) invalid('Provide a card field or work selection.')
   const next: MemoryCard = MemoryCardSchema.parse(creating ? {
     ...operation.card, id: randomUUID(), boardId: row.board.id, revision: 0, createdAt: now, updatedAt: now,
-    ...(operation.sourcePostId ? { sourcePostId: operation.sourcePostId } : {}),
   } : { ...before, ...operation.patch })
   validateCardState(next,before)
   await validateLinks(tx,authority,row.board.scope,next)
   const duplicate = await cardByTitle(tx,row.board.id,next.title)
   if (duplicate && duplicate.id !== next.id) throw new DomainError('DUPLICATE_CARD_TITLE',
     'A task with that title already exists on this board.',409,{ cardId: duplicate.id, card: duplicate })
-  if (creating && operation.sourcePostId) await authority.sourcePost(tx,operation.sourcePostId,row.board.scope,context.caller)
   const bindings = before ? await bindingsFor(tx,next.id) : []
   const claims = before ? await claimsFor(tx,next.id) : []
   const oldBindings = structuredClone(bindings), oldClaims = structuredClone(claims)
@@ -68,10 +66,8 @@ async function noteMutation(tx: SqlTransaction, authority: MemoryBoardAuthority,
   expected(before?.revision ?? row.board.revision,operation,before ?? row.board)
   let next: MemoryNote
   if (operation.kind === 'note_create') {
-    if (operation.sourcePostId) await authority.sourcePost(tx,operation.sourcePostId,row.board.scope,context.caller)
     next = MemoryNoteSchema.parse({ id: randomUUID(), boardId: row.board.id, text: operation.text,
-      rank: operation.rank ?? row.nextNoteRank, archived: false, revision: 0, updatedAt: now,
-      ...(operation.sourcePostId ? { sourcePostId: operation.sourcePostId } : {}) })
+      rank: operation.rank ?? row.nextNoteRank, archived: false, revision: 0, updatedAt: now })
   } else if (operation.kind === 'note_update') {
     if (Object.keys(operation.patch).length === 0) invalid('Provide note text or rank.')
     next = MemoryNoteSchema.parse({ ...before, ...operation.patch })

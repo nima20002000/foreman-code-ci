@@ -9,7 +9,7 @@ import type { NativeHarnessSessionManager } from '../harnesses/port.js'
 import { DomainError } from '../errors.js'
 import { ConversationNativeAccess } from './conversationNativeAccess.js'
 
-it.each([false, true])('keeps a no-Group-access session after an unrelated save, with rebind support: %s', async supported => {
+it.each([false, true])('keeps a no-tool-access session after an unrelated save, with rebind support: %s', async supported => {
   const fixture = makeCurrentWorkflowFixture('conversation-access', 'single')
   const configuration = AgentConfigurationVersionSchema.parse({ ...fixture.configurations[0], graphqlTools: [] })
   const node = fixture.version.definition.nodes[0]!
@@ -19,14 +19,14 @@ it.each([false, true])('keeps a no-Group-access session after an unrelated save,
       workflowNodeId: node.id, agentId: configuration.agentId, configurationVersionId: configuration.id,
       productRole: 'coder', displayName: 'Agent',
     } },
-    configuration, node: { ...node, graphqlTools: { add: [], remove: ['workflow_chat_read', 'workflow_chat_post'] } },
+    configuration, node: { ...node, browser: undefined },
     workflowVersionId: fixture.version.id,
     workingDirectory: '/workspace/project',
   }
   const pool = new pg.Pool()
   const credentials = new ConversationCredentials(pool)
   const issue = vi.spyOn(credentials, 'issue').mockRejectedValue(
-    new DomainError('TOOL_NOT_ENABLED', 'This conversation has no enabled Group chat tools.', 403))
+    new DomainError('TOOL_NOT_ENABLED', 'This conversation has no enabled scoped tools.', 403))
   const revoke = vi.spyOn(credentials, 'revoke').mockResolvedValue()
   const rebind = vi.fn(async () => {})
   const manager: NativeHarnessSessionManager = new ChatManager()

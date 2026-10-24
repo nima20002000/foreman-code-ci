@@ -5,9 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { ChatSendRequestSchema, ChatStopRequestSchema, type ChatDeliveryReceipt, type ChatSendRequest,
   type ChatStopRequest, type EngineChatMessage, type EngineChatReadback } from '@foreman-code/contracts'
-import { agentChatFixtures } from '@foreman-code/contracts/agent-chat'
-import { agentChatFixtureFor, createAgentChatMock } from '../../../shared/mocks/agentChatHandlers'
-import { AgentConversation } from '../agentChat/AgentConversation'
 import { server } from '../../../mocks/server'
 import { ApiError } from '../../../shared/api/client'
 import type { ConversationAttachments } from '../../attachments'
@@ -69,12 +66,12 @@ function endpoints(value: EngineChatReadback = structuredClone(initial)) {
   return state
 }
 function mount(source: NativeSource, options: { visible?: boolean; nativeTurnId?: string; attachments?: ConversationAttachments;
-  onOpenContinuation?: (receipt: ChatDeliveryReceipt) => void; followUp?: (inputs: ReactNode) => ReactNode } = {}) {
+  followUp?: ReactNode } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   clients.push(client)
   const tree = (visible = true) => <QueryClientProvider client={client}><ExecutionChatPanel visible={visible}
     target={target} name="Ava" source={source} nativeTurnId={options.nativeTurnId} attachments={options.attachments}
-    onOpenContinuation={options.onOpenContinuation} followUp={options.followUp} /></QueryClientProvider>
+    followUp={options.followUp} /></QueryClientProvider>
   const view = render(tree(options.visible ?? true))
   return { ...view, visible: (value: boolean) => view.rerender(tree(value)) }
 }
@@ -84,7 +81,7 @@ afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear())
 describe('exact Execution chat public surface', () => {
   it('notices on its own that the Run ended and offers the follow-up instead of a message box', async () => {
     const state = endpoints()
-    mount(new NativeSource(), { followUp: inputs => <>{inputs}<p>Agent chat follow-up</p></> })
+    mount(new NativeSource(), { followUp: <p>Agent chat follow-up</p> })
     expect(await screen.findByRole('textbox', { name: 'Message' })).toBeInTheDocument()
     await waitFor(() => expect(state.reads).toBe(2))
     await new Promise(resolve => setTimeout(resolve, 300))
@@ -94,37 +91,6 @@ describe('exact Execution chat public surface', () => {
     expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
   }, 15_000)
 
-  it.each(['completed', 'canceled'] as const)('keeps %s retained input history while offering the finished execution follow-up', async status => {
-    const receipt: ChatDeliveryReceipt = { id: 'settled-receipt', commandId: 'settled-command', target,
-      requestedIntent: 'next_turn', appliedIntent: 'next_turn', state: status, createdAt: date, updatedAt: date }
-    const state = endpoints({ ...structuredClone(initial), state: 'idle',
-      capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false }, receipts: [receipt] })
-    state.inputs = [{ commandId: receipt.commandId, receiptId: receipt.id, target, origin: 'direct', content: 'Retained request',
-      truncated: false, bodyCursor: null, attachments: [], intent: 'next_turn', createdAt: date }]
-    mount(new NativeSource(), { followUp: inputs => <>{inputs}<p>Agent chat follow-up</p></> })
-    expect(await screen.findByText('Retained request')).toBeVisible()
-    expect(await screen.findByText('Agent chat follow-up')).toBeInTheDocument()
-  })
-
-  it('preserves an unsent message when the execution completes into its Agent follow-up', async () => {
-    const state = endpoints()
-    const context = { ...target.agent, runId: target.execution.runId }
-    const followUp = agentChatFixtureFor(agentChatFixtures.idleAfterCompletion, context)
-    if (!followUp.conversation || followUp.conversation.origin.kind !== 'run_execution') throw new Error('Expected Run conversation')
-    followUp.conversation.origin.executionId = target.execution.executionId
-    const mock = createAgentChatMock(followUp)
-    server.use(...mock.handlers, http.get('*/api/workspaces/:workspaceId/agent-chat/workflows/:workflowId/runs/:runId/nodes/:workflowNodeId', () =>
-      HttpResponse.json({ kind: 'selected', selection: { ...context, executionId: target.execution.executionId },
-        key: { ...context, executionId: target.execution.executionId, conversationId: followUp.conversation!.id }, state: followUp })))
-    mount(new NativeSource(), { followUp: retainedInputs => <AgentConversation retainedInputs={retainedInputs} context={context} name="Ava"
-      selection={{ ...context, executionId: target.execution.executionId }} /> })
-    const input = await screen.findByRole('textbox', { name: 'Message' })
-    fireEvent.change(input, { target: { value: 'Keep my unsent question' } })
-    state.value = { ...state.value, state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } }
-    await waitFor(() => expect(screen.getByTestId('agent-conversation')).toBeInTheDocument(), { timeout: 6000 })
-    expect(await screen.findByRole('textbox', { name: 'Message' })).toHaveValue('Keep my unsent question')
-  }, 15_000)
-
   it('says the Run ended when a message is refused for that, instead of losing chat access', async () => {
     const state = endpoints()
     server.use(http.post(`${root}/send`, () => {
@@ -132,7 +98,7 @@ describe('exact Execution chat public surface', () => {
       return HttpResponse.json({ error: { code: 'RUN_AUTHORIZATION_REVOKED',
         message: 'The authority that accepted this Run is no longer valid.' } }, { status: 403 })
     }))
-    mount(new NativeSource(), { followUp: inputs => <>{inputs}<p>Agent chat follow-up</p></> })
+    mount(new NativeSource(), { followUp: <p>Agent chat follow-up</p> })
     const input = await screen.findByRole('textbox', { name: 'Message' })
     fireEvent.change(input, { target: { value: 'What was the title?' } })
     fireEvent.keyDown(input, { key: 'Enter' })
@@ -181,14 +147,14 @@ describe('exact Execution chat public surface', () => {
     expect(source.subscriptions[0]!.options.signal.aborted).toBe(true)
   })
 
-  it('pins the original execution and qualified turn, selects interruption without sending, and follows successors only explicitly', async () => {
-    const state = endpoints(), source = new NativeSource(), open = vi.fn()
+  it('pins the original execution and qualified turn and selects interruption without sending', async () => {
+    const state = endpoints(), source = new NativeSource()
     state.value.receipts = [{ id: 'previous-delivery', commandId: 'previous-command', target, requestedIntent: 'interrupt_and_send',
       appliedIntent: 'interrupt_and_send', state: 'completed', continuationId: 'continuation-a',
       continuationExecution: { ...target.execution, executionId: 'successor', attempt: 3 }, createdAt: date, updatedAt: date }]
     state.inputs = [{ commandId: 'previous-command', receiptId: 'previous-delivery', target, origin: 'direct', content: 'Change direction',
       truncated: false, bodyCursor: null, attachments: [], intent: 'interrupt_and_send', createdAt: date }]
-    mount(source, { nativeTurnId: 'native-turn-a', onOpenContinuation: open })
+    mount(source, { nativeTurnId: 'native-turn-a' })
     const input = await screen.findByRole('textbox', { name: 'Message' })
     fireEvent.change(input, { target: { value: '  change direction  ' } })
     await screen.findByRole('button', { name: 'Steer now' })
@@ -199,9 +165,7 @@ describe('exact Execution chat public surface', () => {
     expect(state.commands[0]).toMatchObject({ target, intent: 'interrupt_and_send', content: '  change direction  ', expectedNativeTurnId: 'native-turn-a' })
     expect(source.subscriptions.every(subscription => subscription.target.kind === 'workflow_execution'
       && subscription.target.execution.executionId === 'execution-a')).toBe(true)
-    expect(open).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Open continuation' }))
-    expect(open).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Open continuation' })).not.toBeInTheDocument()
   })
 
   it('never treats a historical native turn as current and keeps unsupported session commands as draft text', async () => {
@@ -340,7 +304,7 @@ describe('exact Execution chat public surface', () => {
       requestedIntent: 'next_turn', appliedIntent: 'next_turn', state: 'unknown', createdAt: date, updatedAt: date }
     endpoints({ ...structuredClone(initial), state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false },
       receipts: [receipt] })
-    mount(new NativeSource(), { followUp: inputs => <>{inputs}<p>Agent chat follow-up</p></> })
+    mount(new NativeSource(), { followUp: <p>Agent chat follow-up</p> })
     expect(await screen.findByText('Delivery unconfirmed')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Check status' })).toBeVisible()
     expect(screen.queryByText('Agent chat follow-up')).not.toBeInTheDocument()
