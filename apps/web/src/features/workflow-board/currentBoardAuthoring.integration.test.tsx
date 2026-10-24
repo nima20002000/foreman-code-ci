@@ -1016,6 +1016,31 @@ describe('retained Board Run polling and presentation', () => {
     await waitFor(() => expect(node).toHaveTextContent('Running'))
   }, 30_000)
 
+  it('drops the previous Run handoff lights and transitions when a new Run starts on the same nodes', async () => {
+    const { mock, user, mounted, run, graph } = await liveBoard()
+    // Hold presentation time while commands and HTTP settle, so the first Run's light is still in flight.
+    vi.spyOn(performance, 'now').mockReturnValue(performance.now())
+    const current = mock.currents.get(run.id)!, sender = current.state.executions[0]!, recipient = current.state.executions[1]!
+    const digest = `sha256:${'1'.repeat(64)}`
+    mock.currents.set(run.id, RepeatGraphCurrentStateSchema.parse({ ...current,
+      asOfSequence: String(BigInt(current.asOfSequence) + 1n), state: { ...current.state,
+        executions: [{ ...sender, state: 'completed', resultOutcome: 'succeeded' }, { ...recipient, state: 'running' }],
+        results: [{ execution: sender.identity, resultDigest: digest }],
+        bindings: [{ bindingId: 'previous-run-handoff', kind: 'predecessor', relationshipId: graph.edges[0]!.id, decisionId: null,
+          sender: sender.identity, recipient: recipient.identity, acceptedResultDigest: digest, inputDigest: digest, ordinal: 0 }] } }))
+    await mounted.query.invalidateQueries()
+    await waitFor(() => expect(authoring().querySelector('.n-signal-edge-flight')).toHaveTextContent('Handoff'))
+    complete(mock, run.id); await mounted.query.invalidateQueries()
+    await waitFor(() => expect(control('Start saved version')).toBeEnabled())
+    const retained = canvasNode(graph.nodes[0]!.id)
+    const next = await start(mock, user, 2)
+    runningNodes(mock, next.id); await mounted.query.invalidateQueries()
+    await waitFor(() => expect(retained).toHaveTextContent('Running'))
+    expect(canvasNode(graph.nodes[0]!.id)).toBe(retained)
+    expect(authoring().querySelector('.n-signal-edge-flight')).toBeNull()
+    expect(retained.querySelector('.n-agent')).not.toHaveAttribute('data-transition')
+  }, 30_000)
+
   it('shows the displayed Run CI server jobs and request/result lights on the draft canvas', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     const { mock, mounted, run, graph } = await liveBoard()
@@ -1044,7 +1069,7 @@ describe('retained Board Run polling and presentation', () => {
     await waitFor(() => expect(canvasNode(graph.nodes[0]!.id)).toHaveTextContent('Waiting for CI unit-web · running'))
     complete(mock, run.id)
     // Only the independently polled summary observes completion initially.
-    await mounted.query.invalidateQueries({ queryKey: ['runs-selector', 'summaries'] })
+    await mounted.query.invalidateQueries({ queryKey: ['runs-selector', 'list'] })
     await mounted.query.invalidateQueries({ queryKey: queryKeys.workspaceDetails(mock.workspaceId) })
     await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeEnabled())
     await act(async () => { await vi.advanceTimersByTimeAsync(3100) })
