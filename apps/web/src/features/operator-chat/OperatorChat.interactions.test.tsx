@@ -30,7 +30,8 @@ function renderChat() {
   render(<QueryClientProvider client={client}><button>Before chat</button><OperatorChatVisibilityProvider enabled><OperatorChat /></OperatorChatVisibilityProvider><button>After chat</button></QueryClientProvider>)
   return client
 }
-beforeEach(installCanonicalOperatorFixture)
+let deliveryFixture: ReturnType<typeof installCanonicalOperatorFixture>
+beforeEach(() => { deliveryFixture = installCanonicalOperatorFixture() })
 beforeEach(() => {
   vi.clearAllMocks()
   useOperatorChatStore.setState({ open: false, historyOpen: false, selectedConversationId: 'conversation-one' })
@@ -63,7 +64,7 @@ describe('Operator chat interactions', () => {
     await waitFor(() => expect(launcher).toHaveFocus())
     expect(launcher).toHaveAttribute('aria-expanded', 'false')
   })
-  it('keeps active drafting editable with Stop and a live Send in the original composer, without a delivery picker', async () => {
+  it('keeps active drafting editable with Stop and a live Send in the original composer with delivery choices', async () => {
     useOperatorChatStore.setState({ open: true })
     renderChat()
     const textarea = await findOperatorComposer()
@@ -73,8 +74,37 @@ describe('Operator chat interactions', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled())
     expect(useConversationDraftStore.getState().drafts['conversation-one']).toBe('My next message')
     expect(sendOperatorMessage).not.toHaveBeenCalled()
-    expect(screen.queryByLabelText('Delivery action')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Delivery action' })).toHaveValue('auto')
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+  })
+  it.each(['next_turn', 'interrupt_and_send'] as const)('sends an explicit %s delivery choice during an Operator turn', async intent => {
+    useOperatorChatStore.setState({ open: true })
+    renderChat()
+    fireEvent.change(await findOperatorComposer(), { target: { value: 'After this turn' } })
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Delivery action' }), { target: { value: intent } })
+    expect(deliveryFixture.commands.size).toBe(0)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Message' }), { key: 'Enter' })
+    await waitFor(() => expect([...deliveryFixture.commands.values()]).toEqual([
+      expect.objectContaining({ target: { kind: 'operator_conversation', conversationId: 'conversation-one' },
+        intent, content: 'After this turn' }),
+    ]))
+    if (intent === 'next_turn') expect([...deliveryFixture.commands.values()][0]).not.toHaveProperty('expectedNativeTurnId')
+  })
+  it('keeps a selected active-turn action visible after the Operator becomes idle so it can be reset', async () => {
+    useOperatorChatStore.setState({ open: true })
+    renderChat()
+    fireEvent.change(await findOperatorComposer(), { target: { value: 'My next message' } })
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Delivery action' }), { target: { value: 'interrupt_and_send' } })
+    const idle = operatorState({ revision: 2, turnState: 'idle', activeRequestId: null })
+    vi.mocked(getOperatorConversation).mockResolvedValue(idle)
+    act(() => vi.mocked(subscribeOperatorChat).mock.calls.at(-1)![1].snapshot(idle))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Stop response' })).not.toBeInTheDocument())
+    expect(screen.getByRole('combobox', { name: 'Delivery action' })).toHaveValue('interrupt_and_send')
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
+    fireEvent.click(await screen.findByRole('button', { name: 'Refresh target' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Delivery action' }), { target: { value: 'auto' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled())
+    expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue('My next message')
   })
   it('pins a draft typed while its target loads only after the target is read, so it can still be sent', async () => {
     useOperatorChatStore.setState({ open: true })

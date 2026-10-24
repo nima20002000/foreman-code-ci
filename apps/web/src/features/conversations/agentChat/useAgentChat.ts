@@ -11,7 +11,7 @@ import { selectedRunChatApi } from './selectedRunChatClient'
 import { agentChatApi } from '../../../shared/api/agentChat'
 import { ApiError } from '../../../shared/api/client'
 import { createStreamReadback } from '../../../shared/api/streamReadback'
-import { committedMessage, createCommittedMessageBuffer, patchCommittedMessages, useConversationDraftStore, messageAttachmentRefs, sameAttachmentRefs, type ChatAttachmentAttempt, markChatTurnCompleted, agentChatContextKey, approvalReplyAvailable, intentUnavailable, stateBelongsToContext } from '../../chat-core'
+import { committedMessage, createCommittedMessageBuffer, patchCommittedMessages } from '../delivery/committedMessageStream'
 import { subscribeAgentChat, type AgentChatConnection } from '../../../shared/api/agentChatStream'
 import { sameDeliveryTarget } from '../../workflow-chat'
 import { assertSession, sessionGeneration, sessionIsSwitching } from '../../../shared/api/sessionBoundary'
@@ -19,10 +19,14 @@ import { useLocalHumanAccessQuery } from '../../../shared/api/settingsExperience
 import { isApiAccessError } from '../../../shared/api/accessError'
 import { useProtectedAccessError } from '../../../shared/api/useProtectedAccessError'
 import { canUseBoardAction } from '../../workflow-board'
+import { useConversationDraftStore } from '../conversationDraftStore'
+import { messageAttachmentRefs, sameAttachmentRefs, type ChatAttachmentAttempt } from '../chatAttachmentAttempt'
+import { markChatTurnCompleted } from '../chatTurnCompletion'
 import { useAgentChatHistory } from './useAgentChatHistory'
 import { acceptAgentReadback, deliveryTargetMatches } from './readbackMetadata'
 import { claimDeliveryDraftReadback, claimDraftReadback, receiptForCommand } from './receiptReadback'
 import { acceptPendingDelivery, forgetPendingCommand, rememberPendingCommand, restorePendingCommands } from './pendingCommands'
+import { agentChatContextKey, agentChatDraftKey, approvalReplyAvailable, intentUnavailable, stateBelongsToContext } from './model'
 
 import { agentChatCommandOrder, compactAgentChatResult, confirmedCommandReceipt, currentCommandReceipt, rememberAgentChatReadback, retireAgentChatAcknowledgements, useAgentChatReadbacks, type AgentChatCommand as Command, type AgentChatCommandResult as Result, type AgentChatCommandRecord } from './commandRecords'
 export type { AgentChatCommandRecord } from './commandRecords'
@@ -73,7 +77,7 @@ const subscribeNetwork = (notify: () => void) => {
 }
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine
 export const agentChatStateKey = (context: AgentChatContext, generation = sessionGeneration(), executionId?: string) =>
-  ['agent-chat', generation, executionId ? JSON.stringify([agentChatContextKey(context), executionId]) : agentChatContextKey(context), 'state'] as const
+  ['agent-chat', generation, agentChatDraftKey(context, executionId), 'state'] as const
 
 /** Access can be revoked during response readback after the command was accepted. */
 export function commandMayHaveBeenAccepted(error: unknown): boolean {
@@ -212,12 +216,14 @@ export function useAgentChat(inputContext: AgentChatContext,
       return true
     } catch (error) { release(); setLocalError(errorMessage(error, 'The command could not be prepared.')); return false }
   }
-  const blocked = (action: ManagementAction) => {
+  const blocked = (action: ManagementAction, newConversation = false) => {
     if (!online) return 'You are offline. Your draft is kept.'
     if (!permits(action)) return 'Your access does not allow this action for this Agent and Run.'
     if (recoveryError) return recoveryError
     if (!state || query.isError) return 'Refresh this conversation before sending a command.'
-    if (state.availability.reason === 'run_active' || state.sessionState === 'unavailable') {
+    const resettingMissing = newConversation && (state.availability.reason === 'native_session_missing'
+      || state.availability.reason === 'harness_unavailable')
+    if (state.availability.reason === 'run_active' || state.sessionState === 'unavailable' && !resettingMissing) {
       return state.availability.message ?? 'This selection is read only.'
     }
     if (pending) return 'A command is being sent.'

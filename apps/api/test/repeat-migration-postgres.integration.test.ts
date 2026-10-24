@@ -1,4 +1,3 @@
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import assert from 'node:assert/strict'
 import type pg from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -18,10 +17,8 @@ async function rejectsTransaction(pool: pg.Pool, work: (sql: pg.PoolClient) => P
   let failure: unknown
   try { await transaction(pool, work) } catch (error) { failure = error }
   expect(failure, 'The invalid transaction must fail, including deferred COMMIT checks').toBeInstanceOf(Error)
-  const databaseFailure = failure instanceof DomainError ? failure.cause as Error & { code: string } : failure as Error & { code: string }
-  if (failure instanceof DomainError) expect(failure.code).toBe(databaseFailure.message)
-  expect(codes).toContain(databaseFailure.code)
-  if (message) expect(databaseFailure.message).toMatch(message)
+  expect(codes).toContain((failure as { code?: string }).code)
+  if (message) expect((failure as Error).message).toMatch(message)
 }
 
 async function migrated<T>(work: (pool: pg.Pool) => Promise<T>): Promise<T> {

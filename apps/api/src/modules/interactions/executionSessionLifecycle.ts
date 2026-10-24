@@ -1,5 +1,3 @@
-import { runtimeTimingPoint } from '../../infrastructure/runtimeTiming.js'
-import type { RunOwnership } from '../runs/index.js'
 import type { HarnessExecution, NativeSessionReference } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import { nativePersistenceRedactor } from './nativePersistence.js'
@@ -7,7 +5,7 @@ import type { SingleWriterSessionManager } from './sessionWriter.js'
 import { attemptCleanup } from './cleanup.js'
 import { deviceRequestTimeoutMs } from '../devices/deviceRequestRetry.js'
 import type { NativeManagerResolutionContext } from './runtimePorts.js'
-import type { ExecutionSessionHost, OwnedNativeSession } from './executionSessionHost.js'
+import type { ExecutionSessionHost, OwnedNativeSession } from './execution.js'
 
 /** Native session lifecycle: ownership, opening, exact close receipts and cleanup of one execution. */
 export class ExecutionSessionLifecycle {
@@ -272,67 +270,5 @@ export class ExecutionSessionLifecycle {
     owned.cleanup = bounded
     const errors = await bounded
     if (errors.length) throw new AggregateError(errors, 'Exact native lifetime cleanup is incomplete.')
-  }
-  async retainRunOwner(execution: HarnessExecution, onLost: () => void) {
-    let owner = this.host.ownedSessions.get(execution.id)?.runOwner ?? this.host.sharedRunOwners.get(execution.runId)
-    try { owner?.assertOwned() }
-    catch (error) {
-      if (!(error instanceof DomainError) || error.code !== 'RUN_OWNERSHIP_LOST') throw error
-      await owner?.release()
-      owner = undefined
-    }
-    if (owner) {
-      const release = owner.retain(onLost)
-      runtimeTimingPoint('engine', 'run.retain_owner', {
-        runId: execution.runId, executionId: execution.id, reused: true, success: true,
-      })
-      return { owner, release }
-    }
-    const acquired = await this.host.runs.acquireOwnership(execution.runId, onLost)
-    runtimeTimingPoint('engine', 'run.retain_owner', {
-      runId: execution.runId, executionId: execution.id, reused: false, success: Boolean(acquired),
-    })
-    if (!acquired) throw new DomainError('SESSION_LANE_BUSY', 'The Run is still completing its current native operation.', 409)
-    return { owner: acquired, release: () => acquired.release() }
-  }
-
-  shareRunOwner(owner: RunOwnership): () => void {
-    this.adoptRunOwner(owner)
-    // Cold review attachment can start before recovery registers any session.
-    this.host.sharedRunOwners.set(owner.runId, owner)
-    return () => {
-      if (this.host.sharedRunOwners.get(owner.runId) === owner) this.host.sharedRunOwners.delete(owner.runId)
-    }
-  }
-
-  adoptRunOwner(owner: RunOwnership): void {
-    owner.assertOwned()
-    for (const owned of this.host.ownedSessions.values()) {
-      if (owned.execution.runId !== owner.runId) continue
-      owned.runOwner = owner
-      this.host.managers.adoptOwner?.(owned.execution.id, this.host.rawManagers.get(owned.manager) ?? owned.manager, owner)
-    }
-  }
-
-  async finishRun(runId: string): Promise<void> {
-    const run = await this.host.runs.get(runId)
-    if (run?.executionState !== 'completed') throw new DomainError('GRAPH_TERMINAL_CONFLICT', 'Only a terminal Run may finish native cleanup.', 409)
-    const failures: Error[] = []
-    for (const owned of this.host.ownedSessions.values()) {
-      if (owned.execution.runId !== runId) continue
-      // An active reviewer may be awaiting this graph response through MCP.
-      // Its captured job finalizer releases the exact session after settlement.
-      if (owned.session && owned.manager.isActive(owned.session)) continue
-      if (owned.context.purpose === 'reviewer' && owned.manager.retainsReviewerSession
-        && owned.context.acceptedPlacement?.hostRef.kind === 'device') {
-        const owner = owned.runOwner
-        if (!owner) throw new DomainError('RUN_OWNERSHIP_LOST', 'The reviewer Run owner is unavailable.', 409)
-        await this.host.finishIdleReviewers(runId, owner, owned.controller.signal)
-        continue
-      }
-      failures.push(...await this.host.lifecycle.cleanupSession(owned, false))
-    }
-    if (failures.length) throw new AggregateError(failures, 'Completed Run session cleanup was incomplete.')
-    this.host.releaseExecutionCapacity(runId)
   }
 }

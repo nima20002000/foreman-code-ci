@@ -1,7 +1,7 @@
 import Fastify from 'fastify'
 import { describe, expect, it, vi } from 'vitest'
 import { ManagedWorkspaceSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
-import { registerForemanMcp } from '../src/mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import type { AppInteractionService } from '../src/modules/interactions/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -76,7 +76,7 @@ describe('authenticated MCP database connection recovery', () => {
     app.setErrorHandler((error, _request, reply) => {
       reply.code(error instanceof DomainError ? error.status : 500).send({ error: 'request failed' })
     })
-    registerForemanMcp(app, { access, operator: services })
+    registerGraphqlMcp(app, { access, operator: services })
     const read = (id: string, token = 'reader-token') => app.inject({
       method: 'POST', url: '/mcp',
       headers: { authorization: `Bearer ${token}`, accept: 'application/json, text/event-stream' },
@@ -117,7 +117,7 @@ describe('authenticated MCP database connection recovery', () => {
     const register = vi.fn().mockResolvedValue(undefined)
     const call = vi.fn().mockResolvedValue(undefined)
     const app = Fastify()
-    registerForemanMcp(app, { access, interactions, workerArtifacts: () => ({ register, call }) })
+    registerGraphqlMcp(app, { access, interactions, workerArtifacts: () => ({ register, call }) })
     const rpc = (method: string, params?: object) => app.inject({
       method: 'POST', url: '/mcp',
       headers: { authorization: 'Bearer worker-token', accept: 'application/json, text/event-stream' },

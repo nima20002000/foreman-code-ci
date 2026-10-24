@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { lstat, readdir, realpath, rename, rm, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -8,7 +7,7 @@ import {
   writeLauncherInstallation,
 } from './appMcpLauncher.js'
 
-const launcherSource = new URL('../../../../../scripts/foreman-mcp.mjs', import.meta.url)
+const launcherSource = new URL('../../../../../scripts/graphql-mcp.mjs', import.meta.url)
 
 async function existingPath(path: string) {
   try {
@@ -48,8 +47,8 @@ async function refreshSharedLauncher(directory: string): Promise<void> {
 
 /** Called under the production installation lock while the old API is stopped. */
 export async function upgradeProductionMcpLauncher(desktopHome: string): Promise<void> {
-  const previous = join(desktopHome, INSTALLATION_NAMES.paths.productionMcp)
-  const destination = join(desktopHome, INSTALLATION_NAMES.paths.mcpDirectory)
+  const previous = join(desktopHome, '.local/state/graphql-production/mcp')
+  const destination = join(desktopHome, '.local/share/graphql/mcp')
   const launcher = join(destination, 'launcher.mjs')
   const alias = join(previous, 'launcher.mjs')
   const retained = `${previous}.previous`

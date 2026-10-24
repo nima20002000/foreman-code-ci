@@ -52,7 +52,7 @@ export class ActivityProductionReplay {
           const thread: Thread = { id: `${this.threadIdPrefix}-${++this.counter}`, turns: original ? structuredClone(original.turns) : [],
             settings: this.settings(params), ephemeral: params.ephemeral === true }
           this.threads.set(thread.id, thread); bind(thread)
-          const token = _environment?.GRAPHQL_MCP_TOKEN ?? _environment?.GRAPHQL_MCP_TOKEN
+          const token = _environment?.FOREMAN_CODE_MCP_TOKEN ?? _environment?.GRAPHQL_MCP_TOKEN
           if (token) this.appTokens.set(thread.id, token)
           return threadResponse(thread, params)
         }
@@ -223,8 +223,11 @@ export class ActivityProductionReplay {
         identity: 'recorded-launcher', protocol: fixtureProtocol, providerVersion: RECORDED_CODEX_VERSION,
         schemaManifestSha256: 'synthetic-recorded-schema', stableSchemaGitBlob: 'synthetic-stable', referenceSchemaManifestSha256: 'synthetic-reference' }
     }
-    // Scoped names strip inherited credentials, not the admitted input; this replay inherits no environment.
-    const environment: Extract<CodexSessionDependencies, { mode: 'replay' }>['environment'] = input => ({ ...input?.variables })
+    const environment: Extract<CodexSessionDependencies, { mode: 'replay' }>['environment'] = (input, stripped = []) => {
+      const values: NodeJS.ProcessEnv = {}
+      for (const [key, value] of Object.entries(input?.variables ?? {})) if (!stripped.includes(key)) values[key] = value
+      return values
+    }
     const operations = { qualify, assertUnchanged: async () => {}, environment, runCommand: command,
       qualifyModel: async (configuration: Parameters<NonNullable<CodexSessionDependencies['qualifyModel']>>[0]) => {
         if (!this.qualifiedModels.includes(configuration.model)) throw new Error('Unrecorded replay model qualification.')

@@ -16,7 +16,7 @@ import {
 
 const directories: string[] = []
 const runtime = process.execPath
-const source = new URL('../../../scripts/foreman-mcp.mjs', import.meta.url)
+const source = new URL('../../../scripts/graphql-mcp.mjs', import.meta.url)
 afterEach(async () => {
   Object.defineProperty(process, 'execPath', { value: runtime })
   vi.unstubAllEnvs()
@@ -29,7 +29,7 @@ async function fixture() {
   const previous = join(home, '.local/state/graphql-production/mcp/launcher.mjs')
   const shared = join(home, '.local/share/graphql/mcp/launcher.mjs')
   vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
-  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', dirname(shared))
+  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', dirname(shared))
   await installManagedLauncher(source, previous)
   return { home, previous, shared }
 }

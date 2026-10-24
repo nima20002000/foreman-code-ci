@@ -27,7 +27,7 @@ import { readLiveManagementPrincipal } from '../src/modules/access/liveManagemen
 import { requireAuthorization } from '../src/modules/access/policy.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import type { FileQuery } from '../src/modules/files/repository.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { completeResultRepair } from '../src/modules/runs/remote/workflowRepair.test-support.js'
 import { postgresEnabled } from './helpers/database.js'
 const text = (value: unknown) => canonicalGraphJson(value, 4 * 1024 * 1024)
@@ -131,12 +131,12 @@ describe.skipIf(!postgresEnabled)('durable artifact completeness gate on real Po
       proof.original.history.events[0]!.payload = { threadId: execution.nativeSessionId, turnId, status: 'completed', clientCorrelationId: correlationId }
       proof.lane!.providerId = turnId
     }
-    const connection = await pool.connect()
+    const client = await pool.connect()
     try {
       // Actual owner lock/backend fence required by dispatch admission triggers.
       // This is SQL fixture admission, not a device/native launch grant.
-      await connection.query('select pg_advisory_lock(810002,hashtext($1))', [run.id])
-      await withTransaction({ client: connection }, async client => {
+      await client.query('select pg_advisory_lock(810002,hashtext($1))', [run.id])
+      await beginTransaction(client)
       const owner = (await client.query<{ owner_id: string; fence: string }>(`select pg_backend_pid()::text as owner_id,
         (extract(epoch from backend_start)*1000000)::bigint::text as fence from pg_stat_activity where pid=pg_backend_pid()`)).rows[0]!
       await client.query(`insert into management_principals(id,name,audience,token_hash,grants,expires_at)
@@ -199,8 +199,9 @@ describe.skipIf(!postgresEnabled)('durable artifact completeness gate on real Po
           values($1,'remote.artifact-transfer.admit',$2,$3,$4,$5::jsonb)`, [x.principalId, record.commandId,
           `workflow-artifact:${x.principalId}`, commandInputHash(declaration), text(admitted)])
       }
-      })
-    } finally { await connection.query('select pg_advisory_unlock(810002,hashtext($1))', [run.id]); connection.release() }
+      await commitTransaction(client)
+    } catch (error) { await rollbackTransaction(client); throw error }
+    finally { await client.query('select pg_advisory_unlock(810002,hashtext($1))', [run.id]); client.release() }
     const authorize = async (sql: FileQuery, nativeContext = context) => {
       const principal = await readLiveManagementPrincipal(sql, x.principalId)
       requireAuthorization(principal, 'agent_chat:write', { workspaceId: run.workspaceId })

@@ -27,7 +27,7 @@ import { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import { canonicalRuntimePath, pathsOverlap, withFilesystemDeadline } from './filesystem.js'
 import { WORKSPACE_FOLDER_LIFECYCLE_LOCK } from './projectFolderCleanup.js'
-import type { WorkspaceRootPolicyPort } from '../sources/index.js'
+import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
 import { sha256Hex } from '../../shared/hash.js'
 
 export const LOCAL_RUNNER_ID = 'runner-local'

@@ -25,7 +25,6 @@ it('keeps source development commands usable after successful and failed product
   const api = join(source, 'apps/api')
   const contracts = join(source, 'packages/contracts')
   const ci = join(source, 'apps/ci')
-  const nodeContracts = join(source, 'packages/contracts-node')
   const destination = join(directory, 'deployed')
   // The repository install already populated the store; registry retries add no deployment coverage.
   const environment: NodeJS.ProcessEnv = { ...process.env, npm_config_offline: 'true' }
@@ -42,7 +41,6 @@ it('keeps source development commands usable after successful and failed product
     await mkdir(join(api, 'dist'), { recursive: true })
     await mkdir(join(contracts, 'dist'), { recursive: true })
     await mkdir(join(ci, 'dist'), { recursive: true })
-    await mkdir(join(nodeContracts, 'dist'), { recursive: true })
     await writeFile(join(source, 'package.json'), JSON.stringify({
       name: 'production-deployment-fixture', private: true, version: '1.0.0',
       packageManager: 'pnpm@11.27.0',
@@ -56,20 +54,15 @@ it('keeps source development commands usable after successful and failed product
     ].join('\n') + '\n')
     await writeFile(join(api, 'package.json'), JSON.stringify({
       name: '@foreman-code/api', private: true, version: '1.0.0', type: 'module',
-      main: 'dist/index.js', files: ['dist'], dependencies: { '@foreman-code/contracts': 'workspace:*', '@foreman-code/contracts-node': 'workspace:*', '@foreman-code/ci': 'workspace:*' },
+      main: 'dist/index.js', files: ['dist'], dependencies: { '@foreman-code/contracts': 'workspace:*', '@foreman-code/ci': 'workspace:*' },
     }))
     await writeFile(join(contracts, 'package.json'), JSON.stringify({ name: '@foreman-code/contracts',
       private: true, version: '1.0.0', type: 'module', main: 'dist/index.js', files: ['dist'] }))
-    await writeFile(join(nodeContracts, 'package.json'), JSON.stringify({ name: '@foreman-code/contracts-node',
-      private: true, version: '1.0.0', type: 'module', main: 'dist/index.js', files: ['dist'],
-      dependencies: { '@foreman-code/contracts': 'workspace:*' } }))
-    await writeFile(join(nodeContracts, 'dist/index.js'),
-      'export { contractValue as nodeValue } from "@foreman-code/contracts"\n')
     await writeFile(join(ci, 'package.json'), JSON.stringify({ name: '@foreman-code/ci',
       private: true, version: '1.0.0', type: 'module', main: 'dist/index.js', files: ['dist'],
-      dependencies: { '@foreman-code/contracts': 'workspace:*', '@foreman-code/contracts-node': 'workspace:*' } }))
+      dependencies: { '@foreman-code/contracts': 'workspace:*' } }))
     await writeFile(join(ci, 'dist/index.js'),
-      'export { nodeValue as ciValue } from "@foreman-code/contracts-node"\n')
+      'export { contractValue as ciValue } from "@foreman-code/contracts"\n')
     await writeFile(join(contracts, 'dist/index.js'), 'export const contractValue = () => "production API available"\n')
     await writeFile(join(api, 'dist/index.js'),
       'import { ciValue } from "@foreman-code/ci"; export const deployed = () => ciValue()\n')
@@ -90,17 +83,12 @@ it('keeps source development commands usable after successful and failed product
       '.': { devDependencies: { '@types/node': { specifier: '26.5.1', version: '26.5.1' } } },
       'apps/api': { dependencies: {
         '@foreman-code/contracts': { specifier: 'workspace:*', version: 'link:../../packages/contracts' },
-        '@foreman-code/contracts-node': { specifier: 'workspace:*', version: 'link:../../packages/contracts-node' },
         '@foreman-code/ci': { specifier: 'workspace:*', version: 'link:../ci' },
       } },
       'apps/ci': { dependencies: {
         '@foreman-code/contracts': { specifier: 'workspace:*', version: 'link:../../packages/contracts' },
-        '@foreman-code/contracts-node': { specifier: 'workspace:*', version: 'link:../../packages/contracts-node' },
       } },
       'packages/contracts': {},
-      'packages/contracts-node': { dependencies: {
-        '@foreman-code/contracts': { specifier: 'workspace:*', version: 'link:../contracts' },
-      } },
     } }))
     await run('corepack', ['pnpm', 'install', '--frozen-lockfile'])
     await verifyDevelopment()
@@ -111,7 +99,6 @@ it('keeps source development commands usable after successful and failed product
     await deployProductionApi((command: string, args: string[]) => run(command, args.includes('deploy')
       ? [...args, '--package-import-method=hardlink'] : args), uncached)
     await writeFile(join(ci, 'dist/index.js'), 'export const ciValue = () => "rebuilt CI"\n')
-    await writeFile(join(nodeContracts, 'dist/index.js'), 'export const nodeValue = () => "rebuilt Node contracts"\n')
     await writeFile(join(contracts, 'dist/index.js'), 'export const contractValue = () => "rebuilt contracts"\n')
     await writeFile(join(api, 'dist/index.js'), 'export const deployed = () => "rebuilt source API"\n')
     const { stdout } = await execute(process.execPath, ['--input-type=module', '-e',
@@ -180,12 +167,11 @@ it('loads the compiled API using only its deployed production dependencies', asy
       }
       await cp(join(repository, 'patches'), join(source, 'patches'), { recursive: true })
       await cp(join(repository, 'scripts/require-pnpm.mjs'), join(source, 'scripts/require-pnpm.mjs'))
-      for (const project of ['apps/api', 'apps/ci', 'packages/contracts', 'packages/contracts-node']) {
+      for (const project of ['apps/api', 'apps/ci', 'packages/contracts']) {
         await mkdir(join(source, project), { recursive: true })
         await cp(join(repository, project, 'package.json'), join(source, project, 'package.json'))
       }
       await cp(join(repository, 'packages/contracts/dist'), join(source, 'packages/contracts/dist'), { recursive: true })
-      await cp(join(repository, 'packages/contracts-node/dist'), join(source, 'packages/contracts-node/dist'), { recursive: true })
       await emitTypeScriptFixture(join(repository, 'apps/ci/tsconfig.build.json'), join(source, 'apps/ci/dist'))
     }
     const setup = [compileApiFixture(directory), prepareSource()] as const

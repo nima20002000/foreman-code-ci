@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AgentSubjectSchema, EngineChatReadbackSchema, NodeBrowserSettingsSchema,
-  collaborationContractFixtures as fixture, effectiveForemanTools,
+  collaborationContractFixtures as fixture, effectiveGraphqlTools,
 } from '@foreman-code/contracts';
 
 test('Worker consumes execution and consultation readback without creating a conversation', () => {
@@ -18,7 +18,7 @@ test('Worker consumes execution and consultation readback without creating a con
 
 test('Master and legacy saved defaults never activate dormant collaboration tools', () => {
   for (const role of ['master', 'orchestrator', 'coder']) {
-    const tools = effectiveForemanTools(role, undefined);
+    const tools = effectiveGraphqlTools(role, undefined);
     for (const unavailable of ['memory_card_create', 'browser_action', 'workflow_chat_post']) {
       assert.equal(tools.includes(unavailable), false);
     }

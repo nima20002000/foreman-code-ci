@@ -1,5 +1,10 @@
 import type { OperatorConversationState } from '@foreman-code/contracts'
-import { activityScopeKey, applyCanonicalActivityItems, reconcileActivitySnapshot, sourceVectorIsStale, sourceVectorHasAdvance, mergeChatMessages, boundedNativeWindow } from '../chat-core'
+import {
+  activityScopeKey, applyCanonicalActivityItems, reconcileActivitySnapshot,
+  sourceVectorIsStale, sourceVectorHasAdvance,
+} from '../conversations/agentChat/activityMerge'
+import { mergeChatMessages } from '../conversations/agentChat/model'
+import { boundedNativeWindow } from '../conversations/delivery/nativeMessageWindow'
 import { mergeOperatorActivity, retainRecentOperatorActivity } from '../../shared/api/operatorActivity'
 
 export function newerOperatorConversationState(current: OperatorConversationState | undefined,
