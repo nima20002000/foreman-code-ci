@@ -1,7 +1,7 @@
 import type { SqlQuery } from '../../../infrastructure/transaction.js'
 import { MessageAttachmentRefSchema, type MessageAttachmentRef } from '@foreman-code/contracts/files'
 import { bindingIdentity } from '../../files/tools/context.js'
-import type { FileToolContext } from '../../files/tools/types.js'
+import type { FileToolContext } from '../../files/index.js'
 import { mergeMessagePins } from '../../conversations/messagePins.js'
 
 export interface ClaudeMessagePublicationReceipt {

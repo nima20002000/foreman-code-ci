@@ -7,14 +7,14 @@ import type { SourceManifest } from '@foreman-code/contracts/source-materializat
 import type { SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import { InstalledJobRuntimeConfigurationRecordSchema, InstalledVerificationRuntimeCaptureInputSchema,
   InstalledVerificationRuntimeConfigurationSchema, type InstalledVerificationRuntimeCaptureInput,
-  type InstalledVerificationRuntimeConfiguration } from '@foreman-code/contracts/installed-runtime-node'
+  type InstalledVerificationRuntimeConfiguration } from '@foreman-code/contracts-node/installed-runtime-node'
 import type { JobResourceRequest, PreparedCiRuntime } from '@foreman-code/contracts'
 import { DEVICE_MIB, DEVICE_RESOURCE_HOST_RESERVE, DeviceResourceLimitsSchema, type DeviceResourceLimits }
   from '@foreman-code/contracts/device-resources'
 import { readCiRuntimeInstallation, readCiRuntimeTemplate, relocateCiQuotaSlots } from './ciRuntimeInstallation.js'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import type { CiContext } from './environment.js'
-import { sha256Hex } from '@foreman-code/contracts/server-kit'
+import { sha256Hex } from '@foreman-code/contracts-node/server-kit'
 
 const run = promisify(execFile)
 

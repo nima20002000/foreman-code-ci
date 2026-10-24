@@ -4,7 +4,7 @@ import { RemoteOwnerControlSchema, RemoteOperationReceiptSchema, remoteActiveNat
 import type { SqlTransaction } from '../../../infrastructure/transaction.js'
 import { assertGraphTransaction } from '../../run-graph/connection.js'
 import type { RunOwnership } from '../ownership.js'
-import type { AcceptedExecutionBinding } from '../../placement/nativeComposition.js'
+import type { AcceptedExecutionBinding } from '../../placement/index.js'
 import type { RemoteNativeManagerOptions } from './nativeManagerProxy.js'
 import { DomainError } from '../../errors.js'
 import { canCloseRetainedRemoteReviewer } from '../../placement/remoteReviewerAuthority.js'

@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { EngineChatReadback } from '@foreman-code/contracts'
 import { ChatDeliveryActions } from './ChatDeliveryActions'
-import { deliveryAction } from './deliveryAction'
+import { deliveryAction } from '../../chat-core'
 
 const capabilities: EngineChatReadback['capabilities'] = {
   steer: 'native_expected_turn', queue: true, interruptAndSend: true,

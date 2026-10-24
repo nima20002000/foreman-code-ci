@@ -5,7 +5,7 @@ import { localHumanPrincipal } from '../src/modules/access/localHuman.js'
 import { registerOperatorHttpSecurity, requireLocalHuman, requirePrincipal } from '../src/modules/access/http.js'
 import type { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { DomainError } from '../src/modules/errors.js'
-import * as localClient from '@foreman-code/contracts/local-client-node'
+import * as localClient from '@foreman-code/contracts-node/local-client-node'
 
 async function fixture() {
   const app = Fastify()

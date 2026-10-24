@@ -43,6 +43,8 @@ test('repairs a lost reservation, admits the next coordinator and keeps its orig
     }
     await cp(new URL('../packages/contracts/src/productEnvironment.mjs', import.meta.url),
       join(root, 'packages', 'contracts', 'src', 'productEnvironment.mjs'))
+    await cp(new URL('../packages/contracts/src/installationNames.mjs', import.meta.url),
+      join(root, 'packages', 'contracts', 'src', 'installationNames.mjs'))
     const common = join(root, '.git')
     const state = join(common, 'graphql-heavy-jobs')
     await mkdir(join(state, 'queue'), { recursive: true })

@@ -3,7 +3,7 @@ import { assertOrchestratorGraphAuthority } from '../src/modules/interactions/gr
 import { resolveImmutableApprovalRoute } from '../src/modules/workflows/approvalRoutes.js'
 import { approvalDatabase } from './helpers/approvalDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { while (cleanup.length) await cleanup.pop()!() })
 async function setup() {
@@ -33,14 +33,8 @@ describe.skipIf(!postgresEnabled)('Wave 2.5 approval authority SQL consumer', { 
         const writerPid = await writer.query<{ pid: number }>('select pg_backend_pid() as pid')
         expect(readerPid.rows[0]!.pid).not.toBe(writerPid.rows[0]!.pid)
         await expect(assertOrchestratorGraphAuthority(reader, f.interaction, f.bound)).resolves.toBeDefined()
-        await beginTransaction(writer)
-        try {
-          await writer.query('update worker_credential_bindings set revoked_at=clock_timestamp() where principal_id=$1', [f.bound.principalId])
-          await commitTransaction(writer)
-        } catch (error) {
-          await rollbackTransaction(writer)
-          throw error
-        }
+        await withTransaction({ client: writer }, transaction => transaction.query(
+          'update worker_credential_bindings set revoked_at=clock_timestamp() where principal_id=$1', [f.bound.principalId]))
         await expect(assertOrchestratorGraphAuthority(reader, f.interaction, f.bound))
           .rejects.toMatchObject({ code: 'INTERACTION_ACCESS_DENIED' })
       } finally { writer.release() }

@@ -14,7 +14,7 @@ import { transact } from './transaction.js'
 import { fail, isCurrentApprovalRun, readContext, runFor, requireLeaseAtCommit, type ApprovalContext } from './context.js'
 import { acknowledgementId, reviewEvidence } from './nativeEvidence.js'
 import { reviewFact, sourceForReview } from './publication.js'
-import { assertWave25WorkerBinding } from './credentialAuthority.js'
+import { assertCurrentWorkerBinding } from './credentialAuthority.js'
 import { stopForReviewFailure } from './stop.js'
 import { runCleanupAllowed } from './cleanupAuthority.js'
 import { renewReviewLease } from './reviewLease.js'
@@ -49,7 +49,7 @@ function settlementDigest(job: ReviewJob): string {
 }
 
 /** Same queue/session lanes and ReviewJob authority; only current mutations use G1. */
-export class Wave25InteractionCoordinationRepository extends PostgresInteractionCoordinationRepository {
+export class CurrentInteractionCoordinationRepository extends PostgresInteractionCoordinationRepository {
   constructor(private readonly approvalPool: pg.Pool, private readonly nativeProofs?: ReviewNativeProofServices) { super(approvalPool) }
   assertOriginalNativeComposition(): void {
     if (!(this.nativeProofs instanceof ReviewNativeProofServices)) return fail('REVIEW_ORIGINAL_SOURCE_REQUIRED')
@@ -205,6 +205,7 @@ export class Wave25InteractionCoordinationRepository extends PostgresInteraction
       const row = await rowFor(publication, id), current = parseReviewJob(row.record)
       if (!row.lease_active || current.leaseToken !== token || expected &&
         (String(expected.revision) !== row.revision || String(expected.fence) !== row.lease_fence)) return fail('REVIEW_JOB_LEASE_LOST')
+      if ((current.cleanup || fields.cleanup) && requested !== 'failed') return fail('REVIEW_CLEANUP_CONFLICT')
       if (current.state === 'completed' || current.state === 'failed' && requested !== 'failed') return fail('REVIEW_TERMINAL_CONFLICT')
       if (current.providerTurnOrMessageId && fields.providerTurnOrMessageId
         && current.providerTurnOrMessageId !== fields.providerTurnOrMessageId) return fail('REVIEW_JOB_IDENTITY_CONFLICT')
@@ -246,7 +247,7 @@ export class Wave25InteractionCoordinationRepository extends PostgresInteraction
       const ack = acknowledgementId(observation)
       let state = requested
       let cleanup = fields.cleanup ?? current.cleanup
-      let error = fields.error ?? current.error
+      let error = current.cleanup ? current.error : fields.error ?? current.error
       if (requested === 'acknowledged' && !ack) state = current.acknowledgedAt ? 'uncertain' : 'submitted'
       if (requested === 'completed') {
         if (observation?.kind !== 'terminal' || !observation.terminal.nativeSettled) {
@@ -361,7 +362,7 @@ export class Wave25InteractionCoordinationRepository extends PostgresInteraction
       "select principal_id from worker_credential_bindings where execution_id=$1 and purpose='reviewer' and revoked_at is null", [executionId])).rows
     let reviewerActive = false
     for (const binding of bindings) {
-      try { await assertWave25WorkerBinding(this.approvalPool, binding.principal_id); reviewerActive = true; break } catch { /* ignore: no cached credential grants authority. */ }
+      try { await assertCurrentWorkerBinding(this.approvalPool, binding.principal_id); reviewerActive = true; break } catch { /* ignore: no cached credential grants authority. */ }
     }
     return { ...session, reviewerActive }
   }

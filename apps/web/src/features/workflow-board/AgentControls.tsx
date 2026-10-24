@@ -1,10 +1,11 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { storeEditSnapshot } from '../graph/nextDraft/editIntentStorage'
 import { useId, useRef, type ReactNode } from 'react'
 import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { usePlacementChoices, type NodePlacementOption } from '../node-placement'
 import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
 import type { AgentWorktreeSettings } from '@foreman-code/contracts/worktree-settings'
-import type { Agent, GraphqlToolOverride } from '@foreman-code/contracts'
+import type { Agent, ForemanToolOverride } from '@foreman-code/contracts'
 import { Alert } from '../../shared/ui/nocturne'
 import { useGraphDraftStore } from '../graph/store'
 import { AgentSettingsForm } from '../graph/AgentSettingsForm'
@@ -14,7 +15,7 @@ import { worktreeLabel } from './worktreePresentation'
 import { hierarchyNodes, reparentHierarchyWorker, WorkerParentField } from '../workflow-hierarchy'
 
 function installAgent(draftKey: string, instanceId: string, agent: Agent, nodeId?: string, prompt?: string,
-  graphqlTools?: GraphqlToolOverride, placement?: SavedNodePlacement, worktree?: AgentWorktreeSettings) {
+  foremanTools?: ForemanToolOverride, placement?: SavedNodePlacement, worktree?: AgentWorktreeSettings) {
   useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => {
     if (current.instanceId !== instanceId) throw new Error('The draft instance changed. Reopen these settings.')
     const graph = current.graph
@@ -23,12 +24,12 @@ function installAgent(draftKey: string, instanceId: string, agent: Agent, nodeId
     const id = node?.id ?? `node-${crypto.randomUUID()}`
     const kept = node ? { ...node } : undefined
     if (kept) {
-      delete kept.graphqlTools
+      delete kept[INSTALLATION_NAMES.fields.agentTools]
       delete kept.placement
       delete kept.worktree
     }
     const nextNode = kept ? { ...kept, name: agent.name, initialPrompt: prompt,
-      ...(graphqlTools ? { graphqlTools } : {}), ...(placement ? { placement } : {}), ...(worktree ? { worktree } : {}) } : {
+      ...(foremanTools ? { [INSTALLATION_NAMES.fields.agentTools]: foremanTools } : {}), ...(placement ? { placement } : {}), ...(worktree ? { worktree } : {}) } : {
       id, agentId: agent.id, name: agent.name,
     }
     const agentForms = { ...current.agentForms }; delete agentForms[id]
@@ -70,7 +71,7 @@ function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placem
   const agent = node && editorAgents(edit).find((item) => item.id === node.agentId)
   const visit = useId()
   // The browser switch writes the draft at once; Cancel puts back what the node had when these settings opened.
-  const browserBaseline = useRef(node ? { browser: node.browser, graphqlTools: node.graphqlTools } : undefined)
+  const browserBaseline = useRef(node ? { browser: node.browser, [INSTALLATION_NAMES.fields.agentTools]: node[INSTALLATION_NAMES.fields.agentTools] } : undefined)
   const saved = edit.context.savedDraft ?? edit.context.draft
   const savedNode = node && saved.graph.nodes.filter(item => item.kind !== 'job').find((item) => item.id === node.id && item.agentId === node.agentId)
   const savedAgent = savedNode && edit.context.agents.find((item) => item.agent.id === savedNode.agentId)?.agent
@@ -90,8 +91,8 @@ function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placem
   const parentDirty = selectedParent !== undefined && selectedParent !== edit.graph.hierarchy?.parents.find(member => member.workflowNodeId === nodeId)?.parentNodeId
   // Re-key on the staged agent so a discard or reload never leaves stale values in the open form.
   return <>
-    <AgentSettingsForm key={`${edit.instanceId}:${node.id}:${JSON.stringify(agent)}:${node.initialPrompt ?? ''}:${JSON.stringify(node.graphqlTools ?? null)}:${JSON.stringify(node.placement ?? null)}:${JSON.stringify(node.worktree ?? null)}`} embedded agent={agent}
-    node={{ initialPrompt: node.initialPrompt, graphqlTools: node.graphqlTools, placement: node.placement, worktree: node.worktree,
+    <AgentSettingsForm key={`${edit.instanceId}:${node.id}:${JSON.stringify(agent)}:${node.initialPrompt ?? ''}:${JSON.stringify(node[INSTALLATION_NAMES.fields.agentTools] ?? null)}:${JSON.stringify(node.placement ?? null)}:${JSON.stringify(node.worktree ?? null)}`} embedded agent={agent}
+    node={{ initialPrompt: node.initialPrompt, [INSTALLATION_NAMES.fields.agentTools]: node[INSTALLATION_NAMES.fields.agentTools], placement: node.placement, worktree: node.worktree,
       executionPolicy: edit.graph.executionPolicy }}
     workflow={{ workspaceId: edit.graph.workspaceId, approvalHandler: edit.graph.approval?.handler,
       designatedOrchestrator: edit.graph.approval?.handler === 'orchestrator' && edit.graph.approval.designatedOrchestratorAgentId === agent.id,
@@ -110,7 +111,7 @@ function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placem
           if (item.id !== node.id || item.kind === 'job') return item
           const restored = { ...item }
           if (baseline.browser) restored.browser = baseline.browser; else delete restored.browser
-          if (baseline.graphqlTools) restored.graphqlTools = baseline.graphqlTools; else delete restored.graphqlTools
+          if (baseline[INSTALLATION_NAMES.fields.agentTools]) restored[INSTALLATION_NAMES.fields.agentTools] = baseline[INSTALLATION_NAMES.fields.agentTools]; else delete restored[INSTALLATION_NAMES.fields.agentTools]
           return restored
         }) }
         const agentForms = { ...current.agentForms }; delete agentForms[node.id]
@@ -127,10 +128,10 @@ function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placem
       } }}
     slots={{ main: mainFields, more: moreFields, additional: worker ? <WorkerParentField draftKey={draftKey} edit={edit} nodeId={node.id} /> : undefined }}
     onClose={close} onRemove={remove} {...(saveWorkflow ? { onSaveWorkflow: saveWorkflow } : {})}
-    onSave={({ agent: next, initialPrompt: prompt, nodeGraphqlTools: graphqlTools, placement, worktree }) => {
-      installAgent(draftKey, edit.instanceId, next, node.id, prompt, graphqlTools, placement, worktree)
+    onSave={({ agent: next, initialPrompt: prompt, [INSTALLATION_NAMES.fields.nodeTools]: foremanTools, placement, worktree }) => {
+      installAgent(draftKey, edit.instanceId, next, node.id, prompt, foremanTools, placement, worktree)
       const saved = useGraphDraftStore.getState().nextDrafts[draftKey]?.graph.nodes.find(item => item.id === node.id)
-      if (saved && saved.kind !== 'job') browserBaseline.current = { browser: saved.browser, graphqlTools: saved.graphqlTools }
+      if (saved && saved.kind !== 'job') browserBaseline.current = { browser: saved.browser, [INSTALLATION_NAMES.fields.agentTools]: saved[INSTALLATION_NAMES.fields.agentTools] }
     }} />
   </>
 }
