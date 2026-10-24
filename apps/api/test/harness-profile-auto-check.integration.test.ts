@@ -134,8 +134,14 @@ describe('automatic checks of enabled harness profiles', () => {
         const choices = NodePlacementChoicesResultSchema.parse(await fixture.value('workflow_node_placement_choices', {
           ...scope, nodeId: node.id, agentConfigurationVersionId: saved.version.agentConfigurationVersionIds[node.agentId],
         }))
+        expect(choices.pending).toBe(true)
         expect(choices.choices.find(choice => choice.placement.instanceId === original.instanceId))
-          .toMatchObject({ availability: 'unavailable' })
+          .toMatchObject({ availability: 'unavailable',
+            reason: 'The selected harness profile is being checked. Retry Run start shortly.',
+            placement: { instanceRevision: enabled.value.instanceRevision } })
+        expect((await profiles(fixture, reader.token)).find(profile => profile.instanceId === original.instanceId))
+          .toMatchObject({ revision: enabled.value.revision, qualification: 'qualifying' })
+        await held.expectWaiting()
         await fixture.provider.releaseModels()
         blocked = false
         await waitForRemoteReview(() => profiles(fixture, reader.token), values =>
