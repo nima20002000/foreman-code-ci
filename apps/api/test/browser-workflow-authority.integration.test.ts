@@ -227,7 +227,7 @@ it.each(['empty', 'published', 'failed'] as const)('prepares a %s shared profile
     }
   } finally {
     finish.resolve()
-    await preparing?.catch(() => undefined)
+    await preparing?.catch(() => /* ignore: the outcome was asserted above; settle it before stopping the dispatcher */ undefined)
     await browser.stop()
   }
 })

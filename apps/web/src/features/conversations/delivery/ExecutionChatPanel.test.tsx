@@ -83,6 +83,15 @@ beforeEach(() => { localStorage.clear(); useConversationDraftStore.getState().cl
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()) })
 
 describe('exact Execution chat public surface', () => {
+  it('shows the retained browser preparation reason while the selected execution is queued', async () => {
+    const state = endpoints({ ...initial, state: 'queued', messages: [],
+      capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } })
+    const message = 'Waiting for the browser profile on Worker A: Computer offline.'
+    Object.assign(state.value, { queueReason: { kind: 'preparation', message, since: date } })
+    mount(new NativeSource())
+    expect(await screen.findByText(message)).toBeVisible()
+  })
+
   it('notices on its own that the Run ended and offers the follow-up instead of a message box', async () => {
     const state = endpoints()
     mount(new NativeSource(), { followUp: inputs => <>{inputs}<p>Agent chat follow-up</p></> })

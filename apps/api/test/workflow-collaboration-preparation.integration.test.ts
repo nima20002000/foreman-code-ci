@@ -3,6 +3,7 @@ import { COORDINATION_RESULT_PROTOCOL, type AgentSubject, type BoardApplicationR
   type BrowserPrepareResult, type BoardResult } from '@foreman-code/contracts'
 import type { SqlTransaction } from '../src/infrastructure/transaction.js'
 import { DomainError } from '../src/modules/errors.js'
+import { readWorkflowExecutionChat } from '../src/modules/collaboration/workflowChatRead.js'
 import { RunHistoryService } from '../src/modules/runs/history.js'
 import { readCurrentRunDetails } from '../src/modules/runs/currentRead.js'
 import { requestRepeatRunStop } from '../src/modules/runs/repeatLifecycle.js'
@@ -99,6 +100,16 @@ describe.skipIf(!postgresEnabled)('workflow collaboration preparation and atomic
       expect((await history.snapshot(f.writer.principal, input)).executionQueue).toEqual([expect.objectContaining(expected)])
       expect((await readCurrentRunDetails(db.pool, f.writer.principal, f.run.workspaceId, f.run.id)).executions[0])
         .toMatchObject({ queueReason: expected.reason })
+      const unused = async (): Promise<never> => { throw new Error('Queued chat does not dispatch native work') }
+      const chat = await readWorkflowExecutionChat(db.pool, { transaction: unused, dispatch: unused, validateAdmission: unused,
+        readNative: async () => ({ messages: [], hasMore: false, nextCursor: null, revision: 0 }),
+        observe: async () => ({ capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } }),
+      }, f.writer.principal, { target: { kind: 'workflow_execution', agent: { workspaceId: f.run.workspaceId,
+        workflowId: f.run.workflowId, workflowNodeId: f.execution.workflowNodeId, agentId: f.execution.agentId },
+      execution: { runId: f.run.id, workflowVersionId: f.version.id, executionId: f.execution.id,
+        attempt: f.execution.attempt, activationId: b.prepare.mock.calls[0]![0].subject.kind === 'execution'
+          ? b.prepare.mock.calls[0]![0].subject.execution.activationId : undefined } } })
+      expect(chat).toMatchObject({ queueReason: expected.reason })
       await f.restart()
       expect((await history.snapshot(f.writer.principal, input)).executionQueue).toEqual([expect.objectContaining(expected)])
       await integration.prepare(f.owner, f.run, f.version, f.execution)
