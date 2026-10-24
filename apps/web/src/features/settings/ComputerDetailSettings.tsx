@@ -9,7 +9,7 @@ import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Alert, Badge, Button, SettingRow, SettingsSection, Skeleton, Switch, Tabs, TextField } from '../../shared/ui/nocturne'
 import type { ComputerSettingsTab } from './computerSettingsTabs'
-import { ComputerCards, ComputerSyncPanel } from '../computers'
+import { ComputerCards, ComputerDefaultSignIns, ComputerSyncPanel } from '../computers'
 import { ProviderAccountsSettings } from '../provider-accounts'
 import { ComputerPairingRecovery } from './ComputerPairingRecovery'
 import { ComputerRevokeButton } from './ComputerRevokeButton'
@@ -53,7 +53,8 @@ export function ComputerDetailSettings({ mainId, devices, registration }: {
     </> },
     ...target ? [{ value: 'accounts', label: 'Sign-ins', content:
       <SettingsSection title="Sign-ins" description="Codex and Claude accounts on this computer.">
-        <ProviderAccountsSettings target={target} />
+        <ComputerDefaultSignIns target={target} computer={name} online={online} />
+        <ProviderAccountsSettings target={target} additional />
       </SettingsSection> },
     { value: 'files', label: 'Files and browsers', content: <>
       <SettingsSection title="File sync" description="Workspace files kept in sync on this computer.">

@@ -60,8 +60,3 @@ parameterized reads. The bounded cache holds statement names, not results,
 permissions or ownership. Every call still executes on the same guarded
 transaction with its current parameters. Borrowed pool connections retain
 unnamed statements. Closing the owner releases its session and prepared plans.
-
-Owner fence checks share one physical session/lock sample inside each transaction.
-The connection reads it again after every registered finalizer has finished and
-before COMMIT. A changed or missing lock rolls the entire transaction back; no
-sample survives into the next transaction or authorizes native work before COMMIT.

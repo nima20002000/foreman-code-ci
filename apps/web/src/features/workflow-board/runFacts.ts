@@ -5,6 +5,7 @@ import type { RepeatGraphCurrentState } from '@foreman-code/contracts/current'
 import type { AgentNodeState, Tone } from '../../shared/ui/nocturne'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { currentRunKey } from './currentRunQuery'
+import { runStatusLabels } from '../runs-selector'
 import { useBoardSelection } from '../board-core'
 import { checkingView, pinnedNodeStates, runningIntervalChecks, type PinnedNodeDisplayCut } from './inspect/pinnedTopology'
 
@@ -53,7 +54,7 @@ export function runLabel(state: string, outcome: string) {
   if (state === 'waiting') return 'Waiting'
   if (state === 'queued') return 'Queued'
   if (state === 'interrupted') return 'Interrupted'
-  return outcome === 'succeeded' ? 'Completed' : outcome === 'failed' ? 'Failed' : outcome === 'canceled' ? 'Cancelled' : 'Finished'
+  return outcome === 'succeeded' || outcome === 'failed' || outcome === 'canceled' ? runStatusLabels[outcome] : 'Finished'
 }
 export function runTone(state: string, outcome: string): Tone {
   if (state === 'running' || state === 'queued') return 'info'

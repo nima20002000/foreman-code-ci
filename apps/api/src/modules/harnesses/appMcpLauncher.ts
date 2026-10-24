@@ -251,9 +251,15 @@ export async function registerAppRouteDigest(
       throw error
     }
   }
-  const publish = (expiration: string, mode: 'register' | 'refresh',
-    publication: Pick<AppMcpRouteOptions, 'renewalFailure' | 'signal'> = {}): Promise<void> =>
-    withLauncherLock(launcher, async signal => {
+  let publishedExpiration: string | undefined
+  let publishedFailure: string | undefined
+  const publish = async (expiration: string, mode: 'register' | 'refresh',
+    publication: Pick<AppMcpRouteOptions, 'renewalFailure' | 'signal'> = {}): Promise<void> => {
+    publication.signal?.throwIfAborted()
+    ownership?.assertActive()
+    // This registration never reclaims a successor's route. Identical publication has no write to serialize.
+    if (mode === 'refresh' && expiration === publishedExpiration && publication.renewalFailure === publishedFailure) return
+    await withLauncherLock(launcher, async signal => {
       ownership?.assertActive()
       if (mode === 'refresh' && !await ownsRoute()) return
       await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -267,10 +273,13 @@ export async function registerAppRouteDigest(
         signal.throwIfAborted()
         ownership?.assertActive()
         await rename(temporary, file)
+        publishedExpiration = expiration
+        publishedFailure = publication.renewalFailure
       } finally {
         await rm(temporary, { force: true })
       }
     }, publication.signal)
+  }
   await publish(expiresAt, 'register', options)
   const remove = async (): Promise<void> => {
     await withLauncherLock(launcher, async () => {
