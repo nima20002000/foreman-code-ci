@@ -29,7 +29,7 @@ async function fixture(t, artifactName = 'fixture') {
       { path: 'artifacts/graphql-mcp.mjs', size: Buffer.byteLength(bridge), sha256: hash(bridge) },
       { path: 'artifacts/graphql.svg', size: icon.length, sha256: hash(icon) }] };
   const bytes = JSON.stringify(manifest); await writeFile(join(artifact, 'manifest.json'), bytes);
-  return { home, artifact, node: process.execPath, facts, approvedManifestSha256: hash(bytes), serviceTemplate: await readFile(new URL('../artifacts/graphql-worker.service.in', import.meta.url), 'utf8') };
+  return { home, artifact, node: process.execPath, facts, approvedManifestSha256: hash(bytes), serviceTemplate: await readFile(new URL('../artifacts/foreman-worker.service.in', import.meta.url), 'utf8') };
 }
 
 test('setup holds the installation lock until its launchers and proposed service are published', { timeout: 5000 }, async (t) => {

@@ -10,7 +10,7 @@ mapping, and native Codex/OpenCode process adapters.
 - `src/server.ts` is the composition root. It loads configuration, connects
   PostgreSQL, initializes LangGraph's PostgreSQL checkpointer, then listens.
 - `src/infrastructure/database.ts` owns the application `pg` pool.
-- `src/infrastructure/checkpoints.ts` owns `PostgresSaver`; its `saver`
+- `src/composition/checkpoints.ts` owns `PostgresSaver`; its `saver`
   property is the checkpointer ENG-04 passes to compiled LangGraph workflows.
 - `src/modules/workflows/postgres.ts` persists definitions and immutable
   versions, including the explicit first-added entry node.

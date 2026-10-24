@@ -12,9 +12,6 @@ interface OperatorChatUiState {
   open: boolean
   historyOpen: boolean
   selectedConversationId?: string
-  draftConversationIds: string[]
-  rememberDraft(id: string): void
-  forgetDraft(id: string): void
   navigationGeneration: number
   /** One request from elsewhere in the app; the chat sends it in a new conversation. */
   request?: { id: string; content: string; send: boolean } | undefined
@@ -29,36 +26,16 @@ interface OperatorChatUiState {
 function savedState() {
   try { return parseChatPreferences(JSON.parse(window.localStorage.getItem(protectedKey('ui')) ?? '{}')) } catch { return {} }
 }
-function savedDraftIds(): string[] {
-  try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(protectedKey('ui', 'draft-conversations')) ?? '[]')
-    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && !!id.trim()) : []
-  } catch { return [] /* ignore: draft navigation remains available in memory. */ }
-}
 const initial = typeof window === 'undefined' ? {} : savedState()
 function persist(state: Pick<OperatorChatUiState, 'open' | 'historyOpen' | 'selectedConversationId'>) {
   if (sessionIsSwitching()) return
-  try { window.localStorage.setItem(protectedKey('ui'), JSON.stringify({ open: state.open, historyOpen: state.historyOpen, selectedConversationId: state.selectedConversationId })) } catch { /* ignore: optional UI preferences remain available in memory. */ }
+  try { window.localStorage.setItem(protectedKey('ui'), JSON.stringify({ open: state.open, historyOpen: state.historyOpen, selectedConversationId: state.selectedConversationId })) } catch { /* Preferences are optional. */ }
 }
 export const useOperatorChatStore = create<OperatorChatUiState>((set) => ({
   open: initial.open ?? false,
   historyOpen: false,
   selectedConversationId: initial.selectedConversationId,
   navigationGeneration: 0,
-  draftConversationIds: typeof window === 'undefined' ? [] : savedDraftIds(),
-  rememberDraft: (id) => set((state) => {
-    const draftConversationIds = [...new Set([...state.draftConversationIds, id])]
-    try { window.localStorage.setItem(protectedKey('ui', 'draft-conversations'), JSON.stringify(draftConversationIds)) }
-    catch { /* ignore: draft navigation remains available in memory. */ }
-    return { draftConversationIds }
-  }),
-  forgetDraft: (id) => set((state) => {
-    if (!state.draftConversationIds.includes(id)) return state
-    const draftConversationIds = state.draftConversationIds.filter(value => value !== id)
-    try { window.localStorage.setItem(protectedKey('ui', 'draft-conversations'), JSON.stringify(draftConversationIds)) }
-    catch { /* ignore: draft navigation remains available in memory. */ }
-    return { draftConversationIds }
-  }),
   ask: (content, options) => { if (!sessionIsSwitching()) set((state) => {
     persist({ ...state, open: true })
     return { open: true, historyOpen: false, request: { id: crypto.randomUUID(), content, send: options?.send ?? true } }
@@ -78,7 +55,7 @@ export const useOperatorChatStore = create<OperatorChatUiState>((set) => ({
     const next = { selectedConversationId, navigationGeneration: state.navigationGeneration + 1, historyOpen: isNarrowOperatorChat() ? false : state.historyOpen }
     persist({ ...state, ...next }); return next
   }) },
-  reset: () => set((state) => ({ open: false, historyOpen: false, selectedConversationId: undefined, request: undefined, draftConversationIds: [], navigationGeneration: state.navigationGeneration + 1 })),
+  reset: () => set((state) => ({ open: false, historyOpen: false, selectedConversationId: undefined, request: undefined, navigationGeneration: state.navigationGeneration + 1 })),
 }))
 if (typeof window !== 'undefined') window.addEventListener(identityChangedEvent, () => useOperatorChatStore.getState().reset())
 

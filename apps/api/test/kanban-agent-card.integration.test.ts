@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, MemoryBoardViewSchema, MemoryBoardWireSchemas,
-  MemoryCardDetailSchema, newAgentGraphqlTools, type HarnessExecutionRequest, type MemoryCard } from '@foreman-code/contracts'
+  MemoryCardDetailSchema, newAgentForemanTools, type HarnessExecutionRequest, type MemoryCard } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture, WorkActivationInputSchema, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
@@ -15,7 +15,7 @@ function agentFixture(readOnly = false) {
   fixture.version.approval = { handler: 'native' }
   fixture.version.definition.approval = fixture.version.approval
   fixture.run.approval = fixture.version.approval
-  fixture.configurations[0]!.graphqlTools = newAgentGraphqlTools('coder')
+  fixture.configurations[0]!.graphqlTools = newAgentForemanTools('coder')
   fixture.configurations[0]!.harness = { harness: 'codex', model: 'synthetic-no-native-call', reasoningEffort: 'low',
     sandbox: readOnly ? 'read-only' : 'workspace-write', serviceTier: 'standard',
     advanced: { ...DEFAULT_CODEX_ADVANCED_CONFIGURATION, approvalPolicy: 'never' } }

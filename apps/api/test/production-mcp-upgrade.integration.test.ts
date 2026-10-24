@@ -65,15 +65,15 @@ it.each(cases)(
       }))
     vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
     const savedLauncher = change === 'unused-directory' ? shared : previous
-    vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', dirname(savedLauncher))
+    vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', dirname(savedLauncher))
     await runLauncherProcess({ kind: 'older-install', launcher: shared }, developmentRuntime)
     if (change === 'unused-directory') {
       await mkdir(join(dirname(previous), 'routes'), { recursive: true })
     } else {
-      await installManagedLauncher(new URL('../../../scripts/graphql-mcp.mjs', import.meta.url), previous)
+      await installManagedLauncher(new URL('../../../scripts/foreman-mcp.mjs', import.meta.url), previous)
     }
     await runLauncherProcess({ kind: 'older-install', launcher: savedLauncher }, installedRuntime)
-    const tokenVariable = harness === 'codex' ? 'GRAPHQL_MCP_TOKEN' : 'FOREMAN_CODE_MCP_TOKEN'
+    const tokenVariable = harness === 'codex' ? 'GRAPHQL_MCP_TOKEN' : 'GRAPHQL_MCP_TOKEN'
     const connection = {
       transport: 'stdio' as const, executable: installedRuntime, arguments: [savedLauncher],
       environmentVariables: [tokenVariable],
@@ -162,7 +162,7 @@ it.each(cases)(
     const runtimeModule = new URL('../../../scripts/local-production-runtime.mjs', import.meta.url).href
     const { localProductionEnvironment } = await import(runtimeModule)
     const environment = localProductionEnvironment(home, 'a'.repeat(64))
-    vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', environment.FOREMAN_CODE_APP_MCP_DIRECTORY)
+    vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', environment.GRAPHQL_APP_MCP_DIRECTORY)
     expect(isAppLauncher(entry)).toBe(change === 'unused-directory')
     await upgradeProductionMcpLauncher(home)
     expect(isAppLauncher(entry)).toBe(true)
@@ -195,7 +195,7 @@ it.each(cases)(
     await upgraded.close()
     await runLauncherProcess({ kind: 'upgrade', home })
     expect(isAppLauncher(entry)).toBe(true)
-    await installManagedLauncher(new URL('../../../scripts/graphql-mcp.mjs', import.meta.url), shared)
+    await installManagedLauncher(new URL('../../../scripts/foreman-mcp.mjs', import.meta.url), shared)
     const restarted = await start()
     await assertReadback(restarted.settings)
     expect(restarted.requests()).toBeGreaterThan(0)

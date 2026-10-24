@@ -1,4 +1,4 @@
-import { nativeTextPartKey as operatorTextPartKey, type ChatTimelineEntry } from '../conversations/chatTimeline'
+import { nativeTextPartKey as operatorTextPartKey, type ChatTimelineEntry } from '../chat-core'
 import { ActivityChangeEnvelopeV1Schema, type Message } from '@foreman-code/contracts'
 import { TextTruncationSchema } from '@foreman-code/contracts/activity-text'
 
@@ -7,7 +7,7 @@ export const OPERATOR_TEXT_BYTES = 128 * 1024
 export const OPERATOR_TIMELINE_ITEMS = 512
 
 
-export { nativeTextPartKey as operatorTextPartKey } from '../conversations/chatTimeline'
+export { nativeTextPartKey as operatorTextPartKey } from '../chat-core'
 export type OperatorTimelineEntry = ChatTimelineEntry
 /** Bounded presentation bridge between notifications and Query-owned canonical reads.
  * Discarded on rebootstrap; never owns persisted text, lifecycle or scope revision. */

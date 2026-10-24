@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import type { CiHostStatus, CiRunRecord } from '@foreman-code/contracts'
 import type { CiContext } from './environment.js'
-import { DomainError, errorMessage } from '@foreman-code/contracts/server-kit'
+import { DomainError, errorMessage } from '@foreman-code/contracts-node/server-kit'
 import type { HostCiComputer, HostCiEndpoint, HostRef } from './serviceTypes.js'
 import { ciExecutionRunId } from './executionAttempt.js'
 

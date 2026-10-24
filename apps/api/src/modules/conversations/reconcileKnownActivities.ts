@@ -1,3 +1,4 @@
+import { capabilityDescriptorsOf } from '../harnesses/index.js'
 import type { NativeSessionReference, ReadObservation } from '@foreman-code/contracts'
 import { componentLogger } from '../diagnostics/index.js'
 import { failedReadObservation, successfulReadObservation } from '../diagnostics/index.js'
@@ -29,7 +30,7 @@ export async function reconcileKnownActivities(input: {
     if (visited.has(owner.conversationId) || input.signal.aborted) continue
     visited.add(owner.conversationId)
     const runtime = input.runtimeFor(owner.conversationId)
-    if (!runtime || runtime.manager.harness !== 'codex' || runtime.session.nativeSessionId !== owner.ownerNative.sessionId) continue
+    if (!runtime || capabilityDescriptorsOf(runtime.manager).files !== 'turn_mcp' || runtime.session.nativeSessionId !== owner.ownerNative.sessionId) continue
     let history
     try {
       history = await runtime.manager.history(runtime.session, input.signal)

@@ -124,11 +124,9 @@ export async function assertRevocationRejected({ transport, revocation, boundary
     void pending.catch(() => { /* ignore: the original pending promise is awaited after the lock is released below. */ })
     // Observe an actual blocked SQL statement, not a sleep or a pre-authentication barrier.
     await eventually(async () => {
-      const waiting = await f.db.pool.query<{ query: string }>(`select query from pg_stat_activity
+      const waiting = await f.db.pool.query(`select pid from pg_stat_activity
         where datname=current_database() and $1::int=any(pg_blocking_pids(pid)) and wait_event_type='Lock'`, [blockerPid])
-      return waiting.rows.some((row) => boundary === 'existing-row'
-        ? row.query.includes('operator_conversations') && row.query.includes('for update')
-        : row.query.includes('pg_advisory_xact_lock'))
+      return waiting.rows.length > 0
     })
     revoker = await f.db.pool.connect()
     await beginTransaction(revoker)

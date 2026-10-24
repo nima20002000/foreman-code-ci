@@ -1,12 +1,9 @@
-import { useRef, useState, type ReactNode } from 'react'
-import { parseSessionCommand, type ChatDeliveryIntent, type OperatorConversationState } from '@foreman-code/contracts'
-import { Button, Select } from '../../shared/ui/nocturne'
+import { useRef, type ReactNode } from 'react'
+import { parseSessionCommand, type OperatorConversationState } from '@foreman-code/contracts'
+import { Button } from '../../shared/ui/nocturne'
 import type { useFileDrop } from '../../shared/ui/useFileDrop'
 import type { ConversationAttachments } from '../attachments'
-import { useConversationDraftStore } from '../conversations/conversationDraftStore'
-import { prepareChatAttachments, type ChatAttachmentAttempt } from '../conversations/chatAttachmentAttempt'
-import type { ComposerSessionControls } from '../conversations/sessionControls/useSessionControls'
-import { deliveryAction } from '../conversations/delivery/deliveryAction'
+import { useConversationDraftStore, prepareChatAttachments, type ChatAttachmentAttempt, type ComposerSessionControls, deliveryAction } from '../chat-core'
 import { ChatDeliveryReceipts } from '../conversations/delivery/ChatDeliveryReceipts'
 import { RetainedDeliveryInputs } from '../conversations/delivery/RetainedDeliveryInputs'
 import { useChatDelivery } from '../conversations/delivery/useChatDelivery'
@@ -22,7 +19,6 @@ export function CanonicalOperatorComposer({ conversation, attachments, sessionCo
   reason?: string; onNewChat(): void; onDenied(error: Error): void; refresh(): void
 }) {
   const id = conversation.conversation.id, draft = useConversationDraftStore(store => store.drafts[id] ?? '')
-  const [intent, setIntent] = useState<ChatDeliveryIntent>('auto')
   const attempt = useRef<{ content: string; version: number; files: ChatAttachmentAttempt } | undefined>(undefined)
   const target = { kind: 'operator_conversation' as const, conversationId: id }
   const delivery = useChatDelivery(target, true, `${conversation.turnState}:${conversation.activeRequestId ?? ''}`, (_receipt, request) => {
@@ -37,7 +33,7 @@ export function CanonicalOperatorComposer({ conversation, attachments, sessionCo
   const presentation = { ...delivery.presentation, hasAttachments: attachments.hasAttachments,
     changesMode: !!mode && sessionControls.state?.appliedMode !== mode }
   const reason = unavailable ?? (delivery.pendingControl ? 'Confirm the original Stop or queue control before sending.' : !delivery.online ? 'You are offline. Your draft is kept.' : pin.stale ? 'The selected turn changed. Refresh the target to send this draft.' : undefined)
-  const action = deliveryAction(presentation, intent), receipts = delivery.state?.receipts ?? []
+  const action = deliveryAction(presentation, 'auto'), receipts = delivery.state?.receipts ?? []
   // Settled receipts are already visible as transcript messages; only ones needing attention stay listed.
   // A failed turn is already explained by the turn's error message above; its receipt would repeat it.
   const openReceipts = receipts.filter(receipt => receipt.state === 'queued' || receipt.state === 'unknown')
@@ -55,10 +51,6 @@ export function CanonicalOperatorComposer({ conversation, attachments, sessionCo
       onRefresh={delivery.refresh} onCancel={delivery.pendingControl ? undefined : receipt => delivery.cancel(receipt.id)} /> : null}
     {draft.trim() && !unavailable && (reason ?? action.reason) ? <p className="operator-chat-handoff" role="status">{reason ?? action.reason}</p> : null}
     <OperatorComposer conversationId={id} sessionControls={sessionControls} context={context} attachmentControl={attachmentControl}
-      deliveryControl={presentation.state === 'active' || intent !== 'auto' ? <Select label="Delivery action" value={intent} disabled={delivery.busy}
-        options={[{ value: 'auto', label: 'Automatic' }, { value: 'next_turn', label: 'Queue next' },
-          { value: 'steer', label: 'Steer now' }, { value: 'interrupt_and_send', label: 'Interrupt and send' }]}
-        onChange={event => setIntent(event.target.value as ChatDeliveryIntent)} /> : undefined}
       fileDropProps={fileDropProps} hasAttachments={attachments.hasAttachments} onNewChat={onNewChat}
       sendDisabled={!!reason || !!action.reason || attachments.hasBlockingAttachments || !!delivery.pending}
       isSending={delivery.busy} onCancel={!delivery.pendingControl && presentation.state === 'active' ? delivery.stop : undefined}
@@ -69,8 +61,8 @@ export function CanonicalOperatorComposer({ conversation, attachments, sessionCo
         const files = prepareChatAttachments(attachments)
         if (!files || !content.trim() && !files.attachments.length) return
         attempt.current = { content, files, version: useConversationDraftStore.getState().versions[id] ?? 0 }
-        delivery.submit({ content, intent, ...(selectedMode ? { sessionMode: selectedMode } : {}),
-          ...(intent !== 'next_turn' && pin.pin?.nativeTurnId ? { expectedNativeTurnId: pin.pin.nativeTurnId } : {}),
+        delivery.submit({ content, intent: 'auto', ...(selectedMode ? { sessionMode: selectedMode } : {}),
+          ...(pin.pin?.nativeTurnId ? { expectedNativeTurnId: pin.pin.nativeTurnId } : {}),
           ...(files.attachments.length ? { attachments: [...files.attachments] } : {}) })
       }} />
   </>

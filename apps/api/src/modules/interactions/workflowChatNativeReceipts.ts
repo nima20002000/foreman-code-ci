@@ -1,9 +1,9 @@
+import { capabilityDescriptorsOf, supportsExpectedTurnSteer } from '../harnesses/index.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import type { WorkflowNativeProofRecord } from '../runs/workflowNativeProof.js'
+import type { WorkflowNativeProofRecord } from '../runs/index.js'
 import { CONTROL_COMMAND_COLUMNS, WORKFLOW_INPUT_RETRIES, captureWorkflowControlNativeLocked, markWorkflowControlCommandLocked,
   type ControlCommandRow } from '../collaboration/index.js'
 import type { WorkflowChatNativeTarget } from '../collaboration/index.js'
-import { supportsExpectedTurnSteer } from '../harnesses/index.js'
 
 const projectedNonTerminal = new WeakMap<SqlTransaction, Set<string>>()
 
@@ -50,13 +50,13 @@ export async function projectWorkflowChatNativeReceiptsLocked(sql: SqlTransactio
       if (!captured) await captureWorkflowControlNativeLocked(sql, {
         runId: row.run_id, commandId: row.id, now: proof.observedAt,
         nativeTarget: { nativeSessionId: proof.session.nativeSessionId, ownerRequestId: proof.commandId,
-          ...(proof.session.harness === 'codex' ? { nativeTurnId: providerId } : { inputMessageId: providerId }),
+          ...(capabilityDescriptorsOf(proof.session).inputIdentity === 'turn' ? { nativeTurnId: providerId } : { inputMessageId: providerId }),
           providerId, sessionMode: (row.request as { sessionMode?: 'regular' | 'plan' }).sessionMode ?? 'regular',
           steer: supportsExpectedTurnSteer(proof.session), interruptAndSend: true },
       })
       await markWorkflowControlCommandLocked(sql, { runId: row.run_id, commandId: row.id,
         state: terminal ? 'completed' : 'accepted',
-        ...(proof.session.harness === 'codex' ? { nativeTurnId: providerId } : {}), now: proof.observedAt })
+        ...(capabilityDescriptorsOf(proof.session).inputIdentity === 'turn' ? { nativeTurnId: providerId } : {}), now: proof.observedAt })
       continue
     }
     if (!captured || captured.nativeSessionId !== proof.session.nativeSessionId

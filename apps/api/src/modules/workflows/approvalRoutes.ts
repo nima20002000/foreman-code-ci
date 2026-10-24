@@ -1,4 +1,4 @@
-import type { HarnessConfiguration } from '@foreman-code/contracts'
+import type { RecordedHarnessConfiguration } from '@foreman-code/contracts'
 import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 
 /** These are immutable accepted versions, never a current editable workflow. */
@@ -19,7 +19,7 @@ export interface ImmutableApprovalRoute {
   relationshipId?: string
 }
 
-export function usesNativeSelfReview(configuration: HarnessConfiguration | undefined): boolean {
+export function usesNativeSelfReview(configuration: RecordedHarnessConfiguration | undefined): boolean {
   return configuration?.harness === 'codex'
     && configuration.advanced?.approvalPolicy === 'on-request'
     && configuration.advanced.approvalsReviewer === 'auto_review'

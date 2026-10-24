@@ -2,7 +2,7 @@ import { lstat, readFile } from 'node:fs/promises'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'yaml'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import type { HostCiPorts } from './runner.js'
 
 interface CircleConfig { token?: string; host?: string }

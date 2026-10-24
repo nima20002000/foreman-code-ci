@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../installationNames.mjs'
 import { optionalCommandId } from './commands.js'
 import { AgentProductRoleSchema } from '../agentIdentity.js';
 import { z } from "zod";
@@ -5,7 +6,7 @@ import { DeviceProvisioningHostReferenceSchema } from "../deviceResources.js";
 import { WorkflowVersionCurrentSchema } from "../current/workflowSchemas.js";
 import {
   AgentSchema, AgentConfigurationVersionSchema,
-  HarnessConfigurationSchema, SupportedHarnessConfigurationSchema, HarnessQualificationSchema, ScopedMcpDetectionSchema,
+  RecordedHarnessConfigurationSchema, SupportedHarnessConfigurationSchema, HarnessQualificationSchema, ScopedMcpDetectionSchema,
   IdSchema, TimestampSchema, ApprovalHandlerSchema, MAX_SKILL_INSTRUCTIONS_CHARS,
 } from "../index.js";
 
@@ -27,7 +28,7 @@ export const AgentCreateInputSchema = z.object({
   configuration: Configuration.optional(),
   harnessProfileSelection: AgentSchema.shape.harnessProfileSelection,
   prompt: AgentSchema.shape.prompt, assignedSkills: AgentSchema.shape.assignedSkills,
-  graphqlTools: AgentSchema.shape.graphqlTools,
+  [INSTALLATION_NAMES.fields.agentTools]: AgentSchema.shape[INSTALLATION_NAMES.fields.agentTools],
   nativeTools: AgentSchema.shape.nativeTools,
 }).strict();
 export const AgentUpdateInputSchema = z.object({
@@ -40,10 +41,10 @@ export const AgentUpdateInputSchema = z.object({
   configuration: Configuration.optional(),
   harnessProfileSelection: AgentSchema.shape.harnessProfileSelection,
   prompt: AgentSchema.shape.prompt, assignedSkills: AgentSchema.shape.assignedSkills,
-  graphqlTools: AgentSchema.shape.graphqlTools,
+  [INSTALLATION_NAMES.fields.agentTools]: AgentSchema.shape[INSTALLATION_NAMES.fields.agentTools],
   nativeTools: AgentSchema.shape.nativeTools,
 }).strict().refine((value) => [value.name, value.description, value.role, value.productRole, value.configuration,
-  value.prompt, value.assignedSkills, value.graphqlTools, value.nativeTools, value.harnessProfileSelection].some((item) => item !== undefined), "At least one editable field is required");
+  value.prompt, value.assignedSkills, value[INSTALLATION_NAMES.fields.agentTools], value.nativeTools, value.harnessProfileSelection].some((item) => item !== undefined), "At least one editable field is required");
 export const AgentCloneInputSchema = z.object({
   ...Workspace, commandId: optionalCommandId(Command), agentId: IdSchema, sourceAgentId: IdSchema,
   expectedSourceRevision: Revision, expectedSourceConfigurationVersionId: IdSchema,
@@ -67,7 +68,7 @@ export const HarnessMcpDetectionInputSchema = z.object({ ...Workspace, harness: 
 export const HarnessMcpDetectionResultSchema = ScopedMcpDetectionSchema;
 export const NativeConfigurationCheckInputSchema = z.object({ configuration: Configuration }).strict();
 export const NativeConfigurationCheckResultSchema = z.object({
-  configuration: HarnessConfigurationSchema, qualification: HarnessQualificationSchema, checkedAt: TimestampSchema,
+  configuration: RecordedHarnessConfigurationSchema, qualification: HarnessQualificationSchema, checkedAt: TimestampSchema,
 }).strict();
 
 export const WorkflowVersionListInputSchema = z.object({ ...Workflow, ...Page }).strict();
