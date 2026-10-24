@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { agentChatApi } from '../../../shared/api/agentChat'
 import { sessionGeneration } from '../../../shared/api/sessionBoundary'
 import { Alert, Button } from '../../../shared/ui/nocturne'
-import { ChatMessageFiles } from '../ChatMessageFiles'
+import { ChatMessageFiles } from '../../chat-core'
 import { AgentChatMessage } from './AgentChatMessage'
 
 export function AgentConversationHistory({ workspaceId, conversationId, name }: {

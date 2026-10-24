@@ -353,7 +353,8 @@ function validateAgentTemplate(value: { role: z.infer<typeof ConfiguredAgentProd
   if (value.role === "operator" && value.boardAddable) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["boardAddable"], message: "Operator is application-level and cannot be added to a workflow board" });
   }
-  if (value[INSTALLATION_NAMES.fields.agentTools] && (value.role === 'operator' || foremanToolsOutsideRole(value.role, activeForemanTools(value[INSTALLATION_NAMES.fields.agentTools])).length)) {
+  const tools = value[INSTALLATION_NAMES.fields.agentTools];
+  if (tools && (value.role === 'operator' || foremanToolsOutsideRole(value.role, activeForemanTools(tools)).length)) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['graphqlTools'], message: 'Workflow tool defaults must be allowed for the selected Agent role.' });
   }
 }
@@ -394,8 +395,9 @@ export type RecordedAgentDefaults = z.infer<typeof RecordedAgentDefaultsSchema>;
 /** A new settings submission contains only active choices; the saved template stays untouched. */
 export function activeAgentDefaults(defaults: RecordedAgentDefaults): AgentDefaults {
   const value = structuredClone(defaults);
-  for (const template of Object.values(value)) if (template?.[INSTALLATION_NAMES.fields.agentTools]) {
-    template[INSTALLATION_NAMES.fields.agentTools] = activeForemanTools(template[INSTALLATION_NAMES.fields.agentTools]);
+  for (const template of Object.values(value)) {
+    const tools = template?.[INSTALLATION_NAMES.fields.agentTools];
+    if (template && tools) template[INSTALLATION_NAMES.fields.agentTools] = activeForemanTools(tools);
   }
   return AgentDefaultsSchema.parse(value);
 }
