@@ -15,7 +15,7 @@ import type { CircleAccounts, ManagementAction, ManagementGrant, ManagementPrinc
 import type { RemoteJobOperationReceiptRecord } from '@foreman-code/contracts/remote-job-execution'
 import type { SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import type { SourceManifest } from '@foreman-code/contracts/source-materialization'
-import type { DomainError } from '@foreman-code/contracts-node/server-kit'
+import type { DomainError } from '@foreman-code/contracts/server-kit'
 
 // The services a host process (Main or a Worker) supplies to CI: one logger, one service-health table, one transaction
 // helper and one CI database-priority context per process. The host builds one CiContext and passes it to CI

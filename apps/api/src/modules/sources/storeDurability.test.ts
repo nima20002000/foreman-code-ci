@@ -8,7 +8,6 @@ import { createSourceManifest, sourceSha256 } from './manifest.js'
 import { PrivateSourceSnapshotStore } from './store.js'
 
 const io = vi.hoisted(() => ({
-  opens: 0,
   syncs: 0,
   flushes: 0,
   missingHelper: false,
@@ -19,7 +18,6 @@ const io = vi.hoisted(() => ({
 vi.mock('node:fs/promises', async original => {
   const actual = await original<typeof import('node:fs/promises')>()
   return { ...actual, open: async (...args: Parameters<typeof actual.open>) => {
-    io.opens++
     const file = await actual.open(...args)
     const sync = file.sync.bind(file)
     file.sync = async () => { io.syncs++; await sync() }
@@ -42,7 +40,6 @@ vi.mock('./sourceTreeFlush.js', async original => {
 
 const roots: string[] = []
 afterEach(async () => {
-  io.opens = 0
   io.syncs = 0
   io.flushes = 0
   io.missingHelper = false
@@ -122,21 +119,4 @@ it('falls back to file and directory syncs when the helper is unavailable', asyn
   expect(io.syncs).toBeGreaterThanOrEqual(f.entries.length)
   expect(await f.store.manifest(f.manifest.snapshotId)).toEqual(f.manifest)
   expect(await readFile(join(f.root, f.manifest.snapshotId, 'bytes', f.entries[0]!.path))).toEqual(f.bytes)
-})
-
-it.each([0, 40])('captures %i nested files within a directory I/O budget and publishes exact durable bytes', async count => {
-  const f = await fixture(count)
-  try {
-    io.opens = 0
-    await f.store.withCaptureLock(f.manifest.snapshotId, f.write)
-    // Each file needs a manifest check, a qualified leaf parent and an exclusive
-    // output. Ancestor qualification is shared within this joined capture.
-    expect(io.opens).toBeLessThanOrEqual(count * 3 + 64)
-    await f.store.commit(f.manifest)
-    const reopened = new PrivateSourceSnapshotStore(f.root)
-    expect(await reopened.manifest(f.manifest.snapshotId)).toEqual(f.manifest)
-    for (const entry of f.entries) {
-      expect(await reopened.read(f.manifest, entry, AbortSignal.timeout(5000))).toEqual(f.bytes)
-    }
-  } finally { await f.store.abort(f.manifest.snapshotId) }
 })

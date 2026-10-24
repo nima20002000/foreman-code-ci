@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from './installationNames.mjs'
 import { optionalCommandId } from './management/commands.js'
 import { z } from 'zod'
 import { JobExecutionRecordSchema } from './jobVerification.js'
@@ -75,8 +74,8 @@ export type SignedJobCancellationClosure = z.infer<typeof SignedJobCancellationC
 export type JobCancellationRecoveryRead = z.infer<typeof JobCancellationRecoveryReadSchema>
 export type JobCancellationRecoveryApply = z.infer<typeof JobCancellationRecoveryApplySchema>
 export function jobCancellationGrantMessage(grant: JobCancellationGrant): string {
-  return canonicalGraphJson([INSTALLATION_NAMES.protocol.cancellationGrant, JobCancellationGrantSchema.parse(grant)])
+  return canonicalGraphJson(['graphql-job-cancellation-grant-v1', JobCancellationGrantSchema.parse(grant)])
 }
 export function jobCancellationClosureMessage(closure: JobCancellationClosure): string {
-  return canonicalGraphJson([INSTALLATION_NAMES.protocol.cancellationClosure, JobCancellationClosureSchema.parse(closure)])
+  return canonicalGraphJson(['graphql-job-cancellation-closure-v1', JobCancellationClosureSchema.parse(closure)])
 }

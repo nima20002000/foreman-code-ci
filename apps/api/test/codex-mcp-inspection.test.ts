@@ -1,5 +1,4 @@
 import { expect, it, vi } from 'vitest'
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -42,7 +41,7 @@ function fixture(entries: Record<string, { enabled: boolean }>,
       if (!entry) return { exitCode: 1, stdout: '', stderr: `Error: No MCP server named '${name}' found.` }
       return { exitCode: 0, stderr: '', stdout: JSON.stringify({ name, enabled: entry.enabled,
         transport: { type: 'streamable_http', url: 'http://127.0.0.1:3040/mcp',
-          bearer_token_env_var: INSTALLATION_NAMES.environment.MCP_TOKEN }, disabled_tools: ['files.publish_result'] }) }
+          bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' }, disabled_tools: ['files.publish_result'] }) }
     }),
   }
   return { manager: new CodexAppServerSessionManager('/recorded-codex', undefined, options.requestedName,
@@ -53,7 +52,7 @@ it.each(['foreman-code', 'graphql'])('reads %s configuration without a global ca
   const f = fixture({ [name]: { enabled: true } })
   const result = await f.manager.inspectMcpConfiguration('/accepted-project')
   expect(result).toMatchObject({ cwd: '/accepted-project', serverName: name,
-    configured: { enabled: true, bearerTokenEnvironmentVariable: INSTALLATION_NAMES.environment.MCP_TOKEN,
+    configured: { enabled: true, bearerTokenEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN',
       disabledTools: ['files.publish_result'] } })
   expect(f.commands).toEqual([['mcp', 'get', 'foreman-code', '--json'], ['mcp', 'get', 'graphql', '--json']])
 })
@@ -85,14 +84,13 @@ it('allows cold configuration commands after slow qualification', async () => {
         }
         return { exitCode: 0, stderr: '', stdout: JSON.stringify({ name: 'foreman-code', enabled: true,
           transport: { type: 'streamable_http', url: 'http://127.0.0.1:3040/mcp',
-            bearer_token_env_var: INSTALLATION_NAMES.environment.MCP_TOKEN } }) }
+            bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } }) }
       } })
     const detection = new McpDetectionService(codexMcpInspectorAdapter(f.manager), 'http://127.0.0.1:3040/mcp')
     const pending = detection.preflight({ harness: 'codex', runnerId: 'runner-local', workingDirectory: '/workspace' })
-    await Promise.all([
-      expect(pending).resolves.toMatchObject({ detection: { state: 'status_unavailable' } }),
-      vi.advanceTimersByTimeAsync(38_000),
-    ])
+    const assertion = expect(pending).resolves.toMatchObject({ detection: { state: 'status_unavailable' } })
+    await vi.advanceTimersByTimeAsync(38_000)
+    await assertion
   } finally {
     vi.useRealTimers()
   }
@@ -129,7 +127,7 @@ const watcher = fs.watch(__dirname, () => {
   watcher.close()
   process.stdout.write(JSON.stringify({ name: 'foreman-code', enabled: true,
   transport: { type: 'streamable_http', url: 'http://127.0.0.1:3040/mcp',
-    bearer_token_env_var: '${INSTALLATION_NAMES.environment.MCP_TOKEN}' } }))
+    bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } }))
 })
 fs.writeFileSync(ready, '')
 `)

@@ -6,7 +6,7 @@ import type { WorkerConversationRpcRequest } from '@foreman-code/contracts/remot
 import { DomainError } from '../errors.js'
 import { deviceRequestTimeoutMs } from '../devices/deviceRequestRetry.js'
 import { withWorkerMcpDeadline, workerMcpUploadCeilingMs } from '../devices/workerMcpDeadline.js'
-import type { DeviceApplicationRequestOptions } from '../devices/index.js'
+import type { DeviceApplicationRequestOptions } from '../devices/deviceApplicationChannel.js'
 
 export async function prepareWorkerConversationMcp(input: {
   source: WorkerConversationRpcRequest

@@ -1,4 +1,3 @@
-import { harnessMaintenanceCapabilities } from '../../shared/harnessPolicy.js'
 import { cp, mkdir, mkdtemp, rename, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -17,9 +16,9 @@ export async function backupPluginInstallation(ports: Pick<MaintenancePorts, 'en
   harness: MaintainedHarness, pluginId: string): Promise<MaintenancePluginBackup> {
   const [name = '', marketplace = ''] = pluginId.split('@')
   if (!safePluginPart(name) || !safePluginPart(marketplace)) throw new Error('Invalid plugin cache selector.')
-  const capabilities = harnessMaintenanceCapabilities(harness)
   const home = ports.environment.HOME ?? homedir()
-  const nativeHome = ports.environment[capabilities.homeEnvironmentVariable] ?? join(home, capabilities.homeDirectory)
+  const nativeHome = harness === 'codex' ? ports.environment.CODEX_HOME ?? join(home, '.codex')
+    : ports.environment.CLAUDE_CONFIG_DIR ?? join(home, '.claude')
   const pluginRoot = join(nativeHome, 'plugins', 'cache', marketplace, name)
   const root = dirname(pluginRoot)
   await mkdir(root, { recursive: true, mode: 0o700 })
@@ -31,7 +30,7 @@ export async function backupPluginInstallation(ports: Pick<MaintenancePorts, 'en
   let previousEnabled: unknown
   let hadEnabled = false
   try {
-    if (capabilities.plugins.records === 'user') {
+    if (harness === 'claude') {
       const record = InstalledRecordSchema.parse(JSON.parse(await ports.readText(installedFile) ?? '{}'))
       previous = record.plugins[pluginId]?.filter(installation => installation.scope === 'user')
       if (!previous?.length) throw new Error(`No user installation record for ${pluginId}.`)
@@ -56,7 +55,7 @@ export async function backupPluginInstallation(ports: Pick<MaintenancePorts, 'en
       catch (error) {
         throw new Error(`Plugin restoration failed; the previous cache is retained at ${backup}.`, { cause: error })
       }
-      if (capabilities.plugins.records === 'user') {
+      if (harness === 'claude') {
         const record = InstalledRecordSchema.parse(JSON.parse(await ports.readText(installedFile) ?? '{}'))
         record.plugins[pluginId] = [
           ...record.plugins[pluginId]?.filter(installation => installation.scope !== 'user') ?? [], ...previous ?? [],

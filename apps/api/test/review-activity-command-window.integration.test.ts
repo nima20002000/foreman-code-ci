@@ -11,7 +11,7 @@ import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js
 import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { postgresEnabled } from './helpers/database.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 it.skipIf(!postgresEnabled).each(['pending', 'uncertain', 'completed'])('retains the newest %s control beside 200 completed PostgreSQL receipts', async (status) => {
     await withTaskDatabase(async (pool) => {
@@ -64,29 +64,28 @@ it.skipIf(!postgresEnabled).each(['pending', 'uncertain', 'completed'])('retains
 it.skipIf(!postgresEnabled)('backfills compact receipt activity and follows result updates without changing stored outcomes', async () => {
   await withTaskDatabase(async pool => {
     const sql = await pool.connect()
-    const rollback = new Error('Rollback temporary command activity schema')
     try {
-      await expect(withTransaction({ client: sql }, async transaction => {
+      await beginTransaction(sql)
       // Template databases already contain the migrated table; this fixture needs its pre-migration shape.
       const schema = `command_activity_${randomUUID().replaceAll('-', '')}`
-      await transaction.query(`create schema ${schema}`)
-      await transaction.query(`set local search_path=${schema}`)
-      await transaction.query('create table management_command_receipts (id integer primary key, result jsonb not null)')
+      await sql.query(`create schema ${schema}`)
+      await sql.query(`set local search_path=${schema}`)
+      await sql.query('create table management_command_receipts (id integer primary key, result jsonb not null)')
       const outcome = { status: 'pending', acceptedControl: { id: 'control' }, state: { retained: 'original snapshot' } }
-      await transaction.query('insert into management_command_receipts values (1,$1::jsonb),(2,$2::jsonb)', [JSON.stringify(outcome), '["historical"]'])
-      await transaction.query(compactCommandActivityMigration.sql)
-      const read = async () => (await transaction.query(`select result,activity_status,activity_control,activity_acknowledgment
+      await sql.query('insert into management_command_receipts values (1,$1::jsonb),(2,$2::jsonb)', [JSON.stringify(outcome), '["historical"]'])
+      await sql.query(compactCommandActivityMigration.sql)
+      const read = async () => (await sql.query(`select result,activity_status,activity_control,activity_acknowledgment
         from management_command_receipts order by id`)).rows
       expect(await read()).toEqual([
         { result: outcome, activity_status: 'pending', activity_control: outcome.acceptedControl, activity_acknowledgment: null },
         { result: ['historical'], activity_status: null, activity_control: null, activity_acknowledgment: null },
       ])
       const settled = { ...outcome, status: 'completed', providerAcknowledgment: { id: 'acknowledgment' } }
-      await transaction.query('update management_command_receipts set result=$1::jsonb where id=1', [JSON.stringify(settled)])
+      await sql.query('update management_command_receipts set result=$1::jsonb where id=1', [JSON.stringify(settled)])
       expect((await read())[0]).toEqual({ result: settled, activity_status: 'completed', activity_control: outcome.acceptedControl,
         activity_acknowledgment: settled.providerAcknowledgment })
-      throw rollback
-      })).rejects.toBe(rollback)
-    } finally { sql.release() }
+    } finally {
+      try { await rollbackTransaction(sql) } finally { sql.release() }
+    }
   })
 }, 120000)

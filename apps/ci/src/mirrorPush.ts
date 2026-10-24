@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import type { CiContext } from './environment.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { pushFullMirrorPack, type MirrorGit } from './fullMirrorPack.js'
 
 const rejected = (error: unknown, reason: RegExp) => error instanceof DomainError && error.code === 'CI_CLOUD_FAILED'

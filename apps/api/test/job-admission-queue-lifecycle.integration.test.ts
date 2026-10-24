@@ -4,7 +4,7 @@ import { jobComputerHasCapacity } from '../src/modules/jobs/computerSelection.js
 import { jobExecution } from './helpers/jobFixture.js'
 import { postgresEnabled } from './helpers/database.js'
 import { setupJobAdmissionQueue } from './helpers/jobAdmissionQueue.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 describe.skipIf(!postgresEnabled)('durable build admission queue: lifecycle', () => {
   const queue = setupJobAdmissionQueue()
@@ -22,11 +22,14 @@ describe.skipIf(!postgresEnabled)('durable build admission queue: lifecycle', ()
     const finish = async () => {
       const sql = await database.pool.connect()
       try {
-        await withTransaction({ client: sql }, async transaction => {
-          const current = await f.jobs.repository.queueTicket(transaction, f.workspaceId, accepted.id, true)
-          await f.jobs.repository.finishQueueTicket(transaction, current, 'completed', finishedAt)
-        })
-      } finally { sql.release() }
+        await beginTransaction(sql)
+        const current = await f.jobs.repository.queueTicket(sql, f.workspaceId, accepted.id, true)
+        await f.jobs.repository.finishQueueTicket(sql, current, 'completed', finishedAt)
+        await commitTransaction(sql)
+      } finally {
+        await rollbackTransaction(sql)
+        sql.release()
+      }
     }
     await expect(finish()).rejects.toMatchObject({ message: 'JOB_QUEUE_COMPLETION_UNCONFIRMED' })
     const fence = { attemptId: execution.attemptId, owner: execution.owner }

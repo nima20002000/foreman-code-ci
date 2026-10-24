@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { randomUUID } from 'node:crypto';
 import { lstat, open, readFile, realpath, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -6,7 +5,7 @@ import { WorkerError } from './diagnostics.mjs';
 
 /** Called under the installation lock; keep the launcher's approved Node and environment. */
 export async function migratePinnedCompanionLauncher(root) {
-  const launcher = join(root, INSTALLATION_NAMES.launchers.companion);
+  const launcher = join(root, 'graphql-companion');
   let info;
   try { info = await lstat(launcher); }
   catch (error) {

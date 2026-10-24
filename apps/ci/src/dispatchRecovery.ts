@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { CiHostReplySchema, type CiHostReply, type CiHostStatus,
   type CiRunRecord } from '@foreman-code/contracts'
 import type { CiContext, SqlQuery } from './environment.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import type { CiRunSettlement, HostCiComputer, HostCiEndpoint } from './serviceTypes.js'
 import { CI_START_ACK_TIMEOUT_MS, CI_START_MAX_ATTEMPTS, releaseCiDispatch, rejectedCiStart,
   requestCiStart, withCiTicketLock } from './dispatch.js'

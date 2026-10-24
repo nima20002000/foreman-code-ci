@@ -1,5 +1,5 @@
 import { WorkflowVersionCurrentSchema, WorkflowRunCurrentSchema, RepeatOccurrenceV1Schema, RepeatDecisionMetadataV1Schema, RepeatGraphCurrentStateSchema, RepeatGraphScopeCurrentSchema, RepeatGraphStateCurrentSchema, repeatGraphTopologyCurrent, type RepeatGraphStateCurrent } from '@foreman-code/contracts/current'
-import { currentWorkflowFixture as makeCurrentFixture } from '../../shared/mocks/currentWorkflow'
+import { currentWorkflowFixture as makeWave25Fixture } from '../../shared/mocks/currentWorkflow'
 
 export const emptyBoardRepeatState = () => RepeatGraphStateCurrentSchema.parse({
   run: { executionState: 'queued', outcome: 'pending', stopRequested: false, cleanupPending: false, unsettledReviewCount: 0, pendingInteractionCount: 0 },
@@ -8,7 +8,7 @@ export const emptyBoardRepeatState = () => RepeatGraphStateCurrentSchema.parse({
 
 /** Deterministic shared-schema read fixture, not a native/SQL qualification proof. */
 export function boardCurrentFixture(reason: 'early_exit' | 'limit_exit' | 'repeat' = 'limit_exit', runId = 'run-v3-history', versionId = 'version-v3-pinned') {
-  const base = makeCurrentFixture(), [entry, exit] = base.version.definition.nodes
+  const base = makeWave25Fixture(), [entry, exit] = base.version.definition.nodes
   const version = WorkflowVersionCurrentSchema.parse({ ...base.version, id: versionId, executionSemanticsVersion: 3,
     definition: { ...base.version.definition, executionSemanticsVersion: 3,
       executionPolicy: { maxParallelism: 1, maxNodeExecutions: 6 },

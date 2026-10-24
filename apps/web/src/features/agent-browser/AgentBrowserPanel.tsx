@@ -252,8 +252,11 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
       <div key={tab.tabId} className="agent-browser-tab" data-selected={tab.tabId === props.tab.tabId || undefined}>
         <button type="button" role="tab" aria-selected={tab.tabId === props.tab.tabId} disabled={pending}
           title={tabLabel(tab)} onClick={() => {
+            if (props.readOnly) {
+              if (tab.tabId !== props.tab.tabId) { retiringForTab.current = true; props.onSelectTab(tab.tabId) }
+              return
+            }
             if (tab.tabId === props.tab.tabId) { void controller.acquire().catch(failure => setError(browserErrorMessage(failure))); return }
-            if (props.readOnly) { retiringForTab.current = true; props.onSelectTab(tab.tabId); return }
             mutate((epoch, commandId) => props.port.selectTab(props.initial.session, tab.tabId, props.viewerId, epoch, commandId), tab.tabId)
           }}>{tabLabel(tab)}</button>
         {!props.readOnly ? <IconButton label={`Close ${tab.title || 'tab'}`} variant="ghost" size="sm" disabled={busy}
@@ -278,7 +281,7 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
       onClick={() => { retiringForTab.current = true; props.onReconnect() }}>Reconnect</Button> : null}
     <BrowserViewer key={props.connectionVisit} controller={controller} snapshot={snapshot} readOnly={props.readOnly}
       onLeavePage={() => surface.current?.querySelector<HTMLButtonElement>('[data-browser-control]')?.focus()} />
-    <small id="browser-page-help" className="agent-browser-help">{snapshot.notice === 'user' ? 'You have control. Click elsewhere to give it back to the agent.'
+    <small id="browser-page-help" className="agent-browser-help">{props.readOnly ? 'Watch-only. This Agent’s browser is read-only.' : snapshot.notice === 'user' ? 'You have control. Click elsewhere to give it back to the agent.'
       : snapshot.notice === 'taking' ? 'Taking control…' : 'Click the page to take control; click elsewhere to give it back.'}</small>
     <BrowserSessionActions read={props.initial} tab={props.tab} files={props.files} disabled={pending || snapshot.stale}
       onDenied={failure => controller.pause(failure)}

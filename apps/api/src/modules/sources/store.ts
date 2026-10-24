@@ -14,8 +14,6 @@ import { openSnapshotReference } from './snapshotReference.js'
 import type { SourceByteReader, SourceSnapshotPin } from './ports.js'
 import { flushSourceTree } from './sourceTreeFlush.js'
 import { syncSourceTree } from './sourceTreeSync.js'
-import { withSourceDirectoryParents } from './directoryParents.js'
-import { processSourceDirectories } from './entryProcessing.js'
 
 interface SnapshotWriteback {
   directory: FileHandle
@@ -54,7 +52,6 @@ async function removeSnapshotDirectory(parent: FileHandle, name: string): Promis
  * authoritative retention/ownership reconciliation owns reclamation.
  */
 export class PrivateSourceSnapshotStore implements SourceSnapshotSink, SourceByteReader {
-  private readonly captureWriters = new Map<string, (entry: SourceEntry, bytes: Uint8Array) => Promise<void>>()
   private readonly writebacks = new Map<string, Promise<SnapshotWriteback>>()
   private readonly manifests = new Map<string, {
     identity: string
@@ -111,14 +108,7 @@ export class PrivateSourceSnapshotStore implements SourceSnapshotSink, SourceByt
     options: { nonBlocking?: boolean } = {}): Promise<T> {
     const { root, snapshot } = await this.directory(snapshotId, true)
     try {
-      return await withPrivateDirectoryLock(snapshot, () =>
-        withSourceDirectoryParents(snapshot, true, async parent => {
-          // The capture joins every write before this scope releases its pinned parents.
-          this.captureWriters.set(snapshotId, (entry, bytes) => this.writeEntry(snapshotId, snapshot, entry, bytes,
-            path => parent(`bytes/${path}`)))
-          try { return await work() }
-          finally { this.captureWriters.delete(snapshotId) }
-        }), options)
+      return await withPrivateDirectoryLock(snapshot, work, options)
     } finally {
       await snapshot.close()
       await root.close()
@@ -134,34 +124,25 @@ export class PrivateSourceSnapshotStore implements SourceSnapshotSink, SourceByt
   }
   async write(id: string, entry: SourceEntry, bytes: Uint8Array): Promise<void> {
     sourcePath(entry.path); verifySourceBytes(entry, bytes)
-    const captured = this.captureWriters.get(id)
-    if (captured) return captured(entry, bytes)
     const { root, snapshot } = await this.directory(id, true)
     try {
-      await this.writeEntry(id, snapshot, entry, bytes, async path => {
-        const data = await openChildDirectory(snapshot, 'bytes', true)
-        try { return (await entryParent(data, path, true)).parent }
-        finally { await data.close() }
+      const existing = await open(anchored(snapshot, 'manifest.json'), constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: unknown) => {
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return null
+        throw error
       })
-    } finally { await snapshot.close(); await root.close() }
-  }
-  private async writeEntry(id: string, snapshot: FileHandle, entry: SourceEntry, bytes: Uint8Array,
-    parentForPath: (path: string) => Promise<FileHandle>): Promise<void> {
-    const existing = await open(anchored(snapshot, 'manifest.json'), constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: unknown) => {
-      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return null
-      throw error
-    })
-    if (existing) { await existing.close(); throw new SourceError('SOURCE_ALREADY_COMMITTED', 'Committed source snapshots are immutable.') }
-    const writeback = await this.writeback(id, snapshot)
-    const parent = await parentForPath(entry.path)
-    try {
-      const leaf = entry.path.slice(entry.path.lastIndexOf('/') + 1)
-      const file = await open(anchored(parent, leaf), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o400)
+      if (existing) { await existing.close(); throw new SourceError('SOURCE_ALREADY_COMMITTED', 'Committed source snapshots are immutable.') }
+      const writeback = await this.writeback(id, snapshot)
+      const data = await openChildDirectory(snapshot, 'bytes', true)
+      const target = await entryParent(data, entry.path, true).finally(() => data.close())
+      const { parent, leaf } = target
       try {
-        await file.writeFile(bytes)
-        if (!writeback.batched) await file.sync()
-      } finally { await file.close() }
-    } finally { await parent.close() }
+        const file = await open(anchored(parent, leaf), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o400)
+        try {
+          await file.writeFile(bytes)
+          if (!writeback.batched) await file.sync()
+        } finally { await file.close() }
+      } finally { await parent.close() }
+    } finally { await snapshot.close(); await root.close() }
   }
   async writeGitMetadata(snapshotId: string, bytes: Uint8Array): Promise<void> {
     if (bytes.byteLength > 16 * 1024 * 1024) throw new SourceError('SOURCE_CAPACITY', 'Git metadata exceeds its source budget.')
@@ -209,14 +190,15 @@ export class PrivateSourceSnapshotStore implements SourceSnapshotSink, SourceByt
           verifySourceBytes({ ...manifest.git.metadata, path: 'git-objects.json', kind: 'file', executable: false }, await file.readFile())
         } finally { await file.close() }
       }
-      if (manifest.entries.length) {
-        const data = await openChildDirectory(snapshot, 'bytes')
-        try {
-          await processSourceDirectories(data, manifest.entries, async (parent, entries) => {
-            for (const entry of entries) await this.readEntryAt(parent, entry)
-          })
-        } finally { await data.close() }
-      }
+      const entries = manifest.entries.values()
+      let failed: { error: unknown } | undefined
+      await Promise.all(Array.from({ length: Math.min(8, manifest.entries.length) }, async () => {
+        for (const entry of entries) {
+          if (failed) break
+          try { await this.readEntry(snapshot, entry) } catch (error) { failed ??= { error } }
+        }
+      }))
+      if (failed) throw failed.error
       // Persist every source byte and directory before the manifest can be visible.
       await this.flushWriteback(manifest.snapshotId, snapshot)
       const file = await open(anchored(snapshot, 'manifest.pending'), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o400)
@@ -245,17 +227,15 @@ export class PrivateSourceSnapshotStore implements SourceSnapshotSink, SourceByt
     sourcePath(entry.path)
     const data = await openChildDirectory(snapshot, 'bytes')
     const target = await entryParent(data, entry.path, false).finally(() => data.close())
-    try { return await this.readEntryAt(target.parent, entry) }
-    finally { await target.parent.close() }
-  }
-  private async readEntryAt(parent: FileHandle, entry: SourceEntry): Promise<Buffer> {
-    const leaf = entry.path.slice(entry.path.lastIndexOf('/') + 1)
-    const file = await open(anchored(parent, leaf), constants.O_RDONLY | constants.O_NOFOLLOW)
+    const { parent, leaf } = target
     try {
-      const stat = await file.stat()
-      if (!stat.isFile() || stat.nlink !== 1 || stat.size !== entry.byteSize) throw new SourceError('SOURCE_BYTES_INVALID', 'Canonical source kind/size/link count changed.')
-      const bytes = await file.readFile(); verifySourceBytes(entry, bytes); return bytes
-    } finally { await file.close() }
+      const file = await open(anchored(parent, leaf), constants.O_RDONLY | constants.O_NOFOLLOW)
+      try {
+        const stat = await file.stat()
+        if (!stat.isFile() || stat.nlink !== 1 || stat.size !== entry.byteSize) throw new SourceError('SOURCE_BYTES_INVALID', 'Canonical source kind/size/link count changed.')
+        const bytes = await file.readFile(); verifySourceBytes(entry, bytes); return bytes
+      } finally { await file.close() }
+    } finally { await parent.close() }
   }
   async manifest(snapshotId: string): Promise<SourceManifest> {
     const { root, snapshot } = await this.directory(snapshotId, false)
