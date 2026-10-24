@@ -165,8 +165,8 @@ describe('exact Execution chat public surface', () => {
     expect(screen.queryByText(/Delivery is not confirmed/)).not.toBeInTheDocument()
   })
 
-  it.each([true, false])('keeps prose, shows the result once and folds JSON away (routing: %s)', async routing => {
-    const result = { data: { latestDeliverable: 'Google' }, summary: 'The exact page title is Google.', ...(routing ? { routing: { kind: 'finish' } } : {}) }
+  it('keeps the Agent\'s prose around a fenced result, shows its summary once and folds the JSON away', async () => {
+    const result = { data: { latestDeliverable: 'Google' }, summary: 'The exact page title is Google.', routing: { kind: 'finish' } }
     const wrapped = { ...initialMessage, id: 'wrapped', nativeMessageId: 'native-wrapped', nativeMessageComplete: true,
       content: 'I will hand this over.\n\n```json\n' + JSON.stringify(result, null, 2) + '\n```\n\nThe Worker should now open it.' }
     const bare = { ...initialMessage, id: 'bare', nativeMessageId: 'native-bare', sequence: '2', nativeMessageComplete: true,

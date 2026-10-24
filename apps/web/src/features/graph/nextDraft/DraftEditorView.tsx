@@ -2,6 +2,7 @@ import { WorkflowSettings } from './WorkflowSettings'
 import { BoardNotice } from './BoardNotice'
 import { Redo2, Save, Undo2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
+import { useState } from 'react'
 import { ActionMenu, Button, ConfirmDialog, Icon, IconButton, Toolbar } from '../../../shared/ui/nocturne'
 import { nodeTitle, removeRelationship, neverAskCodexAgents, nextDraftDirty, type NextDraftEdit } from '../../board-core'
 import { useGraphDraftStore } from '../store'
@@ -19,6 +20,7 @@ import { raiseFloating, useFloatingZ } from '../../../shared/ui/floatingStack'
 import { RepeatEditor } from '../../repeats'
 import type { useDraftEditorController } from './useDraftEditorController'
 import { dragByHeader } from '../../../shared/ui/floatingWindow'
+import { WorkspaceExecutionLocationSettings } from '../../settings'
 
 const kindName = (kind: 'execution' | 'approval') => kind === 'approval' ? 'Approval' : 'Handoff'
 
@@ -28,6 +30,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
   updateFailures?: readonly BoardUpdateFailure[]
   controller: ReturnType<typeof useDraftEditorController>
 }) {
+  const [locationOpen, setLocationOpen] = useState(false)
   const { graph, context, board, editIntent, undoScope, core, preflight, pendingStart, changedAgents,
     reloading, stopAndSave, discardChanges, reload, inspectLatest, startMutation, starting, start, recoverStart,
     workspace, managedWorkflow, agents, hints, requestSave, historyAction, openAgent, panels,
@@ -119,7 +122,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
           Confirm this change before editing the schedule or leaving the Board.</BoardNotice> : null}
         {!pendingStart && workspace.data && workspace.data.locationValidation.status !== 'ready'
           ? <BoardNotice tone="warning" title={locationMessage}
-            action={<Button size="sm" onClick={board?.openLocation}>{workspace.data.locationValidation.status === 'unconfigured'
+            action={<Button size="sm" onClick={() => setLocationOpen(true)}>{workspace.data.locationValidation.status === 'unconfigured'
               ? 'Choose folder' : 'Review folder'}</Button>} /> : null}
         {pendingStart ? <BoardNotice tone="warning" title="An earlier start may have gone through."
           action={<><Button size="sm" disabled={starting} onClick={() => void start().catch(report)}>Check again</Button>
@@ -152,7 +155,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
           {panel === 'workflow' ? <WorkflowSettings draftKey={draftKey} edit={edit} change={change} report={report}
             defaultMs={preflight.data?.capabilities.agentActiveTimeBudget.defaultMs}
             locationReady={workspace.data?.locationValidation.status === 'ready'} locationMessage={locationMessage}
-            onChangeFolder={board?.openLocation} onReload={() => {
+            onChangeFolder={() => setLocationOpen(true)} onReload={() => {
               if (nextDraftDirty(edit)) setConfirm('reload'); else void reload()
             }} /> : null}
           {panel === 'workflow' ? <ConflictRecoveryPanel draftKey={draftKey} edit={edit}
@@ -180,6 +183,8 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
           Remove {kindName(edge.kind)} · {nodeTitle(graph, edge.source)} → {nodeTitle(graph, edge.target)}</Button>)}
       </nav>
     </div>
+    {locationOpen ? <WorkspaceExecutionLocationSettings workspaceId={graph.workspaceId} presentation="dialog"
+      open onOpenChange={setLocationOpen} onSaved={() => setLocationOpen(false)} /> : null}
     <ConfirmDialog open={confirm === 'save' && affectedRuns.length > 0 && !stopBlocked} onOpenChange={(open) => { if (!open) setConfirm(undefined) }} title="Stop running work and save?"
       description={`${affectedRuns.length} affected ${affectedRuns.length === 1 ? 'Run requires' : 'Runs require'} Stop or cleanup across ${affectedWorkflows} ${affectedWorkflows === 1 ? 'workflow' : 'workflows'}.${affectedRuns.some((item) => item.pin.workflowId !== graph.id) ? ' This includes shared-Agent work in another workflow.' : ''} Stop-and-save stops every affected Run and waits for full cleanup before saving. Stopped runs are not restarted.`}
       confirmLabel="Stop runs and save" onConfirm={() => { setConfirm(undefined); void prepare(() => runAfterSave.current ? startMutation.mutateAsync({ saveFirst: true, allowStop: true }) : stopAndSave(true)).catch(report) }} />
