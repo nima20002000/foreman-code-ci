@@ -43,6 +43,7 @@ const BoardSurfaceSelectionFields = {
   boardNodeId: GraphIdSchema.optional(), boardExecutionId: GraphIdSchema.optional(),
   boardWaitingActivationId: GraphIdSchema.optional(),
   boardTeamId: GraphIdSchema.optional(),
+  boardCiTicketId: GraphIdSchema.optional(),
   browserSessionId: GraphIdSchema.optional(), browserTabId: GraphIdSchema.optional(),
   groupRunId: GraphIdSchema.optional(), groupPostId: GraphIdSchema.optional(), groupReceiptId: GraphIdSchema.optional(),
   boardMemory: z.union([z.literal(true), z.literal('true').transform(() => true as const)]).optional(),
@@ -149,7 +150,7 @@ export function boardSearchForRun(search: WorkspaceBoardSearch, workflowId: stri
   void _run; void _version; void _semantics; void _node; void _edge; void _exchange
   const changedRun = search.workflowId !== workflowId || search.runId !== run?.runId
     || search.workflowVersionId !== run?.workflowVersionId
-  if (changedRun) { delete rest.boardExecutionId; delete rest.boardWaitingActivationId; delete rest.browserSessionId; delete rest.browserTabId }
+  if (changedRun) { delete rest.boardCiTicketId; delete rest.boardExecutionId; delete rest.boardWaitingActivationId; delete rest.browserSessionId; delete rest.browserTabId }
   return WorkspaceBoardSearchSchema.parse({ ...rest, workflowId, ...(run ? {
     runId: run.runId, workflowVersionId: run.workflowVersionId, executionSemanticsVersion: run.executionSemanticsVersion,
   } : {}) })
@@ -175,7 +176,7 @@ export function staysOnWorkflowBoard(current: { pathname: string; search: unknow
 function authoringSelection(search: WorkspaceBoardSearch): WorkspaceBoardSearch {
   const value = { ...search }
   for (const key of ['activityKind', 'activityAgentId', 'boardView', 'boardPanel', 'boardAgentTab',
-    'browserSessionId', 'browserTabId', 'boardNodeId', 'boardExecutionId', 'boardWaitingActivationId', 'boardTeamId', 'boardMemory',
+    'boardCiTicketId', 'browserSessionId', 'browserTabId', 'boardNodeId', 'boardExecutionId', 'boardWaitingActivationId', 'boardTeamId', 'boardMemory',
     'boardBrowsers', 'browserTab', 'groupRunId', 'groupPostId', 'groupReceiptId'] as const) delete value[key]
   return value
 }

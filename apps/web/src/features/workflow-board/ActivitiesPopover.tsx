@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { IconButton, Icon } from '../../shared/ui/nocturne'
 import { useFloatingSurface } from '../../shared/ui/nocturne/useFloatingSurface'
 import { useOutsidePress } from '../../shared/ui/useOutsidePress'
@@ -16,7 +16,6 @@ export function ActivitiesPopover({ open, onClose, findAnchor, children }: {
 
 function PopoverSurface({ onClose, findAnchor, children }: { onClose(): void; findAnchor(): HTMLElement | null; children: ReactNode }) {
   const surface = useRef<HTMLElement>(null)
-  const anchor = useRef<HTMLElement | null>(null)
   const close = useRef(onClose)
   close.current = onClose
   // The toolbar button may mount after the popover (a deep link opens it), so it is looked up again on every event.
@@ -24,21 +23,20 @@ function PopoverSurface({ onClose, findAnchor, children }: { onClose(): void; fi
   find.current = findAnchor
   // A deep link can open the popover before the toolbar button exists; show it as soon as the button appears.
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
-  anchor.current = anchorEl
+  const anchor = useMemo(() => ({ current: anchorEl }), [anchorEl])
   useEffect(() => {
-    const found = find.current()
-    if (found) { setAnchorEl(found); return }
-    const watch = new MutationObserver(() => {
-      const next = find.current()
-      if (next) { setAnchorEl(next); watch.disconnect() }
-    })
+    const sync = () => setAnchorEl(find.current())
+    sync()
+    const watch = new MutationObserver(sync)
     watch.observe(document.body, { childList: true, subtree: true })
     return () => watch.disconnect()
   }, [])
   // Not a top-layer popover: Activities stacks with the other Board containers, newest or focused on top.
   const zIndex = useFloatingZ(STACK_ID)
   useFloatingSurface(anchorEl !== null, anchor, surface, 420, 'end', 'block', false)
-  useOutsidePress(true, (target) => !!surface.current?.contains(target) || !!find.current()?.contains(target), () => close.current())
+  useOutsidePress(true, (target) => !!surface.current?.contains(target) || !!find.current()?.contains(target)
+    // Changing the Board view keeps this inspection window open.
+    || target instanceof Element && !!target.closest('.workflow-collaboration-toolbar'), () => close.current())
   useEffect(() => {
     const onButton = (target: EventTarget | null) => target instanceof Node && !!find.current()?.contains(target)
     const escape = (event: KeyboardEvent) => {

@@ -1,6 +1,5 @@
-import { useContext, useEffect, useId, useRef, useState, cloneElement, type KeyboardEventHandler, type ReactElement, type ReactNode, type RefObject } from 'react'
+import { useEffect, useId, useRef, useState, cloneElement, type KeyboardEventHandler, type ReactElement, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { ToastContext } from './toastContext'
 import { Button, IconButton } from './Button'
 import { Icon } from './Icon'
 import { TextField } from './Fields'
@@ -42,7 +41,6 @@ export interface DialogProps {
 }
 export function Dialog({ open, onOpenChange, title, description, children, footer, headerLeading, onKeyDownCapture, size = 'md', variant = 'dialog', dismissible = true,
   closeOnOutsideClick = true, initialFocusRef, className, onAfterClose, side = 'end', role = 'dialog', busy = false, closeLabel = 'Close dialog', returnFocusRef, anchorRef, anchorAlign = 'end' }: DialogProps) {
-  const registerDialog = useContext(ToastContext)?.registerDialog
   const canDismiss = dismissible && !busy
   const ref = useRef<HTMLDialogElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -55,18 +53,16 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const unlock = lockBody()
     if (!dialog.open) dialog.showModal()
-    const unregister = registerDialog?.(dialog)
     const target = initialFocusRef?.current
     if (target && dialog.contains(target)) target.focus()
     else heading.current?.focus()
     return () => {
-      unregister?.()
       if (dialog.open) dialog.close()
       unlock()
       if (previous?.isConnected) previous.focus()
       else returnFocus?.focus()
     }
-  }, [open, initialFocusRef, returnFocusRef, registerDialog])
+  }, [open, initialFocusRef, returnFocusRef])
   useEffect(() => {
     const dialog = ref.current, anchor = anchorRef?.current
     if (!open || !dialog || !anchor) return
@@ -119,19 +115,18 @@ export function BottomSheet(props: Omit<DialogProps, 'variant'>) { return <Dialo
 
 export interface ConfirmDialogProps {
   open: boolean; onOpenChange: (open: boolean) => void; title: string; description: string
-  confirmLabel: string; onConfirm: () => void; confirmation?: string; pending?: boolean; error?: string; dismissalReason?: string
+  confirmLabel: string; onConfirm: () => void; confirmation?: string; pending?: boolean; error?: string
 }
 export function ConfirmDialog(props: ConfirmDialogProps) {
-  return <Dialog open={props.open} onOpenChange={props.onOpenChange} title={props.title} description={props.description} dismissible={!props.pending && !props.dismissalReason} busy={props.pending} role="alertdialog" size="sm">
+  return <Dialog open={props.open} onOpenChange={props.onOpenChange} title={props.title} description={props.description} dismissible={!props.pending} busy={props.pending} role="alertdialog" size="sm">
     {props.open && <ConfirmContents {...props} />}
   </Dialog>
 }
-function ConfirmContents({ confirmation, pending, error, dismissalReason, onOpenChange, onConfirm, confirmLabel }: ConfirmDialogProps) {
+function ConfirmContents({ confirmation, pending, error, onOpenChange, onConfirm, confirmLabel }: ConfirmDialogProps) {
   const [typed, setTyped] = useState('')
   return <div className="n-stack">{confirmation && <TextField label={`Type “${confirmation}” to confirm`} value={typed} disabled={pending} onChange={(event) => setTyped(event.currentTarget.value)} autoComplete="off" spellCheck={false} />}
     {error && <p className="n-field-error" role="alert">{error}</p>}
-    {dismissalReason && <p role="status">{dismissalReason}</p>}
-    <div className="n-actions"><Button disabled={pending || Boolean(dismissalReason)} onClick={() => onOpenChange(false)}>Keep it</Button><Button variant="danger" loading={pending}
+    <div className="n-actions"><Button disabled={pending} onClick={() => onOpenChange(false)}>Keep it</Button><Button variant="danger" loading={pending}
       disabled={Boolean(confirmation) && typed !== confirmation} onClick={onConfirm}>{confirmLabel}</Button></div></div>
 }
 

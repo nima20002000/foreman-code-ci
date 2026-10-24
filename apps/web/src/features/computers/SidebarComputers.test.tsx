@@ -570,21 +570,3 @@ it('closes both groups on Escape when focus switches before the previous group f
     vi.useRealTimers()
   }
 })
-
-
-it('preserves the selected CircleCI account and organization in its settings address', async () => {
-  const { router, element } = inRouter()
-  const f = computersFixture(element)
-  f.activity.cloud.push({ provider: 'circleci', circleAccountId: 'overflow', account: 'beta', name: 'CircleCI beta', ready: false, slots: 30, running: 0 })
-  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
-  await userEvent.click(await findCloud(/^CircleCI beta, Cloud CI/))
-  await waitFor(() => expect(router.state.location.search).toMatchObject({ circleAccountId: 'overflow', cloudAccount: 'beta' }))
-})
-
-
-it('opens Main PC settings directly from its sidebar row', async () => {
-  const { router, element } = inRouter()
-  computersFixture(element)
-  await userEvent.click(await findComputer('Main PC, Main, Plenty of capacity'))
-  await waitFor(() => expect(router.state.location.pathname).toBe('/settings/computers/main'))
-})

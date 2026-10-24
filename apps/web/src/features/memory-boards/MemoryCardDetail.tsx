@@ -89,13 +89,14 @@ function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpe
 }
 function HistoryEntry({ entry, onOpenWork }: { entry: MemoryChange; onOpenWork?: (change: MemoryChange) => void }) {
   const text = (value: unknown) => typeof value === 'string' ? value : value === null || value === undefined ? 'None' : JSON.stringify(value)
+  const work = entry.provenance?.work ?? entry.provenance?.execution
   return <li>{entry.actor.displayName} updated this card · {visibleTime(entry.occurredAt)}
     {entry.changes && <ul>{Object.entries(entry.changes).map(([field, change]) => <li key={field}>
       <details><summary>{field} changed</summary><p className="memory-preserve-lines">Previously: {text(change.before)}</p>
         <p className="memory-preserve-lines">Saved: {text(change.after)}</p></details>
     </li>)}</ul>}
-    {entry.provenance?.work && <p>Run {entry.provenance.work.runId.slice(0, 8)}
-      {entry.provenance.execution ? ` · Execution ${entry.provenance.execution.executionId.slice(0, 8)}` : ''}
+    {work && <p>Run {work.runId.slice(0, 8)}
+      {entry.provenance?.execution ? ` · Execution ${entry.provenance.execution.executionId.slice(0, 8)}` : ''}
       {onOpenWork && <Button size="sm" onClick={() => onOpenWork(entry)}>Open recorded work</Button>}</p>}
     {entry.provenance?.subject?.kind === 'coordinator_consultation' && <p>Consultation · {entry.provenance.subject.agent.displayName}</p>}
   </li>
