@@ -10,7 +10,6 @@ import { nativePersistenceRedactor } from '../src/modules/interactions/nativePer
 import { nativeHttpIsolation, type NativeHttpIsolationInput } from './helpers/nativeHttpIsolation.js'
 
 const enabled = process.env.RUN_REAL_HARNESS_TESTS === '1' || process.env.RUN_NATIVE_LIFECYCLE_TESTS === '1'
-const databaseUrl = process.env.TEST_DATABASE_URL
 
 describe.skipIf(!enabled)('installed harness local-human isolation', { timeout: 180_000 }, () => {
   it.each(['codex'] as const)(
@@ -18,7 +17,7 @@ describe.skipIf(!enabled)('installed harness local-human isolation', { timeout: 
     await nativeHttpIsolation(async input => {
       const { script, report, marker } = await installProbe(input)
       const environment = inheritedAgentEnvironment()
-      delete environment.GRAPHQL_MCP_TOKEN
+      delete environment.FOREMAN_CODE_MCP_TOKEN
       const secrets = Object.entries(environment).filter(([name]) => /TOKEN|KEY|PASSWORD|SECRET/.test(name))
         .map(([, value]) => value).filter((value): value is string => Boolean(value))
       const redactor = nativePersistenceRedactor([...secrets, input.token])
@@ -65,7 +64,7 @@ describe.skipIf(!enabled)('installed harness local-human isolation', { timeout: 
         await signalTree(child, 'SIGKILL')
         await exited
       }
-    }, databaseUrl ? { databaseUrl } : {})
+    })
   })
 
   it('cannot approve a human gate or mutate settings by omitting or forging browser headers', async () => {
@@ -82,7 +81,7 @@ describe.skipIf(!enabled)('installed harness local-human isolation', { timeout: 
           '-c', `mcp_servers.isolation.command=${JSON.stringify(process.execPath)}`,
           '-c', `mcp_servers.isolation.args=${JSON.stringify([script])}`, 'Reply DONE.'],
         cwd: input.directory,
-        environment: { ...inheritedAgentEnvironment(), GRAPHQL_MCP_TOKEN: input.token },
+        environment: { ...inheritedAgentEnvironment(), FOREMAN_CODE_MCP_TOKEN: input.token },
         recovery: input.recovery,
         onError: error => { launchError = error },
       })
@@ -108,7 +107,7 @@ describe.skipIf(!enabled)('installed harness local-human isolation', { timeout: 
         clearTimeout(deadline)
         await owned.close()
       }
-    }, databaseUrl ? { databaseUrl } : {})
+    })
   })
 })
 
@@ -118,7 +117,7 @@ async function installProbe(input: NativeHttpIsolationInput) {
   const report = join(input.directory, 'native-mcp-results.json')
   const marker = randomUUID()
   await writeFile(join(input.directory, 'native-probe-marker'), marker, { mode: 0o600 })
-  const probe = input.script.replace('process.env.GRAPHQL_MCP_TOKEN', JSON.stringify(input.token))
+  const probe = input.script.replace('process.env.FOREMAN_CODE_MCP_TOKEN', JSON.stringify(input.token))
   await writeFile(script, `
     const fs = require('node:fs');
     const readline = require('node:readline');

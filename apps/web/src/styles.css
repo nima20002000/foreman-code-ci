@@ -1,4 +1,4 @@
-@import './shared/ui/nocturne/reset.css';
+@import 'tailwindcss';
 
 /* Design-system tokens live in shared/ui/nocturne/tokens.css and switch with the theme. */
 :root {

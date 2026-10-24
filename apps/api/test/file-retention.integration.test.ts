@@ -15,12 +15,14 @@ import {
   TemporaryFileSchema, temporaryFileExpiresAt, type FileState,
 } from '@foreman-code/contracts/files'
 import type { ManagementGrant } from '@foreman-code/contracts/management'
-import { withTransaction } from '../src/infrastructure/transaction.js'
 
+import {
+  beginTransaction, commitTransaction, rollbackTransaction, withTransaction,
+} from '../src/infrastructure/transaction.js'
 import { fileStorageMigration } from '../src/infrastructure/fileStorageMigration.js'
 import { fileRetentionMigration } from '../src/infrastructure/fileRetentionMigration.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { registerForemanMcp } from '../src/mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 import { registerOperatorHttpSecurity } from '../src/modules/access/http.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -88,7 +90,7 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
     registerFileRetentionRoutes(app, retention)
     registerFileRoutes(app, new TemporaryFileService(files, bytes, authorization))
     // Unrelated product services are intentionally absent; the real retention service/auth/MCP transport are not mocked.
-    registerForemanMcp(app, { access, operator: { commands, fileRetention: retention } as unknown as OperatorServices })
+    registerGraphqlMcp(app, { access, operator: { commands, fileRetention: retention } as unknown as OperatorServices })
     address = await app.listen({ host: '127.0.0.1', port: 0 })
   })
   afterAll(async () => {
@@ -269,25 +271,25 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
     const blocker = await database.pool.connect()
     let saving: ReturnType<FileRetentionService['save']> | undefined
     try {
-      await withTransaction({ client: blocker }, async transaction => {
-        await transaction.query('select file_id from files where file_id=$1 for share', [original.value.file.fileId])
-        const blockerPid = (await transaction.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
-        saving = retention.save(owner.principal, 'http', payload(7200, 0, true))
-        void saving.catch(() => {
-          // ignore: The saving promise is awaited after releasing the row lock and settled during cleanup.
-        })
-        const waiting = await readUntil(async () => {
-          return (await database.pool.query<{ waiting: boolean }>(`select exists(select 1 from pg_stat_activity
-            where $1::int=any(pg_blocking_pids(pid)) and query like '%for update%'
-              and wait_event_type='Lock') as waiting`, [blockerPid])).rows[0]!.waiting
-        }, value => value, { timeoutMs: 1000, description: 'the PostgreSQL lock wait' })
-        assert.equal(waiting, true, 'Save must wait on the file row, not the retention-owner lock')
-        await database.pool.query("select pg_sleep(greatest(0,extract(epoch from $1::timestamptz-clock_timestamp()))+0.02)",
-          [TemporaryFileSchema.parse(original.value.file).expiresAt])
-        const unavailable = await app.inject({ method: 'GET', headers: headers(owner),
-          url: `${root(owner)}/${original.value.file.fileId}/revisions/${original.value.revision.revisionId}/content` })
-        assert.equal(unavailable.statusCode, 410, unavailable.body)
+      await beginTransaction(blocker)
+      await blocker.query('select file_id from files where file_id=$1 for share', [original.value.file.fileId])
+      const blockerPid = (await blocker.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
+      saving = retention.save(owner.principal, 'http', payload(7200, 0, true))
+      void saving.catch(() => {
+        // ignore: The saving promise is awaited after releasing the row lock and settled during cleanup.
       })
+      const waiting = await readUntil(async () => {
+        return (await database.pool.query<{ waiting: boolean }>(`select exists(select 1 from pg_stat_activity
+          where $1::int=any(pg_blocking_pids(pid)) and query like '%for update%'
+            and wait_event_type='Lock') as waiting`, [blockerPid])).rows[0]!.waiting
+      }, value => value, { timeoutMs: 1000, description: 'the PostgreSQL lock wait' })
+      assert.equal(waiting, true, 'Save must wait on the file row, not the retention-owner lock')
+      await database.pool.query("select pg_sleep(greatest(0,extract(epoch from $1::timestamptz-clock_timestamp()))+0.02)",
+        [TemporaryFileSchema.parse(original.value.file).expiresAt])
+      const unavailable = await app.inject({ method: 'GET', headers: headers(owner),
+        url: `${root(owner)}/${original.value.file.fileId}/revisions/${original.value.revision.revisionId}/content` })
+      assert.equal(unavailable.statusCode, 410, unavailable.body)
+      await commitTransaction(blocker)
       const saved = await saving
       assert.equal(saved.value.updatedFileCount, 0)
       assert.deepEqual(await reread(original), original)
@@ -295,6 +297,7 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
         url: `${root(owner)}/${original.value.file.fileId}/revisions/${original.value.revision.revisionId}/content` })
       assert.equal(stillUnavailable.statusCode, 410, stillUnavailable.body)
     } finally {
+      await rollbackTransaction(blocker)
       blocker.release()
       if (saving) await Promise.allSettled([saving])
     }

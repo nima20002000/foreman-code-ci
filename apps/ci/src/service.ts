@@ -1,4 +1,4 @@
-import { RetryBackoff, DomainError, errorMessage } from '@foreman-code/contracts-node/server-kit'
+import { RetryBackoff, DomainError, errorMessage } from '@foreman-code/contracts/server-kit'
 import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import type { MainCiContext, PostgresCommandCoordinator, SqlQuery } from './environment.js'
@@ -94,8 +94,10 @@ async function inBatches<T>(items: readonly T[], limit: number, work: (item: T) 
   }))
 }
 
-/** Main resolves and publishes the commit, then queues suite parts and integration partitions for idle CI computers. */
+/** Main resolves and queues suite parts and integration partitions; dispatch waits for source publication. */
 export class HostCiService {
+  private admitting = 0
+  private readonly admissionQueue: (() => void)[] = []
   private dispatching: Promise<void> | undefined
   private dispatchRequested = false
   private cleaningTickets: Promise<void> | undefined
@@ -111,6 +113,9 @@ export class HostCiService {
   private readonly policyRefreshes = new Map<string, Promise<void>>()
   private readonly computerStatusRetries = new Map<string, RetryBackoff>()
   private readonly mirrorPublications = new Map<string, { settled: boolean }>()
+  private readonly sourcePublications = new Map<string, {
+    ready: boolean; retryAt: number; message: string; work: Promise<void> | undefined
+  }>()
   /** Computers that still had a free slot after the last dispatch pass: where a canceled provider-queued ticket can go. */
   private spareComputers: HostCiComputer[] = []
   private readonly dispatchRejections = new CiDispatchRejections()
@@ -208,7 +213,8 @@ export class HostCiService {
     for (;;) {
       const pending = [this.dispatching, this.cleaningTickets, this.prewarm.drain(),
         ...this.observingRuns.values(), ...this.observingComputers.values(), ...this.cloudDispatches.values(),
-        ...this.policyRefreshes.values(), ...this.retainedExecutors.work()]
+        ...this.policyRefreshes.values(), ...this.retainedExecutors.work(),
+        ...[...this.sourcePublications.values()].map(publication => publication.work)]
         .filter(work => work !== undefined)
       if (!pending.length) return
       await Promise.allSettled(pending)
@@ -216,7 +222,16 @@ export class HostCiService {
   }
 
   async run(caller: ManagementPrincipal, input: CiRunInput & { workspaceId?: string | undefined }, source: 'mcp' | 'http' = 'mcp') {
-    return this.context.platform.withCiDatabasePriority(() => this.admit(caller, input, source))
+    // The lifecycle pool has at least ten connections. Bursts wait here before leasing one for preparation.
+    if (this.admitting >= 8) await new Promise<void>(resolve => { this.admissionQueue.push(resolve) })
+    else this.admitting += 1
+    try {
+      return await this.context.platform.withCiDatabasePriority(() => this.admit(caller, input, source))
+    } finally {
+      const next = this.admissionQueue.shift()
+      if (next) next()
+      else this.admitting -= 1
+    }
   }
 
   private async admit(caller: ManagementPrincipal, input: CiRunInput & { workspaceId?: string | undefined },
@@ -1452,6 +1467,34 @@ export class HostCiService {
     }
   }
 
+  private sourcePublished(run: CiRunRecord): { ready: boolean; message: string } {
+    if (!this.commits.publish) return { ready: true, message: '' }
+    const key = `${run.repository}:${run.commit}`
+    const known = this.sourcePublications.get(key)
+    if (known && (known.ready || Date.now() < known.retryAt)) return known
+    const publication = { ready: false, retryAt: Infinity, message: 'Publishing the CI source commit to GitHub.',
+      work: undefined as Promise<void> | undefined }
+    // Keep in-flight publications shared even when many commits arrive together.
+    if (this.sourcePublications.size >= 256) {
+      const completed = [...this.sourcePublications].find(([, value]) => !value.work)
+      if (completed) this.sourcePublications.delete(completed[0])
+    }
+    this.sourcePublications.set(key, publication)
+    publication.work = this.context.platform.withoutCiDatabasePriority(() =>
+      this.context.platform.withoutCiDatabaseDeadline(() => this.commits.publish!(run.repository, run.commit)))
+      .then(() => { publication.ready = true })
+      .catch(error => {
+        publication.message = sanitizeCiText(errorMessage(error, 'CI source publication failed.'))
+        publication.retryAt = Date.now() + 60_000
+        this.context.log.warn({ err: error, repository: run.repository, commit: run.commit },
+          'CI source publication failed; queued tickets will retry')
+      }).finally(() => {
+        publication.work = undefined
+        void this.dispatch()
+      })
+    return publication
+  }
+
   /** Pushes a commit snapshot to the CI mirror once per distinct payload; dispatch runs again when the push settles. */
   private publishMirror(input: CiMirrorInput): { settled: boolean } {
     if (!this.endpoint.publishMirror) return { settled: true }
@@ -1630,6 +1673,11 @@ export class HostCiService {
       const blocked = gateQueueBlock(run, gate)
       if (blocked) {
         if (run.message !== blocked) await saveQueuedCiRun(this.pool, run, { ...run, message: blocked })
+        return
+      }
+      const publication = this.sourcePublished(run)
+      if (!publication.ready) {
+        await saveQueuedCiRun(this.pool, run, { ...run, message: publication.message })
         return
       }
       if (run.suite === 'integration' && run.partition && !run.partition.weights) return

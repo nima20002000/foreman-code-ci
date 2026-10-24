@@ -23,7 +23,10 @@ it('requires every migration after the legacy entries to have a version greater 
 it('appends a new registry migration only above the highest registered version', () => {
   const highest = Math.max(...migrations.map(({ version }) => version))
   expect(() => assertMigrationVersions([...migrations, { version: highest + 1 }])).not.toThrow()
-  expect(() => assertMigrationVersions([...migrations, { version: highest - 1 }])).toThrow('must have a version greater than')
+  const registered = new Set(migrations.map(({ version }) => version))
+  let earlier = highest - 1
+  while (registered.has(earlier)) earlier--
+  expect(() => assertMigrationVersions([...migrations, { version: earlier }])).toThrow('must have a version greater than')
 })
 
 it('rejects versions the application_migrations integer column cannot record', () => {

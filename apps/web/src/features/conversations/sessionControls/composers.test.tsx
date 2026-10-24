@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionControlStateSchema } from '@foreman-code/contracts'
 import { OperatorComposer } from '../../operator-chat'
 import { ConversationComposer } from '../ConversationComposer'
-import { SessionContext, type ComposerSessionControls, useConversationDraftStore } from '../../chat-core'
+import { SessionContext } from './SessionControls'
+import type { ComposerSessionControls } from './useSessionControls'
+import { useConversationDraftStore } from '../conversationDraftStore'
 
 const state = SessionControlStateSchema.parse({ conversationId: 'chat', revision: 1, profileKey: 'profile',
   desiredMode: 'regular', appliedMode: 'regular', defaults: {}, desired: {}, applied: {}, applicability: 'applied',

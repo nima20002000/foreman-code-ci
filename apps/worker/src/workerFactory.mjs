@@ -8,7 +8,7 @@ import { createInstalledWorkerDomains, createWorkerConnection } from '@foreman-c
 import { codexQualificationSuite, qualificationRevisionWithIdentity, registerWorkerMcpInstallation } from '@foreman-code/api/worker/harnesses';
 import { loadApprovedRoots } from './approvedRoots.mjs';
 import { mkdir, readFile, realpath } from 'node:fs/promises';
-import { loadOrCreateWorkerIdentity, loadWorkerPairing } from '../../../packages/contracts-node/src/deviceIdentityNode.ts';
+import { loadOrCreateWorkerIdentity, loadWorkerPairing } from '../../../packages/contracts/src/deviceIdentityNode.ts';
 import { hostFacts, requirePrivateDirectory, WorkerError } from './diagnostics.mjs';
 import { validateManifest, requireReleaseState } from './installation.mjs';
 import { startWorker, acquireWorkerLock } from './runtime.mjs';
@@ -198,7 +198,7 @@ export async function startConfiguredWorker({ stateDirectory, extensions = [], e
           context.signal.throwIfAborted();
           requireWorkerBundleReady(workerBundleReadiness(expectedBundle, running));
         },
-        launcherSource: new URL(`../${INSTALLATION_NAMES.artifacts.mcpLauncher}`, import.meta.url),
+        launcherSource: new URL('../artifacts/graphql-mcp.mjs', import.meta.url),
         ciStartupPending: async () => startupCi.pending || (await updater?.status())?.state === 'restarting',
         ...(updater ? { workerUpdate: { status: () => updater.status(), start: options => updater.start(options),
           outcome: (task, deadlineAt) => updater.maintenanceOutcome(task, deadlineAt) } } : {}),

@@ -199,7 +199,7 @@ describe.skipIf(!postgresEnabled)('W08 independent workspace root HTTP/MCP', () 
       await bindReached
       const cleanupClient = await db.pool.connect()
       const cleanupPid = (await cleanupClient.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
-      const cleanupPool = { connect: async () => cleanupClient } as unknown as typeof db.pool
+      const cleanupPool = { connect: async () => cleanupClient, query: db.pool.query.bind(db.pool) } as unknown as typeof db.pool
       const cleanup = cleanupWorkspaceProjectFolders(cleanupPool, owner.principal, [removableId], 'runner-local', 'http', randomUUID())
       const cleanupOutcome = cleanup.then(() => ({ removed: true as const }), error => ({ error }))
       try {

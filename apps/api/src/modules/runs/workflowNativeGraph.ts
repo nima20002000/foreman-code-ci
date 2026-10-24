@@ -16,7 +16,7 @@ import { activeNativeBatch, forgetNativeRow, memoizeNativeRead, nativeCommitChec
 import { flushNativeGraphRows } from '../run-graph/nativeWriter.js'
 import { stagedNativeRecordId } from '../run-graph/records.js'
 import { type NativeResponseDeliveryEvidence } from '../interactions/delivery.js'
-import type { NativeHistory } from '../harnesses/index.js'
+import type { NativeHistory } from '../harnesses/port.js'
 import { selectNativeGraphEvidence } from '../run-graph/nativeEvidence.js'
 import type { NativeEventAppendResult } from './nativeEventBatch.js'
 import { latestWorkflowCorrelation } from './workflowNativeCorrelation.js'

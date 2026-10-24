@@ -46,7 +46,7 @@ test('desktop launch preserves the normal user environment without job ownership
 
 test('desktop launch drops job temporary overrides when no original directory was recorded', () => {
   const source = { PATH: '/user/bin', TMPDIR: '/job/tmp', TMP: '/job/tmp', TEMP: '/job/tmp',
-    GRAPHQL_HEAVY_JOB_TOKEN: 'owned-job' }
+    FOREMAN_CODE_HEAVY_JOB_TOKEN: 'owned-job', GRAPHQL_HEAVY_JOB_TOKEN: 'owned-job' }
   assert.deepEqual(desktopLaunchEnvironment(source), { PATH: '/user/bin' })
   assert.equal(source.TMPDIR, '/job/tmp')
 })
@@ -61,8 +61,8 @@ test('a desktop child can create temporary files after its launching build job i
     await mkdir(job)
     const environment = desktopLaunchEnvironment({ ...process.env,
       TMPDIR: job, TMP: job, TEMP: job,
-      GRAPHQL_HEAVY_JOB_TOKEN: 'owned-job',
-      GRAPHQL_HEAVY_BASE_TMPDIR: base,
+      FOREMAN_CODE_HEAVY_JOB_TOKEN: 'owned-job', GRAPHQL_HEAVY_JOB_TOKEN: 'owned-job',
+      FOREMAN_CODE_HEAVY_BASE_TMPDIR: base, GRAPHQL_HEAVY_BASE_TMPDIR: base,
     })
     child = spawn(process.execPath, ['-e', `
       const { mkdirSync, mkdtempSync } = require('node:fs');
@@ -139,9 +139,9 @@ test('production updates retire the browser-access setting while retaining nativ
   const path = join(directory, 'operator.json')
   const owned = localProductionEnvironment('/owner/home', 'a'.repeat(64))
   const native = { CODEX_BINARY: '/opt/owner/codex' }
-  const retired = { GRAPHQL_DEV_BROWSER_ACCESS: '1' }
+  const retired = { FOREMAN_CODE_DEV_BROWSER_ACCESS: '0', GRAPHQL_DEV_BROWSER_ACCESS: '1' }
   try {
-    assert.equal(Object.hasOwn(owned, 'GRAPHQL_DEV_BROWSER_ACCESS'), false)
+    assert.equal(Object.hasOwn(owned, 'FOREMAN_CODE_DEV_BROWSER_ACCESS'), false)
     const first = await preserveOperatorConfiguration(path, { ...owned, ...native, ...retired }, owned, () => {})
     assert.deepEqual(first, { ...native, ...owned })
     assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), native)
@@ -158,10 +158,10 @@ test('renamed installer settings retain operator values and the existing databas
   const directory = await mkdtemp(join(tmpdir(), 'production-renamed-settings-'))
   const path = join(directory, 'operator.json')
   const password = 'a'.repeat(64)
-  const owned = { GRAPHQL_LOCAL_PRODUCTION: '1', GRAPHQL_APP_MCP_DIRECTORY: '/installed/mcp',
+  const owned = { FOREMAN_CODE_LOCAL_PRODUCTION: '1', FOREMAN_CODE_APP_MCP_DIRECTORY: '/installed/mcp',
     GRAPHQL_PRODUCTION_DB_PASSWORD: password }
   const previous = { GRAPHQL_LOCAL_PRODUCTION: '1', GRAPHQL_APP_MCP_DIRECTORY: '/installed/mcp',
-    GRAPHQL_PRODUCTION_DB_PASSWORD: password, GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0',
+    FOREMAN_CODE_PRODUCTION_DB_PASSWORD: password, GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0',
     CODEX_BINARY: '/opt/owner cli/codex' }
   const validate = environment => {
     assert.equal(readProductEnvironment(environment, 'LOCAL_PRODUCTION'), '1')
@@ -176,7 +176,8 @@ test('renamed installer settings retain operator values and the existing databas
     assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), {
       GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0', CODEX_BINARY: previous.CODEX_BINARY,
     })
-    for (const name of ['GRAPHQL_LOCAL_PRODUCTION', 'GRAPHQL_PRODUCTION_DB_PASSWORD']) {
+    for (const name of ['GRAPHQL_LOCAL_PRODUCTION', 'FOREMAN_CODE_LOCAL_PRODUCTION',
+      'GRAPHQL_PRODUCTION_DB_PASSWORD', 'FOREMAN_CODE_PRODUCTION_DB_PASSWORD']) {
       await writeFile(path, JSON.stringify({ [name]: 'override' }))
       await assert.rejects(preserveOperatorConfiguration(path, previous, owned, validate), /managed by the installer/)
     }
@@ -185,34 +186,25 @@ test('renamed installer settings retain operator values and the existing databas
   }
 })
 
-test('existing operator configuration loads frozen settings without previous environment', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'production-existing-settings-'))
+test('configuration aliases reject conflicts before publishing and retain matching operator spellings', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'production-alias-conflicts-'))
   const path = join(directory, 'operator.json')
-  const settings = { GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0' }
-  const owned = { GRAPHQL_LOCAL_PRODUCTION: '1' }
-  try {
-    await writeFile(path, JSON.stringify(settings))
-    const environment = await preserveOperatorConfiguration(path, undefined, owned, () => undefined)
-    assert.deepEqual(environment, { ...settings, ...owned })
-    assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), settings)
-  } finally {
-    await rm(directory, { recursive: true, force: true })
-  }
-})
-
-test('configuration validation fails before publishing frozen operator settings', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'production-settings-validation-'))
-  const path = join(directory, 'operator.json')
-  const owned = { GRAPHQL_LOCAL_PRODUCTION: '1' }
-  const settings = { GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0' }
+  const owned = { FOREMAN_CODE_LOCAL_PRODUCTION: '1' }
+  const settings = { GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0', FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '0' }
   try {
     await preserveOperatorConfiguration(path, settings, owned, () => undefined)
     assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), settings)
     const before = await readFile(path, 'utf8')
-    await assert.rejects(preserveOperatorConfiguration(path, undefined, owned, () => {
-      throw new Error('invalid setting')
-    }), /invalid setting/)
+    await assert.rejects(preserveOperatorConfiguration(path,
+      { GRAPHQL_PRODUCTION_DB_PASSWORD: 'old-secret', FOREMAN_CODE_PRODUCTION_DB_PASSWORD: 'new-secret' },
+      owned, () => undefined), error => {
+        assert.match(error.message, /FOREMAN_CODE_PRODUCTION_DB_PASSWORD conflicts with GRAPHQL_PRODUCTION_DB_PASSWORD/)
+        assert.ok(!error.message.includes('old-secret') && !error.message.includes('new-secret'))
+        return true
+      })
     assert.equal(await readFile(path, 'utf8'), before)
+    await writeFile(path, JSON.stringify({ ...settings, FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '1' }))
+    await assert.rejects(preserveOperatorConfiguration(path, undefined, owned, () => undefined), /conflicts/)
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
@@ -766,15 +758,13 @@ test('reuses one build tree reset to the exact next commit with dependencies and
 /** A build source whose fake pnpm deploy writes the API package and a dependency tree like legacy pnpm deploy. */
 async function apiBuildSource(directory) {
   const source = join(directory, 'source')
-  for (const path of ['apps/api/dist', 'packages/contracts/dist', 'packages/contracts-node/dist', 'apps/ci/dist']) await mkdir(join(source, path), { recursive: true })
+  for (const path of ['apps/api/dist', 'packages/contracts/dist', 'apps/ci/dist']) await mkdir(join(source, path), { recursive: true })
   await writeFile(join(source, 'pnpm-lock.yaml'), 'lock: 1\n')
   await writeFile(join(source, 'apps/api/package.json'), '{"name":"@foreman-code/api"}\n')
   await writeFile(join(source, 'apps/api/README.md'), 'api\n')
   await writeFile(join(source, 'apps/api/dist/server.js'), 'build 1\n')
   await writeFile(join(source, 'packages/contracts/package.json'), '{"name":"@foreman-code/contracts"}\n')
   await writeFile(join(source, 'packages/contracts/dist/index.js'), 'contracts 1\n')
-  await writeFile(join(source, 'packages/contracts-node/package.json'), '{"name":"@foreman-code/contracts-node"}\n')
-  await writeFile(join(source, 'packages/contracts-node/dist/serverKit.js'), 'node contracts 1\n')
   await writeFile(join(source, 'apps/ci/package.json'), '{"name":"@foreman-code/ci"}\n')
   await writeFile(join(source, 'apps/ci/dist/runner.js'), 'ci 1\n')
   const deploys = []
@@ -787,11 +777,6 @@ async function apiBuildSource(directory) {
     await writeFile(join(store, 'dist/index.js'), await readFile(join(source, 'packages/contracts/dist/index.js')))
     await mkdir(join(destination, 'node_modules/@foreman-code'), { recursive: true })
     await symlink('../.pnpm/@foreman-code+contracts/node_modules/@foreman-code/contracts', join(destination, 'node_modules/@foreman-code/contracts'))
-    const nodeStore = join(destination, 'node_modules/.pnpm/@foreman-code+contracts-node/node_modules/@foreman-code/contracts-node')
-    await mkdir(join(nodeStore, 'dist'), { recursive: true })
-    await writeFile(join(nodeStore, 'package.json'), await readFile(join(source, 'packages/contracts-node/package.json')))
-    await writeFile(join(nodeStore, 'dist/serverKit.js'), await readFile(join(source, 'packages/contracts-node/dist/serverKit.js')))
-    await symlink('../.pnpm/@foreman-code+contracts-node/node_modules/@foreman-code/contracts-node', join(destination, 'node_modules/@foreman-code/contracts-node'))
     // pnpm injects the CI package with its own contracts dependency, which a release must never load.
     const ciStore = join(destination, 'node_modules/.pnpm/@foreman-code+ci/node_modules/@foreman-code')
     await mkdir(join(ciStore, 'ci/dist'), { recursive: true })
@@ -831,16 +816,12 @@ test('releases reuse installed dependencies while freezing their own contracts o
 
   // Contracts builds change independently of installed dependencies; each release freezes its own output.
   await writeFile(join(source, 'packages/contracts/dist/index.js'), 'contracts 2\n')
-  await writeFile(join(source, 'packages/contracts-node/dist/serverKit.js'), 'node contracts 2\n')
   const third = join(directory, 'releases/release-c/apps/api')
   await production.deployProductionApi(run, third, { dependencies })
   assert.equal(deploys.length, 1)
   assert.equal(await realpath(join(third, 'node_modules/fastify')), await realpath(join(second, 'node_modules/fastify')))
   assert.equal(await readFile(join(third, 'node_modules/@foreman-code/contracts/dist/index.js'), 'utf8'), 'contracts 2\n')
   assert.equal(await readFile(join(second, 'node_modules/@foreman-code/contracts/dist/index.js'), 'utf8'), 'contracts 1\n')
-
-  assert.equal(await readFile(join(third, 'node_modules/@foreman-code/contracts-node/dist/serverKit.js'), 'utf8'), 'node contracts 2\n')
-  assert.equal(await readFile(join(second, 'node_modules/@foreman-code/contracts-node/dist/serverKit.js'), 'utf8'), 'node contracts 1\n')
 
   // Trees no kept release links to are removed; the ones in use stay.
   const removed = []
@@ -857,25 +838,22 @@ test('releases reuse installed dependencies while freezing their own contracts o
   assert.equal(await readFile(join(fourth, 'node_modules/fastify/index.js'), 'utf8'), 'fastify')
 })
 
-test('a release CI package loads the release Node contracts copy, so CI and API share one DomainError', async t => {
+test('a release CI package loads the release contracts copy, so CI and API share one DomainError', async t => {
   const directory = await installFixture(t)
   const { source, run } = await apiBuildSource(directory)
   const manifest = name => JSON.stringify({ name, type: 'module', exports: { '.': './dist/index.js', './runner': './dist/runner.js' } })
   await writeFile(join(source, 'packages/contracts/package.json'), manifest('@foreman-code/contracts'))
-  await writeFile(join(source, 'packages/contracts/dist/index.js'), 'export const schema = true\n')
-  await writeFile(join(source, 'packages/contracts-node/package.json'), JSON.stringify({ name: '@foreman-code/contracts-node', type: 'module',
-    exports: { './server-kit': './dist/serverKit.js' } }))
-  await writeFile(join(source, 'packages/contracts-node/dist/serverKit.js'), 'export class DomainError extends Error {}\n')
+  await writeFile(join(source, 'packages/contracts/dist/index.js'), 'export class DomainError extends Error {}\n')
   await writeFile(join(source, 'apps/ci/package.json'), manifest('@foreman-code/ci'))
   await writeFile(join(source, 'apps/ci/dist/runner.js'),
-    "export { DomainError } from '@foreman-code/contracts-node/server-kit'\nexport const build = 'ci 2'\n")
+    "export { DomainError } from '@foreman-code/contracts'\nexport const build = 'ci 2'\n")
   const release = join(directory, 'releases/release-a/apps/api')
   await production.deployProductionApi(run, release, { dependencies: { root: join(directory, 'api-dependencies'), source } })
   const ci = join(release, 'node_modules/@foreman-code/ci')
   assert.equal((await lstat(ci)).isDirectory(), true)
   await assert.rejects(stat(join(ci, 'node_modules')), { code: 'ENOENT' })
   const runner = await import(pathToFileURL(join(ci, 'dist/runner.js')).href)
-  const contracts = await import(pathToFileURL(join(release, 'node_modules/@foreman-code/contracts-node/dist/serverKit.js')).href)
+  const contracts = await import(pathToFileURL(join(release, 'node_modules/@foreman-code/contracts/dist/index.js')).href)
   assert.equal(runner.build, 'ci 2')
   assert.equal(runner.DomainError, contracts.DomainError)
 })
@@ -1010,7 +988,6 @@ test('production builds check the API separately from JavaScript emit and browse
   await production.buildProductionSource(async (command, args) => { calls.push([command, args]) })
   assert.deepEqual(calls, [
     ['corepack', ['pnpm', '--filter', '@foreman-code/contracts', 'build']],
-    ['corepack', ['pnpm', '--filter', '@foreman-code/contracts-node', 'build']],
     ['corepack', ['pnpm', '--filter', '@foreman-code/ci', 'build']],
     ['corepack', ['pnpm', '--filter', '@foreman-code/api', 'exec', 'tsc', '-p', 'tsconfig.build.json',
       '--noEmit', '--isolatedModules', '--tsBuildInfoFile', 'node_modules/.cache/tsc/production-check.tsbuildinfo']],
@@ -1084,7 +1061,7 @@ test('readiness polls while the service start command is waiting and smoke waits
   assert.equal(smoked, true)
 })
 
-for (const input of ['pnpm-lock.yaml', 'apps/api/package.json', 'packages/contracts/package.json', 'apps/ci/package.json', 'packages/contracts-node/package.json',
+for (const input of ['pnpm-lock.yaml', 'apps/api/package.json', 'packages/contracts/package.json', 'apps/ci/package.json',
   'pnpm-workspace.yaml', '.npmrc']) {
   test(`dependency staging invalidates when ${input} changes`, async t => {
     const directory = await installFixture(t)

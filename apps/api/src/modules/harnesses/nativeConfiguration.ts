@@ -1,11 +1,11 @@
 import { isDeepStrictEqual } from 'node:util'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 import { HarnessOptionsDiscoveryRequestSchema } from '@foreman-code/contracts/harness-registry'
-import type { DeviceEndpoint } from '../devices/index.js'
+import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
 import { logIgnoredError } from '../diagnostics/index.js'
 import type { ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import {
-  RecordedHarnessConfigurationSchema, HarnessQualificationSchema, type AgentHarness, type RecordedHarnessConfiguration,
+  HarnessConfigurationSchema, HarnessQualificationSchema, type AgentHarness, type HarnessConfiguration,
 } from '@foreman-code/contracts'
 import { HarnessOptionsResultSchema } from '@foreman-code/contracts/management'
 import { QualificationCache } from './qualificationCache.js'
@@ -16,7 +16,7 @@ import { HarnessExecutionError } from './errors.js'
 import { DomainError } from '../errors.js'
 import { claudeSettingSupport, type ClaudeNativeConfigurationPort } from './claudeSdk/nativeConfiguration.js'
 import { requireClaudeProductionCredentialDelivery } from './claudeSdk/productionCredentials.js'
-import type { ProviderAccountResolver } from '../provider-accounts/index.js'
+import type { ProviderAccountResolver } from '../provider-accounts/service.js'
 import { retiredHarnessError } from './retiredHarness.js'
 
 export class NativeConfigurationService {
@@ -36,8 +36,8 @@ export class NativeConfigurationService {
     this.factories = factories ?? new NativeHarnessFactories({ codexBinary })
   }
 
-  async qualifyConfiguration(input: RecordedHarnessConfiguration) {
-    const value = RecordedHarnessConfigurationSchema.parse(input)
+  async qualifyConfiguration(input: HarnessConfiguration) {
+    const value = HarnessConfigurationSchema.parse(input)
     if (value.harness === 'opencode') throw retiredHarnessError()
     try {
       // The selected Claude host/profile proof must be rechecked on every read.
@@ -51,7 +51,7 @@ export class NativeConfigurationService {
     catch (error) { throw qualificationError(error) }
   }
 
-  private async inspectConfiguration(value: RecordedHarnessConfiguration) {
+  private async inspectConfiguration(value: HarnessConfiguration) {
     const signal = AbortSignal.timeout(60_000)
     if (value.harness === 'claude') {
       await requireClaudeProductionCredentialDelivery(value, this.accounts)

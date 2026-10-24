@@ -18,7 +18,7 @@ import { ClaudeHarnessConfigurationSchema } from '@foreman-code/contracts/claude
 import { ComputerSyncStatusSchema } from '@foreman-code/contracts/computer-accounts'
 import { DevicePairingGrantResultSchema, DevicePairingResultSchema, MainDeviceIdentityPublicSchema,
   WorkerPairingConfigurationSchema } from '@foreman-code/contracts/device-identity'
-import { loadOrCreateWorkerIdentity, persistWorkerPairing, pairingProof } from '@foreman-code/contracts-node/device-identity-node'
+import { loadOrCreateWorkerIdentity, persistWorkerPairing, pairingProof } from '@foreman-code/contracts/device-identity-node'
 import { HarnessRegistryReadbackSchema, HostHarnessOverrideSaveResultSchema,
   HostHarnessInstanceCheckResultSchema } from '@foreman-code/contracts/harness-registry'
 import { SourceApproveResultSchema, SourceRootBindResultSchema } from '@foreman-code/contracts/source-admission'
@@ -149,7 +149,7 @@ export async function remoteReviewProduction(options: {
       return db
     })
     const setupProvider = () => measureIntegrationPhase('provider fixture', async () => {
-      await installManagedLauncher(new URL('../../../../scripts/foreman-mcp.mjs', import.meta.url), launcher)
+      await installManagedLauncher(new URL('../../../../scripts/graphql-mcp.mjs', import.meta.url), launcher)
       return createRemoteReviewProvider(join(directory, 'provider'), launcher)
     })
     const workerReleaseResult = Promise.allSettled([
@@ -247,7 +247,7 @@ export async function remoteReviewProduction(options: {
     const config = loadConfig({ DATABASE_URL: db.databaseUrl, PORT: String(await freePort()),
       HARNESS_WORKSPACE_ROOT: runtime, FILE_STORAGE_ROOT: join(directory, 'files'),
       CODEX_BINARY: provider.binary,
-      DATABASE_QUERY_TIMEOUT_MS: '10000', GRAPHQL_LAPTOP_EXECUTION_ENABLED: '1' })
+      DATABASE_QUERY_TIMEOUT_MS: '10000', FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: '1' })
     config.workspaceStorageRoot = join(directory, 'projects')
     const access = new PostgresAccessService(db.pool)
     const writer = await access.issue({ name: 'Remote review owner', audience: 'operator',

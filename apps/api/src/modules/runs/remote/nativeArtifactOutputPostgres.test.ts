@@ -29,7 +29,7 @@ async function fixture() {
   const link: DistributedPublicationLink = { ...record.publication, context: f.context, ref: { fileId: record.pins.fileId, revisionId: record.pins.revisionId },
     transferReceipt: record.transferReceipt, publicationInputHash: 'original-input', createdAt: new Date().toISOString() }
   const state = { row: undefined as Row | undefined, link, expired: false, missing: false, audits: 0, loseAck: false, committed: false,
-    queries: [] as string[] }
+    queries: [] as string[], rollbackError: undefined as Error | undefined }
   let before: Row | undefined
   const query = vi.fn(async (sql: string, args: unknown[] = []) => {
     state.queries.push(sql)
@@ -37,7 +37,7 @@ async function fixture() {
     if (sql === 'select pg_backend_pid() as pid') rows = [{ pid: 123 }]
     else if (sql.startsWith('begin')) { before = structuredClone(state.row); state.committed = false }
     else if (sql === 'commit') { state.committed = true; if (state.loseAck) { state.loseAck = false; throw new Error('COMMIT acknowledgment lost') } }
-    else if (sql === 'rollback') { if (!state.committed) state.row = before }
+    else if (sql === 'rollback') { if (state.rollbackError) throw state.rollbackError; if (!state.committed) state.row = before }
     else if (sql.includes('select p.record from file_tool_publications')) rows = state.missing ? [] : [{ record: state.link }]
     else if (sql.startsWith('select file_id from files')) rows = state.expired ? [] : [{ file_id: record.pins.fileId }]
     else if (sql.startsWith('insert into management_command_receipts')) {
@@ -63,6 +63,14 @@ describe('original output mapping in the existing command ledger', () => {
     expect(await t.repository.bind(t.record, t.authorize)).toEqual(t.record)
     expect(t.authorize).toHaveBeenCalledTimes(4); expect(t.state.audits).toBe(1)
     expect(await new PostgresNativeArtifactOutputRepository(t.pool, t.mainId).read(t.record.producer, 'report')).toEqual(t.record)
+  })
+  it('preserves the binding failure as the cause when rollback also fails', async () => {
+    const t = await fixture(), failure = new Error('binding failed'), rollback = new Error('rollback failed')
+    t.authorize.mockRejectedValueOnce(failure)
+    t.state.rollbackError = rollback
+    await expect(t.repository.bind(t.record, t.authorize)).rejects.toMatchObject({
+      cause: failure, errors: [failure, rollback],
+    })
   })
   it('recovers a committed mapping after lost ACK without second insertion or audit', async () => {
     const t = await fixture(); t.state.loseAck = true

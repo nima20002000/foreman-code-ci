@@ -1,7 +1,7 @@
 import { isDeepStrictEqual as same } from 'node:util'
 import type { TransferContext } from '@foreman-code/contracts/byte-transfer'
 import { RemoteOperationReceiptSchema, remoteWorkflowTurnId } from '@foreman-code/contracts/remote-execution'
-import type { AcceptedArtifactPublication } from '../../files/index.js'
+import type { AcceptedArtifactPublication } from '../../files/distributed/publication.js'
 import { DomainError } from '../../errors.js'
 import type { WorkflowNativeCapture, WorkflowNativeVerificationPort } from '../../interactions/workflowNativeCapture.js'
 import { readAcceptedPlacement, readDispatchIntent } from '../../placement/persistence.js'

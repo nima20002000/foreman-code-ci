@@ -42,7 +42,7 @@ function fixture() {
   const query = vi.fn(async (_text: string, values: unknown[]) => ({ rows: values?.[0] === principal.id
     ? [{ ...principal, expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] : [] }))
   const pool = { connect: async () => ({ query, release() {} }) } as unknown as pg.Pool
-  const commands = { recordDenied: vi.fn() } as unknown as PostgresCommandCoordinator
+  const commands = { recordDenied: vi.fn(async () => undefined) } as unknown as PostgresCommandCoordinator
   const status = { observedAt: '2026-10-14T00:00:00Z', harnesses: [], tasks: [],
     system: { packageUpdates: null, rebootRequired: false, sudo: false, disk: null } }
   const probe = vi.fn(async () => status)
