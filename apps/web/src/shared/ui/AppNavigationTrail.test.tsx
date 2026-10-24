@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Link, Outlet, RouterProvider, createBrowserHistory, createMemoryHistory, createRootRoute, createRoute, createRouter, useLocation } from '@tanstack/react-router'
+import { Link, Outlet, RouterProvider, createBrowserHistory, createMemoryHistory, createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
@@ -23,7 +23,7 @@ function Editor({ pending = false, uncertain = false }: { pending?: boolean; unc
 function mount(path: string, editor?: { pending?: boolean; uncertain?: boolean }, unknownPredecessor?: string, browserHistory = false,
   seed?: (client: QueryClient) => void) {
   const root = createRootRoute({ component: () => <AppNavigationHistoryProvider><UnsavedChangesProvider>
-    <AppNavigationTrail activeWorkflowId={useLocation().search.workflowId as string | undefined} /><Outlet />
+    <AppNavigationTrail /><Outlet />
   </UnsavedChangesProvider></AppNavigationHistoryProvider> })
   const paths = ['/workspaces', '/settings/general', '/settings', '/settings/harnesses',
     '/settings/bugs', '/settings/system-prompt', '/workspaces/$workspaceId',
@@ -174,14 +174,4 @@ it('keeps a stable placeholder while an uncached workspace name loads', async ()
   mount('/workspaces/workspace-2/files')
   const breadcrumbs = await screen.findByRole('navigation', { name: 'Breadcrumbs' })
   expect(within(breadcrumbs).getByRole('link', { name: 'Go to Workspace' })).toHaveClass('is-pending')
-})
-
-it.each([
-  '/workspaces/workspace-1?workflowId=workflow-content-pipeline',
-  '/workspaces/workspace-1/workflows/workflow-content-pipeline/draft',
-])('returns a fresh ordinary Board link to its workflow list: %s', async path => {
-  const { router } = mount(path)
-  await userEvent.setup().click(await screen.findByRole('button', { name: 'Back' }))
-  await waitFor(() => expect(router.state.location.pathname).toBe('/workspaces/workspace-1/workflows'))
-  expect(router.state.location.search).toEqual({})
 })
