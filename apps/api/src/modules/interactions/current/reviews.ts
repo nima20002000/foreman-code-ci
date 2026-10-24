@@ -205,6 +205,7 @@ export class CurrentInteractionCoordinationRepository extends PostgresInteractio
       const row = await rowFor(publication, id), current = parseReviewJob(row.record)
       if (!row.lease_active || current.leaseToken !== token || expected &&
         (String(expected.revision) !== row.revision || String(expected.fence) !== row.lease_fence)) return fail('REVIEW_JOB_LEASE_LOST')
+      if ((current.cleanup || fields.cleanup) && requested !== 'failed') return fail('REVIEW_CLEANUP_CONFLICT')
       if (current.state === 'completed' || current.state === 'failed' && requested !== 'failed') return fail('REVIEW_TERMINAL_CONFLICT')
       if (current.providerTurnOrMessageId && fields.providerTurnOrMessageId
         && current.providerTurnOrMessageId !== fields.providerTurnOrMessageId) return fail('REVIEW_JOB_IDENTITY_CONFLICT')
@@ -246,7 +247,7 @@ export class CurrentInteractionCoordinationRepository extends PostgresInteractio
       const ack = acknowledgementId(observation)
       let state = requested
       let cleanup = fields.cleanup ?? current.cleanup
-      let error = fields.error ?? current.error
+      let error = current.cleanup ? current.error : fields.error ?? current.error
       if (requested === 'acknowledged' && !ack) state = current.acknowledgedAt ? 'uncertain' : 'submitted'
       if (requested === 'completed') {
         if (observation?.kind !== 'terminal' || !observation.terminal.nativeSettled) {

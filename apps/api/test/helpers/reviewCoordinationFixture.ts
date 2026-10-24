@@ -9,11 +9,17 @@ import { approvalDatabase } from './approvalDatabase.js'
 
 export async function reviewCoordinationFixture(failed = false) {
   const f = await approvalDatabase()
+  const coordination = f.repository.coordination
+  let closing: Promise<void> | undefined
+  const close = () => closing ??= (async () => {
+    const lane = await coordination.getLane('codex', f.reviewer.nativeSessionId!)
+    if (lane?.leaseToken) await coordination.releaseLane(lane.id, lane.leaseToken, { observedStatus: 'idle' })
+    await f.close()
+  })()
   try {
     // Retain a real native acknowledgement, then drain its original observer.
     f.resumeObservation()
     await f.native.reviewers.shutdown()
-    const coordination = f.repository.coordination
     const lane = (await coordination.getLane('codex', f.reviewer.nativeSessionId!))!
     const writer = await coordination.claimLane(lane.id, lane.revision, 'worker', 'writer',
       new Date(Date.now() + 60_000).toISOString(), f.job.correlationId)
@@ -38,7 +44,7 @@ export async function reviewCoordinationFixture(failed = false) {
           [job.id, record.state, JSON.stringify(record)])
       })
     })
-    return { ...f, coordination, reviewerId: f.reviewer.agentId, job, lane: writer,
+    return { ...f, close, coordination, reviewerId: f.reviewer.agentId, job, lane: writer,
       writer: { id: lane.id, token: 'writer' }, read, save }
-  } catch (error) { await f.close(); throw error }
+  } catch (error) { await close(); throw error }
 }
