@@ -72,7 +72,7 @@ export async function assertInteractionReservedRetryLocked(sql: SqlTransaction,
     return fail('GRAPH_SUBMISSION_NOT_REPLAYABLE')
   }
 }
-export class Wave25InteractionDeliveryRepository extends PostgresInteractionDeliveryRepository {
+export class CurrentInteractionDeliveryRepository extends PostgresInteractionDeliveryRepository {
   constructor(private readonly approvalPool: pg.Pool) { super(approvalPool) }
   private async mode(id: string) { const runId = await runFor(this.approvalPool, 'interaction', id)
     return { runId, enabled: await isCurrentApprovalRun(this.approvalPool, runId) } }

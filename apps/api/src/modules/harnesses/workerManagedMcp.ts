@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
@@ -9,14 +9,14 @@ import { MANAGED_MCP_NAMESPACE, ManagedMcpFailureSchema, ManagedMcpRequestSchema
   from '@foreman-code/contracts/managed-mcp-channel'
 import { HarnessMcpPlanSchema, type HarnessMcpManagedInput, type HarnessMcpPlan, type HarnessMcpReconcileInput }
   from '@foreman-code/contracts/management'
-import { syncNativeConfigDirectory } from './nativeConfigFiles.js'
+import { writeDurableFile } from '../../shared/durableFile.js'
 import { appMcpNeedsMigration, assertManagedChange, expectedMcpUserFingerprint, fingerprint, managedChange, managedEnableChange,
   managedStatus, mcpUserFingerprint, publicMcpList, record, type NativeMcpAdapter } from './nativeMcpCommon.js'
 import { APP_MCP_SERVER_NAME, appLauncherTokenName } from './appMcpLauncher.js'
 import { DomainError } from '../errors.js'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 
 type Harness = 'codex' | 'claude'
 const RecordSchema = z.object({ hash: z.string(), plan: HarnessMcpPlanSchema, expectedHash: z.string() }).strict()
@@ -45,13 +45,7 @@ export class WorkerManagedMcp {
   }
   private async save(key: string, record: z.infer<typeof RecordSchema>) {
     const file = this.path(key)
-    await mkdir(join(this.options.directory, 'managed-mcp'), { recursive: true, mode: 0o700 })
-    const temporary = `${file}.${randomUUID()}`
-    const handle = await open(temporary, 'wx', 0o600)
-    try { await handle.writeFile(JSON.stringify(record)); await handle.sync() }
-    finally { await handle.close() }
-    await rename(temporary, file)
-    await syncNativeConfigDirectory(file)
+    await writeDurableFile(file, JSON.stringify(record), { temporaryPath: `${file}.${randomUUID()}` })
   }
   async list(harness: Harness, signal: AbortSignal) {
     const snapshot = await this.options.adapters[harness].read(signal)
