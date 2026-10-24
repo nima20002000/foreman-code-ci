@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { collaborationContractFixtures as fixture, WorkflowExecutionChatResolutionSchema } from '@foreman-code/contracts'
 import { server } from '../../../mocks/server'
+import { executionChatReadKey } from '../../workflow-hierarchy/execution-chat/client'
 import { WorkflowExecutionConversation } from './WorkflowExecutionConversation'
 
 const clients: QueryClient[] = []
@@ -21,7 +22,7 @@ it('keeps the attachment affordance visible with the active execution restrictio
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(cache)
   render(<QueryClientProvider client={cache}><WorkflowExecutionConversation resolved={resolved}
     selection={{ workspaceId: fixture.node.workspaceId, workflowId: fixture.node.workflowId, workflowNodeId: fixture.node.workflowNodeId }}
-    queryKey={[]} client={{ read: vi.fn(), deliver: vi.fn(), stop: vi.fn(), cancel: vi.fn() }}
+    queryKey={executionChatReadKey(resolved.target)} client={{ read: vi.fn(), deliver: vi.fn(), stop: vi.fn(), cancel: vi.fn() }}
     onSelectTarget={vi.fn()} onSelectRun={vi.fn()} /></QueryClientProvider>)
   await screen.findByRole('textbox', { name: 'Message' })
   const attach = screen.getByRole('button', { name: 'Attach files' })
