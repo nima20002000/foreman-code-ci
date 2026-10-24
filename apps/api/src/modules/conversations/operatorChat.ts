@@ -616,7 +616,7 @@ export class OperatorChatService {
     return accepted
   }
 
-  createDeliveryOwner(receipts: PostgresChatDeliveryRepository): ConversationDeliveryOwner {
+  createDeliveryOwner(receipts: PostgresChatDeliveryRepository, changed?: (receiptId: string) => Promise<void>): ConversationDeliveryOwner {
     if (this.canonicalDelivery) return this.canonicalDelivery
     const owner = new ConversationDeliveryOwner(this.repository.pool, receipts, {
       authenticate: (principal, target, action, sql) => this.authorizeDelivery(principal, target, action, sql),
@@ -644,7 +644,7 @@ export class OperatorChatService {
           queue: state.conversation.status !== 'archived', interruptAndSend: state.conversation.status !== 'archived' },
         ...(row?.active_native_turn_id ? { nativeTurnId: row.active_native_turn_id } : {}) } }
       },
-      progress: (command, tx) => this.deliveryProgress(command, tx),
+      progress: (command, tx) => this.deliveryProgress(command, tx), ...(changed ? { changed } : {}),
     })
     this.canonicalDelivery = owner
     followDeliveryReceipts(this.events, owner, { operation: 'synchronize Operator delivery',
