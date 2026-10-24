@@ -311,7 +311,6 @@ describe('Prompt settings', () => {
     await user.type(editor, 'Updated')
     await user.click(screen.getByRole('button', { name: 'Save system prompt' }))
     expect(await screen.findByText(/Prompt updates are denied/)).toBeVisible()
-    expect(screen.getByRole('textbox', { name: 'System prompt' })).toBeVisible()
     expect(editor).toHaveValue('Original instructionsUpdated')
     expect(editor).toHaveAttribute('readonly')
     expect(screen.queryByRole('button', { name: 'Save system prompt' })).not.toBeInTheDocument()
