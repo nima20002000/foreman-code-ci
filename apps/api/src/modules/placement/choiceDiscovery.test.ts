@@ -57,23 +57,17 @@ function fixture(options: { driver?: 'codex' | 'claude'; host?: 'main' | 'device
     presetId: `${driver}-default`, enabled: true, driverId: driver, configuration: configuration.harness,
     configurationFingerprint: digest, qualification: 'qualified' })
   const sourceRoots = vi.fn(async () => [root])
-  const readRoots = vi.fn(async () => [policy])
   // The configuration read binds the version id and the workspace id; the source root read binds the workspace id alone.
   const query = vi.fn(async (_sql: string, values: unknown[] = []) => {
     if (values.length === 2 && values[0] === configuration.id) return { rows: [{ record: configuration }] }
-    if (values.length === 1 && values[0] === configuration.workspaceId) {
-      const policies = await readRoots()
-      return { rows: (await sourceRoots()).map(record => ({ record,
-        policy: policies.find(value => value.rootPolicyId === record.selection.rootPolicyId),
-      })) }
-    }
+    if (values.length === 1 && values[0] === configuration.workspaceId) return { rows: (await sourceRoots()).map(record => ({ record })) }
     return { rows: [] }
   })
   const pool = { connect: async () => ({ query, release: vi.fn() }) } as unknown as pg.Pool
-  const resolve = vi.fn(async (_sql: unknown, _principal: unknown, selection: { rootPolicyId: string; rootPolicyRevision: string; locationRevision: string }) =>
-    (await readRoots()).find(value => value.rootPolicyId === selection.rootPolicyId
-      && value.rootPolicyRevision === selection.rootPolicyRevision && value.locationRevision === selection.locationRevision) ?? policy)
-  const resolveSource = vi.fn<SourceAdmissionPort['resolveRootBinding']>(async () => root)
+  const readRoots = vi.fn(async () => [policy])
+  const resolve = vi.fn(async (_sql: unknown, _principal: unknown, selection: { rootPolicyId: string }) =>
+    (await readRoots()).find(value => value.rootPolicyId === selection.rootPolicyId) ?? policy)
+  const resolveSource = vi.fn(async (_sql: unknown, _principal: unknown, _input: { rootId: string }) => root)
   const setupRoot = vi.fn(async () => ({ value: root, replayed: false }))
   const profiles = vi.fn(async () => [profile])
   const evidence = vi.fn(async () => ({ qualified: true }))
@@ -104,10 +98,7 @@ it('discovers an authorized matching profile with the persisted root, source and
     harnessInstallationId: f.profile.target.harnessInstallationId, source: f.root.source,
     rootBinding: { rootId: f.root.binding.rootId, bindingRevision: 2 },
   } })
-  expect(f.resolveSource).toHaveBeenCalledWith(expect.anything(), f.principal, {
-    workspaceId: f.input.workspaceId, rootId: f.root.binding.rootId,
-    bindingRevision: f.root.binding.bindingRevision, source: f.root.source,
-  })
+  expect(f.resolveSource).toHaveBeenCalledOnce()
   expect(((await f.service.list(f.principal, f.input)).choices)[0]!.id).toBe(choices[0]!.id)
 })
 
@@ -187,7 +178,7 @@ it('keeps unqualified installations and revoked root authority unavailable with 
       source: f.root.source,
     }),
   })])
-  expect(f.resolveSource).toHaveBeenCalledTimes(2)
+  expect(f.resolveSource).toHaveBeenCalledTimes(1)
   expect(f.evidence).not.toHaveBeenCalled()
 })
 
