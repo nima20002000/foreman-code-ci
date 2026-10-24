@@ -8,7 +8,7 @@ import { http, HttpResponse } from 'msw'
 import { WorkflowRunSummarySchema } from '@foreman-code/contracts'
 import { RunBoardSnapshotGetResultSchema } from '@foreman-code/contracts/run-snapshots'
 import { server } from '../../mocks/server'
-import { AgentChatPanel } from '../graph'
+import { AgentChatPanel, useBoardViewportStore } from '../graph'
 import { installFlowLayout } from '../run-board/testFlowLayout'
 import { RunsSelectorSearchSchema, useRunsSelectorUi } from '../runs-selector'
 import { useConversationDraftStore, agentChatContextKey } from '../conversations'
@@ -23,7 +23,11 @@ function CurrentNavigation() { return useWorkflowBoard()?.navigationControls }
 vi.mock('../schedules', () => ({ ScheduleClockButton: () => null }))
 vi.mock('../workflow-files', () => ({ WorkflowFilesButton: () => null }))
 
-beforeEach(() => { installChatSource(); installFlowLayout(); useRunsSelectorUi.getState().setOpen(null) })
+beforeEach(() => {
+  // Each case opens a fresh Board; viewport memory is deliberately shared across Run visits within a case.
+  useBoardViewportStore.setState({ views: {} })
+  installChatSource(); installFlowLayout(); useRunsSelectorUi.getState().setOpen(null)
+})
 afterEach(() => {
   cleanup()
   for (const client of clients.splice(0)) client.clear()
