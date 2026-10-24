@@ -17,7 +17,7 @@ import {
   ActionMenu, Alert, Button, ConfirmDialog, EmptyState, ErrorState, PageHeader, TextField,
 } from '../../shared/ui/nocturne'
 import { ResourceActionsMenu, ResourceCard } from '../../shared/ui/ResourceCard'
-import { useWorkflowRemoval } from './useWorkflowRemoval'
+import { RemoveWorkflowButton } from './RemoveWorkflowButton'
 import { NewWorkflowAction } from './NewWorkflowAction'
 import './workflows.css'
 import '../../shared/ui/resourceDirectory.css'
@@ -27,7 +27,6 @@ function WorkflowCardActions({ workspaceId, workflowId, name, revision }: {
 }) {
   const client = useQueryClient()
   const update = useUpdateManagedWorkflowMutation()
-  const removal = useWorkflowRemoval({ workspaceId, workflowId, revision })
   const attempt = useRef(new CommandAttempt<Omit<WorkflowUpdateInput, 'commandId'>>())
   const original = useRef<Omit<WorkflowUpdateInput, 'commandId'> | undefined>(undefined)
   const inFlight = useRef(false)
@@ -35,12 +34,12 @@ function WorkflowCardActions({ workspaceId, workflowId, name, revision }: {
   const [nextName, setNextName] = useState(name)
   const [nameError, setNameError] = useState<string>()
   const nameInputRef = useRef<HTMLInputElement>(null)
-  const pending = update.isPending || removal.mutation.isPending
-  const uncertain = attempt.current.unresolved || removal.unresolved
+  const pending = update.isPending
+  const uncertain = attempt.current.unresolved
   useEffect(() => { if (!open) setNextName(name) }, [name, open])
 
   const rename = async () => {
-    if (inFlight.current || removal.unresolved) return
+    if (inFlight.current) return
     const value = nextName.trim()
     if (!value) { setNameError('Enter a workflow name.'); nameInputRef.current?.focus(); return }
     inFlight.current = true
@@ -62,16 +61,14 @@ function WorkflowCardActions({ workspaceId, workflowId, name, revision }: {
       <form className="resource-card-menu-rename" onSubmit={(event) => { event.preventDefault(); void rename() }}>
         <TextField ref={nameInputRef} label="Name" value={nextName} error={nameError} disabled={pending || uncertain}
           onChange={(event) => { setNextName(event.target.value); setNameError(undefined) }} />
-        <Button type="submit" disabled={pending || removal.unresolved || !update.isError && nextName.trim() === name}>
+        <Button type="submit" disabled={pending || !update.isError && nextName.trim() === name}>
           {update.isPending ? 'Renaming…' : update.isError ? 'Retry rename' : 'Rename'}
         </Button>
       </form>
       {update.isError ? <Alert live tone="danger" title={update.error.message} /> : null}
       {attempt.current.unresolved && !update.isPending ? <p role="status">The rename may have worked. Retry to check.</p> : null}
-      <Button variant="danger" disabled={pending || attempt.current.unresolved} onClick={() => void removal.remove()}>
-        {removal.mutation.isPending ? 'Removing…' : removal.mutation.isError ? `Retry removing ${name}` : 'Remove workflow'}
-      </Button>
-      {removal.mutation.isError ? <Alert live tone="danger" title={removal.mutation.error.message} /> : null}
+      <RemoveWorkflowButton workspaceId={workspaceId} workflowId={workflowId} name={name} revision={revision}
+        renderTrigger={show => <Button variant="danger" disabled={pending || uncertain} onClick={show}>Remove workflow</Button>} />
     </ResourceActionsMenu>
   )
 }

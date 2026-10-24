@@ -164,7 +164,7 @@ it('keeps a failed rename editable and offers an explicit retry', async () => {
   await waitFor(() => expect(screen.getByTestId('workflow-card-workflow-content-pipeline')).toHaveTextContent('Review flow'))
 })
 
-it('shows a rejected removal and retries it from the same card', async () => {
+it('shows a rejected removal and retries it from the same confirmation', async () => {
   let fail = true
   server.use(http.delete('/api/management/workspaces/:workspaceId/workflows/:workflowId', () => {
     if (fail) return HttpResponse.json({ error: { code: 'ARCHIVE_BLOCKED_BY_ACTIVE_RUN', message: 'Wait for the active run to finish.' } }, { status: 409 })
@@ -174,9 +174,11 @@ it('shows a rejected removal and retries it from the same card', async () => {
   renderWithRouter(<WorkflowDirectory workspaceId="workspace-1" />)
   await user.click(await screen.findByRole('button', { name: 'Open actions for Research to review' }))
   await user.click(screen.getByRole('button', { name: 'Remove workflow' }))
-  expect(await screen.findByText('Wait for the active run to finish.')).toBeVisible()
+  const confirm = await screen.findByRole('alertdialog', { name: 'Remove Research to review?' })
+  await user.click(within(confirm).getByRole('button', { name: 'Remove workflow' }))
+  expect(await within(confirm).findByText('Wait for the active run to finish.')).toBeVisible()
   expect(screen.getByRole('link', { name: 'Research to review' })).toBeVisible()
   fail = false
-  await user.click(screen.getByRole('button', { name: 'Retry removing Research to review' }))
+  await user.click(within(confirm).getByRole('button', { name: 'Remove workflow' }))
   await waitFor(() => expect(screen.queryByTestId('workflow-card-workflow-content-pipeline')).not.toBeInTheDocument())
 })
