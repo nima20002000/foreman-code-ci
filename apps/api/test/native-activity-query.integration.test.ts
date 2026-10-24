@@ -125,11 +125,9 @@ describe.skipIf(!postgresEnabled)('native activity reads with retained PostgreSQ
   it('uses the newest activity instant despite out-of-order timestamps without scanning history', async () => {
     await database.pool.query(`insert into ci_runs(id,workspace_id,group_id,state,record)
       values('00000000-0000-4000-8000-000000000001',$1,'00000000-0000-4000-8000-000000000002','passed',
-        jsonb_build_object('workspaceId',$1::text,'initiator',jsonb_build_object('executionId',$2::text),
+        jsonb_build_object('initiator',jsonb_build_object('executionId',$2::text),
           'queuedAt',$3::text,'finishedAt','2026-10-01T00:00:01Z'))`,
     [fixture.run.workspaceId, executionId, occurredAt])
-    await database.pool.query('update run_activity set occurred_at=$1::timestamptz where harness_execution_id=$2',
-      [occurredAt, executionId])
     await database.pool.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
       select $1,'backend','native',$2,$3::timestamptz,'{}'::jsonb from generate_series(1,6000)`,
     [fixture.run.id, executionId, occurredAt])

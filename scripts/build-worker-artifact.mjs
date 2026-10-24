@@ -1,3 +1,5 @@
+import { verificationRuntimeFiles, verificationArtifactPath } from '../packages/verification-runner/runtime-files.mjs';
+import { INSTALLATION_NAMES, standaloneInstallationSource } from '../packages/contracts/src/installationNames.mjs'
 import { readProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
 import { inspectQuotaHelperAbi } from './quota-helper-abi.mjs';
 import { copyBuiltBrowserRuntime } from '../apps/worker/src/browserRuntimeInstall.mjs';
@@ -41,7 +43,7 @@ function snapshotSource(path) {
 async function requirePinnedSource(path) {
   if (!snapshotSource(path).equals(await readFile(join(root, path)))) throw new Error(`Uncommitted build control input: ${path}`);
 }
-for (const path of ['scripts/build-worker-artifact.mjs', 'scripts/worker-artifact-files.mjs', 'packages/contracts/package.json', 'apps/api/package.json', 'apps/ci/package.json', 'packages/contracts/src/productEnvironment.mjs', 'apps/worker/package.json', 'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml']) await requirePinnedSource(path);
+for (const path of ['scripts/build-worker-artifact.mjs', 'scripts/worker-artifact-files.mjs', 'packages/contracts/package.json', 'apps/api/package.json', 'apps/ci/package.json', 'packages/contracts/src/productEnvironment.mjs', 'packages/contracts/src/installationNames.mjs', 'apps/worker/package.json', 'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml']) await requirePinnedSource(path);
 await requirePinnedSource('scripts/quota-helper-abi.mjs');
 await requirePinnedSource('scripts/worker-snapshot-policy.mjs');
 await requirePinnedSource('apps/worker/artifacts/licenses/cfworker.txt');
@@ -94,7 +96,7 @@ for (const entry of [...Object.values(built.metafile.outputs), ...Object.values(
 }
 for (const name of ['installation.mjs', 'diagnostics.mjs', 'service.mjs', 'install-cli.mjs', 'runtime.mjs', 'setup.mjs', 'companion.mjs', 'setupInput.mjs', 'companionServer.mjs', 'companionService.mjs', 'companionLauncher.mjs', 'harnessPath.mjs',
   'updateSupervisor.mjs', 'update-supervisor-cli.mjs', 'updateOperation.mjs', 'ciSmokeTiming.mjs', 'browserRuntimeInstall.mjs', 'browserRuntime.mjs', 'browserDeviceExtension.mjs']) {
-  await writeFile(join(output, 'src', name), snapshotSource(`apps/worker/src/${name}`), { mode: 0o600 });
+  await writeFile(join(output, 'src', name), standaloneInstallationSource(snapshotSource(`apps/worker/src/${name}`).toString('utf8')), { mode: 0o600 });
 }
 await mkdir(join(output, 'artifacts'));
 const quotaQuerySource = 'apps/worker/artifacts/job-quota-query.c';
@@ -104,28 +106,23 @@ execFileSync('cc', ['-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', quotaQuery
   '-o', join(output, 'artifacts/job-quota-query')], { stdio: ['ignore', 'pipe', 'pipe'] });
 await inspectQuotaHelperAbi(join(output, 'artifacts/job-quota-query'), target);
 
-await writeFile(join(output, 'artifacts/graphql.svg'), snapshotSource('apps/web/public/graphql.svg'), { mode: 0o600 });
-await writeFile(join(output, 'artifacts/graphql-mcp.mjs'), snapshotSource('scripts/graphql-mcp.mjs'), { mode: 0o600 });
-await writeFile(join(output, 'artifacts/graphql-worker.service.in'), snapshotSource('apps/worker/artifacts/graphql-worker.service.in'), { mode: 0o600 });
+await writeFile(join(output, INSTALLATION_NAMES.artifacts.icon), snapshotSource('apps/web/public/graphql.svg'), { mode: 0o600 });
+await writeFile(join(output, INSTALLATION_NAMES.artifacts.mcpLauncher), standaloneInstallationSource(snapshotSource('scripts/foreman-mcp.mjs').toString('utf8')), { mode: 0o600 });
+await writeFile(join(output, INSTALLATION_NAMES.artifacts.workerService), snapshotSource('apps/worker/artifacts/foreman-worker.service.in'), { mode: 0o600 });
 await writeFile(join(output, 'artifacts/companion.html'), snapshotSource('apps/worker/artifacts/companion.html'), { mode: 0o600 });
 const ciRuntimeControls = ['Containerfile', 'corepack', 'context.mjs', 'seed-policy.mjs', 'verification-policy.mjs', 'verification-observation.mjs'];
 await mkdir(join(output, 'artifacts/ci-runtime'));
 for (const name of ciRuntimeControls) {
-  await writeFile(join(output, 'artifacts/ci-runtime', name), snapshotSource(`apps/worker/artifacts/ci-runtime/${name}`),
+  await writeFile(join(output, 'artifacts/ci-runtime', name), standaloneInstallationSource(snapshotSource(`apps/worker/artifacts/ci-runtime/${name}`).toString('utf8')),
     { mode: name === 'corepack' ? 0o700 : 0o600 });
 }
 const committedScripts = new Set(execFileSync('git', ['ls-tree', '-r', '--name-only', commit, '--', ...verificationScripts],
   { cwd: root, encoding: 'utf8' }).trim().split('\n'));
 if (verificationScripts.every(path => committedScripts.has(path))) {
-  await mkdir(join(output, 'artifacts/verification'));
-  for (const path of verificationScripts) {
-    await writeFile(join(output, 'artifacts/verification', path.slice('scripts/'.length)), snapshotSource(path), { mode: 0o600 });
-  }
-  for (const path of ['apps/worker/src/diagnostics.mjs', 'packages/contracts/src/verificationEnvironment.mjs',
-    'packages/contracts/src/integrationScheduling.mjs', 'packages/ci-protocol/src/testResults.mjs']) {
-    const destination = join(output, 'artifacts', path);
+  for (const path of verificationRuntimeFiles) {
+    const destination = join(output, 'artifacts', verificationArtifactPath(path));
     await mkdir(dirname(destination), { recursive: true });
-    await writeFile(destination, snapshotSource(path), { mode: 0o600 });
+    await writeFile(destination, standaloneInstallationSource(snapshotSource(path).toString('utf8')), { mode: 0o600 });
   }
 }
 await writeFile(join(output, 'install'), snapshotSource('apps/worker/artifacts/install.sh.in').toString('utf8').replaceAll('@NODE_VERSION@', target.node), { mode: 0o700 });
