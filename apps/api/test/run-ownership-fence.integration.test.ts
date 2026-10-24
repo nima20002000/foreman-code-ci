@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
+import { beforeGraphCommit, withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
@@ -47,6 +47,20 @@ describe.skipIf(!postgresEnabled)('Run ownership database fence', () => {
     await owner.client.query('select pg_advisory_unlock($1,hashtext($2))', [810_002, owner.runId])
     await expect(owner.oneShotConnection().transaction(sql => owner.readOneShotFence(sql)))
       .rejects.toMatchObject({ code: 'RUN_OWNERSHIP_LOST' })
+  })
+
+  it('rolls back when a finalizer releases the owner lock after earlier fence checks', async () => {
+    const owner = await acquire()
+    await owner.oneShotConnection().transaction(sql => sql.query('create temporary table fence_values(value integer)'))
+    await expect(owner.oneShotConnection().transaction(async sql => {
+      await owner.readOneShotFence(sql)
+      await sql.query('insert into fence_values values(1)')
+      beforeGraphCommit(sql, async () => { await owner.readOneShotFence(sql) })
+      beforeGraphCommit(sql, async () => {
+        await sql.query('select pg_advisory_unlock($1,hashtext($2))', [810_002, owner.runId])
+      })
+    })).rejects.toMatchObject({ code: 'RUN_OWNERSHIP_LOST' })
+    expect((await owner.client.query('select value from fence_values')).rows).toEqual([])
   })
 
   it('reuses read plans while returning newly committed values and new parameters', async () => {
