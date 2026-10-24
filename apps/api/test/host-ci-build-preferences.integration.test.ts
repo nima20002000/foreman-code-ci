@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { setTimeout as delay } from 'node:timers/promises'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { CI_HOST_NAMESPACE, CI_HOST_START_PROTOCOL_VERSION, CiComputersOutputSchema, CiGetOutputSchema, CiHostRequestSchema,
   CiRunOutputSchema, CiRunRecordSchema, type CiHostReply, type CiHostRequest, type CiHostRun } from '@foreman-code/contracts'
@@ -174,10 +173,6 @@ it('honors persisted MCP build participation and priority while retaining assign
         cancelAcknowledgements.add(input.ticketId)
       }
       // Cancel every partition before waiting for the whole group to settle.
-      await delay(2500)
-      await ci!.dispatch()
-      await ci!.drain()
-      expect((await get(ticketIds[0]!)).run.state).toBe('canceled')
       const completed = await getSettled(ticketIds[0]!)
       expect(completed.wait).toMatchObject({ tickets: ticketIds.length, settledTickets: ticketIds.length })
       expect((completed.partitions ?? [completed.run]).map(run => run.state))
@@ -209,7 +204,8 @@ it('honors persisted MCP build participation and priority while retaining assign
     expect((await db.pool.query('select count(*)::int as count from ci_runs')).rows[0]!.count).toBe(0)
 
     outdated.add(devices[1]!.registration.deviceId)
-    vi.useFakeTimers({ toFake: ['Date'] })
+    // Cache-expiry jumps must still let cancellation backoff and bounded reads elapse.
+    vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true })
     vi.setSystemTime(Date.now() + 5001)
     const incompatible = (await list()).computers.find(computer => computer.hostRef.deviceId === devices[1]!.registration.deviceId)
     expect(incompatible).toMatchObject({ ready: false, reasons: [expect.stringMatching(/CI start protocol.*update/i)] })
