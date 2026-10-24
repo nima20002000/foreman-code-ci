@@ -109,17 +109,15 @@ describe('exact Execution chat public surface', () => {
   it('preserves an unsent message when the execution completes into its Agent follow-up', async () => {
     const state = endpoints()
     const context = { ...target.agent, runId: target.execution.runId }
-    const selection = { workspaceId: context.workspaceId, workflowId: context.workflowId,
-      workflowNodeId: context.workflowNodeId, runId: context.runId, executionId: target.execution.executionId }
     const followUp = agentChatFixtureFor(agentChatFixtures.idleAfterCompletion, context)
     if (!followUp.conversation || followUp.conversation.origin.kind !== 'run_execution') throw new Error('Expected Run conversation')
     followUp.conversation.origin.executionId = target.execution.executionId
     const mock = createAgentChatMock(followUp)
     server.use(...mock.handlers, http.get('*/api/workspaces/:workspaceId/agent-chat/workflows/:workflowId/runs/:runId/nodes/:workflowNodeId', () =>
-      HttpResponse.json({ kind: 'selected', selection,
+      HttpResponse.json({ kind: 'selected', selection: { ...context, executionId: target.execution.executionId },
         key: { ...context, executionId: target.execution.executionId, conversationId: followUp.conversation!.id }, state: followUp })))
     mount(new NativeSource(), { followUp: retainedInputs => <AgentConversation retainedInputs={retainedInputs} context={context} name="Ava"
-      selection={selection} /> })
+      selection={{ ...context, executionId: target.execution.executionId }} /> })
     const input = await screen.findByRole('textbox', { name: 'Message' })
     fireEvent.change(input, { target: { value: 'Keep my unsent question' } })
     state.value = { ...state.value, state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } }
