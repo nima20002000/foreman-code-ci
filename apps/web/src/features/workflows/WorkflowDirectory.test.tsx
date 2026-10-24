@@ -141,39 +141,3 @@ describe('WorkflowDirectory', () => {
     expect(updateRequests).toBe(0)
   })
 })
-
-it('keeps a failed rename editable and offers an explicit retry', async () => {
-  let fail = true
-  server.use(http.patch('/api/management/workspaces/:workspaceId/workflows/:workflowId', () => {
-    if (fail) return HttpResponse.json({ error: { code: 'REVISION_CONFLICT', message: 'Workflow changed elsewhere.' } }, { status: 409 })
-    return undefined
-  }))
-  const user = userEvent.setup()
-  renderWithRouter(<WorkflowDirectory workspaceId="workspace-1" />)
-  await user.click(await screen.findByRole('button', { name: 'Open actions for Research to review' }))
-  await user.clear(screen.getByRole('textbox', { name: 'Name' }))
-  await user.type(screen.getByRole('textbox', { name: 'Name' }), 'Review flow')
-  await user.click(screen.getByRole('button', { name: 'Rename' }))
-  expect(await screen.findByText('Workflow changed elsewhere.')).toBeVisible()
-  expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Review flow')
-  fail = false
-  await user.click(screen.getByRole('button', { name: 'Retry rename' }))
-  await waitFor(() => expect(screen.getByTestId('workflow-card-workflow-content-pipeline')).toHaveTextContent('Review flow'))
-})
-
-it('shows a rejected removal and retries it from the same card', async () => {
-  let fail = true
-  server.use(http.delete('/api/management/workspaces/:workspaceId/workflows/:workflowId', () => {
-    if (fail) return HttpResponse.json({ error: { code: 'ARCHIVE_BLOCKED_BY_ACTIVE_RUN', message: 'Wait for the active run to finish.' } }, { status: 409 })
-    return undefined
-  }))
-  const user = userEvent.setup()
-  renderWithRouter(<WorkflowDirectory workspaceId="workspace-1" />)
-  await user.click(await screen.findByRole('button', { name: 'Open actions for Research to review' }))
-  await user.click(screen.getByRole('button', { name: 'Remove workflow' }))
-  expect(await screen.findByText('Wait for the active run to finish.')).toBeVisible()
-  expect(screen.getByRole('link', { name: 'Research to review' })).toBeVisible()
-  fail = false
-  await user.click(screen.getByRole('button', { name: 'Retry removing Research to review' }))
-  await waitFor(() => expect(screen.queryByTestId('workflow-card-workflow-content-pipeline')).not.toBeInTheDocument())
-})

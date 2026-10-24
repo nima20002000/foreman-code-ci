@@ -4,13 +4,14 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../mocks/server'
 import { afterEach, expect, it, vi } from 'vitest'
-import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
+import { DEFAULT_AGENT_DEFAULTS, DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { queryKeys } from '../../shared/api/query'
 import { accountTarget, accountTargetInfo, observedAccount, workerAccountTarget } from '../provider-accounts/providerAccounts.fixtures'
 import { providerTargetsKey, providerAccountsKey } from '../provider-accounts'
 import { mockRuntimeIdentity } from '../../shared/mocks/handlers'
 import { useOperatorChatStore } from '../operator-chat'
 import { HarnessDefaultsSettings } from './HarnessDefaultsSettings'
+import { clearRevisionedFormPersistence } from './revisionedForm'
 import { savedClaudeConfiguration } from './claudeSettings.fixtures'
 
 vi.mock('./OperatorMcpStatus', () => ({ OperatorMcpStatus: ({ harness }: { harness: string }) => <span>Operator MCP for {harness}</span> }))
@@ -19,7 +20,7 @@ vi.mock('./ClaudePluginSummary', () => ({ ClaudePluginSummary: () => <p>Claude p
 vi.mock('./HarnessMcpManager', () => ({ HarnessMcpManager: () => <p>Native connections</p> }))
 
 const clients: QueryClient[] = []
-afterEach(() => { cleanup(); for (const client of clients.splice(0)) client.clear(); useOperatorChatStore.getState().reset() })
+afterEach(() => { cleanup(); for (const client of clients.splice(0)) client.clear(); clearRevisionedFormPersistence(); useOperatorChatStore.getState().reset() })
 function mount(props: Parameters<typeof HarnessDefaultsSettings>[0] = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } }); clients.push(client)
   client.setQueryData(['workbench', 'runtime-identity', 0], mockRuntimeIdentity)
@@ -134,4 +135,59 @@ it('uses discovered canonical targets for both account cards without placing con
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Claude account computer' }), JSON.stringify(accountTarget))
   expect(onAccountTargetChange).toHaveBeenCalledWith(accountTarget)
   expect(screen.getAllByRole('combobox', { name: /account computer$/ })).toHaveLength(2)
+})
+
+
+it.each([422, 503])('exposes recovery for an Operator default save rejected with HTTP %s', async status => {
+  const requests: unknown[] = []
+  server.use(
+    http.get('/api/management/settings/agents', () => HttpResponse.json({ revision: 3, versionId: null, value: DEFAULT_AGENT_DEFAULTS })),
+    http.put('/api/management/settings/agents', async ({ request }) => {
+      const input = await request.json() as { value: typeof DEFAULT_AGENT_DEFAULTS }; requests.push(input)
+      return requests.length === 1
+        ? HttpResponse.json({ error: { code: status === 503 ? 'UNAVAILABLE' : 'INVALID_INPUT', message: 'Default save failed' } }, { status })
+        : HttpResponse.json({ replayed: false, value: { revision: 4, versionId: null, value: input.value } })
+    }),
+  )
+  mount()
+  const card = screen.getByRole('button', { name: 'Edit Claude defaults' }).closest('.settings-choice') as HTMLElement
+  const toggle = within(card).getByRole('switch', { name: 'Operator default' })
+  await waitFor(() => expect(toggle).toBeEnabled())
+  await userEvent.click(toggle)
+  expect(await screen.findByText(/Operator default has unsaved changes/)).toBeVisible()
+  if (status === 422) {
+    expect(await screen.findByText(/Default save failed/)).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(toggle).not.toBeChecked()
+  } else {
+    expect(await screen.findByText(/Save not confirmed/)).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Save Operator default' }))
+    await waitFor(() => expect(requests).toHaveLength(2))
+    expect(requests[1]).toEqual(requests[0])
+    expect(await screen.findByText('Saved.')).toBeVisible()
+  }
+})
+
+
+it('opens Claude MCP configuration from a connection deep link', async () => {
+  mount({ selectedHarness: 'claude', section: 'connections' })
+  expect(await screen.findByRole('dialog', { name: 'Claude connections' })).toBeVisible()
+  expect(screen.getByRole('region', { name: 'Claude MCP configuration' })).toBeVisible()
+})
+
+it.each(['model', 'permissions', 'session', 'tools', 'workspace'] as const)('explains the supported destination of a %s preset deep link', async section => {
+  mount({ selectedHarness: 'claude', section })
+  const panel = await screen.findByRole('dialog', { name: `Claude ${section}` })
+  expect(within(panel).getByRole('button', { name: 'Edit Claude defaults with Operator' })).toBeVisible()
+})
+
+
+it('uses one global computer picker for both harness account lists', async () => {
+  const client = mount({ accountTarget: workerAccountTarget, onAccountTargetChange: vi.fn() })
+  await act(async () => { client.setQueryData(providerTargetsKey(), { targets: [accountTargetInfo(), accountTargetInfo(workerAccountTarget)] }) })
+  const picker = await screen.findByRole('combobox', { name: 'Account computer' })
+  expect(picker).toHaveValue(JSON.stringify(workerAccountTarget))
+  expect(screen.getAllByRole('combobox', { name: /account computer/i })).toHaveLength(1)
+  expect(screen.getByRole('region', { name: 'Codex accounts' }).contains(picker)).toBe(false)
+  expect(screen.getByRole('region', { name: 'Claude accounts' }).contains(picker)).toBe(false)
 })
