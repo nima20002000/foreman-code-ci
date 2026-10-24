@@ -14,7 +14,7 @@ import { PostgresRepeatReviewerBindings } from '../../src/modules/interactions/r
 import { deliverApproval } from '../../src/modules/interactions/current/service.js'
 import { object } from '../../src/modules/harnesses/codexStdioTransport.js'
 import { RepeatRunRepository } from '../../src/modules/runs/repeatPostgres.js'
-import { ApprovalPostgresSaver } from '../../src/modules/runs/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
 import { codexApprovalRuntime } from './codexApprovalRuntime.js'
 import { approvalResponse } from './approvalResponse.js'
 import { continuationAt } from './continuationCuts.js'

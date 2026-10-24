@@ -2,8 +2,8 @@ import type { JobAuthoringChoicesRecord } from '@foreman-code/contracts/job-veri
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { join } from 'node:path'
 import type pg from 'pg'
-import type { WorkspaceRootPolicyPort } from '../sources/index.js'
-import type { InstalledSourceExecutionHosts } from '../sources/index.js'
+import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
+import type { InstalledSourceExecutionHosts } from '../sources/executionHosts.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
   ApprovedSourceSchema,
@@ -29,7 +29,7 @@ import { JOB_VERIFICATION_OWNER_CONFIGURATION } from '@foreman-code/contracts/jo
 import type { JobPlacementIntent } from '@foreman-code/contracts/job-admission'
 import type { JobComputerCandidate, JobComputerDiscovery } from './computerSelection.js'
 import { readJobRuntimeProfileVersion } from './runtimeProfileVersion.js'
-import type { PostgresSourceService } from '../sources/index.js'
+import type { PostgresSourceService } from '../sources/service.js'
 import { sourceMaterializationBytes } from '../sources/footprint.js'
 import { sourceBindingHash, sourceMaterializationDigest } from '../sources/bindingHash.js'
 import { sourceSha256 } from '../sources/manifest.js'

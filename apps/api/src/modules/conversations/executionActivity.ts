@@ -7,7 +7,7 @@ import {
 } from '@foreman-code/contracts/agent-chat'
 import { z } from 'zod'
 import { nativePersistenceRedactor } from '../interactions/index.js'
-import { operatorActivity } from '../harnesses/index.js'
+import { operatorActivity } from './operatorActivity.js'
 import { executionItemsSql } from './executionActivitySql.js'
 import { DomainError } from '../errors.js'
 

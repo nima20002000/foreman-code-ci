@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CODEX_UNSUPPORTED_INTERACTION_ERRORS, type NativeHarnessEvent } from '@foreman-code/contracts'
-import { currentOperatorHistory, operatorActivity } from '../src/modules/harnesses/index.js'
+import { currentOperatorHistory, operatorActivity } from '../src/modules/conversations/operatorActivity.js'
 import { nativePersistenceRedactor } from '../src/modules/interactions/nativePersistence.js'
 import { knownNativeActivity } from '../src/modules/conversations/knownNativeActivity.js'
 

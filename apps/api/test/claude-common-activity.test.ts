@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { NativeHarnessEvent, NativeSessionReference } from '@foreman-code/contracts'
-import { operatorActivity, currentOperatorHistory } from '../src/modules/harnesses/index.js'
+import { operatorActivity, currentOperatorHistory } from '../src/modules/conversations/operatorActivity.js'
 import { nativeActivityFence } from '../src/modules/conversations/nativeActivityFence.js'
 import { normalizeNativeTextOperations } from '../src/modules/conversations/nativeTextStream.js'
 

@@ -8,6 +8,7 @@ import { HarnessExecutionSchema, NativeSessionReferenceSchema } from '@foreman-c
 import { AgentChatContextSchema, AgentChatStateSchema, SendAgentChatMessageResponseSchema, type AgentChatState } from '@foreman-code/contracts/agent-chat'
 import { WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { readNativeSource } from './helpers/agentChatNativeSource.js'
 
@@ -25,9 +26,7 @@ function required(name: string): string {
 const identifier = (value: string) => `"${value.replaceAll('"', '""')}"`
 
 async function protectedState(pool: pg.Pool, schema: string, checkpointSchema: string): Promise<string> {
-  const client = await pool.connect()
-  try {
-    await client.query('begin isolation level repeatable read read only')
+  return withTransaction(pool, async client => {
     const tables = (await client.query<{ schema: string; name: string }>(`select n.nspname as schema,c.relname as name
       from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where n.nspname=any($1::text[]) and c.relkind in ('r','p') order by n.nspname,c.relname`, [[schema, checkpointSchema]])).rows
@@ -43,12 +42,8 @@ async function protectedState(pool: pg.Pool, schema: string, checkpointSchema: s
       const rows = (await client.query<{ row: unknown }>(`select to_jsonb(t) as row from ${identifier(table.schema)}.${identifier(table.name)} t`)).rows
       state[`${table.schema}.${table.name}`] = rows.map((row) => canonicalJson(row.row)).sort()
     }
-    await client.query('commit')
     return canonicalJson(state)
-  } finally {
-    await client.query('rollback').catch(() => undefined)
-    client.release()
-  }
+  }, { isolation: 'repeatable read', readOnly: true })
 }
 
 describe.skipIf(!enabled)('F4 A-R21 actual terminal-Run to Agent-chat immutability', () => {
