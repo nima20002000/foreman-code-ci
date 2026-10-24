@@ -218,3 +218,15 @@ it.each([['failed', 'Failed'], ['completed', 'Completed'], ['unknown', 'Delivery
     expect(sends).toBe(1)
   },
 )
+
+it('renders the Run browser preparation reason in Agent chat while no native turn exists', async () => {
+  const state = structuredClone(agentChatFixtures.empty)
+  state.context.runId = 'browser-preparation-run'
+  state.availability = { canSend: false, reason: 'run_active' }
+  server.use(...createAgentChatMock(state).handlers)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  clients.push(client)
+  const reason = 'Waiting for the browser profile on Worker A: Computer offline.'
+  render(<QueryClientProvider client={client}><AgentConversation name="Coder" context={state.context} runLabel={reason} /></QueryClientProvider>)
+  expect(await screen.findByText(reason)).toBeVisible()
+})
