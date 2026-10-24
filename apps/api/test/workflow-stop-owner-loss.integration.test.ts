@@ -208,7 +208,7 @@ it('keeps a Run fenced while another live owner holds it', async () => {
   }
 }, 90_000)
 
-it('joins a local engine drive that takes the Run owner between Stop cleanup and verification', async () => {
+it.each(['after', 'during'] as const)('joins a local engine drive that finishes %s Stop owner acquisition', async completion => {
   const f = await runtime()
   let client: Awaited<ReturnType<typeof operator>> | undefined
   let drive: Promise<void> | undefined
@@ -229,7 +229,11 @@ it('joins a local engine drive that takes the Run owner between Stop cleanup and
     const acquire = f.runs.acquireOwnership.bind(f.runs)
     vi.spyOn(f.runs, 'acquireOwnership').mockImplementation(async (...args) => {
       const owner = await acquire(...args)
-      if (!owner) open()
+      if (!owner) {
+        open()
+        // The failed try-lock connection can finish closing after the drive releases its owner.
+        if (completion === 'during') await drive
+      }
       return owner
     })
     const cancel = f.engine.cancel.bind(f.engine)
