@@ -216,12 +216,14 @@ export function useAgentChat(inputContext: AgentChatContext,
       return true
     } catch (error) { release(); setLocalError(errorMessage(error, 'The command could not be prepared.')); return false }
   }
-  const blocked = (action: ManagementAction) => {
+  const blocked = (action: ManagementAction, newConversation = false) => {
     if (!online) return 'You are offline. Your draft is kept.'
     if (!permits(action)) return 'Your access does not allow this action for this Agent and Run.'
     if (recoveryError) return recoveryError
     if (!state || query.isError) return 'Refresh this conversation before sending a command.'
-    if (state.availability.reason === 'run_active' || state.sessionState === 'unavailable') {
+    const resettingMissing = newConversation && (state.availability.reason === 'native_session_missing'
+      || state.availability.reason === 'harness_unavailable')
+    if (state.availability.reason === 'run_active' || state.sessionState === 'unavailable' && !resettingMissing) {
       return state.availability.message ?? 'This selection is read only.'
     }
     if (pending) return 'A command is being sent.'

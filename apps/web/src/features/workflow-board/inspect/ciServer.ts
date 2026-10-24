@@ -1,4 +1,4 @@
-import { CiCancelOutputSchema, CiListOutputSchema, CiLogsOutputSchema, CiTestsOutputSchema,
+import { CiListOutputSchema, CiLogsOutputSchema, CiTestsOutputSchema,
   type CiActivity, type OperatorCiListInput, type CiPlacement, type CiRunJob, type CiTestStatus } from '@foreman-code/contracts'
 import { apiClient, type RequestOptions } from '../../../shared/api/client'
 import type { AgentNodeState } from '../../../shared/ui/nocturne'
@@ -16,9 +16,6 @@ export const runCiApi = {
   tests: (input: { workspaceId: string; ticketId: string; status?: readonly CiTestStatus[] }, options?: RequestOptions) =>
     apiClient.request(`${ciPath(input.workspaceId)}/${encodeURIComponent(input.ticketId)}/tests${input.status
       ? `?${new URLSearchParams({ status: input.status.join(',') })}` : ''}`, CiTestsOutputSchema, options),
-  cancel: (input: { workspaceId: string; ticketId: string; commandId: string }) =>
-    apiClient.request(`${ciPath(input.workspaceId)}/${encodeURIComponent(input.ticketId)}?${new URLSearchParams({ commandId: input.commandId })}`,
-      CiCancelOutputSchema, { method: 'DELETE' }),
   logTail: (input: { workspaceId: string; ticketId: string }, options?: RequestOptions) =>
     apiClient.request(`${ciPath(input.workspaceId)}/${encodeURIComponent(input.ticketId)}/logs?maxBytes=32768`,
       CiLogsOutputSchema, options),
