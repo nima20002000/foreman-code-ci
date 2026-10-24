@@ -1,4 +1,6 @@
 import { useId, useRef, useState } from 'react'
+import { useRouter } from '@tanstack/react-router'
+import { OperatorChatNavigation } from './OperatorChatNavigation'
 import { useSessionControls, ChatAttachmentBoundary } from '../chat-core'
 import { useFileDrop } from '../../shared/ui/useFileDrop'
 import { Alert, Button } from '../../shared/ui/nocturne'
@@ -34,7 +36,8 @@ import { useMovableWindow, windowResizeEdges } from '../../shared/ui/useMovableW
 import './operatorChat.css'
 
 export function OperatorChat(props: { settingsWarning?: string } = {}) {
-  return <ChatAttachmentBoundary><OperatorChatContent {...props} /></ChatAttachmentBoundary>
+  const router = useRouter({ warn: false })
+  return <ChatAttachmentBoundary>{router ? <OperatorChatNavigation /> : null}<OperatorChatContent {...props} /></ChatAttachmentBoundary>
 }
 
 function OperatorChatContent({ settingsWarning }: { settingsWarning?: string }) {

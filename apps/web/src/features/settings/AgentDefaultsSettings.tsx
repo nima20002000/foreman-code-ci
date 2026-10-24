@@ -1,6 +1,6 @@
 import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { useState } from 'react'
-import { agentTemplateForRole, nativeToolsSummary, memoryBoardTools, newAgentForemanTools, type AgentDefaults } from '@foreman-code/contracts'
+import { agentTemplateForRole, nativeToolsSummary, memoryBoardTools, newAgentForemanTools, activeAgentDefaults, type RecordedAgentDefaults } from '@foreman-code/contracts'
 import type { SettingsAgentRole } from '@foreman-code/contracts/management'
 import { ErrorState, LoadingState, Switch } from '../../shared/ui/nocturne'
 import { useAgentDefaultsQuery, useUpdateAgentDefaultsMutation } from '../../shared/api/query'
@@ -10,13 +10,13 @@ import { AgentRoleSettings } from './AgentRoleSettings'
 import { PromptSettings } from './PromptSettings'
 
 /** Hiding the chat would also hide the way to ask for it back, so this one setting stays a direct switch. */
-function OperatorChatVisibility({ value, revision }: { value: AgentDefaults; revision: number }) {
+function OperatorChatVisibility({ value, revision }: { value: RecordedAgentDefaults; revision: number }) {
   const save = useUpdateAgentDefaultsMutation()
   const [commandId, setCommandId] = useState(() => crypto.randomUUID())
   return <>
     <Switch label="Show Operator chat" checked={value.operator.uiEnabled} disabled={save.isPending}
       onChange={(event) => save.mutate({ commandId, expectedRevision: revision,
-        value: { ...value, operator: { ...value.operator, uiEnabled: event.target.checked } } },
+        value: activeAgentDefaults({ ...value, operator: { ...value.operator, uiEnabled: event.target.checked } }) },
       { onSuccess: () => setCommandId(crypto.randomUUID()) })} />
     {save.isError ? <small className="operator-mcp-error" role="alert">{save.error.message}</small> : null}
   </>

@@ -2,7 +2,7 @@ import { WorkflowWorktreeSettingsSchema } from '../worktreeSettings.js'
 import { z } from 'zod'
 import { CurrentCommonGraphOperationSchema } from '../management/index.js'
 import { WorkflowRelationshipSchema, WorkflowChoiceSchema } from './workflow.js'
-import { CurrentWorkflowNodeSchema } from './currentWorkflowFoundation.js'
+import { AuthoringCurrentWorkflowNodeSchema } from './workflowShape.js'
 import { RepeatPlanV1Schema } from './repeat.js'
 import {
   CurrentEditIntentSchema, CurrentEditReadResultSchema, CurrentEditStageInputSchema, CurrentEditReadInputSchema,
@@ -12,7 +12,7 @@ import {
 /** Board-local authoring vocabulary. The Board diffs its local V3 graph into these
  * operations; Agent operations call the Agent service and the complete graph is
  * saved through the shared current definition writer. There is no server draft. */
-const WorkflowNodeCurrentSchema = CurrentWorkflowNodeSchema
+const WorkflowNodeCurrentSchema = AuthoringCurrentWorkflowNodeSchema
 export type WorkflowNodeCurrent = z.infer<typeof WorkflowNodeCurrentSchema>
 export const GraphDraftOperationCurrentSchema = z.union([
   z.object({ type: z.literal('workflow.set_worktree'), worktree: WorkflowWorktreeSettingsSchema.nullable() }).strict(),

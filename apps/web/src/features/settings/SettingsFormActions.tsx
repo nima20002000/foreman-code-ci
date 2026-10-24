@@ -54,18 +54,28 @@ export function SettingsFormActions({ form, onSave, saveLabel = 'Save defaults',
   const subject = saveLabel.replace(/^Save /, '')
   const subjectTitle = subject.charAt(0).toUpperCase() + subject.slice(1)
   const toasts = useContext(ToastContext)
+  const warning = useRef<string | undefined>(undefined)
+  useEffect(() => () => { if (warning.current) toasts?.dismiss(warning.current) }, [toasts])
   const previous = useRef({ revision: form.savedRevision, error: form.error, uncertain: form.uncertain,
     conflicted: form.conflicted, saving: form.isSaving })
   useEffect(() => {
     const before = previous.current
     if (toasts) {
-      if (form.uncertain && !before.uncertain) toasts.notify({ tone: 'warning', title: 'Save not confirmed',
+      const notifyWarning = (input: Parameters<typeof toasts.notify>[0]) => {
+        if (warning.current) toasts.dismiss(warning.current)
+        warning.current = toasts.notify(input)
+      }
+      if (!form.isSaving && !form.uncertain && !form.conflicted && !form.error && warning.current) {
+        toasts.dismiss(warning.current)
+        warning.current = undefined
+      }
+      if (form.uncertain && !before.uncertain) notifyWarning({ tone: 'warning', title: 'Save not confirmed',
         description: form.checking ? 'Checking again by itself until the app answers. Your edits are kept.'
           : 'Retry the original save to learn whether it committed.' })
-      else if (form.conflicted && !before.conflicted) toasts.notify({ tone: 'warning', title: `${subjectTitle} changed elsewhere`,
+      else if (form.conflicted && !before.conflicted) notifyWarning({ tone: 'warning', title: `${subjectTitle} changed elsewhere`,
         description: 'Review the changes before saving again.' })
       else if (form.error && !form.conflicted && (form.error !== before.error || before.saving)) {
-        toasts.notify({ tone: 'danger', title: `Could not save ${subject}`, description: form.error })
+        notifyWarning({ tone: 'danger', title: `Could not save ${subject}`, description: form.error })
       } else if (form.savedRevision !== undefined && form.savedRevision !== before.revision) {
         toasts.notify({ tone: 'success', title: `${subjectTitle} saved`,
           ...(form.isDirty ? { description: 'Newer edits are still unsaved.' } : {}) })
@@ -77,8 +87,8 @@ export function SettingsFormActions({ form, onSave, saveLabel = 'Save defaults',
   if (!canSave) return null
   return <footer className="settings-save-actions">
     {extra ? <div className="settings-footer-options">{extra}</div> : null}
-    {form.isDirty && !form.conflicted ? <Button variant="ghost" disabled={!form.isDirty || form.isSaving || form.uncertain} onClick={form.reset}>Discard</Button> : null}
-    <Button variant="primary" aria-label={saveLabel} loading={form.isSaving} loadingLabel="Saving…" disabled={(!form.isDirty && !form.uncertain) || (form.conflicted && !form.uncertain)} onClick={save}>
+    <Button variant="ghost" disabled={!form.isDirty || form.conflicted || form.isSaving || form.uncertain} onClick={form.reset}>Discard</Button>
+    <Button variant="primary" aria-label={saveLabel} loading={form.isSaving} loadingLabel="Saving…" widthLabel="Retry original save" disabled={(!form.isDirty && !form.uncertain) || (form.conflicted && !form.uncertain)} onClick={save}>
       {form.uncertain ? 'Retry original save' : 'Save'}
     </Button>
   </footer>

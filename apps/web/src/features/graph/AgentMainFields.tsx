@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import {
-  AgentEffortSchema, ClaudeEffortSchema, changeCodexSandbox, effectiveForemanTools, memoryBoardTools, ForemanAgentToolSchema,
-  type ForemanAgentTool, type ForemanToolOverride, type HarnessConfiguration, type RecordedHarnessConfiguration, type WorkflowAgentProductRole,
+  AgentEffortSchema, ClaudeEffortSchema, changeCodexSandbox, effectiveForemanTools, memoryBoardTools, ForemanAgentToolSchema, activeForemanTools, activeForemanToolOverride,
+  type ForemanAgentTool, type ForemanToolOverride, type RecordedForemanToolOverride, type HarnessConfiguration, type RecordedHarnessConfiguration, type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 import { Combobox, Select, Switch } from '../../shared/ui/nocturne'
 import { useProviderHarnessModels } from '../provider-accounts'
@@ -75,10 +75,11 @@ function EditableAgentHarnessRows({ value, onChange, issues = [], accountHost }:
 const memoryLabels = { none: 'Off', read: 'Read', write: 'Read and write', custom: 'Custom' } as const
 
 /** Memory board access for this node, stored as the node's change to the Agent's default tools. */
-export function AgentMemoryRow({ role, defaults, override, readOnly, onChange }: {
-  role: WorkflowAgentProductRole; defaults: readonly ForemanAgentTool[] | undefined; override: ForemanToolOverride | undefined
+export function AgentMemoryRow({ role, defaults: recordedDefaults, override: recordedOverride, readOnly, onChange }: {
+  role: WorkflowAgentProductRole; defaults: readonly string[] | undefined; override: RecordedForemanToolOverride | undefined
   readOnly: boolean; onChange(defaults: ForemanAgentTool[] | undefined, override: ForemanToolOverride | undefined): void
 }) {
+  const defaults = recordedDefaults && activeForemanTools(recordedDefaults), override = activeForemanToolOverride(recordedOverride)
   const memoryTools: ForemanAgentTool[] = memoryBoardTools('write')
   const agentDefault = effectiveForemanTools(role, defaults, undefined, false, memoryTools)
   const changed = Boolean(override?.add.some(tool => memoryTools.includes(tool)) || override?.remove.some(tool => memoryTools.includes(tool)))

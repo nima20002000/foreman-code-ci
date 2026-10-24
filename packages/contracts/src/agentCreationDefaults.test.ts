@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { AgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS, agentTemplateForRole } from './index.js'
+import { AgentDefaultsSchema, RecordedAgentDefaultsSchema, activeAgentDefaults, DEFAULT_AGENT_DEFAULTS, agentTemplateForRole } from './index.js'
 import { effectiveForemanTools, foremanRoleTools, newAgentForemanTools } from './foremanMcpTools.js'
 import { memoryBoardTools } from './collaborationTools.js'
+import { AgentDefaultsUpdateInputSchema } from './management/index.js'
 
 describe('new Agent memory defaults and preserved saved choices', () => {
+  it('does not accept retired tool names in new role defaults', () => {
+    const value = { ...DEFAULT_AGENT_DEFAULTS, coder: { ...DEFAULT_AGENT_DEFAULTS.coder,
+      graphqlTools: ['workflow_chat_read', 'workflow_chat_post'] } }
+    expect(AgentDefaultsUpdateInputSchema.safeParse({ value }).success).toBe(false)
+    expect(RecordedAgentDefaultsSchema.parse(value)).toEqual(value)
+    expect(activeAgentDefaults(value).coder.graphqlTools).toEqual([])
+    expect(agentTemplateForRole(value, 'coder').graphqlTools).toEqual([])
+    expect(value.coder.graphqlTools).toEqual(['workflow_chat_read', 'workflow_chat_post'])
+  })
   it.each(['master', 'orchestrator', 'coder'] as const)('copies the %s memory default only on explicit creation', role => {
     const access = 'write'
     expect(newAgentForemanTools(role)).toEqual([...foremanRoleTools(role), ...memoryBoardTools(access)])

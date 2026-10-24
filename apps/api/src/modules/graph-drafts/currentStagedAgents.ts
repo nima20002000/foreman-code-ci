@@ -2,7 +2,7 @@ import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type pg from 'pg'
 import { AgentSchema, AgentConfigurationVersionSchema, agentTemplateForRole, newAgentForemanTools, projectHarnessEffort } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { type CurrentEditSaveInput, sameWorkflowValue } from '@foreman-code/contracts/current'
+import { type CurrentEditSaveInput, type CurrentEditIntent, sameWorkflowValue } from '@foreman-code/contracts/current'
 import { requireAuthorization } from '../access/index.js'
 import { DomainError } from '../errors.js'
 import { configurationInput, lockAgentConfigurations, pinnedConfigurationContent } from '../workspaces/index.js'
@@ -12,7 +12,7 @@ import type { ProviderAccountConfigurationService } from '../harnesses/index.js'
 import { readAgentDefaultsSetting } from '../settings/index.js'
 import { sha256Hex } from '../../shared/hash.js'
 
-export function authorizeStagedAgents(principal: ManagementPrincipal, input: Pick<CurrentEditSaveInput, 'workspaceId' | 'stagedAgents'>) {
+export function authorizeStagedAgents(principal: ManagementPrincipal, input: Pick<CurrentEditIntent['saveInput'], 'workspaceId' | 'stagedAgents'>) {
   for (const item of input.stagedAgents ?? []) {
     requireAuthorization(principal, item.baseRevision === null ? 'agents:create' : 'agents:update', { workspaceId: input.workspaceId })
   }

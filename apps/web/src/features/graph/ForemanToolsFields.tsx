@@ -1,8 +1,8 @@
 import { MemoryBoardAccessField } from '../memory-boards'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import {
-  COLLABORATION_AGENT_TOOLS, FOREMAN_AGENT_TOOLS, ForemanAgentToolSchema, foremanRoleTools, effectiveForemanTools, memoryBoardTools,
-  type ForemanAgentTool, type ForemanToolOverride, type WorkflowAgentProductRole,
+  COLLABORATION_AGENT_TOOLS, FOREMAN_AGENT_TOOLS, ForemanAgentToolSchema, foremanRoleTools, effectiveForemanTools, memoryBoardTools, activeForemanTools, activeForemanToolOverride,
+  type ForemanAgentTool, type ForemanToolOverride, type RecordedForemanToolOverride, type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 
 import { Checkbox, SegmentedControl } from '../../shared/ui/nocturne'
@@ -17,11 +17,11 @@ function normalizeToolOverride(override: ForemanToolOverride | undefined): Forem
 }
 
 /** The Agent's default Foreman Code MCP tools, and this workflow node's change to them. */
-export function ForemanToolsFields({ role, defaults, override, onChange, executionReadOnly = false, readOnly = false, hideMemory = false }: {
+export function ForemanToolsFields({ role, defaults: recordedDefaults, override: recordedOverride, onChange, executionReadOnly = false, readOnly = false, hideMemory = false }: {
   /** Workflow Agent roles only; Operator tools are never enabled per Agent. */
   role: WorkflowAgentProductRole
-  defaults: readonly ForemanAgentTool[] | undefined
-  override: ForemanToolOverride | undefined
+  defaults: readonly string[] | undefined
+  override: RecordedForemanToolOverride | undefined
   executionReadOnly?: boolean
   readOnly?: boolean
   /** Memory access is edited elsewhere in the same form. */
@@ -29,6 +29,7 @@ export function ForemanToolsFields({ role, defaults, override, onChange, executi
   /** Missing defaults retain the legacy enabled set until explicitly edited. */
   onChange(defaults: ForemanAgentTool[] | undefined, override: ForemanToolOverride | undefined): void
 }) {
+  const defaults = recordedDefaults && activeForemanTools(recordedDefaults), override = activeForemanToolOverride(recordedOverride)
   const sharedFields = useCollaborationUISlots()
   const fields = useBoardAuthoring()?.collaborationFields ?? sharedFields
   const memoryTools: ForemanAgentTool[] = memoryBoardTools('write')

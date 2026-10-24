@@ -1,4 +1,4 @@
-import { INSTALLATION_NAMES } from '../../../packages/contracts/src/installationNames.mjs'
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { randomUUID } from 'node:crypto';
 import { lstat, open, readFile, realpath, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';

@@ -1,7 +1,7 @@
 import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { z } from 'zod'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
-import { AssignedSkillSchema, ForemanToolDefaultsSchema, ForemanToolOverrideSchema, RecordedHarnessConfigurationSchema, withBrowserToolDefaults } from '@foreman-code/contracts'
+import { AssignedSkillSchema, RecordedForemanToolDefaultsSchema, RecordedForemanToolOverrideSchema, RecordedHarnessConfigurationSchema, withBrowserToolDefaults } from '@foreman-code/contracts'
 import { sameWorkflowValue, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 
 // Raw form state is browser-only, including unfinished JSON. Publication still
@@ -15,7 +15,7 @@ export const AgentFormSchema = z.object({ base: z.string().refine((value) => { t
   instructions: z.string().optional(), skills: z.array(AssignedSkillSchema).optional(),
   editor: HarnessFormSchema.extend({ drafts: z.object({ codex: HarnessFormSchema.optional(),
     claude: HarnessFormSchema.optional() }).strict().optional() }),
-  [INSTALLATION_NAMES.fields.agentTools]: z.object({ defaults: ForemanToolDefaultsSchema.optional(), override: ForemanToolOverrideSchema.optional() }).strict().optional(),
+  [INSTALLATION_NAMES.fields.agentTools]: z.object({ defaults: RecordedForemanToolDefaultsSchema.optional(), override: RecordedForemanToolOverrideSchema.optional() }).strict().optional(),
 }).strict()
 export type AgentForm = z.infer<typeof AgentFormSchema>
 

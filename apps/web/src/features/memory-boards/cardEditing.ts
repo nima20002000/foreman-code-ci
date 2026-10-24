@@ -18,7 +18,6 @@ export function cardDraftProblem(draft: CardDraft): { field: 'title' | 'reason';
 export function cardDraftCommand(boardId: string, draft: CardDraft): MemoryBoardMutation {
   const fields = { ...draft.fields, title: draft.fields.title.trim() }
   if (!draft.original) return { kind: 'card_create', boardId, card: fields,
-    ...(draft.sourcePostId ? { sourcePostId: draft.sourcePostId } : {}),
     ...(draft.workSelections.length ? { workSelections: draft.workSelections } : {}) }
   const original = draft.original
   const patch: Partial<CardFields> = {}

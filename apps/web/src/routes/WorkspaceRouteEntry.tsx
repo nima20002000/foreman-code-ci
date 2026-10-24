@@ -1,15 +1,15 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react'
-import { useBlocker, useLocation, useNavigate } from '@tanstack/react-router'
+import { Link, useBlocker, useLocation, useNavigate, useParams } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import type { CurrentWorkspaceDetails } from '@foreman-code/contracts/current'
 import { boardSearchForInspection, type WorkspaceBoardInspection, boardSearchForRun, staysOnWorkflowBoard, type RepeatGraphScopeCurrent, type WorkflowBoardLocation } from '@foreman-code/contracts/current'
-import { Button, ErrorState } from '../shared/ui/nocturne'
+import { Button, EmptyState, ErrorState } from '../shared/ui/nocturne'
 import { PersistedWorkflowBoundary } from '../features/graph'
 import { WorkflowBoard } from '../features/workflow-board/WorkflowBoard'
 import { BoardLoading, clearCurrentRunAccess, revokeCurrentRunWorkspace } from '../features/workflow-board'
 import { useProtectedAccessError } from '../shared/api/useProtectedAccessError'
 import { ApiError } from '../shared/api/client'
-import { queryKeys, useManagedWorkflowQuery, useWorkspaceDetailsQuery } from '../shared/api/query'
+import { queryKeys, useManagedWorkflowQuery, useWorkflowPages, useWorkspaceDetailsQuery } from '../shared/api/query'
 import { WorkspaceSelection } from './WorkspaceRoute'
 import {
   RunsSelectorSearchSchema, withoutRunsSelectorSearch,
@@ -38,10 +38,21 @@ export function WorkspaceRouteEntry() {
     // While navigating away, this route renders once with the next page's URL before it unmounts.
     // Keep the board that was shown instead of flashing an error for a URL that is not a board link.
     if (last.current && !BOARD_PATH.test(location.pathname)) return <WorkspaceBoardRoute selection={last.current} />
-    return <ErrorState title="Invalid board selection" description="Open a valid workflow or Run link." />
+    return <InvalidBoardSelection />
   }
   last.current = selection
   return <WorkspaceBoardRoute selection={selection} />
+}
+
+function InvalidBoardSelection() {
+  const { workspaceId = '' } = useParams({ strict: false })
+  const navigate = useNavigate()
+  return <WorkspaceSelection workspaceId={workspaceId} state="stale" allowBoardWithoutLocation
+    slots={{ graph: <EmptyState title="Invalid board selection" description="Open a valid workflow or Run link."
+      action={<div className="n-actions">
+        <Link to="/workspaces/$workspaceId/workflows" params={{ workspaceId }} search={{}}>Open workflows</Link>
+        <Button variant="secondary" onClick={() => void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, search: {}, replace: true })}>Clear invalid selection</Button>
+      </div>} /> }} />
 }
 
 function WorkspaceBoardRoute({ selection }: { selection: WorkflowBoardLocation }) {
@@ -49,11 +60,13 @@ function WorkspaceBoardRoute({ selection }: { selection: WorkflowBoardLocation }
   const navigate = useNavigate(), client = useQueryClient()
   const location = useLocation(), selectedRunId = location.search.selectedRunId
   const workspace = useWorkspaceDetailsQuery(workspaceId)
+  const catalog = useWorkflowPages(workspaceId, !requestedId)
+  const defaultId = catalog.data?.pages[0]?.items[0]?.workflow.id
   const managed = useManagedWorkflowQuery(workspaceId, requestedId ?? '')
   const denied = useProtectedAccessError(workspace), managedDenied = useProtectedAccessError(managed)
   const details = denied ? undefined : workspace.data
   const managedWorkflow = managedDenied ? undefined : managed.data?.workflow
-  const workflowId = requestedId ?? details?.workflows[0]?.id
+  const workflowId = requestedId ?? defaultId
   const workflow = details?.workflows.find((item) => item.id === workflowId) ?? managedWorkflow
   useEffect(() => {
     if (!denied) return
@@ -62,30 +75,13 @@ function WorkspaceBoardRoute({ selection }: { selection: WorkflowBoardLocation }
   }, [denied, client, workspaceId])
   useEffect(() => { if (details) cacheWorkspaceProjection(client, workspaceId, details) }, [client, workspaceId, details])
   useEffect(() => {
-    // Resolve an unpinned workspace default only, but NEVER retarget a pinned Run.
-    if (run || selectedRunId) return
-    const detailsKey = queryKeys.workspaceDetails(workspaceId), managedKey = queryKeys.managedWorkflow(workspaceId, requestedId ?? '')
-    type Managed = NonNullable<ReturnType<typeof useManagedWorkflowQuery>['data']>
-    const latest = client.getQueryData<CurrentWorkspaceDetails>(detailsKey)
-    const catalog = client.getQueryData<Managed>(managedKey)
-    if (!latest || requestedId && (latest.workflows.some((item) => item.id === requestedId)
-      || catalog?.workflow.id === requestedId
-      || client.getQueryState(managedKey)?.fetchStatus === 'fetching')) return
-    if (requestedId === latest.workflows[0]?.id) return
+    // Only an unselected workspace gets a default; explicit workflow and Run identities stay intact.
+    if (run || selectedRunId || requestedId || !details || !defaultId) return
     void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, replace: true, search: (previous) => {
-      const current = client.getQueryData<CurrentWorkspaceDetails>(detailsKey)
-      const saved = client.getQueryData<Managed>(managedKey)
-      if (!current || previous.runId || previous.selectedRunId || previous.workflowId !== search.workflowId || previous.workflowId && (
-        current.workflows.some((item) => item.id === previous.workflowId)
-        || saved?.workflow.id === previous.workflowId
-        || client.getQueryState(managedKey)?.fetchStatus === 'fetching')) return previous
-      const next = { ...previous }, fallback = current.workflows[0]?.id
-      if (fallback) next.workflowId = fallback
-      else delete next.workflowId
-      if (requestedId) delete next.agentId
-      return next
+      if (previous.runId || previous.selectedRunId || previous.workflowId) return previous
+      return { ...previous, workflowId: defaultId }
     } })
-  }, [requestedId, run, selectedRunId, search.workflowId, workspaceId, navigate, client, details, managed.data, managed.fetchStatus])
+  }, [requestedId, run, selectedRunId, workspaceId, navigate, details, defaultId])
   const selectRun = useCallback((scope?: RepeatGraphScopeCurrent) => {
     if (!workflowId) return
     if (scope && (scope.workspaceId !== workspaceId || scope.workflowId !== workflowId)) throw new Error('Run selection belongs to a different board.')
@@ -133,6 +129,23 @@ function WorkspaceBoardRoute({ selection }: { selection: WorkflowBoardLocation }
       <Button variant="secondary" onClick={() => void workspace.refetch()}>Try again</Button>
     </WorkspaceSelection>
   }
+  if (!requestedId && catalog.isPending || requestedId && !run && !selectedRunId && managed.isPending) {
+    return <WorkspaceSelection workspaceId={workspaceId} state="loading" slots={{ graph: <BoardLoading /> }} />
+  }
+  if (!requestedId && catalog.isError) return <WorkspaceSelection workspaceId={workspaceId} state="error" allowBoardWithoutLocation
+    slots={{ graph: <ErrorState title="Workflows unavailable" description={catalog.error.message} onRetry={() => void catalog.refetch()} /> }} />
+  if (requestedId && !run && !selectedRunId && managed.isError) {
+    const missing = ApiError.is(managed.error) && managed.error.status === 404
+    return <WorkspaceSelection workspaceId={workspaceId} state="stale" allowBoardWithoutLocation
+      slots={{ graph: <>
+        {missing ? <EmptyState title="Workflow not found" description="This workflow link is no longer available." />
+          : <ErrorState title="Workflow unavailable" description={managed.error.message} onRetry={() => void managed.refetch()} />}
+        <Link to="/workspaces/$workspaceId/workflows" params={{ workspaceId }} search={{}}>Open workflows</Link>
+      </> }} />
+  }
+  if (managed.data?.archivedAt && !run && !selectedRunId) return <WorkspaceSelection workspaceId={workspaceId} state="stale" allowBoardWithoutLocation
+    slots={{ graph: <EmptyState title="Workflow removed" description="This workflow was removed. Saved versions and run history are kept."
+      action={<Link to="/workspaces/$workspaceId/workflows" params={{ workspaceId }} search={{}}>Open workflows</Link>} /> }} />
   return <WorkspaceSelection workspaceId={workspaceId} selectedAgentId={search.agentId} activeWorkflowId={workflowId}
     state={workflowId ? 'ready' : 'empty'} allowBoardWithoutLocation
     slots={{ workspace: <strong data-testid="workspace-name">{details.workspace.name}</strong>, graph: workflowId ? (

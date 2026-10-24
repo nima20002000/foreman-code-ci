@@ -104,21 +104,39 @@ export const ForemanAgentToolSchema = z.enum(
 );
 export type ForemanAgentTool = z.infer<typeof ForemanAgentToolSchema>;
 
+/** Immutable records retain original tool names; execution resolves only the active catalog. */
+export const RecordedForemanToolDefaultsSchema = z.array(z.string().min(1)).max(100)
+  .refine((tools) => new Set(tools).size === tools.length, "Foreman Code MCP tools must be unique");
+
 /** Absent saved defaults retain the legacy role tools; future families require explicit choices. */
 export const ForemanToolDefaultsSchema = z.array(ForemanAgentToolSchema).max(100)
   .refine((tools) => new Set(tools).size === tools.length, "Foreman Code MCP tools must be unique");
 
-/** A workflow node's tool changes. bug_report remains available even when named in remove. */
-export const ForemanToolOverrideSchema = z.object({
-  add: z.array(ForemanAgentToolSchema).max(100),
-  remove: z.array(ForemanAgentToolSchema).max(100),
+export const RecordedForemanToolOverrideSchema = z.object({
+  add: z.array(z.string().min(1)).max(100),
+  remove: z.array(z.string().min(1)).max(100),
 }).strict().superRefine((value, context) => {
   const removed = new Set(value.remove);
   for (const [index, tool] of value.add.entries()) {
     if (removed.has(tool)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["add", index], message: "a Foreman Code MCP tool cannot be both added and removed" });
   }
 });
+export type RecordedForemanToolOverride = z.infer<typeof RecordedForemanToolOverrideSchema>;
+
+/** New node choices accept only active tools. bug_report remains available when named in remove. */
+export const ForemanToolOverrideSchema = RecordedForemanToolOverrideSchema.safeExtend({
+  add: z.array(ForemanAgentToolSchema).max(100),
+  remove: z.array(ForemanAgentToolSchema).max(100),
+});
 export type ForemanToolOverride = z.infer<typeof ForemanToolOverrideSchema>;
+
+/** Build new authoring values from recorded metadata without changing the saved record. */
+export function activeForemanTools(tools: readonly string[]): ForemanAgentTool[] {
+  return tools.filter((tool): tool is ForemanAgentTool => Object.hasOwn(FOREMAN_AGENT_TOOLS, tool));
+}
+export function activeForemanToolOverride(override?: RecordedForemanToolOverride): ForemanToolOverride | undefined {
+  return override && { add: activeForemanTools(override.add), remove: activeForemanTools(override.remove) };
+}
 
 export function foremanToolRoles(name: string): readonly ForemanMcpRole[] {
   return (FOREMAN_AGENT_TOOLS as Record<string, { roles: readonly ForemanMcpRole[] }>)[name]?.roles
@@ -140,14 +158,14 @@ export function newAgentForemanTools(role: WorkflowAgentProductRole): ForemanAge
   return [...foremanRoleTools(role), ...memoryBoardTools(newAgentMemoryBoardAccess())];
 }
 
-/** Tools named here that the role can never use. */
+/** Active tools named here that the role can never use; recorded retired names are inert. */
 export function foremanToolsOutsideRole(role: WorkflowAgentProductRole, tools: readonly string[]): string[] {
-  return tools.filter((tool) => !foremanToolRoles(tool).includes(role));
+  return activeForemanTools(tools).filter((tool) => !foremanToolRoles(tool).includes(role));
 }
 
 /** Applies saved tool choices within the role. Bug reporting is available to every workflow Agent. */
 export function effectiveForemanTools(
-  role: WorkflowAgentProductRole, defaults?: readonly string[], override?: ForemanToolOverride, interval = false,
+  role: WorkflowAgentProductRole, defaults?: readonly string[], override?: RecordedForemanToolOverride, interval = false,
   implementedCollaborationTools: readonly string[] = [],
 ): ForemanAgentTool[] {
   const roleTools = foremanRoleTools(role, implementedCollaborationTools);

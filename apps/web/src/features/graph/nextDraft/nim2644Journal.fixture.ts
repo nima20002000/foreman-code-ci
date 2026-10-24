@@ -1,16 +1,21 @@
+import { activeForemanTools } from '@foreman-code/contracts'
 import { GraphEditIntentCurrentSchema, type GraphEditIntentCurrent, type GraphEditStageInputCurrent } from '@foreman-code/contracts/current'
-import type { NextDraftEdit, NextDraftContext } from '../../board-core'
+import { activeWorkflowGraph, type NextDraftEdit, type NextDraftContext } from '../../board-core'
 
 const hash = 'sha256:' + '1'.repeat(64), now = '2026-09-24T00:00:00Z'
 export function journalRequest(edit: NextDraftEdit, commandId: string): GraphEditStageInputCurrent {
   const { draft, agents } = edit.context
   if (draft.publishedRevision == null) throw new Error('The journal fixture requires an exact saved revision.')
   const stagedAgents = Object.values(edit.agentEdits ?? {}).filter((agent) => edit.graph.nodes.some((node) => node.kind!=='job' && node.agentId === agent.id))
-    .map((agent) => ({ agent: { ...agent, prompt: agent.prompt ?? {}, assignedSkills: agent.assignedSkills ?? [] },
-      baseRevision: agents.find((item) => item.agent.id === agent.id)?.metadataRevision ?? null }))
+    .map((agent) => {
+      const { graphqlTools, ...recorded } = agent
+      return { agent: { ...recorded, prompt: agent.prompt ?? {}, assignedSkills: agent.assignedSkills ?? [],
+        ...(graphqlTools ? { graphqlTools: activeForemanTools(graphqlTools) } : {}) },
+      baseRevision: agents.find((item) => item.agent.id === agent.id)?.metadataRevision ?? null }
+    })
   return { action: 'stage_edits', workspaceId: draft.workspaceId, workflowId: draft.workflowId, draftId: draft.id,
     commandId, expectedRevision: draft.publishedRevision, expectedWorkflowVersionId: draft.baseWorkflowVersionId,
-    executionSemanticsVersion: 3, graph: edit.graph,
+    executionSemanticsVersion: 3, graph: activeWorkflowGraph(edit.graph),
     expectedAgentConfigurationVersionIds: Object.fromEntries(edit.graph.nodes.flatMap((node) => {
       if(node.kind==='job')return []
       const agent = edit.agentEdits?.[node.agentId] ?? agents.find((item) => item.agent.id === node.agentId)?.agent

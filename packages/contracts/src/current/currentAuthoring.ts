@@ -12,10 +12,11 @@ import { CommandIdSchema, ExpectedRevisionSchema, WorkflowCreateInputSchema, Man
 import { GraphIdSchema } from './graphPrimitives.js'
 import { IdSchema } from '../schemaPrimitives.js'
 import { WorkflowDefinitionCurrentSchema, WorkflowVersionCurrentSchema } from './saved.js'
+import { AuthoringWorkflowDefinitionCurrentSchema } from './workflowShape.js'
 import { sameExecutableWorkflow } from './meaningfulEdit.js'
 
 // Creation supplies identity, metadata and the workflow default worktree.
-const InitialWorkflowGraphSchema = z.object(WorkflowDefinitionCurrentSchema.shape).omit({
+const InitialWorkflowGraphSchema = z.object(AuthoringWorkflowDefinitionCurrentSchema.shape).omit({
   id: true, workspaceId: true, name: true, description: true, defaultWorktree: true,
   version: true, createdAt: true, updatedAt: true,
 }).strict()
@@ -41,7 +42,7 @@ export const CurrentWorkflowValidateInputSchema = z.object({
   expectedRevision: ExpectedRevisionSchema,
   expectedWorkflowVersionId: GraphIdSchema.nullable(),
   expectedAgentConfigurationVersionIds: z.record(GraphIdSchema, GraphIdSchema),
-  graph: WorkflowDefinitionCurrentSchema,
+  graph: AuthoringWorkflowDefinitionCurrentSchema,
 }).strict()
 export const CurrentWorkflowSaveInputSchema = CurrentWorkflowValidateInputSchema.extend({
   commandId: optionalCommandId(CommandIdSchema),

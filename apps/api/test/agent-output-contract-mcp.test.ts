@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, expect, it } from 'vitest'
 import {
-  CURRENT_WORKFLOW_TOOLS, CurrentWorkflowCapabilitiesSchema, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
+  CURRENT_WORKFLOW_TOOLS, type WorkflowVersionCurrent, CurrentWorkflowCapabilitiesSchema, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
 } from '@foreman-code/contracts/current'
 import type { ResolvedSkill } from '@foreman-code/contracts'
 import { SkillCatalogService } from '../src/modules/skills/catalog.js'
@@ -74,7 +74,7 @@ it('discovers, saves, rejects and reads back Agent output schemas and node skill
   expect(composeInstructionText(executionConfiguration)).toContain('Write release notes for every change.')
   expect(pinned.assignedSkills).toEqual([])
 
-  const refused = async (change: (agentNode: Exclude<typeof node, { kind: 'job' }>) => void) => {
+  const refused = async (change: (agentNode: Exclude<WorkflowVersionCurrent['definition']['nodes'][number], { kind: 'job' }>) => void) => {
     const next = structuredClone(saved.version.definition)
     const agentNode = next.nodes[0]!
     if (agentNode.kind === 'job') throw new Error('Expected an Agent node')

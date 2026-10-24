@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { OperatorChat } from './OperatorChat'
@@ -88,7 +88,8 @@ it('keeps a failed app request and resumes its instruction on explicit retry', a
   act(() => askOperator('Install the selected computer harness', { send: false }))
   expect(await screen.findByText('Conversation could not be created')).toBeVisible()
   expect(useOperatorChatStore.getState().request?.content).toBe('Install the selected computer harness')
-  expect(screen.getByText('Install the selected computer harness')).toBeVisible()
+  expect(within(screen.getByRole('alert')).getByText('Install the selected computer harness')).toBeVisible()
+  expect(screen.queryByRole('dialog', { name: 'Operator chat is hidden' })).not.toBeInTheDocument()
   await waitFor(() => expect(client.isMutating()).toBe(0))
   expect(api.create).toHaveBeenCalledTimes(1)
   fireEvent.click(screen.getByRole('button', { name: 'Retry requested chat' }))

@@ -43,8 +43,7 @@ async function mountBoard(suffix: string) {
     return context ? HttpResponse.json({ kind: 'outside_run', agent: context,
       workflowVersionId: fixture.after.id, reason: 'NO_LIVE_RUN' }) : HttpResponse.json({ error: {
         code: 'CHAT_NODE_UNAVAILABLE', message: 'The selected Agent is unavailable.' }, }, { status: 404 })
-  }), http.get(`${root}/chat`, () => HttpResponse.json({ items: [], nextCursor: null, hasMore: false, revision: 0 })),
-  http.get(`${root}/chat/deliveries`, () => HttpResponse.json({ items: [], nextCursor: null, hasMore: false, revision: 0 })))
+  }))
   server.use(http.get('/api/local-human', () => HttpResponse.json(LocalHumanAccessSchema.parse({ principal: {
     id: 'board-containers-tester', name: 'Board container tester', expiresAt: '2099-01-01T00:00:00.000Z', grants: [{
       scope: { workspaceIds: [saved.workspaceId] },
@@ -66,6 +65,7 @@ describe('Board conversation components share one rail', () => {
   it('shows one Agent body and preserves unsent drafts when switching nodes and destinations', async () => {
     const user = userEvent.setup()
     const { names } = await mountBoard('containers-single-rail')
+    expect(screen.queryByRole('button', { name: 'Group chat' })).not.toBeInTheDocument()
     await openChat(names.first)
     const firstDraft = await within(rail()).findByRole('textbox', { name: 'Message' })
     await user.type(firstDraft, 'Retain the first Agent draft')
@@ -75,14 +75,8 @@ describe('Board conversation components share one rail', () => {
     const secondDraft = await within(rail()).findByRole('textbox', { name: 'Message' })
     expect(secondDraft).toHaveValue('')
     await user.type(secondDraft, 'Retain the second Agent draft')
-    await user.click(screen.getByRole('button', { name: 'Group chat' }))
-    // Group chat takes over the one floating panel; the Agent body is not mounted beside it.
-    const group = await screen.findByRole('complementary', { name: 'Workflow side panel' })
-    expect(within(group).getByRole('heading', { name: 'Group chat' })).toBeVisible()
-    expect(within(group).getByRole('region', { name: 'Group chat' })).toBeVisible()
-    expect(screen.getAllByRole('complementary', { name: 'Workflow side panel' })).toHaveLength(1)
+    await user.click(within(rail()).getByRole('button', { name: 'Back to Board' }))
     expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
-    await user.click(within(group).getByRole('button', { name: 'Close group chat' }))
     await openChat(names.second)
     expect(await within(rail()).findByRole('textbox', { name: 'Message' })).toHaveValue('Retain the second Agent draft')
     await openChat(names.first)
@@ -127,3 +121,18 @@ describe('floating Board containers', () => {
     expect(z(inboxRoot)).toBeGreaterThan(z(activities))
   }, 30_000)
 })
+
+it('raises CI and the shared Agent window when each is opened or focused', async () => {
+  const { names } = await mountBoard('containers-ci-focus')
+  const agent = await openChat(names.first)
+  fireEvent.click(screen.getByRole('button', { name: /^CI server,/ }))
+  const ci = await screen.findByRole('complementary', { name: 'CI server' })
+  expect(z(ci)).toBeGreaterThan(z(agent))
+  fireEvent.pointerDown(agent)
+  expect(z(agent)).toBeGreaterThan(z(ci))
+  fireEvent.focusIn(ci)
+  expect(z(ci)).toBeGreaterThan(z(agent))
+  await userEvent.click(screen.getByRole('button', { name: 'Activities' }))
+  const activities = await screen.findByRole('region', { name: 'Activities popover' })
+  expect(z(activities)).toBeGreaterThan(z(ci))
+}, 30_000)

@@ -1,7 +1,7 @@
 import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import {
   agentTemplateForRole, DEFAULT_HARNESS_DEFAULTS, memoryBoardTools, nativeToolsSummary, newAgentForemanTools,
-  operatorHarnessDefaults, type AgentDefaults, type RecordedHarnessConfiguration,
+  operatorHarnessDefaults, activeAgentDefaults, type RecordedAgentDefaults, type RecordedHarnessConfiguration,
 } from '@foreman-code/contracts'
 import type { SettingsAgentRole } from '@foreman-code/contracts/management'
 import { Button, ErrorState, LoadingState, Select, SettingRow, SettingsSection, Switch } from '../../shared/ui/nocturne'
@@ -12,16 +12,16 @@ import { useRevisionedForm } from './revisionedForm'
 import { rolePresentation } from './settingsPresentation'
 import './settingsExperience.css'
 
-type Template = AgentDefaults['operator'] | NonNullable<AgentDefaults['master']> | AgentDefaults['orchestrator'] | AgentDefaults['coder']
+type Template = RecordedAgentDefaults['operator'] | NonNullable<RecordedAgentDefaults['master']> | RecordedAgentDefaults['orchestrator'] | RecordedAgentDefaults['coder']
 type Memory = 'none' | 'write'
 const harnessOptions = [{ value: 'codex', label: 'Codex' }, { value: 'claude', label: 'Claude' }] as const
 // Agent memory on is read and write; a workflow node or read-only access narrows it to read.
 const memoryOptions = [{ value: 'none', label: 'Off' }, { value: 'write', label: 'Read and write' }] as const
 
-function templateFor(value: AgentDefaults, role: SettingsAgentRole): Template {
+function templateFor(value: RecordedAgentDefaults, role: SettingsAgentRole): Template {
   return role === 'operator' ? value.operator : agentTemplateForRole(value, role)
 }
-function withTemplate(value: AgentDefaults, role: SettingsAgentRole, template: Template): AgentDefaults {
+function withTemplate(value: RecordedAgentDefaults, role: SettingsAgentRole, template: Template): RecordedAgentDefaults {
   return { ...value, [role]: template }
 }
 function memoryOf(tools: readonly string[]): Memory {
@@ -33,7 +33,7 @@ export function AgentRoleSettings({ role, onEditPrompt }: { role: SettingsAgentR
   const query = useAgentDefaultsQuery()
   const presets = useHarnessDefaultsQuery()
   const mutation = useUpdateAgentDefaultsMutation()
-  const form = useRevisionedForm<AgentDefaults>(query.data, 'settings:agent-defaults')
+  const form = useRevisionedForm<RecordedAgentDefaults>(query.data, 'settings:agent-defaults')
   const title = rolePresentation[role].title
   if (query.isError && !form.draft) return <ErrorState title="Agent defaults are unavailable" description={query.error.message} onRetry={() => void query.refetch()} />
   if (!form.draft) return <LoadingState label="Loading agent defaults…" />
@@ -96,7 +96,7 @@ export function AgentRoleSettings({ role, onEditPrompt }: { role: SettingsAgentR
       <SettingRow title="Prompt"><Button size="sm" onClick={onEditPrompt}>Edit prompt</Button></SettingRow>
     </SettingsSection> : null}
     <SettingsFormActions form={form} saveLabel={`Save ${title} settings`} onSave={() => form.save(async input => {
-      const response = await mutation.mutateAsync(input)
+      const response = await mutation.mutateAsync({ ...input, value: activeAgentDefaults(input.value) })
       return response.value
     })} />
   </section>

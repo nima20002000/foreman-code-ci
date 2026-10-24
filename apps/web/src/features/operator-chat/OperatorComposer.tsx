@@ -6,9 +6,9 @@ import type { useFileDrop } from '../../shared/ui/useFileDrop'
 import { ChatPrimaryActions, type ComposerSessionControls } from '../chat-core'
 import '../conversations/chatAttachments.css'
 
-export function OperatorComposer({ conversationId, context, attachmentControl, fileDropProps, hasAttachments = false,
+export function OperatorComposer({ conversationId, context, attachmentControl, deliveryControl, fileDropProps, hasAttachments = false,
   sendDisabled = false, isSending = false, onSubmit, onNewChat, onCancel, sessionControls }: {
-  conversationId: string; context?: ReactNode; attachmentControl?: ReactNode; hasAttachments?: boolean;
+  conversationId: string; context?: ReactNode; attachmentControl?: ReactNode; deliveryControl?: ReactNode; hasAttachments?: boolean;
   sendDisabled?: boolean; isSending?: boolean; sessionControls?: ComposerSessionControls;
   fileDropProps?: ReturnType<typeof useFileDrop>['dropTargetProps'];
   onSubmit(content: string, mode?: SessionMode): void; onNewChat(): void; onCancel?: () => void;
@@ -59,8 +59,8 @@ export function OperatorComposer({ conversationId, context, attachmentControl, f
         </ChatPrimaryActions>
       </div>
     </div>
-    {commands.error
-      ? <p role="alert">{commands.error}</p> : null}
+    {deliveryControl ? <div className="operator-composer-delivery">{deliveryControl}</div> : null}
+    {commands.error ? <p role="alert">{commands.error}</p> : null}
   </form>
   {/* Agent settings sit below the composer box, not inside it. */}
   <div className="operator-composer-options">

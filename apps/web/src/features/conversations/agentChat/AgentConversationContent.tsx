@@ -36,6 +36,7 @@ import '../chatAttachments.css'
 
 export type AgentConversationContentProps = {
   context: AgentChatContext; name: string; role?: string; activity?: string; runLabel?: string
+  retainedInputs?: ReactNode
   selection?: SelectedRunChatExecution
   onClose?: () => void; onNewConversation?: () => void
   canonical?: boolean
@@ -45,7 +46,7 @@ export type AgentConversationContentProps = {
 
 /** Both entry points retain their delivery path while sharing the conversation UI and readback. */
 export function AgentConversationContent({ context, name, activity, runLabel, onClose, onNewConversation,
-  selection, canonical = false, browser, onRecover }: AgentConversationContentProps) {
+  selection, canonical = false, browser, onRecover, retainedInputs }: AgentConversationContentProps) {
   const [canonicalDenial, setCanonicalDenial] = useState<ApiError>()
   const chat = useAgentChat(context, canonical ? { denial: canonicalDenial } : { selection }), state = chat.state
   const conversation = state?.conversation
@@ -159,8 +160,10 @@ export function AgentConversationContent({ context, name, activity, runLabel, on
   if (!attention && !chat.online) attention = 'You are offline'
   if (sessionMissing) {
     attention = 'Original session unavailable'
-    if (!conversation?.providerAccountBinding && onNewConversation) attentionAction = <Button size="sm" variant="ghost"
+    if (onNewConversation && (context.runId || !conversation?.providerAccountBinding)) attentionAction = <Button size="sm" variant="ghost"
       onClick={onNewConversation}>{context.runId ? 'Start separate chat without this Run' : 'Choose another Agent for a new conversation'}</Button>
+    else attentionAction = <Button size="sm" variant="ghost" disabled={newPending || !!chat.blocked('agent_chat:write', true)}
+      onClick={() => { void submit('next_turn', '/new') }}>Start separate conversation</Button>
   }
   const missingFolder = state?.availability.missingFolder
   if (missingFolder) {
@@ -186,8 +189,6 @@ export function AgentConversationContent({ context, name, activity, runLabel, on
   if (!composerReason && attachments.hasBlockingAttachments) composerReason = 'Wait for attachments'
   return <div className="agent-conversation" data-testid="agent-conversation" data-chat-key={chat.draftKey}>
     {header}
-    {conversation?.previousConversationId ? <AgentConversationHistory workspaceId={context.workspaceId}
-      conversationId={conversation.previousConversationId} name={name} /> : null}
     <ProviderAccountProblem binding={conversation?.providerAccountBinding} />
     <AgentChatStatus>{attention ? <><Tooltip content={attention}><span tabIndex={0}>{attention}</span></Tooltip><Tooltip content="Read the latest conversation status">
       <IconButton size="sm" variant="ghost" label="Refresh chat" disabled={chat.query.isFetching && !chat.query.isRefetching} onClick={chat.refresh}>
@@ -195,11 +196,15 @@ export function AgentConversationContent({ context, name, activity, runLabel, on
       </IconButton>
     </Tooltip>{attentionAction}</> : null}</AgentChatStatus>
     {state ? <AgentChatTranscript key={state.conversation?.id ?? 'none'} state={state} name={name} readOnly={retired}
-      commands={chat.commands} history={chat.history} cancelReason={cancelReason} responseReason={responseReason}
+      storageKey={selection ? chat.draftKey : undefined} commands={chat.commands} history={chat.history} cancelReason={cancelReason} responseReason={responseReason}
       resendReason={nextReason} controlResendReason={controlReason}
       onRefresh={chat.refresh} refreshing={chat.query.isFetching} onCancel={chat.cancelQueued} onRespond={chat.respond} onDenied={chat.revoke} onReceipt={chat.confirmDelivery}
       onSendAgain={(content, pins, mode) => setSendAgain({ content, attachments: pins, draftKey: chat.draftKey,
-        sessionMode: parseSessionCommand(content).kind === 'plan-task' ? 'plan' : mode })} />
+        sessionMode: parseSessionCommand(content).kind === 'plan-task' ? 'plan' : mode })}>
+      {conversation?.previousConversationId ? <AgentConversationHistory workspaceId={context.workspaceId}
+        conversationId={conversation.previousConversationId} name={name} /> : null}
+      {retainedInputs}
+    </AgentChatTranscript>
       : <ConversationViewport revision="loading">{() => <RetainedAgentCommands commands={chat.commands} onDenied={chat.revoke} onReceipt={chat.confirmDelivery}
         draftKey={chat.draftKey} refresh={chat.refresh} pending={chat.query.isPending} />}</ConversationViewport>}
     {state && !canonical ? <CompactionActivity controls={sessionControls} latest /> : null}

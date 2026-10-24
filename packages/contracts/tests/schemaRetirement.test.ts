@@ -42,11 +42,19 @@ describe('ENG07 R01/R02 public execution-schema retirement', () => {
     expect(management.ManagedWorkflowSchema.shape.workflow).toBe(WorkflowDefinitionCurrentSchema)
     expect(management.GraphDraftSchema.shape.graph).toBe(WorkflowDefinitionCurrentSchema)
     expect(WorkflowVersionResultSchema.shape.version).toBe(WorkflowVersionCurrentSchema)
-    expect(root.SaveWorkflowRequestSchema.shape.workflow).toBe(WorkflowDefinitionCurrentSchema)
+    expect(root.SaveWorkflowRequestSchema.parse({ workspaceId: save.workspaceId, workflow: definition }).workflow).toEqual(definition)
     expect(root.CreateRunRequestSchema).toBe(RunStartCurrentInputSchema)
     expect(management.RunStartInputSchema).toBe(RunStartCurrentInputSchema)
     expect(ManualRunStartInputSchema).toBe(RunStartCurrentInputSchema)
     expect(root.WorkflowRunSchema).toBe(WorkflowRunCurrentSchema)
+  })
+
+  it('retains retired tool metadata in saved definitions but rejects it in new Save requests', () => {
+    const workflow = { ...definition, nodes: definition.nodes.map((node) => ({ ...node,
+      graphqlTools: { add: ['workflow_chat_read'], remove: [] },
+    })) }
+    expect(WorkflowDefinitionCurrentSchema.parse(workflow)).toEqual(workflow)
+    expect(root.SaveWorkflowRequestSchema.safeParse({ workspaceId: save.workspaceId, workflow }).success).toBe(false)
   })
 
   it.each(forms)('round-trips %s through public management, saved versions and Run DTOs', (form) => {

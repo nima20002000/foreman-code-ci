@@ -96,7 +96,6 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
             {pendingApprovals ? <span className="workflow-approval-inbox-badge" aria-hidden="true">{pendingApprovals}</span> : null}</Button>
           {!graph.handoffs ? <Button size="sm" variant="ghost" onClick={() => openPanel('repeat')}>Repeats</Button> : null}
           {board ? <IconButton label="Activities" onClick={board.openRuns}><Icon name="history" size={16} /></IconButton> : null}
-          {board?.selectSidePanel ? <IconButton label="Group chat" onClick={() => board.selectSidePanel!({ kind: 'group_chat' })}><Icon name="chat" size={16} /></IconButton> : null}
           {board ? <KanbanButton workspaceId={graph.workspaceId} workflowId={graph.id} /> : null}
           {board?.runActionHost ? createPortal(runAction, board.runActionHost) : runAction}
         </Toolbar>

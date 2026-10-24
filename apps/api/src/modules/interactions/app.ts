@@ -11,8 +11,8 @@ import {
   RespondToInteractionRequestSchema,
   RespondToInteractionResponseSchema,
   HarnessExecutionSchema,
-  ForemanToolDefaultsSchema,
-  ForemanToolOverrideSchema,
+  RecordedForemanToolDefaultsSchema,
+  RecordedForemanToolOverrideSchema,
   effectiveForemanTools,
   type ForemanAgentTool,
   type AgentSubject,
@@ -175,12 +175,12 @@ export class PostgresAppInteractionService implements AppInteractionService {
       throw new DomainError('MCP_TOOL_DISCOVERY_FAILED', 'The pinned Agent role is unavailable.', 503)
     }
     const role = row.role
-    const defaults = row.defaults == null ? undefined : ForemanToolDefaultsSchema.parse(row.defaults)
-    const override = row.override == null ? undefined : ForemanToolOverrideSchema.parse(row.override)
+    const defaults = row.defaults == null ? undefined : RecordedForemanToolDefaultsSchema.parse(row.defaults)
+    const override = row.override == null ? undefined : RecordedForemanToolOverrideSchema.parse(row.override)
     const subject = row.purpose === 'consultation'
       ? await readConsultationCredentialSubject(this.pool, principal.id) : undefined
-    const implemented = [...memoryBoardTools('write'), 'workflow_chat_read', 'workflow_chat_post', ...(row.browser?.enabled ? browserAgentTools : [])] as const
-    const harness = RecordedHarnessConfigurationSchema.parse(row.harness)
+    const implemented = [...memoryBoardTools('write'), ...(row.browser?.enabled ? browserAgentTools : [])] as const
+    const harness = HarnessConfigurationSchema.parse(row.harness)
     const readOnly = isReadOnlyHarnessConfiguration(harness)
     const tools = effectiveForemanTools(role, defaults, override, row.interval != null, implemented).filter(tool => {
       if (tool.startsWith('browser_') && readOnly && !COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly) return false

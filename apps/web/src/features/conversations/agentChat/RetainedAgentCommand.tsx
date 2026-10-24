@@ -8,7 +8,7 @@ import { Button } from '../../../shared/ui/nocturne'
 import { ChatDeliveryReceipts } from '../delivery/ChatDeliveryReceipts'
 import { chatDeliveryClient } from '../delivery/client'
 import { UnavailableChatDraft } from '../delivery/UnavailableChatDraft'
-import { sameDeliveryTarget } from '../../workflow-chat'
+import { sameDeliveryTarget } from '../delivery/sameDeliveryTarget'
 import type { AgentChatCommand, AgentChatCommandRecord } from './commandRecords'
 
 export function RetainedAgentCommands({ commands, onDenied, onReceipt, pending, draftKey, refresh }: {

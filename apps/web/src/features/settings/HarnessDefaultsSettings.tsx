@@ -2,16 +2,19 @@ import { operatorChatSettings, type AgentHarness, type HarnessDefaults } from '@
 import type { HarnessSettingsSection } from '@foreman-code/contracts/management'
 import { Alert, Button, Dialog, ErrorState, LoadingState, Switch } from '../../shared/ui/nocturne'
 import { useOperatorSettings } from '../operator-chat/useOperatorSettings'
-import { useManagedHarnessCatalogQuery } from '../../shared/api/query'
+import { useManagedHarnessCatalogQuery, useUpdateManagedHarnessDefaultsMutation } from '../../shared/api/query'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { askOperator } from '../operator-chat/operatorChatStore'
 import { SettingsChoice, SettingsOverview } from './SettingsCards'
 import { harnessNames, harnessSummary } from './settingsPresentation'
+import { useRevisionedForm, type Snapshot } from './revisionedForm'
+import { ClaudeMcpConfiguration } from './ClaudeMcpConfiguration'
 import { ClaudePluginSummary } from './ClaudePluginSummary'
 import { CodexPluginManager } from './CodexPluginManager'
 import { HarnessMcpManager } from './HarnessMcpManager'
+import { SettingsFormActions, SettingsFormFeedback } from './SettingsFormActions'
 import { OperatorMcpStatus } from './OperatorMcpStatus'
-import { ProviderAccountsSettings, type ProviderAccountNavigation } from '../provider-accounts'
+import { ProviderAccountComputerSelect, ProviderAccountsSettings, type ProviderAccountNavigation } from '../provider-accounts'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 
 /** Harnesses this app runs: Codex and Claude. */
@@ -29,14 +32,13 @@ function useProviderDefaults() {
 }
 
 function ProviderCard({ harness, value, revision, readiness, onOpen, accountSelection, onAccountSelect,
-  accountTarget, onAccountTargetChange, operator }: {
+  accountTarget, operator }: {
   harness: Harness; value?: HarnessDefaults | undefined; revision?: number | undefined; readiness: string
   operator: ReturnType<typeof useOperatorSettings>
   onOpen(section: 'connections' | 'plugins'): void
   accountSelection?: ProviderAccountNavigation | undefined
   onAccountSelect?: ((selection: ProviderAccountNavigation | undefined) => void) | undefined
   accountTarget?: DeviceProvisioningTarget | undefined
-  onAccountTargetChange?: ((target: DeviceProvisioningTarget) => void) | undefined
 }) {
   const name = harnessNames[harness]
   const preset = value?.[harness]
@@ -51,14 +53,12 @@ function ProviderCard({ harness, value, revision, readiness, onOpen, accountSele
         onChange={(event) => { if (event.target.checked && preset) operator.change(operatorChatSettings(preset, operator.settings?.showThinking ?? false)) }} />
       {value && revision !== undefined ? <OperatorMcpStatus harness={harness} defaults={value} revision={revision} /> : null}
       <span className="settings-choice-links">
-        {harness === 'codex' ? <>
-          <Button size="sm" variant="ghost" onClick={() => onOpen('connections')}>Connections</Button>
-        </> : null}
+        <Button size="sm" variant="ghost" onClick={() => onOpen('connections')}>Connections</Button>
         <Button size="sm" variant="ghost" onClick={() => onOpen('plugins')}>Plugins</Button>
       </span>
       </div>
       <ProviderAccountsSettings provider={harness} selection={accountSelection} onSelect={onAccountSelect}
-        target={accountTarget} onTargetChange={onAccountTargetChange} />
+        target={accountTarget} />
     </>} />
 }
 
@@ -75,9 +75,7 @@ export function HarnessDefaultsSettings({ selectedHarness, section, onOpen, acco
   const { incoming, query } = useProviderDefaults()
   const operator = useOperatorSettings(true)
   const accessError = useProtectedAccessError(query)
-  let dialog: 'plugins' | 'connections' | undefined
-  if (section === 'plugins' && (selectedHarness === 'codex' || selectedHarness === 'claude')) dialog = 'plugins'
-  if (section === 'connections' && selectedHarness === 'codex') dialog = 'connections'
+  const dialog = selectedHarness && section ? section : undefined
   const dialogName = selectedHarness === 'claude' ? 'Claude' : 'Codex'
   const readiness = (harness: Harness) => {
     const entry = query.data?.find((item) => item.harness === harness)
@@ -98,18 +96,48 @@ export function HarnessDefaultsSettings({ selectedHarness, section, onOpen, acco
   }
   return <>
     {overview}
+    <SettingsFormFeedback form={operator.form} />
+    {operator.form.isDirty ? <p role="status">Operator default has unsaved changes. The switches show your selection.</p> : null}
+    <SettingsFormActions form={operator.form} onSave={operator.save} saveLabel="Save Operator default" />
+    {onAccountTargetChange ? <ProviderAccountComputerSelect target={accountTarget} onChange={onAccountTargetChange} /> : null}
     <SettingsOverview title="Harnesses">
       {HARNESSES.map(harness => <ProviderCard key={harness} harness={harness} value={incoming?.value} operator={operator}
         revision={incoming?.revision} readiness={readiness(harness)} accountSelection={accountSelection}
-        accountTarget={accountTarget} onAccountTargetChange={onAccountTargetChange}
+        accountTarget={accountTarget}
         onAccountSelect={onAccountSelect} onOpen={next => onOpen?.({ harness, section: next })} />)}
     </SettingsOverview>
     <Dialog open={Boolean(dialog)} onOpenChange={(open) => { if (!open) onOpen?.(undefined) }} size="lg"
-      title={dialog === 'plugins' ? `${dialogName} plugins` : 'Codex connections'}>
+      title={`${dialogName} ${dialog ?? ''}`}>
       {dialog === 'plugins' && selectedHarness === 'claude' ? <ClaudePluginSummary accessUnavailable={Boolean(accessError)}
         onClose={() => onOpen?.(undefined)} /> : null}
       {dialog === 'plugins' && selectedHarness === 'codex' ? <CodexPluginManager accessUnavailable={Boolean(accessError)} /> : null}
-      {dialog === 'connections' ? <HarnessMcpManager harness="codex" accessUnavailable={Boolean(accessError)} /> : null}
+      {dialog === 'connections' && selectedHarness === 'codex' ? <HarnessMcpManager harness="codex" accessUnavailable={Boolean(accessError)} /> : null}
+      {dialog === 'connections' && selectedHarness === 'claude' ? <ClaudeConnections incoming={incoming} unavailable={Boolean(accessError)} /> : null}
+      {dialog && dialog !== 'plugins' && dialog !== 'connections' ? <>
+        <p>{dialogName} preset changes are managed by the Operator. This section now opens a contextual request.</p>
+        <Button onClick={() => { onOpen?.(undefined); askOperator(`Change the ${dialogName} preset ${dialog}: `, { send: false }) }}>
+          Edit {dialogName} defaults with Operator</Button>
+      </> : null}
     </Dialog>
+  </>
+}
+
+
+function ClaudeConnections({ incoming, unavailable }: { incoming: Snapshot<HarnessDefaults> | undefined; unavailable: boolean }) {
+  const form = useRevisionedForm(incoming, 'harness:claude:connections')
+  const mutation = useUpdateManagedHarnessDefaultsMutation()
+  const save = () => form.save(async ({ value, ...request }) => {
+    const result = await mutation.mutateAsync({ ...request, defaults: value })
+    return { value: result.value.defaults, revision: result.value.revision }
+  })
+  if (unavailable) return <p role="alert">Claude connections are unavailable. Restore access and retry defaults.</p>
+  const value = form.draft?.claude
+  if (!value) return <p role="status">Configure a Claude preset with the Operator before adding connections.</p>
+  return <>
+    <fieldset disabled={form.isSaving || form.uncertain}>
+      <ClaudeMcpConfiguration value={value} onChange={claude => form.setDraft(current => current ? { ...current, claude } : current)} />
+    </fieldset>
+    <SettingsFormFeedback form={form} />
+    <SettingsFormActions form={form} onSave={save} saveLabel="Save Claude connections" />
   </>
 }

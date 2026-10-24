@@ -9,15 +9,10 @@ import { conversationFeatureContext, type ConversationFeatureContext } from '../
 import { DomainError } from '../errors.js'
 import { readLiveManagementPrincipal } from './liveManagementPrincipal.js'
 
-const groupTools = new Set<ForemanAgentTool>([
-  'workflow_chat_read', 'workflow_chat_post',
-])
 export function conversationChatTools(context: ConversationFeatureContext): ForemanAgentTool[] {
-  // A draft chat has no saved workflow yet, so no Group chat; its browser is the chat's own and works anyway.
   const configuration = context.configuration
   const readOnly = isReadOnlyHarnessConfiguration(configuration.harness)
-  const implemented = [...context.workflowVersionId === null ? [] : groupTools,
-    ...(context.node.browser?.enabled ? browserAgentTools : [])]
+  const implemented = context.node.browser?.enabled ? browserAgentTools : []
   return effectiveForemanTools(context.subject.agent.productRole, configuration[INSTALLATION_NAMES.fields.agentTools],
     chatToolOverride(context.node[INSTALLATION_NAMES.fields.agentTools], context.node.browser), false, implemented)
     .filter(tool => implemented.includes(tool) && (!readOnly || COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly))
