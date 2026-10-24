@@ -297,6 +297,12 @@ export class BrowserBroker implements BrowserLifecyclePort {
       await this.options.authority.assertCurrent(input.subject)
       if (!this.admission) return { kind: 'unavailable', reason: 'runtime_missing', retryable: true }
       if (completed?.record.session.state === 'closed') return { kind: 'unavailable', reason: 'profile_busy', retryable: false }
+      if (existing?.record.session.state === 'closed' && existing.record.closing) {
+        if ((await this.closeOwned(existing)).state === 'pending') {
+          return { kind: 'unavailable', reason: 'profile_busy', retryable: true }
+        }
+        existing = undefined
+      }
       if (existing) {
         if (existing.record.closing || !['ready', 'paused'].includes(existing.record.session.state)) {
           return { kind: 'unavailable', reason: 'profile_busy', retryable: true }
