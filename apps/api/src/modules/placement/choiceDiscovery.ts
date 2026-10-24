@@ -11,8 +11,6 @@ import type { WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root
 import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { commandInputHash } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
-import { isAuthorized } from '../access/index.js'
-import type { HostHarnessOverrideService } from '../harnesses/index.js'
 import type { SourceAdmissionPort } from '../sources/index.js'
 import type { WorkspaceRootPolicyPort } from '../sources/index.js'
 import { provisionPairedAgentRoots, type PairedRootServices } from './pairedRoots.js'
@@ -26,7 +24,6 @@ type DiscoveryServices = PairedRootServices & {
   ensureComputerReady?: (host: CanonicalMachineReference) => Promise<void>
   /** Whether a paired computer is connected now. */
   computerOnline?: (host: CanonicalMachineReference) => boolean
-  harnessInstances?: Pick<HostHarnessOverrideService, 'prepareWorkerConfiguration'>
 }
 type UnavailableComputer = NonNullable<NodePlacementChoicesResult['unavailableComputers']>[number]
 
@@ -63,8 +60,6 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
     })
     let pending = await provisionPairedAgentRoots(this.pool, services, principal, input.workspaceId, configuration,
       matchesConfiguration, source)
-    const preparation = await this.prepareWorkerProfiles(services, principal, input.workspaceId, configuration, source)
-    pending ||= [...preparation.values()].some(value => value.pending)
     const profiles = await withTransaction(this.pool, async sql => {
       const roots = await this.sourceRoots(sql, input.workspaceId)
       const profiles: HostHarnessOverride[] = []
@@ -75,7 +70,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
       }
       return profiles
     })
-    const readiness = await this.probeReadiness(services, profiles, preparation)
+    const readiness = await this.probeReadiness(services, profiles)
     // Root, source and profile metadata may change while a computer is being checked.
     return withTransaction(this.pool, async sql => {
       const roots = await this.sourceRoots(sql, input.workspaceId)
@@ -108,48 +103,15 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
         }
       }
       return { choices, pending,
-        unavailableComputers: await this.unavailableComputers(sql, services, configuration, roots, choices, preparation) }
+        unavailableComputers: await this.unavailableComputers(sql, services, configuration, roots, choices) }
     })
-  }
-
-  private async prepareWorkerProfiles(services: DiscoveryServices, principal: ManagementPrincipal, workspaceId: string,
-    configuration: AgentConfigurationVersion, source: 'http' | 'mcp') {
-    const results = new Map<string, ComputerAvailability>()
-    const harnessInstances = services.harnessInstances
-    if (!harnessInstances || configuration.harness.harness !== 'codex' || configuration.harnessProfileSelection
-      || !isAuthorized(principal, 'harnesses:update')) return results
-    const roots = await withTransaction(this.pool, sql => this.sourceRoots(sql, workspaceId))
-    for (const root of roots) {
-      const host = root.selection.hostRef
-      const key = commandInputHash(host)
-      if (host.kind !== 'device' || results.has(key) || services.computerOnline && !services.computerOnline(host)) continue
-      const installation = services.registry.installations.list().find(value => value.installed
-        && value.driverId === 'codex' && value.installationFingerprint && sameWorkflowValue(value.hostRef, host))
-      const applicationInstallationId = root.binding.workerInstallationId
-      const installationFingerprint = installation?.installationFingerprint
-      if (!installation || !installationFingerprint || !applicationInstallationId) continue
-      const profiles = await services.profiles.list(host, applicationInstallationId)
-      let qualified = false
-      for (const profile of profiles.filter(value => matchesConfiguration(value, configuration))) {
-        qualified ||= !!await services.registry.profileEvidence(profile)
-      }
-      if (qualified) continue
-      const computer = await this.checkReadiness(() => services.ensureComputerReady?.(host))
-      results.set(key, computer.reason === null ? await this.checkReadiness(() =>
-        harnessInstances.prepareWorkerConfiguration(principal, source, configuration.harness, {
-          hostRef: host, applicationInstallationId,
-          harnessInstallationId: installation.harnessInstallationId,
-          installationFingerprint,
-        })) : computer)
-    }
-    return results
   }
 
   /** Every paired computer stays offered: one with no choice above says in plain words why it can't run this Agent.
    * Main is always offered as the workflow default, so only connected computers are listed here. */
   private async unavailableComputers(sql: pg.PoolClient, services: DiscoveryServices,
     configuration: AgentConfigurationVersion, roots: readonly SourceRootRecord[],
-    choices: readonly NodePlacementChoice[], preparation: ReadonlyMap<string, ComputerAvailability>): Promise<UnavailableComputer[]> {
+    choices: readonly NodePlacementChoice[]): Promise<UnavailableComputer[]> {
     const main = (await sql.query<{ id: string }>(
       'select id::text as id from application_installation where singleton=true')).rows[0]
     if (!main) return []
@@ -165,8 +127,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
       const name = names.get(computerNameKey(main.id, deviceId)) ?? `Computer ${deviceId.slice(0, 8)}`
       const installed = services.registry.installations.list().some(installation => installation.installed
         && installation.driverId === driver && sameWorkflowValue(installation.hostRef, hostRef))
-      let reason = preparation.get(commandInputHash(hostRef))?.reason
-        ?? `${name} has no ${harness} setup that matches this agent’s model and settings yet.`
+      let reason = `${name} has no ${harness} setup that matches this agent’s model and settings yet.`
       if (services.computerOnline && !services.computerOnline(hostRef)) reason = `${name} is offline.`
       else if (driver !== 'codex') reason = `${harness} agents run only on Main for now, not on ${name}.`
       else if (!installed) reason = `${harness} isn’t installed on ${name}.`
@@ -196,21 +157,15 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
     return profile.driverId === 'codex' || profile.driverId === 'claude' && profile.target.hostRef.kind === 'main'
   }
 
-  private async probeReadiness(services: DiscoveryServices, profiles: HostHarnessOverride[],
-    preparation: ReadonlyMap<string, ComputerAvailability>) {
+  private async probeReadiness(services: DiscoveryServices, profiles: HostHarnessOverride[]) {
     const computers = new Map<string, ComputerAvailability>()
     const results = new Map<string, ComputerAvailability>()
     for (const profile of profiles) {
       const key = commandInputHash(profile)
       if (results.has(key) || !this.supportedProfile(profile) || !this.installedProfile(services, profile)) continue
       const host = profile.target.hostRef
-      const prepared = preparation.get(commandInputHash(host))
-      if (prepared?.reason) {
-        results.set(key, prepared)
-        continue
-      }
       const computerKey = commandInputHash({ host, installationId: profile.target.applicationInstallationId })
-      let computer = computers.get(computerKey) ?? prepared
+      let computer = computers.get(computerKey)
       if (!computer) {
         computer = await this.checkReadiness(() => services.ensureComputerReady?.(host))
         computers.set(computerKey, computer)
@@ -229,7 +184,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
     } catch (error) {
       const availability = computerAvailabilityFailure(error)
       if (availability) return availability
-      if (!(error instanceof DomainError) || ![409, 422, 429, 503, 504].includes(error.status)) throw error
+      if (!(error instanceof DomainError) || ![409, 422, 503].includes(error.status)) throw error
       return { reason: error.message, pending: error.code === 'HARNESS_PROFILE_CHECK_PENDING' }
     }
   }
