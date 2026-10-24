@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.0.118] - 2026-10-24
+
 - One Board with states: a Run paints its live states on the workflow's own nodes, editing locks while it runs, Stop sits in Run's place.
 - Workers: a workspace's project can be set up on a paired computer from the Computer picker or workspace settings; workspaces without Git run in a plain folder there; exact Codex profiles are prepared on the Worker automatically.
 - Agent browser: floating browser window, readable session names, Worker browser failures shown with their real reason, a failed browser install is retried when the Worker starts.

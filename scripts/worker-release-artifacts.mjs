@@ -10,7 +10,8 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { artifactFiles, validateWorkerTarget, workerReleaseVersion, assertWorkerUpdateToolchain } from './worker-artifact-files.mjs'
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
-const PUBLICATION_COMMAND_TIMEOUT_MS = 5 * 60_000
+// The Worker bundle is ~316 MB; Main's upload link measured 7 Mbit/s (about 6 min) and is slower under CI load.
+const PUBLICATION_COMMAND_TIMEOUT_MS = 15 * 60_000
 const PUBLICATION_RETRY_MS = 60_000
 // WORKER_PUBLICATION_DEADLINE_MS in packages/contracts/src/workerUpdate.ts; installed scripts cannot import contracts.
 const PUBLICATION_DEADLINE_MS = 2 * 60 * 60_000
