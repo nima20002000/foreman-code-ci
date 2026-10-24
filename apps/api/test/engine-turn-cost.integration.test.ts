@@ -1,9 +1,10 @@
 import pg from 'pg'
 import { afterEach, expect, it, vi } from 'vitest'
-import { WorkActivationInputSchema } from '@foreman-code/contracts/current'
+import { WorkActivationInputSchema, WorkReturnSchema } from '@foreman-code/contracts/current'
 import { runtimeTimingChannel, type RuntimeTimingRecord } from '../src/infrastructure/runtimeTiming.js'
 import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { hierarchyRuntimeFixture, receivedRequest } from './helpers/hierarchyRuntimeFixture.js'
+import { reportIntegrationPhase } from './helpers/integrationPhase.js'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -37,6 +38,7 @@ it.each([0, 60 * 1024])('bounds engine work for sixteen serial fake children wit
         data: { latestDeliverable: { ordinal: delegated, output }, remainingFindings: [] },
         summary: 'Child completed', board: { kind: 'none', reason: 'no_access' } }
     } })
+  const version = (await f.db.pool.query('select record from workflow_versions where id=$1', [f.f.version.id])).rows
   const phases = new Map<string, { count: number; ms: number }>()
   const statements = new Map<string, { count: number; ms: number }>()
   const observe = (message: unknown) => {
@@ -57,6 +59,7 @@ it.each([0, 60 * 1024])('bounds engine work for sixteen serial fake children wit
     const statementCount = queries.mock.calls.length
     queries.mockRestore()
     runtimeTimingChannel.unsubscribe(observe)
+    reportIntegrationPhase(`serial-${bytes}-bytes-${statementCount}-statements-${phases.get('sql.begin')!.count}-graph-transactions`, elapsedMs)
     console.info('engine-turn-cost', JSON.stringify({ bytes, turns: children * 2 + 1, elapsedMs, statementCount,
       phases: Object.fromEntries(phases), statements: [...statements].sort((a, b) => b[1].ms - a[1].ms).slice(0, 12) }))
     expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionSemanticsVersion: 3,
@@ -66,6 +69,15 @@ it.each([0, 60 * 1024])('bounds engine work for sixteen serial fake children wit
     const executions = (await f.runs.listRepeatExecutions(f.f.run.id)).map(item => item.execution)
     expect(executions).toHaveLength(children * 2 + 1)
     expect(executions.every(execution => execution.state === 'completed' && execution.result?.outcome === 'succeeded')).toBe(true)
+    const returns = (await f.db.pool.query('select record from run_work_returns where run_id=$1', [f.f.run.id])).rows
+      .map(row => WorkReturnSchema.parse(row.record))
+    expect(returns).toHaveLength(children)
+    expect(returns.map(item => item.latestDeliverable)).toEqual(expect.arrayContaining(seen))
+    const completed = await f.runs.get(f.f.run.id)
+    await f.engine.start(f.f.run.id)
+    expect(await f.runs.get(f.f.run.id)).toEqual(completed)
+    expect(f.provider.counts.starts).toBe(children * 2 + 1)
+    expect((await f.db.pool.query('select record from workflow_versions where id=$1', [f.f.version.id])).rows).toEqual(version)
     expect(statementCount).toBeLessThanOrEqual((children * 2 + 1) * 1_000)
   } finally {
     queries.mockRestore()
