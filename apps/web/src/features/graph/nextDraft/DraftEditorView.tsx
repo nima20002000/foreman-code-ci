@@ -1,6 +1,6 @@
 import { WorkflowSettings } from './WorkflowSettings'
 import { BoardNotice } from './BoardNotice'
-import { Inbox, Redo2, Save, Undo2 } from 'lucide-react'
+import { Redo2, Save, Undo2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { ActionMenu, Button, ConfirmDialog, Icon, IconButton, Toolbar } from '../../../shared/ui/nocturne'
 import { nodeTitle, removeRelationship, neverAskCodexAgents, nextDraftDirty, type NextDraftEdit } from '../../board-core'
@@ -14,7 +14,7 @@ import {
   WorkflowName, WorkflowWorktreeField, BoardUndoNotice, BoardAlerts, type BoardUpdateFailure, KanbanButton,
 } from '../../workflow-board'
 import { RemoveWorkflowButton } from '../../workflows'
-import { useApprovalInboxStore } from '../../approvals'
+import { ApprovalInboxButton } from '../../approvals'
 import { raiseFloating, useFloatingZ } from '../../../shared/ui/floatingStack'
 import { RepeatEditor } from '../../repeats'
 import type { useDraftEditorController } from './useDraftEditorController'
@@ -30,7 +30,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
 }) {
   const { graph, context, board, editIntent, undoScope, core, preflight, pendingStart, changedAgents,
     reloading, stopAndSave, discardChanges, reload, inspectLatest, startMutation, starting, start, recoverStart,
-    workspace, managedWorkflow, pendingApprovals, agents, hints, requestSave, historyAction, openAgent, panels,
+    workspace, managedWorkflow, agents, hints, requestSave, historyAction, openAgent, panels,
     scheduleWrite, historyPending } = controller
   const { panel, settingsPanel, workflowName, openSaveField, openNode, setOpenNode, confirm, setConfirm, runAfterSave,
     message, setGeometryPending, canvas, presentation, change, geometry, report, inspect, openPanel, prepare } = core
@@ -42,17 +42,14 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
   const repeatZ = useFloatingZ('board-repeat', repeatOpen), settingsZ = useFloatingZ('board-settings', settingsOpen)
   // While the Board's latest Run is live the workflow is not edited; its agents still open for chat and details.
   const editLocked = editIntent.locked || !!board?.boardRunLive
-  const runAction = <Button size={board?.runActionHost ? 'sm' : undefined} variant="primary" leading={<Icon name="play" size={14} />} aria-label={pendingStart ? 'Reconcile Start' : needsSave ? 'Save and run' : 'Start saved version'}
-    title={startReason} disabled={startDisabled} loading={starting} onClick={() => void (pendingStart ? start() : prepare(() => needsSave ? startMutation.mutateAsync({ saveFirst: true }) : start())).catch(report)}>{pendingStart ? 'Confirm start' : needsSave ? 'Save and run' : 'Run'}</Button>
-  return <section className="workflow-graph board-typed-editor" aria-label="Workflow authoring">
-    <div className="workflow-graph-canvas">
-      <DraftCanvas ref={canvas} draftKey={draftKey} graph={graph} agents={agents} kind="execution"
-        baseGraph={edit.context.savedDraft?.graph ?? edit.context.draft.graph}
-        semanticLocked={edit.busy || reloading || editLocked || starting || !!edit.pending || !!pendingStart}
-        change={change} geometry={geometry} pending={setGeometryPending} report={report} inspect={inspect}
-        removalDisabled={edit.busy || reloading || editLocked}
-        open={openNode} setOpen={setOpenNode} panels={panels} changedAgentIds={changedAgents} />
-      <header className="board-topbar">
+  const runAction = <><Button size={board?.runActionHost ? 'sm' : undefined} variant="primary" leading={<Icon name="play" size={14} />} aria-label={pendingStart ? 'Reconcile Start' : needsSave ? 'Save and run' : 'Start saved version'}
+    title={startReason} disabled={startDisabled} loading={starting} onClick={() => void (pendingStart ? start() : prepare(() => needsSave ? startMutation.mutateAsync({ saveFirst: true }) : start())).catch(report)}>{pendingStart ? 'Confirm start' : needsSave ? 'Save and run' : board?.authoringActive === false ? 'Run current workflow' : 'Run'}</Button>
+    {board?.authoringActive === false && !pendingStart ? <span aria-label="Start target"
+      style={{ maxWidth: '28rem', font: 'var(--type-caption)', color: 'var(--text-muted)', overflowWrap: 'anywhere' }}>
+      {needsSave ? 'Current draft, saved before Start.' : <>Current workflow · saved version <code>{preflight.data?.version?.id ?? context.draft.baseWorkflowVersionId}</code>.</>}
+      {' '}New input, without reusing the selected Run’s input.
+    </span> : null}</>
+  const toolbar = <>
         <div className="board-title">
           <WorkflowName ref={workflowName} name={graph.name} disabled={saveBusy || starting || editLocked}
             onRename={(name) => change((current) => ({ ...current, name }))} />
@@ -93,9 +90,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
           <AddBoardAgentMenu draftKey={draftKey} edit={edit} report={report}
             disabled={edit.busy || reloading || editLocked || starting || !!edit.pending || !!pendingStart} />
           <IconButton label="Workflow settings" onClick={() => openPanel('workflow')}><Icon name="settings" size={16} /></IconButton>
-          <Button variant="secondary" className="n-icon-button workflow-approval-inbox" aria-label={`Open human approval inbox${pendingApprovals ? `, ${pendingApprovals} pending` : ''}`}
-            title="Approval inbox" onClick={event => useApprovalInboxStore.getState().openInbox({ workspaceId: graph.workspaceId, workflowId: graph.id }, event.currentTarget.getBoundingClientRect())}><Inbox aria-hidden="true" size={16} />
-            {pendingApprovals ? <span className="workflow-approval-inbox-badge" aria-hidden="true">{pendingApprovals}</span> : null}</Button>
+          <ApprovalInboxButton workspaceId={graph.workspaceId} workflowId={graph.id} />
           {!graph.handoffs ? <Button size="sm" variant="ghost" onClick={() => openPanel('repeat')}>Repeats</Button> : null}
           {board ? <IconButton label="Activities" onClick={board.openRuns}><Icon name="history" size={16} /></IconButton> : null}
           {board ? <KanbanButton workspaceId={graph.workspaceId} workflowId={graph.id} /> : null}
@@ -103,7 +98,8 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
           {board?.runActionHost ? createPortal(runAction, board.runActionHost) : board?.boardRunControls && !pendingStart ? null : runAction}
         </Toolbar>
         </div>
-      </header>
+  </>
+  const settingsPanels = <>
       <BoardUndoNotice scope={undoScope} />
       <BoardAlerts scope={draftKey} hints={hints} validation={edit.validation} error={editIntent.mutation.error ?? undefined} updateFailures={updateFailures}
         fixes={{ CODEX_ASKS_FOR_APPROVAL: { label: 'Set these agents to never ask', disabled: editLocked, run: () => {
@@ -164,6 +160,17 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
             report={report} /> : null}
         </fieldset>
       </aside> : null}
+  </>
+  return <section className="workflow-graph board-typed-editor" aria-label="Workflow authoring">
+    <div className="workflow-graph-canvas">
+      <DraftCanvas ref={canvas} draftKey={draftKey} graph={graph} agents={agents} kind="execution"
+        baseGraph={edit.context.savedDraft?.graph ?? edit.context.draft.graph}
+        semanticLocked={edit.busy || reloading || editLocked || starting || !!edit.pending || !!pendingStart}
+        change={change} geometry={geometry} pending={setGeometryPending} report={report} inspect={inspect}
+        removalDisabled={edit.busy || reloading || editLocked}
+        open={openNode} setOpen={setOpenNode} panels={panels} changedAgentIds={changedAgents} />
+      {board?.authoringToolbarHost ? createPortal(toolbar, board.authoringToolbarHost) : <header className="board-topbar">{toolbar}</header>}
+      {board?.authoringPanelHost ? createPortal(settingsPanels, board.authoringPanelHost) : settingsPanels}
       <nav className="board-keyboard-list" aria-label="Agents and connections">
         {graph.nodes.map((node) => <Button size="sm" variant="ghost" key={node.id} onClick={() => openAgent(node.id)}>
           {graph.entryNodeId === node.id ? 'Entry · ' : ''}{nodeTitle(graph, node.id)}</Button>)}

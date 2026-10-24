@@ -1,4 +1,4 @@
-import { useMutationState, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutationState, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import {
   ScheduleDisableInputSchema, ScheduleSaveInputSchema,
   type ScheduleDisableInput, type ScheduleGetInput, type ScheduleGetResult, type ScheduleSaveInput,
@@ -29,6 +29,8 @@ export const scheduleKeys = {
     ['workflow-schedule', generation, scope.workspaceId, scope.workflowId] as const,
   latestOccurrence: (scope: ScheduleGetInput, generation = sessionGeneration()) =>
     ['workflow-schedule-latest-occurrence', generation, scope.workspaceId, scope.workflowId] as const,
+  occurrenceHistory: (scope: ScheduleGetInput, generation = sessionGeneration()) =>
+    [...scheduleKeys.latestOccurrence(scope, generation), 'history'] as const,
   command: (scope: ScheduleGetInput, generation = sessionGeneration()) =>
     ['workflow-schedule-command', generation, scope.workspaceId, scope.workflowId] as const,
 }
@@ -45,6 +47,27 @@ export function useLatestScheduleOccurrence(scope: ScheduleGetInput, open: boole
     refetchOnMount: 'always', refetchOnWindowFocus: true, refetchOnReconnect: true,
     refetchInterval: open ? 5_000 : false,
   })
+}
+
+export function useScheduleOccurrenceHistory(scope: ScheduleGetInput, open: boolean) {
+  const generation = sessionGeneration()
+  const client = useQueryClient(), queryKey = scheduleKeys.occurrenceHistory(scope, generation)
+  const query = useInfiniteQuery({
+    queryKey,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ signal, pageParam }) => {
+      assertSession(generation)
+      return scheduleApi.occurrences({ ...scope, limit: 25, ...(pageParam ? { cursor: pageParam } : {}) }, { signal })
+    },
+    getNextPageParam: (page, _pages, _param, params) => page.pageInfo.nextCursor && !params.includes(page.pageInfo.nextCursor)
+      ? page.pageInfo.nextCursor : undefined,
+    enabled: open, maxPages: 5, staleTime: Infinity,
+    refetchOnWindowFocus: false, refetchOnReconnect: false,
+  })
+  return { ...query, refresh: async () => {
+    await client.cancelQueries({ queryKey, exact: true })
+    await client.resetQueries({ queryKey, exact: true })
+  } }
 }
 
 // Same conservative distinction as shared/api/commandAttempt.ts. An HTML 4xx,
