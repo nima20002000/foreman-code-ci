@@ -89,6 +89,9 @@ it('labels saved Overview scope while offering a return to unsaved draft changes
 }, 15_000)
 
 it('uses the saved node name for historical panel headings after a current rename', async () => {
+  const current = fixture.mock.workflows.get(fixture.after.workflowId)!
+  fixture.mock.workflows.set(current.id, { ...current, nodes: current.nodes.map(node =>
+    node.id === fixture.first.id ? { ...node, name: 'Renamed current node' } : node) })
   measureBoardWire(fixture.mock)
   await mountMeasuredBoard(`${boardHref(fixture.runs.before.scope)}&boardPanel=agent&boardNodeId=${fixture.first.id}&boardAgentTab=settings`)
   const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
