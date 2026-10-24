@@ -82,5 +82,6 @@ export function useSelectedRunSnapshot(selection: SelectedRunState) {
   const blocked = useBlockingReadError(query)
   const snapshot = current && !blocked ? query.data?.snapshot : undefined
   const activitySnapshot = snapshot ? query.data?.activitySnapshot : undefined
-  return { ...query, data: snapshot ? { snapshot, activitySnapshot } : undefined, snapshot, activitySnapshot }
+  const executionQueue = snapshot ? query.data?.executionQueue : undefined
+  return { ...query, data: snapshot ? { snapshot, activitySnapshot, executionQueue } : undefined, snapshot, activitySnapshot, executionQueue }
 }

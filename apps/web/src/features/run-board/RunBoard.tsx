@@ -47,14 +47,15 @@ export function RunBoard({ selection, hidden = false }: RunBoardProps) {
     : loading ? <p role="status">{query.isPaused ? 'Offline' : 'Loading…'}</p>
       : snapshot?.kind === 'unavailable' ? <p role="status">Snapshot unavailable</p>
       : snapshot?.kind === 'available' ? <RunBoardContents selection={selection} snapshot={snapshot} inspection={inspection}
-        activitySnapshot={query.activitySnapshot} /> : null}
+        activitySnapshot={query.activitySnapshot} executionQueue={query.executionQueue} /> : null}
   </section>
 }
 
-function RunBoardContents({ selection, snapshot, inspection, activitySnapshot }: {
+function RunBoardContents({ selection, snapshot, inspection, activitySnapshot, executionQueue }: {
   selection: SelectedRunState; snapshot: AvailableRunBoardSnapshot;
   inspection: ReturnType<typeof useRunNodeInspectionNavigation>;
   activitySnapshot: ReturnType<typeof useSelectedRunSnapshot>['activitySnapshot']
+  executionQueue: ReturnType<typeof useSelectedRunSnapshot>['executionQueue']
 }) {
   const board = useWorkflowBoard()
   const visible = board?.canvasVisible !== false && !board?.memoryOpen
@@ -83,7 +84,7 @@ function RunBoardContents({ selection, snapshot, inspection, activitySnapshot }:
     {/* Drawn once the saved version is read, so nodes appear at their saved places and never jump there. */}
     {!snapshot.nodes.length ? <p role="status">No nodes</p> : definition || version.isError
       ? <RunBoardCanvas key={selection.generation.id} snapshot={snapshot} visible={visible} definition={definition}
-        hierarchy={saved} activitySnapshot={activitySnapshot} onInspectNode={inspection.inspect} /> : null}
+        hierarchy={saved} activitySnapshot={activitySnapshot} executionQueue={executionQueue} onInspectNode={inspection.inspect} /> : null}
     {board ? board.sidePanelHost ? createPortal(<>{details}{settings}</>, board.sidePanelHost) : null : details}
   </>
 }

@@ -2,6 +2,11 @@ import { z } from 'zod'
 
 export const ExecutionQueueReasonSchema = z.discriminatedUnion('kind', [
   z.object({
+    kind: z.literal('preparation'),
+    message: z.string().min(1).max(3000),
+    since: z.iso.datetime(),
+  }).strict(),
+  z.object({
     kind: z.literal('host_capacity'),
     hostKey: z.string().min(1),
     limit: z.number().int().positive(),
@@ -23,6 +28,7 @@ export const ExecutionQueueEntrySchema = z.object({
 export type ExecutionQueueEntry = z.infer<typeof ExecutionQueueEntrySchema>
 
 export function executionQueueReasonLabel(reason: ExecutionQueueReason): string {
+  if (reason.kind === 'preparation') return reason.message
   if (reason.kind === 'host_capacity') {
     return `Waiting for a startup slot on this computer (limit ${reason.limit})`
   }

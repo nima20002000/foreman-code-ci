@@ -13,6 +13,7 @@ import { withExclusiveGraphConnection } from '../run-graph/connection.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { readAcceptedRepeatRunLocked, readRecordedRepeatRunSnapshot, type AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
 import { readRepeatExecutionsLocked } from './repeatExecutionRead.js'
+import { readBrowserPreparationQueue } from '../collaboration/index.js'
 import { readExecutionQueueReason } from './executionQueue.js'
 import { readRunDirectionWaitLocked } from './directionWaitRead.js'
 
@@ -60,10 +61,11 @@ export function readCurrentRunDetails(pool: pg.Pool, principal: ManagementPrinci
           'RUN_DETAIL_TOO_LARGE', 'Use bounded graph metadata and activity pages for this Run.', 409)
       }
     }
+    const preparationQueue = new Map((await readBrowserPreparationQueue(sql, runId)).map(entry => [entry.executionId, entry.reason]))
     const executions = []
     const stored = await readRepeatExecutionsLocked(sql, snapshot, rows.map(row => row.id))
     for (const { execution } of stored) {
-      const queueReason = readExecutionQueueReason(execution)
+      const queueReason = preparationQueue.get(execution.id) ?? readExecutionQueueReason(execution)
       executions.push(queueReason ? { ...execution, queueReason } : execution)
     }
     const activityRows = (await sql.query<{ sequence: string; source: string; kind: string; harness_execution_id: string | null;
