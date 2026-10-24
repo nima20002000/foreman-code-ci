@@ -110,6 +110,11 @@ export function createProductionBrowser(options: BrowserCompositionOptions) {
       const run = input.subject.kind !== 'conversation'
       // A Run wins its profile: chat browsers on it close first.
       if (run && input.browser.profileId) await chat.yieldToRun(input.browser.profileId, input.computerId)
+      if (input.browser.enabled && input.browser.profileId) {
+        await profiles.service.prepareReplica(input.browser.profileId, input.computerId, {
+          assertCurrent: () => authority.assertCurrent(input.subject, { computerId: input.computerId, profileId: input.browser.profileId }),
+        })
+      }
       const result = input.computerId === identity()
         ? runtime.status().ready ? await prepareOrReconcileSettled(runtime.getHost().broker, input)
           : { kind: 'unavailable' as const, reason: 'runtime_missing' as const, retryable: true }

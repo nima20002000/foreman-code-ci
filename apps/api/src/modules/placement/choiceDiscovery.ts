@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { basename } from 'node:path'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { AgentConfigurationVersionSchema, withAdvancedDefaults, type AgentConfigurationVersion } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -8,7 +7,7 @@ import type { CanonicalMachineReference } from '@foreman-code/contracts/device-i
 import type { NodePlacementChoice, NodePlacementChoicesInput, NodePlacementChoicesResult } from '@foreman-code/contracts/placement-readback'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
 import { SourceRootRecordSchema, type SourceRootRecord } from '@foreman-code/contracts/source-admission'
-import { WorkspaceRootPolicySchema, type WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root-policies'
+import type { WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root-policies'
 import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { commandInputHash } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
@@ -32,17 +31,7 @@ type DiscoveryServices = PairedRootServices & {
 type UnavailableComputer = NonNullable<NodePlacementChoicesResult['unavailableComputers']>[number]
 
 type PlacementRootPolicy = Pick<WorkspaceRootPolicy, 'hostRef' | 'applicationInstallationId'
-  | 'rootPolicyId' | 'rootPolicyRevision' | 'locationRevision' | 'canonicalProjectRoot' | 'bindingPurpose'>
-
-function folderChoices(choices: NodePlacementChoice[]): NodePlacementChoice[] {
-  const folders = new Map<string, NodePlacementChoice>()
-  for (const choice of choices) {
-    const key = commandInputHash({ host: choice.placement.hostRef, folder: choice.placement.projectRoot })
-    const previous = folders.get(key)
-    if (!previous || previous.availability !== 'ready' && choice.availability === 'ready') folders.set(key, choice)
-  }
-  return [...folders.values()]
-}
+  | 'rootPolicyId' | 'rootPolicyRevision' | 'locationRevision' | 'canonicalProjectRoot'>
 
 function matchesConfiguration(profile: HostHarnessOverride, configuration: AgentConfigurationVersion): boolean {
   const requested = configuration.harnessProfileSelection
@@ -75,7 +64,6 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
     if (await services.sources.isPlainWorkspace?.(principal, input.workspaceId)) {
       return this.listFolders(services, principal, input, configuration, source)
     }
-    const sourceFailures = await this.refreshSources(services, principal, input.workspaceId, source)
     let pending = await provisionPairedAgentRoots(this.pool, services, principal, input.workspaceId, configuration,
       matchesConfiguration, source)
     const preparation = await this.prepareWorkerProfiles(services, principal, input.workspaceId, configuration, source)
@@ -96,9 +84,9 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
       const roots = await this.sourceRoots(sql, input.workspaceId)
       const choices: NodePlacementChoice[] = []
       for (const root of roots) {
-        let policy: PlacementRootPolicy = { ...root.policy, ...root.selection,
+        let policy: PlacementRootPolicy = { ...root.selection,
           applicationInstallationId: root.binding.workerInstallationId ?? root.binding.mainId,
-          canonicalProjectRoot: root.policy?.canonicalProjectRoot ?? root.binding.canonicalPath }
+          canonicalProjectRoot: root.binding.canonicalPath }
         let rootUnavailableReason: string | null = null
         try {
           // Location changes do not replace an existing host's approved source namespace.
@@ -111,7 +99,9 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
           })
         } catch (error) {
           if (!(error instanceof DomainError) || ![403, 404, 409, 410].includes(error.status)) throw error
-          rootUnavailableReason = sourceFailures.get(root.binding.rootId) ?? error.message
+          rootUnavailableReason = error.code === 'SOURCE_UNAVAILABLE'
+            ? 'The approved source was released. Approve and bind the source again.'
+            : error.message
         }
         const profiles = await services.profiles.list(policy.hostRef, policy.applicationInstallationId, sql)
         for (const profile of profiles.filter(value => matchesConfiguration(value, configuration))) {
@@ -120,47 +110,14 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
           pending ||= found.pending
         }
       }
-      return { choices: folderChoices(choices), pending,
+      return { choices, pending,
         unavailableComputers: await this.unavailableComputers(sql, services, configuration, roots, choices, preparation) }
     })
   }
 
-  private async refreshSources(services: DiscoveryServices, principal: ManagementPrincipal,
-    workspaceId: string, source: 'http' | 'mcp') {
-    const failures = new Map<string, string>()
-    const roots = await withTransaction(this.pool, sql => this.sourceRoots(sql, workspaceId))
-    for (const root of roots) {
-      try {
-        await withTransaction(this.pool, async sql => {
-          await services.roots.resolve(sql, principal, { workspaceId, ...root.selection })
-          await services.sources.resolveRootBinding(sql, principal, { workspaceId, rootId: root.binding.rootId,
-            bindingRevision: root.binding.bindingRevision, source: root.source })
-        })
-      } catch (error) {
-        if (!(error instanceof DomainError)) throw error
-        if (!['SOURCE_UNAVAILABLE', 'SOURCE_NOT_FOUND', 'SOURCE_ROOT_NOT_FOUND', 'SOURCE_ROOT_CONFLICT'].includes(error.code)) {
-          if ([403, 404, 409, 410].includes(error.status)) continue
-          throw error
-        }
-        try {
-          // Capture and host attestation must run after the read transaction has released its locks.
-          await services.sources.setupRoot(principal, source, { workspaceId,
-            commandId: `setup-choice-${root.binding.rootId}-${root.binding.bindingRevision}`,
-            selection: root.selection, accessMode: root.binding.accessMode })
-        } catch (setupError) {
-          failures.set(root.binding.rootId, setupError instanceof Error ? setupError.message : String(setupError))
-        }
-      }
-    }
-    return failures
-  }
-
   private async listFolders(services: DiscoveryServices, principal: ManagementPrincipal,
     input: NodePlacementChoicesInput, configuration: AgentConfigurationVersion, source: 'http' | 'mcp') {
-    const savedPolicies = await withTransaction(this.pool, sql => services.roots.read(sql, principal, input.workspaceId))
-    const policies = savedPolicies.filter(policy => policy.bindingPurpose !== 'ci-enrollment'
-      || !savedPolicies.some(other => other.bindingPurpose !== 'ci-enrollment'
-        && sameWorkflowValue(other.hostRef, policy.hostRef)))
+    const policies = await withTransaction(this.pool, sql => services.roots.read(sql, principal, input.workspaceId))
     const preparation = await this.prepareWorkerProfiles(services, principal, input.workspaceId, configuration, source, policies)
     const profiles: HostHarnessOverride[] = []
     for (const policy of policies) profiles.push(...(await services.profiles.list(policy.hostRef, policy.applicationInstallationId))
@@ -185,7 +142,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
           pending ||= found.pending
         }
       }
-      return { choices: folderChoices(choices), pending, unavailableComputers: await this.unavailableComputers(sql, services, configuration,
+      return { choices, pending, unavailableComputers: await this.unavailableComputers(sql, services, configuration,
         policies.map(policy => ({ selection: { hostRef: policy.hostRef } })), choices, preparation) }
     })
   }
@@ -259,28 +216,10 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
   }
 
   private async sourceRoots(sql: pg.PoolClient, workspaceId: string) {
-    const rows = await sql.query<{ record: unknown; policy: unknown }>(`select b.record,p.record as policy from source_root_catalog c
+    const rows = await sql.query<{ record: unknown }>(`select b.record from source_root_catalog c
       join source_root_bindings b on b.root_id=c.root_id and b.binding_revision=c.current_binding_revision
-      left join workspace_root_policies p on p.root_policy_id::text=b.record#>>'{selection,rootPolicyId}'
-        and p.root_policy_revision::text=b.record#>>'{selection,rootPolicyRevision}'
-      left join workspace_root_policy_heads h on h.workspace_id=p.workspace_id
-        and h.root_policy_id=p.root_policy_id and h.root_policy_revision=p.root_policy_revision
-      where c.workspace_id=$1 order by (h.root_policy_id is not null) desc,
-        b.record->>'boundAt' desc, c.root_id`, [workspaceId])
-    const roots = rows.rows.map(row => ({ root: SourceRootRecordSchema.parse(row.record),
-      policy: row.policy ? WorkspaceRootPolicySchema.parse(row.policy) : undefined }))
-    const folders = new Set<string>()
-    return roots.filter(({ root, policy }) => policy?.bindingPurpose !== 'ci-enrollment'
-      || !roots.some(other => other.policy && other.policy.bindingPurpose !== 'ci-enrollment'
-        && sameWorkflowValue(other.root.selection.hostRef, root.selection.hostRef)))
-      .filter(({ root, policy }) => {
-        // Internal source namespaces differ even when bindings refer to the same project folder.
-        const key = commandInputHash({ host: root.selection.hostRef,
-          folder: policy?.canonicalProjectRoot ?? root.binding.canonicalPath })
-        if (folders.has(key)) return false
-        folders.add(key)
-        return true
-      }).map(({ root, policy }) => ({ ...root, policy }))
+      where c.workspace_id=$1 order by c.root_id`, [workspaceId])
+    return rows.rows.map(row => SourceRootRecordSchema.parse(row.record))
   }
 
   private installedProfile(services: DiscoveryServices, profile: HostHarnessOverride): boolean {
@@ -365,15 +304,8 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
     const named = (await readComputerNames(sql, policy.hostRef.mainId)).get(computerNameKey(
       policy.hostRef.mainId, policy.hostRef.kind === 'device' ? policy.hostRef.deviceId : undefined))
     const hostLabel = named ?? (policy.hostRef.kind === 'main' ? 'Main' : `Computer ${policy.hostRef.deviceId}`)
-    let folder = basename(policy.canonicalProjectRoot)
-    if (policy.bindingPurpose === 'ci-enrollment' && root) {
-      const workspace = (await sql.query<{ path: string }>(
-        "select execution_location->>'rootPath' as path from workspaces where id=$1", [root.binding.workspaceId])).rows[0]
-      folder = basename(workspace?.path ?? 'Project folder')
-    }
-    const folderLabel = /^[a-f0-9]{32,}$|^[a-f0-9-]{36}$/i.test(folder) ? 'Project folder' : folder
     return { pending, choice: { id: commandInputHash(placement),
-      label: `${hostLabel} · ${folderLabel}`,
+      label: `${hostLabel} · ${profile.driverId} · ${policy.canonicalProjectRoot}`,
       placement, availability: reason === null ? 'ready' : 'unavailable', reason } }
   }
 }

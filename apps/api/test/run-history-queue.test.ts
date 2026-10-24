@@ -33,7 +33,7 @@ it('reads live queue reasons through authenticated Board MCP and denies an unaut
     if (/^(begin|commit|rollback)/i.test(text)) return { rows: [] }
     if (values.length === 3 && values[2] === f.run.id) return { rows: [{ workflow_version_id: f.version.id,
       snapshot_id: f.run.id, snapshot, execution_state: 'running' }] }
-    if (values.length === 2) return { rows: [] }
+    if (values.length === 2 || values.length === 1 && values[0] === f.run.id) return { rows: [] }
     if (values.length === 3 && values[0] === f.version.id) return { rows: [{ record: f.version }] }
     throw new Error('Unexpected database read in queue fixture')
   }))
