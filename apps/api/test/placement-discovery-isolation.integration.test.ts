@@ -43,7 +43,7 @@ it.each(['http', 'mcp'] as const)('probes each computer once across matching pro
   try {
     await f.addMatchingWorkerProfile()
     const result = await f.read(via)
-    expect(result.choices).toHaveLength(3)
+    expect(result.choices).toHaveLength(2)
     expect(result.choices.every(choice => choice.availability === 'ready')).toBe(true)
     expect(probe.mock.calls).toEqual(expect.arrayContaining([[f.native.placement.local.hostRef], [f.worker.target.hostRef]]))
     expect(probe).toHaveBeenCalledTimes(2)
@@ -67,7 +67,8 @@ it.each(['http', 'mcp'] as const)('revalidates a source released during a Worker
     const result = await reading
     expect(result.choices).toHaveLength(2)
     for (const choice of result.choices) expect(choice).toMatchObject({ availability: 'unavailable',
-      reason: 'The approved source was released. Approve and bind the source again.' })
+      reason: 'The exact accepted source bytes are no longer retained.',
+      placement: { source: f.native.placement.source } })
   } finally {
     release.resolve()
     await reading
