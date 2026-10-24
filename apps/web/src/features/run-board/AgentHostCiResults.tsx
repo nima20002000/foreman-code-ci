@@ -33,6 +33,6 @@ export function AgentHostCiResults({ selection, scope, execution }: {
     <Button size="sm" disabled={query.isFetching && !query.isRefetching} onClick={() => void query.refetch()}>Refresh Host CI</Button>
     <CiServerDialog open={open && !query.isError} onOpenChange={open => store.setState({ open })}
       scope={scope} jobs={jobs} ticketId={ticketId} names={new Map()} truncated={!!query.data?.truncated}
-      error={query.isError} loading={query.isPending} />
+      error={query.isError} loading={query.isPending} readError={query.error} onRefresh={() => void query.refetch()} />
   </section>
 }

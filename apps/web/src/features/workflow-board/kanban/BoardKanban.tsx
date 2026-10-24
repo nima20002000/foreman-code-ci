@@ -11,7 +11,6 @@ import {
 import { PulseFlight, type EdgePulse } from '../../graph/SignalEdgeShape'
 import { useFloatingCurve, useBoardSelection } from '../../board-core'
 import { kanbanScope, reportKanbanActivity, useKanbanActivity, type KanbanCardActivity } from './kanbanActivity'
-import { KanbanCardDialog } from './KanbanCardDialog'
 import './boardKanban.css'
 
 const client = createMemoryBoardClient()
@@ -24,11 +23,14 @@ export type KanbanFlowNode = Node<{ workspaceId: string; workflowId: string; sav
 /** The workflow's memory board as one Board object: drag it by its bar, resize it from its edges, close it into
  * the dock with its X. Each card inside is its own element and shows an Agent's change live. */
 export const BoardKanbanNode = memo(function BoardKanbanNode({ data }: NodeProps<KanbanFlowNode>) {
+  const board = useBoardSelection()
   return <section className="board-kanban" aria-label="Kanban">
     <NodeResizer minWidth={KANBAN_MIN.width} minHeight={KANBAN_MIN.height} handleClassName="board-kanban-resize"
       onResizeEnd={(_event, frame) => data.resized(frame)} />
     <header className="board-kanban-bar" title="Drag to move the Kanban">
-      <h2><Icon name="grid" size={14} />Kanban</h2>
+      <h2><span><Icon name="grid" size={14} />Kanban</span><small>Live memory · shared across runs</small></h2>
+      {board?.openMemoryCard ? <Button size="sm" variant="ghost" className="nodrag nopan"
+        aria-label="Open memory board" title="Open memory board" onClick={() => board.openMemoryCard?.()}>Memory</Button> : null}
       {data.saveError ? <span className="board-kanban-error" role="alert">Layout not saved: {data.saveError}</span> : null}
       <button type="button" className="board-object-close nodrag nopan" aria-label="Close Kanban to the dock" title="Close to the dock"
         onClick={data.close}><Icon name="close" size={14} /></button>
@@ -67,9 +69,6 @@ function KanbanColumns({ workspaceId, workflowId }: { workspaceId: string; workf
     return next
   }), [])
   const retries = Object.values(failed)
-  // A clicked card opens in its own window on any Board; editing stays in the memory board.
-  const [openCard, setOpenCard] = useState<string>()
-  const editCard = board?.openMemoryCard
   // While loading or after a failed read the columns keep their shape, so the Kanban never collapses or jumps.
   if (!view) return <div className="board-kanban-columns" role="region" aria-label="Kanban columns" aria-busy={!error}>
     {(Object.keys(statusLabels) as Card['status'][]).map((status, index) => <section key={status} className="board-kanban-column is-placeholder"
@@ -81,12 +80,9 @@ function KanbanColumns({ workspaceId, workflowId }: { workspaceId: string; workf
   </div>
   return <div className="board-kanban-columns" role="region" aria-label="Kanban columns">
     {(Object.keys(statusLabels) as Card['status'][]).map((status, index) => <KanbanColumn key={status} view={view}
-      status={status} nodes={nodes} activity={byCard} onOpen={setOpenCard} onFailure={reportFailure}
+      status={status} nodes={nodes} activity={byCard} onOpen={cardId => board?.openMemoryCard?.(cardId)} onFailure={reportFailure}
       notice={index === 0 && retries.length ? <p className="board-kanban-error" role="alert">Couldn’t load cards.
         <Button size="sm" variant="ghost" onClick={() => retries.forEach((retry) => retry())}>Retry</Button></p> : null} />)}
-    {openCard ? <KanbanCardDialog client={client} boardId={view.board.id} cardId={openCard} nodes={nodes}
-      onClose={() => setOpenCard(undefined)}
-      {...(editCard ? { onEdit: () => { setOpenCard(undefined); editCard(openCard) } } : {})} /> : null}
   </div>
 }
 
