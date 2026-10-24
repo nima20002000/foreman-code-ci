@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { spawn } from 'node:child_process'
 import { closeSync, mkdirSync, openSync, readSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -138,7 +137,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const idleTimeoutMs = Number(process.env.CI_WATCHDOG_IDLE_MS ?? CI_IDLE_TIMEOUT_MS)
   process.exitCode = await runCiPart(command, { expectedDurationMs, idleTimeoutMs,
     progressFile: resolve(base, 'progress.jsonl'),
-    ...(process.env.TEST_RESULTS_OUTPUT || process.env[INSTALLATION_NAMES.environment.INTEGRATION_TEST_RESULTS_OUTPUT]
-      ? { resultsFile: resolve(process.env.TEST_RESULTS_OUTPUT ?? process.env[INSTALLATION_NAMES.environment.INTEGRATION_TEST_RESULTS_OUTPUT]) } : {}),
+    ...(process.env.TEST_RESULTS_OUTPUT || process.env.FOREMAN_CODE_INTEGRATION_TEST_RESULTS_OUTPUT
+      ? { resultsFile: resolve(process.env.TEST_RESULTS_OUTPUT ?? process.env.FOREMAN_CODE_INTEGRATION_TEST_RESULTS_OUTPUT) } : {}),
     ...(process.env.CI_WATCHDOG_MESSAGE_FILE ? { messageFile: process.env.CI_WATCHDOG_MESSAGE_FILE } : {}) })
 }

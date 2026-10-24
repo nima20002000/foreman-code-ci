@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema, NativeSessionReferenceSchema } from '@foreman-code/contracts'
 import { WorkflowRunCurrentSchema, WorkflowVersionCurrentSchema, canonicalGraphJson } from '@foreman-code/contracts/current'
 import type { SqlQuery } from '../../../infrastructure/transaction.js'
@@ -95,7 +94,7 @@ export async function credentialAuthority(
 
 /** Additional check on the real authenticated App endpoint. The legacy predicate
  * remains in force; typed-route/session/generation eligibility is additive. */
-export async function assertCurrentWorkerBinding(sql: SqlQuery, principalId: string): Promise<void> {
+export async function assertWave25WorkerBinding(sql: SqlQuery, principalId: string): Promise<void> {
   const row = (await sql.query<WorkerCredentialBinding>(
     `select b.*,b.approval_connection_generation::text,b.approval_review_lease_fence::text,p.revoked_at is null and b.revoked_at is null
       and p.expires_at>clock_timestamp() and p.audience='worker' and p.agent_id=b.agent_id as live,v.execution_semantics_version
@@ -107,7 +106,7 @@ export async function assertCurrentWorkerBinding(sql: SqlQuery, principalId: str
     await readConsultationCredentialSubject(sql, principalId)
     return
   }
-  if (!row.live || !['workflow','reviewer'].includes(row.purpose) || row.environment_variable !== INSTALLATION_NAMES.environment.MCP_TOKEN) return fail('AUTH_REVOKED')
+  if (!row.live || !['workflow','reviewer'].includes(row.purpose) || row.environment_variable !== 'GRAPHQL_MCP_TOKEN') return fail('AUTH_REVOKED')
   if (row.purpose === 'reviewer' && row.approval_review_job_id) {
     const epoch = await sql.query(`select 1 from review_jobs where id=$1 and execution_id=$2 and lease_fence=$3::bigint`,
     [row.approval_review_job_id, row.execution_id, row.approval_review_lease_fence])
@@ -123,7 +122,7 @@ export async function assertCurrentWorkerBinding(sql: SqlQuery, principalId: str
   // Session publication changes the execution and binding together. Compare them from one SQL snapshot.
   const authority = await credentialAuthority(sql, row.execution_id, row.purpose, principalId)
   const binding = authority.binding
-  if (!binding?.live || binding.purpose !== row.purpose || binding.environment_variable !== INSTALLATION_NAMES.environment.MCP_TOKEN
+  if (!binding?.live || binding.purpose !== row.purpose || binding.environment_variable !== 'GRAPHQL_MCP_TOKEN'
     || binding.execution_semantics_version !== 3 || authority.execution.id !== binding.execution_id
     || authority.run.id !== binding.run_id || authority.run.workspaceId !== binding.workspace_id
     || authority.run.workflowId !== binding.workflow_id || authority.execution.agentId !== binding.agent_id

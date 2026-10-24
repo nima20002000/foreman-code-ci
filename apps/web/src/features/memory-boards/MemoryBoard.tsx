@@ -1,5 +1,5 @@
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { MemoryBoardMutation, MemoryBoardScope, MemoryCard as Card, MemoryCardWorkBinding } from '@foreman-code/contracts'
 import { Button } from '../../shared/ui/nocturne/Button'
 import { useMemoryBoard } from './queries'
@@ -35,11 +35,8 @@ export interface MemoryBoardProps {
   filters: MemoryFilters
   onFiltersChange(filters: MemoryFilters): void
   onOpenWork(binding: MemoryCardWorkBinding): void
-  onSourcePost?(postId: string): void
   onOpenHistoryWork?(change: MemoryChange): void
   onInteractionChange?(interaction: MemoryBoardInteraction | undefined): void
-  sourceDraft?: { kind: 'card' | 'note'; postId: string; requestId: string }
-  onSourceDraftConsumed?(): void
 }
 /** The shell owns section/card/filter URLs. This body creates no second router,
  * rail, transcript store or background subscription when hidden. */
@@ -65,11 +62,10 @@ function VisibleMemoryBoard(props: MemoryBoardProps) {
   </section>
 }
 function BoardBody(props: MemoryBoardProps & { board: MemoryBoardView; online: boolean }) {
-  const { board, client, nodes, onInteractionChange, onSelectCard, sourceDraft, onSourceDraftConsumed } = props
+  const { board, client, nodes, onInteractionChange, onSelectCard } = props
   const boardId = board.board.id
   const draft = useMemoryDraft(boardId), save = useMemorySave(client, boardId)
   const [leaveAction, setLeaveAction] = useState<(() => void)>()
-  const consumedSource = useRef<string | undefined>(undefined)
   const matchesConfirmedDraft = Boolean(save.data && memoryDraftMatchesCommand(draft, save.confirmedCommand))
   const confirmedDraft = matchesConfirmedDraft && save.data?.outcome !== 'existing'
   const dirty = Boolean(draft?.dirty && !save.retained.command)
@@ -88,12 +84,6 @@ function BoardBody(props: MemoryBoardProps & { board: MemoryBoardView; online: b
     onInteractionChange?.({ pending: save.isPending, dirty, requestLeave })
     return () => onInteractionChange?.(undefined)
   }, [onInteractionChange, save.isPending, dirty, requestLeave])
-  useEffect(() => {
-    if (!sourceDraft || consumedSource.current === sourceDraft.requestId || draft || save.retained.command || save.isPending) return
-    consumedSource.current = sourceDraft.requestId
-    setMemoryDraft(boardId, sourceDraft.kind === 'card' ? newCardDraft(sourceDraft.postId) : editNoteDraft(undefined, sourceDraft.postId))
-    onSourceDraftConsumed?.()
-  }, [sourceDraft, draft, boardId, onSourceDraftConsumed, save.retained.command, save.isPending])
   useEffect(() => {
     if (!matchesConfirmedDraft) return
     if (save.data?.outcome !== 'existing') setMemoryDraft(boardId)
@@ -137,10 +127,10 @@ function BoardBody(props: MemoryBoardProps & { board: MemoryBoardView; online: b
       onChange={(next) => setMemoryDraft(boardId, next)} onSave={submit} onCancel={finishEditor} />}
     {props.selectedCardId && <MemoryCardDetail client={client} boardId={boardId} cardId={props.selectedCardId} nodes={nodes}
       health={props.health ?? []} canWrite={Boolean(canWrite)} onBack={() => requestLeave(() => onSelectCard(undefined))}
-      onEdit={edit} onOpenWork={props.onOpenWork} onSourcePost={props.onSourcePost} onOpenHistoryWork={props.onOpenHistoryWork} />}
+      onEdit={edit} onOpenWork={props.onOpenWork} onOpenHistoryWork={props.onOpenHistoryWork} />}
     {!draft && !props.selectedCardId && <>
       <NotesStrip client={client} board={board} canWrite={Boolean(canWrite)} onAdd={() => openDraft(editNoteDraft())}
-        onEdit={(note) => openDraft(editNoteDraft(note))} onSourcePost={props.onSourcePost}
+        onEdit={(note) => openDraft(editNoteDraft(note))}
         onArchive={(note, archived) => save.mutate({ kind: 'save', command: { kind: 'note_archive', boardId, noteId: note.id, archived, expectedRevision: note.revision } })} />
       <MemoryColumns client={client} board={board} nodes={nodes} filters={props.filters} onFiltersChange={props.onFiltersChange}
         onOpenCard={openCard} onAdd={() => openDraft(newCardDraft())} canWrite={Boolean(canWrite)} />

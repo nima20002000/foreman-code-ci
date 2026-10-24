@@ -7,7 +7,7 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { ArtifactAttempt } from '@foreman-code/contracts/artifact-edges'
 import type { AcceptedArtifactPublication } from '../../files/distributed/publication.js'
 import { DomainError } from '../../errors.js'
-import { registerForemanMcp } from '../../../mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../../../mcp/unified/transport.js'
 const ports = vi.hoisted(() => ({ receiver: vi.fn(), artifacts: vi.fn() }))
 vi.mock('./workflowArtifactReceiver.js', () => ({ createWorkflowArtifactReceiver: ports.receiver }))
 vi.mock('../../files/production.js', () => ({ createProductionDistributedArtifacts: ports.artifacts }))
@@ -99,8 +99,8 @@ it('preserves the original standalone publication command and accepted context',
 })
 it('adds no graph-tool grants while advertising the authorized extension through actual /mcp', async () => {
   const f = fixture()
-  registerForemanMcp(f.app, { access: { authenticate: async () => f.principal } as unknown as Parameters<typeof registerForemanMcp>[1]['access'],
-    interactions: { toolAccess: async () => ({ role: 'coder', tools: ['context_get'] }), canRead: async () => false, canRespond: async () => false } as unknown as NonNullable<Parameters<typeof registerForemanMcp>[1]['interactions']>,
+  registerGraphqlMcp(f.app, { access: { authenticate: async () => f.principal } as unknown as Parameters<typeof registerGraphqlMcp>[1]['access'],
+    interactions: { toolAccess: async () => ({ role: 'coder', tools: ['context_get'] }), canRead: async () => false, canRespond: async () => false } as unknown as NonNullable<Parameters<typeof registerGraphqlMcp>[1]['interactions']>,
     workerArtifacts: () => f.mounted.extension })
   const response = await f.app.inject({ method: 'POST', url: '/mcp', headers: { host: '127.0.0.1', authorization: 'Bearer unit-worker', accept: 'application/json, text/event-stream' },
     payload: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} } })

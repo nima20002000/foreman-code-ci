@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 // Runs a test command through Main's CI instead of on this computer:
 //   node scripts/ci-remote.mjs <suite> -- <local command...>
 // On a CI machine (CI=true: cloud runners and build computers) or with FOREMAN_CODE_CI_LOCAL=1 it runs the local
@@ -73,7 +72,7 @@ async function scopedRequest(message) {
 }
 
 function hasScopedCredential() {
-  return environment[INSTALLATION_NAMES.environment.MCP_TOKEN] !== undefined
+  return environment.FOREMAN_CODE_MCP_TOKEN !== undefined || environment.GRAPHQL_MCP_TOKEN !== undefined
 }
 
 function toolValue(name, result) {
@@ -99,7 +98,7 @@ export async function mcpClient(clientName = 'ci-remote') {
   const tokenFile = environment.FOREMAN_CODE_OPERATOR_TOKEN_FILE
     ?? join(homedir(), '.local/share/foreman-code/production-operator.private.json')
   const token = scoped ? undefined
-    : environment[INSTALLATION_NAMES.environment.OPERATOR_TOKEN] ?? JSON.parse(readFileSync(tokenFile, 'utf8')).token
+    : environment.FOREMAN_CODE_OPERATOR_TOKEN ?? JSON.parse(readFileSync(tokenFile, 'utf8')).token
   let session, version
   const send = async message => {
     if (scoped) return scopedRequest(message)

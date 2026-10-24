@@ -1,3 +1,4 @@
+import { activeWorkflowNode } from '../board-core'
 import { nativeNode } from '../../shared/mocks/nativeFixtureTypes'
 import { vi } from 'vitest'
 import { ApiClient } from '../../shared/api/client'
@@ -26,7 +27,7 @@ it('Apply does not persist placement; Save and fresh server read preserve exact 
   const graph = { ...draft.graph, nodes: draft.graph.nodes.map((node, index) => index === 0 ? { ...node, placement } : node) }
   const request: DraftRequest = { kind: 'apply', executionSemanticsVersion: 3, workspaceId: draft.workspaceId,
     workflowId: draft.workflowId, draftId: draft.id, commandId: 'apply-placement', expectedRevision: draft.revision,
-    operations: [{ type: 'node.replace_v3', node: graph.nodes[0]! }] }
+    operations: [{ type: 'node.replace_v3', node: activeWorkflowNode(graph.nodes[0]!) }] }
   const before = fetch.mock.calls.length
   const applied = await api.write(request, graph)
   expect(fetch).toHaveBeenCalledTimes(before)

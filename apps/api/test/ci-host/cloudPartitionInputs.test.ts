@@ -62,7 +62,6 @@ it.each(['unit', 'integration'] as const)('isolates the %s suite fixture from en
     const calls = (await readFile(runner.calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
     expect(calls).toEqual(suite === 'integration' ? [['pnpm', 'test:integration', '--files', file]] : [
       ['pnpm', '--filter', '@foreman-code/contracts', 'build'],
-      ['pnpm', '--filter', '@foreman-code/contracts-node', 'build'],
       ['pnpm', '--filter', '@foreman-code/ci', 'build'],
       ['--', 'corepack', 'pnpm', '--dir', 'apps/api', 'exec', 'vitest', 'run', file.slice('apps/api/'.length)],
     ])

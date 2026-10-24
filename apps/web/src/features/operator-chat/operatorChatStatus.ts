@@ -1,6 +1,7 @@
 import type { OperatorConversationState, OperatorConversationSummary } from '@foreman-code/contracts'
 import type { AgentChatSessionState } from '@foreman-code/contracts/agent-chat'
-import { chatBackgroundWork, chatStatus } from '../chat-core'
+import { chatBackgroundWork } from '../conversations/chatWorkStatus'
+import { chatStatus } from '../conversations/chatStatus'
 import type { OperatorChatConnection } from '../../shared/api/operatorChatStream'
 
 export function operatorNeedsAttention(state: OperatorConversationState): boolean {

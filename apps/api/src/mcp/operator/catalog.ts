@@ -16,7 +16,6 @@ import { harnessMcpTools } from './tools/harnessMcp.js'
 import { claudePluginTools } from './tools/claudePlugins.js'
 import { settingsTools } from './tools/settings.js'
 import { providerAccountTools } from './tools/providerAccounts.js'
-import { workflowChatTools } from './tools/workflowChat.js'
 import { agentChatTools } from './tools/agentChat.js'
 import { withWorkflowExecutionChatTools } from './executionChat.js'
 import { sessionControlTools } from './tools/sessionControls.js'
@@ -68,7 +67,6 @@ export const OPERATOR_TOOL_GROUPS = {
   settings: settingsTools,
   providerAccounts: providerAccountTools,
   agentChat: withWorkflowExecutionChatTools(agentChatTools),
-  workflowChat: workflowChatTools(),
   sessionControls: sessionControlTools,
   workspaceDefaults: workspaceDefaultsTools,
   workspaces: workspaceTools,

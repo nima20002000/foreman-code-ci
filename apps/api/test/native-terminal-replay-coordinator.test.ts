@@ -103,7 +103,7 @@ function liveRequest(f: ReturnType<typeof nativeReviewerFixture>) {
 
 test('NATIVE-2 nonterminal missing permit cannot prepare credentials or start native work', async () => {
   const f = nativeReviewerFixture(false); f.set({ ...f.get(), nativeSessionId: undefined })
-  f.managers.resolve = () => ({ manager: f.manager, processState: 'needs_start' })
+  f.internals.resolveManager = () => ({ manager: f.manager, processState: 'needs_start' })
   f.store.authorizeNativeSubmission = async () => { throw new DomainError('NATIVE_ENTRY_CONFLICT', 'Missing committed entry permit', 409) }
   await assert.rejects(f.coordinator.observeExact({ execution: f.get(), request: liveRequest(f), approval: f.run.approval, store: f.store,
     owner: f.owner as never, workflowId: f.run.workflowId, graphThreadId: f.run.id, signal: new AbortController().signal }),
@@ -124,7 +124,8 @@ test('NATIVE-2 recovery rejects a wrong exact native session before manager reso
 
 test('NATIVE-2 resident recovery observes the same turn, records terminal, closes and settles', async () => {
   const f = nativeReviewerFixture(false); f.installResident()
-  f.managers.resolve = () => ({ manager: f.manager, processState: 'resident' })
+  f.internals.resolveManager = () => ({ manager: f.manager, processState: 'resident' })
+  f.internals.prepareEnvironment = async () => undefined
   const observed = await f.coordinator.observeExact({ execution: f.get(), request: liveRequest(f), approval: f.run.approval, store: f.store,
     owner: f.owner as never, workflowId: f.run.workflowId, graphThreadId: f.run.id, signal: new AbortController().signal })
   assert.equal(observed.state, 'completed')
@@ -134,7 +135,8 @@ test('NATIVE-2 resident recovery observes the same turn, records terminal, close
 
 test('NATIVE-2 approval receipt wait preserves native lifetime and pauses active budget', async () => {
   const f = nativeReviewerFixture(false); f.installResident()
-  f.managers.resolve = () => ({ manager: f.manager, processState: 'resident' })
+  f.internals.resolveManager = () => ({ manager: f.manager, processState: 'resident' })
+  f.internals.prepareEnvironment = async () => undefined
   f.runs.updateExecution = async () => { throw new DomainError('APPROVAL_SETTLEMENT_PENDING', 'graph.resume or qualified acknowledgement pending', 409) }
   await assert.rejects(f.coordinator.observeExact({ execution: f.get(), request: liveRequest(f), approval: f.run.approval, store: f.store,
     owner: f.owner as never, workflowId: f.run.workflowId, graphThreadId: f.run.id, signal: new AbortController().signal }),
@@ -145,7 +147,8 @@ test('NATIVE-2 approval receipt wait preserves native lifetime and pauses active
 
 test('NATIVE-2 raw provider payload keeps exact source tuple, session and continuation evidence', async () => {
   const f = nativeReviewerFixture(false); f.installResident()
-  f.managers.resolve = () => ({ manager: f.manager, processState: 'resident' })
+  f.internals.resolveManager = () => ({ manager: f.manager, processState: 'resident' })
+  f.internals.prepareEnvironment = async () => undefined
   const raw = { executionId: f.get().id, connectionId: 'connection-occurrence-1', sequence: 17,
     occurredAt: f.at, type: 'native2.raw.telemetry', payload: { message: 'unaltered provider carrier', extra: { count: 9 } } }
   let reads = 0
@@ -175,7 +178,7 @@ test('NATIVE-2 first launch and terminal replay use one exact session and one tu
     yield { executionId: f.get().id, connectionId: 'connection-first-occurrence', sequence: 1,
       occurredAt: f.at, type: 'native2.raw.telemetry', payload: { source: 'synthetic-native' } }
   }
-  const physical = Object.assign(f.manager, {
+  const physical = { ...f.manager,
     createSession: async () => { creates++; return f.session },
     startTurn,
     async *startTurnBatches(session: unknown, input: {
@@ -186,8 +189,8 @@ test('NATIVE-2 first launch and terminal replay use one exact session and one tu
       input.onTurnOffered?.()
       yield* nativeEventBatches(startTurn(session, input))
     },
-  })
-  f.managers.resolve = () => ({ manager: physical, processState: 'needs_start',
+  }
+  f.internals.resolveManager = () => ({ manager: physical as never, processState: 'needs_start',
     beginStart: () => { f.calls.push('begin-start') }, markResident: () => { f.calls.push('resident') } })
   f.credentials.prepare = async (input) => {
     assert.equal(input.executionId, f.get().id)

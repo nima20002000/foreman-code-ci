@@ -16,7 +16,7 @@ import { nativeLanes } from './helpers/memorySessionCoordination.js'
 
 import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
 import { PostgresInteractionRepository } from '../src/modules/interactions/postgres.js'
-import type { CurrentInteractionRepository } from '../src/modules/interactions/current/repository.js'
+import type { Wave25InteractionRepository } from '../src/modules/interactions/current/repository.js'
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import type { WorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
 import type { RepeatNativeObservationStore } from '../src/modules/interactions/repeatObservation.js'
@@ -191,7 +191,7 @@ async function fixture(items: HarnessExecution[], cold = false) {
     async readUnbound() { return undefined },
   }
   const coordinator = new ApprovalExecutionCoordinator({
-    runs: runs as unknown as PostgresRunRepository, interactions: interactions as unknown as CurrentInteractionRepository,
+    runs: runs as unknown as PostgresRunRepository, interactions: interactions as unknown as Wave25InteractionRepository,
     budgets: budgets as unknown as PostgresApprovalBudgetRepository, managers: resolver as NativeSessionManagerResolver, activeTimeoutMs: 60_000,
     credentials: credentials as unknown as ExecutionCredentialProvider, workflowClosures: closures, nativeCaptures: captures.capture })
   const launched = new Set<string>()
@@ -350,7 +350,7 @@ it('does not start replacement native work when Stop finds a nonresident session
   const f = await fixture([execution('one')])
   const resolver: NativeSessionManagerResolver = { resolve: () => ({ manager: f.managers.get('one')!, processState: 'needs_start' }), release: () => undefined }
   const coordinator = new ApprovalExecutionCoordinator({ runs: f.runs as unknown as PostgresRunRepository,
-    interactions: f.interactions as unknown as CurrentInteractionRepository, budgets: f.budgets as unknown as PostgresApprovalBudgetRepository, managers: resolver, activeTimeoutMs: 60_000 })
+    interactions: f.interactions as unknown as Wave25InteractionRepository, budgets: f.budgets as unknown as PostgresApprovalBudgetRepository, managers: resolver, activeTimeoutMs: 60_000 })
   await assert.rejects(coordinator.cancelRun('run-1'), { code: 'GRAPH_STOP_CONFLICT' })
   assert.ok(!f.calls.some((call) => call.startsWith('create:') || call.startsWith('attach:')))
 })

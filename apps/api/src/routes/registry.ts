@@ -3,7 +3,7 @@ import type pg from 'pg'
 
 import type { AppMcpServices } from '../mcp/app/types.js'
 import type { OperatorServices } from '../mcp/operator/types.js'
-import { registerForemanMcp, type ForemanMcpServices } from '../mcp/unified/transport.js'
+import { registerGraphqlMcp, type GraphqlMcpServices } from '../mcp/unified/transport.js'
 import { requirePrincipal } from '../modules/access/http.js'
 import type { LocalHumanAccess } from '../modules/access/localHuman.js'
 import type { PostgresAccessService } from '../modules/access/postgres.js'
@@ -45,7 +45,6 @@ import { registerResourceTelemetrySelectorRoutes } from './resourceTelemetrySele
 import { registerRunGraphRoutes } from './runGraph.js'
 import { registerSourceRoutes } from './sources.js'
 import { registerUserInteractions } from './userInteractions.js'
-import { registerWorkflowChatRoutes } from './workflowChat.js'
 import { registerWorkflowExecutionChatRoutes } from './workflowExecutionChat.js'
 import { registerWorkflowHierarchyRoutes } from './workflowHierarchy.js'
 import { registerWorkflowKanbanRoutes } from './workflowKanban.js'
@@ -68,7 +67,7 @@ export interface ApiRouteServices extends HealthRouteServices {
   product?: ProductServices
   operator?: { access: PostgresAccessService; services: OperatorServices }
   appMcp?: AppMcpServices
-  workerArtifacts?: ForemanMcpServices['workerArtifacts']
+  workerArtifacts?: GraphqlMcpServices['workerArtifacts']
   mcpDetection?: { pool: pg.Pool; service: McpDetectionService }
   production?: ProductionRouteServices
 }
@@ -111,10 +110,6 @@ export function registerApiRoutes(app: FastifyInstance, services: ApiRouteServic
     const { service } = services.mcpDetection, locations = operator.services.locations
     group('mcp-detection', () => registerMcpDetectionRoute(app, locations, service, operator.services.harnessSettings?.mcp))
   }
-  if (operatorServices?.workflowChat) {
-    const workflowChat = operatorServices.workflowChat
-    group('workflow-chat', () => registerWorkflowChatRoutes(app, workflowChat))
-  }
   if (operatorServices?.agentChat) {
     const agentChat = operatorServices.agentChat
     group('agent-chat', () => registerAgentChatRoutes(app, agentChat))
@@ -127,7 +122,7 @@ export function registerApiRoutes(app: FastifyInstance, services: ApiRouteServic
   if (operator || appMcp) group('mcp', () => {
     const bugReports = appMcp?.bugReports ?? operatorServices?.bugReports
     const commands = appMcp?.commands ?? operatorServices?.commands
-    registerForemanMcp(app, {
+    registerGraphqlMcp(app, {
       access: (operator?.access ?? appMcp?.access)!,
       ...(operator ? { operator: Object.assign(operator.services, { workerToolsMcpImplemented: Boolean(appMcp) }) } : {}),
       ...(appMcp ? { interactions: appMcp.interactions } : {}),

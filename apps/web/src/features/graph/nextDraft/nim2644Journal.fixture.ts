@@ -1,5 +1,5 @@
 import { GraphEditIntentCurrentSchema, type GraphEditIntentCurrent, type GraphEditStageInputCurrent } from '@foreman-code/contracts/current'
-import type { NextDraftEdit, NextDraftContext } from '../../board-core'
+import { activeWorkflowGraph, type NextDraftEdit, type NextDraftContext } from '../../board-core'
 
 const hash = 'sha256:' + '1'.repeat(64), now = '2026-09-24T00:00:00Z'
 export function journalRequest(edit: NextDraftEdit, commandId: string): GraphEditStageInputCurrent {
@@ -10,7 +10,7 @@ export function journalRequest(edit: NextDraftEdit, commandId: string): GraphEdi
       baseRevision: agents.find((item) => item.agent.id === agent.id)?.metadataRevision ?? null }))
   return { action: 'stage_edits', workspaceId: draft.workspaceId, workflowId: draft.workflowId, draftId: draft.id,
     commandId, expectedRevision: draft.publishedRevision, expectedWorkflowVersionId: draft.baseWorkflowVersionId,
-    executionSemanticsVersion: 3, graph: edit.graph,
+    executionSemanticsVersion: 3, graph: activeWorkflowGraph(edit.graph),
     expectedAgentConfigurationVersionIds: Object.fromEntries(edit.graph.nodes.flatMap((node) => {
       if(node.kind==='job')return []
       const agent = edit.agentEdits?.[node.agentId] ?? agents.find((item) => item.agent.id === node.agentId)?.agent

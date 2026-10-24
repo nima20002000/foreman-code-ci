@@ -18,3 +18,4 @@ export type { ConflictRecovery, DraftFailure, DraftRequest, NextDraftEdit, NextD
 export { agentNodeFacts, agentSettingRows, edgeBend, relationshipLines, useFloatingCurve } from './signalEdge'
 export type { EdgeSignal, FloatingCurve } from './signalEdge'
 export type { AgentGraphNode, GraphMapperOptions, GraphNode, GraphProjection, JobGraphNode } from './types'
+export { activeWorkflowGraph, activeWorkflowNode } from './nextDraft/activeToolSettings'

@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { RunNodeActionKind } from '@foreman-code/contracts'
 
 type ObjectValue = Record<string, unknown>
@@ -17,9 +16,9 @@ export interface NativeActionChange {
 const AGENT_ROLE_TOOLS = new Set(['context_get', 'interaction_list', 'interaction_get', 'interaction_respond'])
 function mcpAction(server: string | undefined, tool: string | undefined): RunNodeActionKind {
   // graphql-app/graphql-operator are pre-unification names still found in recorded native history.
-  const app = server === INSTALLATION_NAMES.mcp.app || server === 'graphql_app'
-  const operator = server === INSTALLATION_NAMES.mcp.operator || server === 'graphql_operator'
-  const unified = server === 'foreman-code' || server === 'foreman_code' || server === INSTALLATION_NAMES.mcp.server
+  const app = server === 'graphql-app' || server === 'graphql_app'
+  const operator = server === 'graphql-operator' || server === 'graphql_operator'
+  const unified = server === 'foreman-code' || server === 'foreman_code' || server === 'graphql'
   if (!unified && !app && !operator) return 'using_mcp'
   if (tool === 'interaction_respond') return 'responding_approval'
   if (tool === 'workspace_folder_create') return 'creating_folder'

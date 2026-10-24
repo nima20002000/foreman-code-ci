@@ -1,5 +1,4 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
-import { agentTemplateForRole, newAgentForemanTools, type Agent, type AgentDefaults,
+import { agentTemplateForRole, newAgentGraphqlTools, type Agent, type RecordedAgentDefaults,
   type WorkflowAgentProductRole } from '@foreman-code/contracts'
 import { ActionMenu } from '../../shared/ui/nocturne'
 import { useAgentDefaultsQuery, useManagedHarnessCatalogQuery } from '../../shared/api/query'
@@ -15,7 +14,7 @@ import { hierarchyNodes, stageHierarchyAgent } from './authoring'
 const roles = [['master', 'Master'], ['orchestrator', 'Orchestrator'], ['coder', 'Worker']] as const
 
 /** A new Agent from the role's profile in Settings, numbered after the same-role Agents on this Board. */
-function newBoardAgent(edit: NextDraftEdit, defaults: AgentDefaults, role: WorkflowAgentProductRole, label: string,
+function newBoardAgent(edit: NextDraftEdit, defaults: RecordedAgentDefaults, role: WorkflowAgentProductRole, label: string,
   catalog: HarnessCatalog = []): Agent {
   const profile = agentTemplateForRole(defaults, role)
   // A profile on a harness that is not signed in here starts on a signed-in harness's defaults instead.
@@ -33,7 +32,7 @@ function newBoardAgent(edit: NextDraftEdit, defaults: AgentDefaults, role: Workf
     same ? `${label} ${same + 1}` : label, template.harness, role),
   ...(template.nativeTools && !switched ? { nativeTools: structuredClone(template.nativeTools) } : {}),
   ...(template.harnessProfileSelection && !switched ? { harnessProfileSelection: structuredClone(template.harnessProfileSelection) } : {}),
-  [INSTALLATION_NAMES.fields.agentTools]: [...(template[INSTALLATION_NAMES.fields.agentTools] ?? newAgentForemanTools(role))] }
+  graphqlTools: [...(template.graphqlTools ?? newAgentGraphqlTools(role))] }
 }
 
 /** The Board's plus: one click on a role stages a new Agent; Save creates it. */
