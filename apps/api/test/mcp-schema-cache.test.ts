@@ -6,6 +6,7 @@ import Fastify from 'fastify'
 import { expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
+import * as browserTools from '../src/modules/collaboration/browserTools.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { requireAuthorization } from '../src/modules/access/policy.js'
 import { DomainError } from '../src/modules/errors.js'
@@ -122,12 +123,15 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     expect(await rpc<ListToolsResult>('tools/list')).toEqual(referenceList)
     inputConversion.mockClear()
     outputConversion.mockClear()
+    const browserCatalog = vi.spyOn(browserTools, 'browserOperatorTools')
     for (let request = 0; request < 3; request++) {
+      caller = structuredClone(principal)
       expect(await rpc<ListToolsResult>('tools/list')).toEqual(referenceList)
       expect(await rpc<CallToolResult>('tools/call', params)).toEqual(referenceCall)
     }
     expect(inputConversion).not.toHaveBeenCalled()
     expect(outputConversion).not.toHaveBeenCalled()
+    expect(browserCatalog).not.toHaveBeenCalled()
     expect(decodeMcpToolResult(referenceCall)).toEqual(workspace)
     const scopeDenied = await rpc<CallToolResult>('tools/call', {
       name: 'workspace_get', arguments: { workspaceId: 'other-workspace' },
@@ -154,6 +158,8 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     })
     expect(schema.isError).not.toBe(true)
     expect(JSON.stringify(schema)).toContain('organizations')
+    services.circleAccounts = undefined
+    expect((await catalogNames()).tools.map(tool => tool.name)).not.toContain('circle_account_add')
     caller = { ...principal, id: 'denied-reader', grants: [{ actions: ['capabilities:read'], scope: {} }] }
     const callsBeforeDenial = get.mock.calls.length
     const grantDenied = await rpc<CallToolResult>('tools/call', params)
