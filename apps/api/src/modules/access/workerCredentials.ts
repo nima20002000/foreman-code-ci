@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { canonicalJson, CoordinatorConsultationBindingSchema, HarnessExecutionSchema, WorkflowRunSchema,
   type CoordinatorConsultationBinding } from '@foreman-code/contracts'
 import { withTransaction } from '../../infrastructure/transaction.js'

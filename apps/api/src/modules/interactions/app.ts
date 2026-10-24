@@ -180,7 +180,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
     const subject = row.purpose === 'consultation'
       ? await readConsultationCredentialSubject(this.pool, principal.id) : undefined
     const implemented = [...memoryBoardTools('write'), ...(row.browser?.enabled ? browserAgentTools : [])] as const
-    const harness = HarnessConfigurationSchema.parse(row.harness)
+    const harness = RecordedHarnessConfigurationSchema.parse(row.harness)
     const readOnly = isReadOnlyHarnessConfiguration(harness)
     const tools = effectiveForemanTools(role, defaults, override, row.interval != null, implemented).filter(tool => {
       if (tool.startsWith('browser_') && readOnly && !COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly) return false
