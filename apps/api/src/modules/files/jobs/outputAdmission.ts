@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { withTransaction } from '../../../infrastructure/transaction.js'
 import { randomUUID } from 'node:crypto'
@@ -16,10 +17,10 @@ import { RemoteJobDispatchIntentSchema, RemoteJobOperationReceiptRecordSchema } 
 import { ApprovedSourceSchema, SourceMaterializationRecordSchema, SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import { fileStateAt, type FileWithRevision } from '@foreman-code/contracts/files'
 import type { JobExecutionRecord } from '@foreman-code/contracts/job-verification'
-import type { JobPublicationAuthority } from '../../jobs/authority.js'
+import type { JobPublicationAuthority } from '../../jobs/index.js'
 import type { JobSql } from '../../jobs/repository.js'
 import { commandInputHash, PostgresCommandCoordinator } from '../../commands/postgres.js'
-import type { DeviceEndpoint } from '../../devices/deviceEndpoint.js'
+import type { DeviceEndpoint } from '../../devices/index.js'
 import { sourceMaterializationDigest } from '../../sources/index.js'
 import { DomainError } from '../../errors.js'
 import type { FileMutationSource } from '../repository.js'
@@ -59,7 +60,7 @@ export class PostgresJobOutputAdmission {
     const device=(await sql.query<{record:unknown;credential_expires_at:Date|null}>(`select record,credential_expires_at from device_registrations
       where id=$1 and main_id=$2 for share`,[binding.deviceId,binding.mainId])).rows[0]
     const registration=device && DeviceRegistrationSchema.parse(device.record)
-    if (!device?.credential_expires_at || !registration || !authorizeDevice(registration,{audience:'graphql-worker',mainId:binding.mainId,deviceId:binding.deviceId,
+    if (!device?.credential_expires_at || !registration || !authorizeDevice(registration,{audience:INSTALLATION_NAMES.protocol.workerAudience,mainId:binding.mainId,deviceId:binding.deviceId,
       workerInstallationId:binding.workerInstallationId,keyRevision:binding.keyRevision,authorizationRevision:binding.authorizationRevision,
       expiresAt:device.credential_expires_at.toISOString()},'heartbeat',this.clock().getTime())) throw new DomainError('JOB_OUTPUT_DEVICE_REVOKED','Output device authority expired or was revoked.',403)
     const dispatch=(await sql.query<{intent:unknown;last_receipt:unknown;receipt_sequence:string}>(`select intent,last_receipt,receipt_sequence::text

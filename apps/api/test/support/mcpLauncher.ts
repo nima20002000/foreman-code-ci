@@ -1,12 +1,12 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFile, mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { removeFixtureDirectory } from '../helpers/testResources.js'
 import { createServer, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
-import { APP_MCP_TIMEOUTS } from '../../src/modules/harnesses/appMcpLauncher.js'
+import { APP_MCP_TIMEOUTS, installManagedLauncher } from '../../src/modules/harnesses/appMcpLauncher.js'
 
 export interface LauncherMessage {
   id?: string | number
@@ -25,7 +25,7 @@ export async function mcpLauncherFixture(
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'mcp-launcher-'))
   const launcher = join(directory, 'launcher.mjs')
-  await copyFile(new URL('../../../../scripts/graphql-mcp.mjs', import.meta.url), launcher)
+  await installManagedLauncher(new URL('../../../../scripts/foreman-mcp.mjs', import.meta.url), launcher)
   const server = createServer(async (request, response) => {
     let body = ''
     for await (const chunk of request) body += chunk.toString()

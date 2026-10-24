@@ -11,12 +11,12 @@ import { PostgresFileReferenceAuthorization } from '../src/modules/files/referen
 import { AgentReferenceService } from '../src/modules/files/references/agentService.js'
 import { FileReferenceService } from '../src/modules/files/references/service.js'
 import type { AgentReferenceDependencies } from '../src/modules/files/references/agentAccess.js'
-import { assertWave25WorkerBinding } from '../src/modules/interactions/current/credentialAuthority.js'
+import { assertCurrentWorkerBinding } from '../src/modules/interactions/current/credentialAuthority.js'
 import { FILE_REFERENCE_TOOL_NAMES } from '../src/mcp/operator/tools/fileReferences.js'
 import { toolRoles } from '../src/mcp/unified/roles.js'
 
 // This suite verifies FIL-37's delegation to existing worker authority, not the engine's native/session fixture.
-vi.mock('../src/modules/interactions/current/credentialAuthority.js', () => ({ assertWave25WorkerBinding: vi.fn(async () => undefined) }))
+vi.mock('../src/modules/interactions/current/credentialAuthority.js', () => ({ assertCurrentWorkerBinding: vi.fn(async () => undefined) }))
 const worker: ManagementPrincipal = { id: 'worker', name: 'Worker', audience: 'worker', agentId: 'same-agent',
   expiresAt: '9999-12-31T00:00:00.000Z', revokedAt: null, grants: [{ actions: ['interactions:read'],
     scope: { workspaceIds: ['W'], workflowIds: ['A'], runIds: ['run-A'] } }] }
@@ -44,14 +44,14 @@ function sqlFixture() {
 }
 
 describe('FIL-37 strict service inputs and persisted authorization', () => {
-  beforeEach(() => vi.mocked(assertWave25WorkerBinding).mockClear())
+  beforeEach(() => vi.mocked(assertCurrentWorkerBinding).mockClear())
 
   it('uses an exact persisted worker binding and preserves the current engine authority check', async () => {
     const f = sqlFixture()
     assert.deepEqual(await f.authorization.resolve(worker, { kind: 'execution' }), {
       workspaceId: 'W', workflowId: 'A', agentId: 'same-agent', runId: 'run-A', executionId: 'execution-A',
     })
-    assert.equal(vi.mocked(assertWave25WorkerBinding).mock.calls.length, 1)
+    assert.equal(vi.mocked(assertCurrentWorkerBinding).mock.calls.length, 1)
     assert.deepEqual(f.calls[0]!.args, ['worker', 'same-agent'])
     assert.match(f.calls[0]!.sql, /e\.id=b\.execution_id and e\.run_id=b\.run_id and e\.agent_id=b\.agent_id/)
     assert.match(f.calls[0]!.sql, /r\.workspace_id=b\.workspace_id and r\.workflow_id=b\.workflow_id/)
@@ -61,11 +61,11 @@ describe('FIL-37 strict service inputs and persisted authorization', () => {
       const f = sqlFixture(); f.rows.binding = binding
       await assert.rejects(f.authorization.resolve(worker, { kind: 'execution' }), { code: 'FILE_REFERENCE_ACCESS_DENIED' })
     }
-    assert.equal(vi.mocked(assertWave25WorkerBinding).mock.calls.length, 0)
+    assert.equal(vi.mocked(assertCurrentWorkerBinding).mock.calls.length, 0)
   })
   it('propagates revoked current-engine authority instead of weakening it for file reads', async () => {
     const f = sqlFixture()
-    vi.mocked(assertWave25WorkerBinding).mockRejectedValueOnce(new Error('AUTH_REVOKED'))
+    vi.mocked(assertCurrentWorkerBinding).mockRejectedValueOnce(new Error('AUTH_REVOKED'))
     await assert.rejects(f.authorization.resolve(worker, { kind: 'execution' }), /AUTH_REVOKED/)
   })
   it('rejects stale principal claims before database access', async () => {

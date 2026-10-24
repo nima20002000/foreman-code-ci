@@ -1,11 +1,11 @@
-import type { HarnessConfiguration } from '@foreman-code/contracts'
+import type { RecordedHarnessConfiguration } from '@foreman-code/contracts'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { useNativeHarnessOptions } from '../../shared/api/harnessSettings'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { useProviderAccounts, useProviderAccountModels, useProviderAccountScope } from './providerAccountsQueries'
 import { useProviderAccountAccess } from './providerAccountAccess'
 
-export function useProviderHarnessModels(harness: HarnessConfiguration['harness'], accountId?: string,
+export function useProviderHarnessModels(harness: RecordedHarnessConfiguration['harness'], accountId?: string,
   hostRef?: DeviceProvisioningTarget['hostRef']) {
   const scope = useProviderAccountScope({ ...(harness !== 'opencode' ? { provider: harness } : {}),
     ...(hostRef ? { hostRef } : {}) })

@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { isDeepStrictEqual } from 'node:util'
 import { dirname, join } from 'node:path'
 import { DomainError } from '../errors.js'
@@ -5,7 +6,7 @@ import { JOB_PRIVATE_GIT_LAYOUT, verifyPrivateJobRepositoryMounts, type PrivateJ
 import type { JobAcceptedSpecRecord, JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 export { JOB_PRIVATE_GIT_LAYOUT }
 export type VerifiedJobGitMounts = PrivateJobRepositoryMounts
-export const JOB_GIT_CONTAINER_DIRECTORY = '/graphql-job-git' as const
+export const JOB_GIT_CONTAINER_DIRECTORY = INSTALLATION_NAMES.paths.privateGit
 /** Fixed nonsecret environment; no caller Git directory, hooks, helpers or history. */
 export const JOB_GIT_ENVIRONMENT = Object.freeze({
   GIT_DIR:JOB_GIT_CONTAINER_DIRECTORY,GIT_WORK_TREE:'/workspace',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',

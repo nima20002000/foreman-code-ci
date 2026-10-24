@@ -8,7 +8,7 @@ import { JobVerificationOfflineSeedReceiptSchema,JobVerificationProfileSchema }
 import { privateFixtureDirectory } from '../../../test/helpers/privateFixtureDirectory.js'
 import { verificationCapacityFixture } from '../../../test/helpers/verificationCapacityFixture.js'
 import { bootIdentity } from '../harnesses/recovery/linuxIdentity.js'
-import { InstalledVerificationRuntimeConfigurationSchema } from '@foreman-code/contracts/installed-runtime-node'
+import { InstalledVerificationRuntimeConfigurationSchema } from '@foreman-code/contracts-node/installed-runtime-node'
 import { createInstalledJobRuntimeHost } from './installedRuntimeHost.js'
 import type { JobSql } from './repository.js'
 import { verificationProfileReadiness } from './runtimeProfiles.js'

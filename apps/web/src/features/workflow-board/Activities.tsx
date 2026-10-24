@@ -6,7 +6,7 @@ import type { RepeatGraphScopeCurrent, RunActivityPublic, RunDirectionWait } fro
 import { Alert, Button, Icon, IconButton, Select } from '../../shared/ui/nocturne'
 import { ApiError } from '../../shared/api/client'
 import { type SelectedRunState, RunsSelectorSearchSchema, runReadErrorLabel, useSelectedRunSnapshot } from '../runs-selector'
-import { createChatVisit } from '../conversations/agentChat/selectedRunChatModel'
+import { createChatVisit } from '../chat-core'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { readRunActivities, readRunActivityFeed, mergeOlderRunActivities, isTransientRunActivityError,
   runActivitiesKey, runActivitiesRefetchInterval, type RunActivityFeed, type RunActivityScope } from './runActivitiesQuery'

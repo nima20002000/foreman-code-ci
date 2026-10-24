@@ -5,18 +5,17 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresInteractionCoordinationRepository } from '../src/modules/interactions/coordination.js'
 import { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
 import { acceptRunAuthority, bindRunAuthority } from '../src/modules/access/runAuthority.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { createTestPool } from './helpers/testPool.mjs'
 import { candidateFor, seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
-describe.skipIf(!postgresEnabled)('CI authority reads beside credential admission', () => {
-  it('resolves live Worker CI reads while publication locks the Run, execution and credential rows', async () => {
-    const database = await migratedDatabase()
-    const pool = createTestPool({ connectionString: database.databaseUrl,
+async function authorityFixture() {
+  const database = await migratedDatabase()
+  const pool = createTestPool({ connectionString: database.databaseUrl,
       options: '-c lock_timeout=500 -c statement_timeout=5000' })
-    try {
+  try {
       const fixture = await seedWorkflowFixture(database.pool, database.directory)
       await pool.query(`update runs set execution_state='running',
         record=jsonb_set(record,'{executionState}','"running"'::jsonb) where id=$1`, [fixture.run.id])
@@ -46,10 +45,22 @@ describe.skipIf(!postgresEnabled)('CI authority reads beside credential admissio
           [fixture.run.id, accepted.principal.id])
         return accepted
       })
-      const credentials = new Wave25WorkerCredentialService(pool, access)
+      const credentials = new CurrentWorkerCredentialService(pool, access)
       const issued = await credentials.issueForExecution(execution.id)
       const worker = await access.authenticate(issued.environment.variables.GRAPHQL_MCP_TOKEN!, 'worker')
       const authority = new RunCiAuthority(pool)
+      return { pool, fixture, execution, session, accepted, credentials, worker, authority,
+        async close() { await pool.end(); await database.close() } }
+  } catch (error) {
+    await pool.end(); await database.close(); throw error
+  }
+}
+
+describe.skipIf(!postgresEnabled)('CI authority reads beside credential admission', () => {
+  it('resolves live Worker CI reads while publication locks the Run, execution and credential rows', async () => {
+    const f = await authorityFixture()
+    const { pool, fixture, execution, session, accepted, worker, authority } = f
+    try {
       await withTransaction(pool, async writer => {
         await writer.query('select id from runs where id=$1 for update', [fixture.run.id])
         await writer.query('select id from harness_executions where id=$1 for update', [execution.id])
@@ -68,11 +79,14 @@ describe.skipIf(!postgresEnabled)('CI authority reads beside credential admissio
           })
         }
       })
-      await credentials.revoke({ principalId: worker.id })
-      await expect(authority.resolve(worker, undefined, CI_GET_ACTIONS)).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
-    } finally {
-      await pool.end()
-      await database.close()
-    }
+    } finally { await f.close() }
+  })
+
+  it('denies a binding revoked before the CI authority snapshot', async () => {
+    const f = await authorityFixture()
+    try {
+      await f.credentials.revoke({ principalId: f.worker.id })
+      await expect(f.authority.resolve(f.worker, undefined, CI_GET_ACTIONS)).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
+    } finally { await f.close() }
   })
 })
