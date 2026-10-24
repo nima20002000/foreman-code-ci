@@ -1,5 +1,5 @@
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { MemoryBoardMutation, MemoryBoardScope, MemoryCard as Card, MemoryCardWorkBinding } from '@foreman-code/contracts'
 import { Button } from '../../shared/ui/nocturne/Button'
 import { useMemoryBoard } from './queries'
@@ -68,22 +68,21 @@ function BoardBody(props: MemoryBoardProps & { board: MemoryBoardView; online: b
   const { board, client, nodes, onInteractionChange, onSelectCard, sourceDraft, onSourceDraftConsumed } = props
   const boardId = board.board.id
   const draft = useMemoryDraft(boardId), save = useMemorySave(client, boardId)
-  const [leaveAction, setLeaveAction] = useState<(() => void)>()
   const consumedSource = useRef<string | undefined>(undefined)
   const matchesConfirmedDraft = Boolean(save.data && memoryDraftMatchesCommand(draft, save.confirmedCommand))
   const confirmedDraft = matchesConfirmedDraft && save.data?.outcome !== 'existing'
   const dirty = Boolean(draft?.dirty && !save.retained.command)
-  useUnsavedChanges({ label: `${props.scopeName} memory board`, scope: 'surface', dirty,
-    busy: save.isPending, uncertain: Boolean(save.retained.command), saveDisabled: true,
-    save() { throw new Error('Save the card or note in the memory board before leaving.') },
+  const confirmLeave = useUnsavedChanges({ label: `${props.scopeName} memory board`, scope: 'surface', dirty,
+    busy: save.isPending, uncertain: Boolean(save.retained.command), discardOnly: !save.retained.command,
+    saveDisabled: !save.retained.command,
+    async save() { if (save.retained.command) return save.mutateAsync({ kind: 'retry' }); throw new Error('Save the card or note in the memory board before leaving.') },
     discard() { setMemoryDraft(boardId) },
   }, (current, next) => current.pathname !== next.pathname || current.search.workflowId !== next.search.workflowId
     || current.search.boardMemory === true && next.search.boardMemory !== true)
   const requestLeave = useCallback((proceed: () => void) => {
     if (save.isPending) return
-    if (dirty) setLeaveAction(() => proceed)
-    else proceed()
-  }, [dirty, save.isPending])
+    void confirmLeave(proceed)
+  }, [confirmLeave, save.isPending])
   useEffect(() => {
     onInteractionChange?.({ pending: save.isPending, dirty, requestLeave })
     return () => onInteractionChange?.(undefined)
@@ -124,11 +123,6 @@ function BoardBody(props: MemoryBoardProps & { board: MemoryBoardView; online: b
   return <div className="n-stack">
     {props.restriction && <p>{props.restriction}</p>}
     {!props.canWrite && !props.restriction && <p>Memory changes are unavailable for this caller.</p>}
-    {leaveAction && <section role="alert" className="memory-unsaved"><h3>Discard unsaved changes?</h3>
-      <p>Your draft has not been saved.</p><div className="n-actions">
-        <Button onClick={() => setLeaveAction(undefined)}>Keep editing</Button>
-        <Button onClick={() => { const proceed = leaveAction; setLeaveAction(undefined); setMemoryDraft(boardId); proceed() }}>Discard draft</Button>
-      </div></section>}
     <MemorySaveStatus save={save} draft={draft} online={props.online} onChangeDraft={(next) => setMemoryDraft(boardId, next)}
       onOpenCard={openCard} onOpenWork={props.onOpenWork} />
     {draft?.kind === 'card' && <MemoryCardEditor boardId={boardId} draft={draft} nodes={nodes} disabled={!canWrite} pending={save.isPending}
