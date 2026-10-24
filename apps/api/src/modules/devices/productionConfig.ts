@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { resolveProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { isAbsolute } from 'node:path'
 
@@ -15,7 +14,7 @@ export interface DeviceListenerConfig {
 /** Source configuration alone grants no pairing, task or provider credentials. */
 export function readDeviceListenerConfig(environment: NodeJS.ProcessEnv, apiPort: number): DeviceListenerConfig | undefined {
   environment = resolveProductEnvironment(environment)
-  const enabled = environment[INSTALLATION_NAMES.environment.DEVICE_LISTENER_ENABLED]
+  const enabled = environment.FOREMAN_CODE_DEVICE_LISTENER_ENABLED
   if (enabled !== undefined && enabled !== '0' && enabled !== '1') throw new Error('Device listener enablement must be 0 or 1.')
   if (enabled !== '1') return undefined
   const host = environment.DEVICE_LISTENER_HOST?.trim()

@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import { HarnessExecutionError } from '../errors.js'
@@ -6,7 +5,7 @@ import { appMcpServerName } from '../appMcpLauncher.js'
 
 export interface ClaudeMcpToolManifest {
   serverName: string
-  source: { kind: 'http'; url: string } | { kind: 'sdk'; name: typeof INSTALLATION_NAMES.mcp.files; version: '1.0.0' }
+  source: { kind: 'http'; url: string } | { kind: 'sdk'; name: 'graphql-files'; version: '1.0.0' }
   tools: string[]
 }
 

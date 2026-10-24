@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PreparedCiRuntime } from '@foreman-code/contracts'
 import { verificationRuntimeFixture } from '../helpers/verificationRuntimeFixture.js'
 import { privateFixtureDirectory } from '../helpers/privateFixtureDirectory.js'
-import { InstalledVerificationRuntimeConfigurationSchema } from '@foreman-code/contracts-node/installed-runtime-node'
+import { InstalledVerificationRuntimeConfigurationSchema } from '@foreman-code/contracts/installed-runtime-node'
 import { currentCiRuntimePaths, hostDeviceLimits, nextCaptureInput, recaptureCiTools, retireCiRuntimeConfigurations,
   pruneCiRuntimeRefreshFiles, scheduleCiRuntimeRefresh } from '@foreman-code/ci/ciRuntimeRefresh'
 import { refreshMainJobRuntime } from '../../src/cli/refreshMainJobRuntime.js'

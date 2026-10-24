@@ -25,7 +25,7 @@ import { sourceSha256 } from '../src/modules/sources/manifest.js'
 import { workspaceStorageRoot } from '../src/modules/workspaces/storage.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { DomainError } from '../src/modules/errors.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 const home = vi.hoisted(() => ({ path: '' }))
 vi.mock('node:os', async importOriginal => ({ ...await importOriginal<typeof import('node:os')>(), homedir: () => home.path }))
@@ -207,10 +207,11 @@ describe.skipIf(!postgresEnabled)('trusted local Main workspace storage bootstra
         configurationRevision: '7', bases: [{ baseId: randomUUID(), canonicalPath: external, accessModes: ['read-only'] }], managedRuntimeRoot: runtimeRoot })
       const sql = await db.pool.connect()
       try {
-        await withTransaction({ client: sql }, transaction => sources.policies.publishApprovedHostConfiguration(transaction, approved, {
-          mainId, hostRef: approved.hostRef, applicationInstallationId: mainId, configurationRevision: '7',
-          configurationDigest: sourceSha256(Buffer.from(JSON.stringify(approved))) }))
-      } finally { sql.release() }
+        await beginTransaction(sql)
+        await sources.policies.publishApprovedHostConfiguration(sql, approved, { mainId, hostRef: approved.hostRef, applicationInstallationId: mainId,
+          configurationRevision: '7', configurationDigest: sourceSha256(Buffer.from(JSON.stringify(approved))) })
+        await commitTransaction(sql)
+      } catch (error) { await rollbackTransaction(sql); throw error } finally { sql.release() }
       expect(await bootstrapLocalMainWorkspaceRoot(input)).toEqual(approved)
       expect((await db.pool.query('select count(*)::int as count from workspace_root_host_configurations')).rows[0]?.count).toBe(1)
     } finally { await db.close(); await removeFixtureDirectory(directory) }
