@@ -172,11 +172,13 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
     const proof = await attestWorkspaceRoot(f.approvedRoots, { workspaceId: f.request.workspaceId,
       hostRef: f.placement.hostRef, allowedBaseId: f.approvedRoots.bases[0]!.baseId, configurationRevision: '1',
       relativePath: '', accessMode: 'read-write', expectedLocationRevision: 1, expectedRootPolicyRevision: 0 })
-    const { requestDigest: _requestDigest, ...attestation } = proof
+    const attestation: Partial<typeof proof> = { ...proof }
+    delete attestation.requestDigest
     const policy = WorkspaceRootPolicySchema.parse({ ...attestation, workspaceId: f.request.workspaceId,
       rootPolicyId: f.placement.destination.rootPolicyId, rootPolicyRevision: '1', locationRevision: '1',
       ownerPrincipalId: 'owner', registration: f.placement.registration })
-    const { bindingHash: _bindingHash, ...pins } = f.placement
+    const pins = { ...f.placement }
+    Reflect.deleteProperty(pins, 'bindingHash')
     f.placement = freezePlacement({ ...pins, source: { kind: 'plain', filesystem: policy.filesystem, accessMode: 'read-write' },
       destination: { ...pins.destination, directoryIdentityHash: policy.directoryIdentityHash,
         attestationId: policy.attestationId, attestationHash: policy.attestationDigest } })

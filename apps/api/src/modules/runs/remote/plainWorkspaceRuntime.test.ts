@@ -31,7 +31,8 @@ it('uses the actual plain project as CWD without a source operation and detects 
     expectedLocationRevision: 1, expectedRootPolicyRevision: 0 }
   const proof = await attestWorkspaceRoot(approvedRoots, selection)
   const registration = { workerInstallationId: binding.workerInstallationId, keyRevision: 1, authorizationRevision: 1 }
-  const { requestDigest: _requestDigest, ...attestation } = proof
+  const attestation: Partial<typeof proof> = { ...proof }
+  delete attestation.requestDigest
   const policy = WorkspaceRootPolicySchema.parse({ ...attestation, rootPolicyId: randomUUID(), rootPolicyRevision: '1',
     locationRevision: '1', workspaceId: configuration.workspaceId, ownerPrincipalId: 'owner', registration })
   const placement = freezePlacement({ schemaVersion: 1, mainId: binding.mainId, mainInstallationId: binding.mainId,
