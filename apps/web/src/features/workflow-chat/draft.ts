@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { DeliveryTargetSchema, WorkflowChatPostRequestSchema, type DeliveryTarget, type WorkflowChatPostRequest } from '@foreman-code/contracts'
 import { identityChangedEvent, identityEpoch, protectedKey } from '../../shared/api/protectedChatStorage'
 import { sessionIsSwitching } from '../../shared/api/sessionBoundary'
-import { useConversationDraftStore } from '../conversations/conversationDraftStore'
+import { useConversationDraftStore } from '../chat-core'
 import type { WorkflowChatScope } from './client'
 
 export type WorkflowComposerDraft = Pick<WorkflowChatPostRequest, 'mentions' | 'deliveries' | 'replyToPostId'> & {

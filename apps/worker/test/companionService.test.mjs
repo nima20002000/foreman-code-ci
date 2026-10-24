@@ -14,7 +14,7 @@ async function fixture(t, options = {}) {
   t.after(() => rm(home, { recursive: true, force: true }));
   const root = join(home, '.local/lib/graphql-worker'), state = join(home, '.local/state/graphql-worker'), artifact = join(home, 'artifact');
   await mkdir(state, { recursive: true, mode: 0o700 });
-  const files = [{ path: 'src/cli.mjs', bytes: Buffer.from('console.log("reviewed-release")') }, { path: 'artifacts/graphql-worker.service.in', bytes: await readFile(new URL('../artifacts/graphql-worker.service.in', import.meta.url)) }];
+  const files = [{ path: 'src/cli.mjs', bytes: Buffer.from('console.log("reviewed-release")') }, { path: 'artifacts/graphql-worker.service.in', bytes: await readFile(new URL('../artifacts/foreman-worker.service.in', import.meta.url)) }];
   for (const file of files) { await mkdir(join(artifact, file.path, '..'), { recursive: true }); await writeFile(join(artifact, file.path), file.bytes); }
   const facts = { os: 'ubuntu', osRelease: '24.04', arch: 'x64', libc: 'glibc-2.39', node: 'v22.23.2', rootPersistent: true, homePersistent: true, storagePersistent: true };
   const manifest = { format: 1, version: '1.0.0', protocolVersion: 1, identityFormat: 1, commit: 'a'.repeat(40), lockfileSha256: 'b'.repeat(64), packageManager: 'pnpm@11.27.0', target: facts, files: files.map(({ path, bytes }) => ({ path, sha256: hash(bytes), size: bytes.length })) };

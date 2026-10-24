@@ -1,17 +1,17 @@
 import { FILE_REFERENCE_TOOL_NAMES } from '../operator/tools/fileReferences.js'
-import { GRAPHQL_MCP_ROLE_LABELS, graphqlToolRoles, type GraphqlMcpRole } from '@foreman-code/contracts'
+import { FOREMAN_MCP_ROLE_LABELS, foremanToolRoles, type ForemanMcpRole } from '@foreman-code/contracts'
 import { FILE_RETENTION_TOOL_NAMES } from '../operator/tools/fileRetention.js'
 import { OPERATOR_DISCOVERY_INSTRUCTIONS } from '../operator/discovery.js'
 
-/** The role policy is shared with the web app; see `GRAPHQL_AGENT_TOOLS` in contracts. */
-export type McpRole = GraphqlMcpRole
-export const MCP_ROLE_LABELS = GRAPHQL_MCP_ROLE_LABELS
+/** The role policy is shared with the web app; see `FOREMAN_AGENT_TOOLS` in contracts. */
+export type McpRole = ForemanMcpRole
+export const MCP_ROLE_LABELS = FOREMAN_MCP_ROLE_LABELS
 export function toolRoles(name: string): readonly McpRole[] {
   // These backend extension names are not yet in the frozen shared catalog. Never let an
   // unknown-name fallback grant worker access, even when a worker guesses the name directly.
   if (FILE_REFERENCE_TOOL_NAMES.some((candidate) => candidate === name)) return ['operator']
   if (FILE_RETENTION_TOOL_NAMES.some((candidate) => candidate === name)) return ['operator']
-  return graphqlToolRoles(name)
+  return foremanToolRoles(name)
 }
 
 export function roleList(roles: readonly McpRole[]): string {

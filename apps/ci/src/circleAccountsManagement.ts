@@ -7,7 +7,7 @@ import {
 } from '@foreman-code/contracts/management'
 import type { CircleAccountSettings, MainCiContext, PostgresCommandCoordinator, VersionedSetting } from './environment.js'
 import type { CircleAccountRegistry, CircleAccountRegistryChanged, CircleAccountStatusReader } from './circleAccounts.js'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import { CI_BUSY_TICKET } from './deadlines.js'
 
 /** Metadata and command receipts share one transaction; credential files are never mutated here. */

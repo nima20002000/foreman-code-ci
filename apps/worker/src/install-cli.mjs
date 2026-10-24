@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,11 +30,11 @@ async function main() {
     options[args[i]] = args[i + 1];
   }
   const home = process.env.HOME ?? '';
-  const root = command === 'setup' ? join(home, '.local/lib/graphql-worker') : options['--root'];
-  const state = command === 'setup' ? join(home, '.local/state/graphql-worker') : options['--state'];
+  const root = command === 'setup' ? join(home, INSTALLATION_NAMES.paths.workerApp) : options['--root'];
+  const state = command === 'setup' ? join(home, INSTALLATION_NAMES.paths.workerState) : options['--state'];
   if (!root || !state || !isAbsolute(root) || !isAbsolute(state) || root === state || state.startsWith(`${root}/`) || root.startsWith(`${state}/`)) throw new WorkerError('separate_private_roots_required');
   if (command === 'service') {
-    const template = await readFile(new URL('../artifacts/graphql-worker.service.in', import.meta.url), 'utf8');
+    const template = await readFile(new URL(`../${INSTALLATION_NAMES.artifacts.workerService}`, import.meta.url), 'utf8');
     process.stdout.write(renderUserService(template, { node: options['--node'], app: root, state, home: options['--home'], path: options['--path'] }));
     return;
   }
@@ -43,7 +44,7 @@ async function main() {
   if (command === 'setup') {
     const { setupCompanion } = await import('./setup.mjs');
     const result = await setupCompanion({ home, node: process.execPath, artifact: options['--artifact'] ?? dirname(dirname(fileURLToPath(import.meta.url))), approvedManifestSha256: options['--manifest-sha256'], facts, updatePolicy: approveStop,
-      serviceTemplate: await readFile(new URL('../artifacts/graphql-worker.service.in', import.meta.url), 'utf8') });
+      serviceTemplate: await readFile(new URL(`../${INSTALLATION_NAMES.artifacts.workerService}`, import.meta.url), 'utf8') });
     console.log(`Foreman Code Companion installed. Open Foreman Code Companion from Applications, or run ${result.launcher}.\nIdentity and configuration: ${result.state}\nThis installer did not start or enable the background service. After reviewing ${result.proposedService}, opt in with:\n  install -D -m 0600 ${result.proposedService} ${home}/.config/systemd/user/graphql-worker.service\n  systemctl --user daemon-reload\n  systemctl --user enable --now graphql-worker.service\nUpdates need the approved drain/stop policy; rerun setup with --approve-stopped-update yes.\nRollback: review ${result.root}/previous/manifest.json and approve a Node executable matching its target.node. Then run APPROVED_RETAINED_NODE ${result.root}/current/src/install-cli.mjs rollback --root ${result.root} --state ${result.state} --approve-stopped-update yes`);
     if (options['--pair'] === 'yes') {
       const child = spawnSync(result.launcher, ['onboard'], { stdio: 'inherit' });

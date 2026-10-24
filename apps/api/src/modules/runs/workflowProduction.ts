@@ -1,4 +1,4 @@
-import { isAtomicApprovalCheckpointSaver } from '../../infrastructure/approvalCheckpointSaver.js'
+import { isAtomicApprovalCheckpointSaver } from './approvalCheckpointSaver.js'
 import { DomainError } from '../errors.js'
 import { nativePersistenceRedactor } from '../interactions/nativePersistence.js'
 import { repeatStartPublication } from '../run-graph/repeatStartPublication.js'

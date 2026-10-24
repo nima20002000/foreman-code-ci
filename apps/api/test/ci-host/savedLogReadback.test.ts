@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vitest'
 import { CiLogsOutputSchema, CiRunRecordSchema } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { registerGraphqlMcp } from '../../src/mcp/unified/transport.js'
+import { registerForemanMcp } from '../../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import type { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import type { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
@@ -36,7 +36,7 @@ function fixture() {
   const commands = { recordDenied: vi.fn(async () => undefined) } as unknown as PostgresCommandCoordinator
   const ci = new HostCiService(mainCiContext, pool, commands, authority, {} as CiCommits, endpoint)
   const app = Fastify()
-  registerGraphqlMcp(app, {
+  registerForemanMcp(app, {
     access: { authenticate: async (token: string) => token === 'reader'
       ? principal : { ...principal, grants: [] } } as unknown as PostgresAccessService,
     operator: { ci, commands } as unknown as OperatorServices,

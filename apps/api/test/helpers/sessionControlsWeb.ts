@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url'
 export async function sessionControlsWeb(input: { root: string; baseUrl: string; browserOrigin: string }) {
   const environment: NodeJS.ProcessEnv = {
     PATH: process.env.PATH, HOME: process.env.HOME,
-    FOREMAN_CODE_BROWSER_ORIGIN: input.browserOrigin,
-    FOREMAN_CODE_WEB_PORT: new URL(input.browserOrigin).port,
+    GRAPHQL_BROWSER_ORIGIN: input.browserOrigin,
+    GRAPHQL_WEB_PORT: new URL(input.browserOrigin).port,
     VITE_API_URL: input.baseUrl,
   }
   const child = spawn(process.execPath, [fileURLToPath(new URL(

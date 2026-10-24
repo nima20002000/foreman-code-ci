@@ -1,6 +1,6 @@
 import { runCiRuntimeCommand } from './ciRuntimeCommands.js'
 import type { CiImageJournal } from './environment.js'
-import { sha256Hex } from '@foreman-code/contracts/server-kit'
+import { sha256Hex } from '@foreman-code/contracts-node/server-kit'
 
 export async function retainedCiJobImages(journal: CiImageJournal) {
   const images: string[] = []

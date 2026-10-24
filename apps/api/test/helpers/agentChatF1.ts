@@ -6,7 +6,7 @@ import type { AgentConfigurationVersion, AgentHarness, ExecutionResult, Message,
 import { AgentChatService } from '../../src/modules/conversations/agentChat.js'
 import { qualifiedAgentChatSteer } from '../../src/modules/conversations/chatSteerQualification.js'
 import { agentChatKey, type AgentConversationRow, PostgresAgentChatRepository } from '../../src/modules/conversations/agentChatRepository.js'
-import type { OperatorActivityChange } from '../../src/modules/conversations/operatorActivity.js'
+import type { OperatorActivityChange } from '../../src/modules/harnesses/index.js'
 import type { PostgresOperatorConversationRepository } from '../../src/modules/conversations/operatorChatRepository.js'
 import { NativeTurnNotActiveError } from '../../src/modules/harnesses/errors.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSteerInput, NativeTurnInput } from '../../src/modules/harnesses/port.js'

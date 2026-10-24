@@ -5,7 +5,7 @@ import type {
 } from '@foreman-code/contracts/agent-chat'
 import { agentChatApi } from '../../../shared/api/agentChat'
 import { sessionGeneration } from '../../../shared/api/sessionBoundary'
-import { agentChatContextKey } from './model'
+import { agentChatContextKey } from '../../chat-core'
 import { useExecutionActivityReads, type ActivityRead } from './executionActivityReads'
 
 /** A bounded live window and one explicitly requested history page in the Query cache. */
