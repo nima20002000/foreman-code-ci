@@ -19,7 +19,7 @@ test('Worker consumes execution and consultation readback without creating a con
 test('Master and legacy saved defaults never activate dormant collaboration tools', () => {
   for (const role of ['master', 'orchestrator', 'coder']) {
     const tools = effectiveGraphqlTools(role, undefined);
-    for (const unavailable of ['memory_card_create', 'browser_action']) {
+    for (const unavailable of ['memory_card_create', 'browser_action', 'workflow_chat_post']) {
       assert.equal(tools.includes(unavailable), false);
     }
     assert.equal(tools.includes('bug_report'), true);

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { IdSchema, GraphIdSchema } from './schemaPrimitives.js';
 import { AgentIdentitySchema, AgentNodeRefSchema } from './agentIdentity.js';
 import { DeliveryTargetSchema } from './chatDelivery.js';
-import { EngineChatMessageSchema } from './engineChat.js';
+import { EngineChatMessageSchema } from './workflowChat.js';
 
 /** Shared F3/F4 boundary. Resolving a selected node never starts or forks work. */
 export const WorkflowExecutionChatSelectionSchema = z.object({

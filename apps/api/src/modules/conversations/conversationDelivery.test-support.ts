@@ -4,6 +4,7 @@ import { AgentConfigurationVersionSchema, DEFAULT_HARNESS_DEFAULTS, type NativeS
   type SessionPreferences } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import type { ExecutionChatPort } from '../collaboration/index.js'
+import { workflowChatMigration } from '../../infrastructure/workflowChatMigration.js'
 import { PostgresAccessService } from '../access/postgres.js'
 import { requireAuthorization } from '../access/policy.js'
 import { PostgresOperatorRepository } from '../operators/index.js'
@@ -19,7 +20,7 @@ import { OperatorChatService, type NativeManagerResolver, type OperatorChatAutho
 import { PostgresAgentChatRepository } from './agentChatRepository.js'
 import { PostgresOperatorConversationRepository } from './operatorChatRepository.js'
 import type { ConversationFeatureContext } from './conversationFeatureSubject.js'
-import { createChatDeliveryFeature } from '../workflow-chat/index.js'
+import { createWorkflowChatFeature } from '../workflow-chat/index.js'
 
 /** Only native I/O and the parallel engine port are fake; admission, auth, queues and recovery use production SQL/services. */
 export class DeliveryNativeFixture extends ChatManager {
@@ -88,6 +89,9 @@ export class DeliveryNativeFixture extends ChatManager {
 
 export async function conversationDeliveryFixture() {
   const database = await migratedDatabase()
+  if (!(await database.pool.query("select to_regclass('workflow_chat_posts') as table_name")).rows[0]?.table_name) {
+    await database.pool.query(workflowChatMigration.sql)
+  }
   const definition = makeCurrentWorkflowFixture(`conversation-${randomUUID()}`, 'single')
   definition.configurations = definition.configurations.map(configuration => AgentConfigurationVersionSchema.parse({
     ...configuration, harness: { ...DEFAULT_HARNESS_DEFAULTS.codex, model: 'fixture', reasoningEffort: 'low',
@@ -142,7 +146,7 @@ export async function conversationDeliveryFixture() {
   }
   const services = () => {
     const { agent, operator, agentRepository, operatorRepository } = createServices()
-    const feature = createChatDeliveryFeature({ pool: database.pool, agent, operator, execution,
+    const feature = createWorkflowChatFeature({ pool: database.pool, agent, agentRepository, operator, execution,
       access: { resolve: async (principal, action, selected) => {
         requireAuthorization(principal, action, selected)
         requireAuthorization(await access.currentOperator(principal.id), action, selected)
@@ -155,6 +159,8 @@ export async function conversationDeliveryFixture() {
       } },
       qualifyExecutionLocked: async () => { throw new Error('No execution is created by this fixture.') },
       authorizeExecutionTarget: async () => { throw new Error('No execution is created by this fixture.') },
+      assertCardLinksLocked: async (_tx, _principal, _scope, ids) => { if (ids.length) throw new Error('No board cards in this fixture.') },
+      runReplies: { read: async () => undefined },
       bindConversationScope: async input => { contexts.push(structuredClone(input.context)) },
     })
     return { agent, operator, feature, agentRepository, operatorRepository }

@@ -25,6 +25,7 @@ export type WorkspaceBoardExecutionSelection = z.infer<typeof WorkspaceBoardExec
 /** One shell rail; feature panels share the selected node and immutable execution pins. */
 export const BoardSidePanelSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('none') }).strict(),
+  z.object({ kind: z.literal('group_chat') }).strict(),
   z.object({ kind: z.literal('agent'), nodeId: GraphIdSchema,
     tab: z.enum(['chat', 'settings', 'details']), executionId: GraphIdSchema.optional(), waitingActivationId: GraphIdSchema.optional() }).strict(),
   z.object({ kind: z.literal('browser'), nodeId: GraphIdSchema.optional(), executionId: GraphIdSchema.optional(),
@@ -37,12 +38,13 @@ export type BoardSidePanel = z.infer<typeof BoardSidePanelSchema>
 
 const BoardSurfaceSelectionFields = {
   boardView: z.enum(['graph', 'overview']).optional(),
-  boardPanel: z.enum(['agent', 'browser']).optional(),
+  boardPanel: z.enum(['group_chat', 'agent', 'browser']).optional(),
   boardAgentTab: z.enum(['chat', 'settings', 'details']).optional(),
   boardNodeId: GraphIdSchema.optional(), boardExecutionId: GraphIdSchema.optional(),
   boardWaitingActivationId: GraphIdSchema.optional(),
   boardTeamId: GraphIdSchema.optional(),
   browserSessionId: GraphIdSchema.optional(), browserTabId: GraphIdSchema.optional(),
+  groupRunId: GraphIdSchema.optional(), groupPostId: GraphIdSchema.optional(), groupReceiptId: GraphIdSchema.optional(),
   boardMemory: z.union([z.literal(true), z.literal('true').transform(() => true as const)]).optional(),
   /** The right-hand sidebar of agent browsers, and the Agent node whose browser tab is selected in it. */
   boardBrowsers: z.union([z.literal(1), z.literal('1').transform(() => 1 as const)]).optional(),
@@ -95,6 +97,7 @@ export type WorkflowBoardSelection = WorkspaceBoardSearch
 
 export function boardSidePanelFromSearch(search: WorkspaceBoardSearch): BoardSidePanel {
   switch (search.boardPanel) {
+    case 'group_chat': return { kind: 'group_chat' }
     case 'agent': return BoardSidePanelSchema.parse({ kind: 'agent', nodeId: search.boardNodeId,
       tab: search.boardAgentTab ?? 'chat', ...(search.boardExecutionId ? { executionId: search.boardExecutionId } : {}),
       ...(search.boardWaitingActivationId ? { waitingActivationId: search.boardWaitingActivationId } : {}) })
@@ -173,6 +176,6 @@ function authoringSelection(search: WorkspaceBoardSearch): WorkspaceBoardSearch 
   const value = { ...search }
   for (const key of ['activityKind', 'activityAgentId', 'boardView', 'boardPanel', 'boardAgentTab',
     'browserSessionId', 'browserTabId', 'boardNodeId', 'boardExecutionId', 'boardWaitingActivationId', 'boardTeamId', 'boardMemory',
-    'boardBrowsers', 'browserTab'] as const) delete value[key]
+    'boardBrowsers', 'browserTab', 'groupRunId', 'groupPostId', 'groupReceiptId'] as const) delete value[key]
   return value
 }

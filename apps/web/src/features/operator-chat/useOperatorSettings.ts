@@ -1,4 +1,4 @@
-import { applyOperatorChatSettings, operatorChatSettings, operatorHarnessDefaults, activeAgentDefaults, type RecordedAgentDefaults, type HarnessConfiguration, type OperatorChatSettings } from '@foreman-code/contracts'
+import { applyOperatorChatSettings, operatorChatSettings, operatorHarnessDefaults, type AgentDefaults, type HarnessConfiguration, type OperatorChatSettings } from '@foreman-code/contracts'
 import { useAgentDefaultsQuery, useHarnessDefaultsQuery, useUpdateAgentDefaultsMutation } from '../../shared/api/query'
 import { useNativeHarnessOptions } from '../../shared/api/harnessSettings'
 import { useRevisionedForm } from '../settings/revisionedForm'
@@ -7,7 +7,7 @@ export function useOperatorSettings(enabled: boolean) {
   const query = useAgentDefaultsQuery(enabled)
   const harnesses = useHarnessDefaultsQuery({ enabled })
   const mutation = useUpdateAgentDefaultsMutation()
-  const form = useRevisionedForm<RecordedAgentDefaults>(query.data, 'operator-chat:defaults')
+  const form = useRevisionedForm<AgentDefaults>(query.data, 'operator-chat:defaults')
   const operator = form.draft?.operator
   const catalog = useNativeHarnessOptions('claude', enabled && operator?.harness.harness === 'claude')
   const settings = operator && operator.harness.harness !== 'opencode'
@@ -24,7 +24,7 @@ export function useOperatorSettings(enabled: boolean) {
       return { ...value, operator: { ...value.operator, harness: configuration } }
     })
     return form.save(async (input) => {
-      const result = await mutation.mutateAsync({ ...input, value: activeAgentDefaults(input.value) })
+      const result = await mutation.mutateAsync(input)
       return result.value
     })
   }
