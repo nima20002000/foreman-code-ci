@@ -89,6 +89,7 @@
 .circleci-orgs { list-style: none; padding: 0; margin: .5rem 0 0; }
 .circleci-orgs > li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: .75rem;
   border-top: 1px solid var(--n-border); padding: .45rem 0; font-size: .85rem; }
+.circleci-orgs > li > p { grid-column: 1 / -1; overflow-wrap: anywhere; }
 .circleci-orgs > li > strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .circleci-orgs > li > span { color: var(--n-muted); white-space: nowrap; }
 .circleci-summary .circleci-summary-note { color: var(--n-muted); font-size: .8rem; margin: .35rem 0 0; }

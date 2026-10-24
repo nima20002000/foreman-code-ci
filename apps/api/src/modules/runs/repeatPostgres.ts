@@ -140,8 +140,7 @@ export interface RepeatRepositoryHost {
   /** Lock order: Run (already held), graph head, exact execution children, receipts.
    * Parse the actual v3 Run union, retain all admission/approval/configuration pins,
    * and open the existing publication. Never initialize a missing history head. */
-  openLocked(sql: SqlTransaction, scope: RepeatScope, runRecord: unknown, version: WorkflowVersionCurrent,
-    observation?: boolean): Promise<RepeatLockedHooks>
+  openLocked(sql: SqlTransaction, scope: RepeatScope, runRecord: unknown, version: WorkflowVersionCurrent): Promise<RepeatLockedHooks>
 }
 interface Context {
   sql: SqlTransaction; scope: RepeatScope; version: WorkflowVersionCurrent; hooks: RepeatLockedHooks
@@ -213,7 +212,7 @@ export class RepeatRunRepository {
     if (this.owner.oneShotConnection().unusable) return false
     return this.launchPermits.delete(executionId)
   }
-  private async transaction<T>(work: (context: Context) => Promise<T>, options: { readOnly?: boolean; observation?: boolean } = {}): Promise<T> {
+  private async transaction<T>(work: (context: Context) => Promise<T>, options: { readOnly?: boolean } = {}): Promise<T> {
     return this.owner.oneShotConnection().transaction(async (sql) => {
       this.owner.assertOwned()
       const found = await repeatQueries.readRunSnapshot(sql, this.owner.runId, options.readOnly)
@@ -223,7 +222,7 @@ export class RepeatRunRepository {
       if (!sameRepeatValue(version, this.expectedVersion)) return repeatConflict('RUN_PIN_CONFLICT')
       const scope: RepeatScope = { workspaceId: version.workspaceId, workflowId: version.workflowId,
         workflowVersionId: version.id, runId: this.owner.runId, executionSemanticsVersion: 3 }
-      const hooks = await this.host.openLocked(sql, scope, row.run, version, options.observation ?? options.readOnly)
+      const hooks = await this.host.openLocked(sql, scope, row.run, version)
       const run = hooks.run
       if (run.executionSemanticsVersion !== 3 || run.id !== scope.runId || run.workspaceId !== scope.workspaceId
         || run.workflowId !== scope.workflowId || run.workflowVersionId !== scope.workflowVersionId || run.executionState !== row.state
@@ -299,7 +298,7 @@ export class RepeatRunRepository {
       await this.execution(context, executionId)
       await this.recordedEffect(context, 'input.bind', executionId)
       return readWorkflowControlDispositionLocked(context.sql, context.scope.runId, executionId)
-    }, { observation: true })
+    })
   }
   claimWorkflowInput(executionId: string) {
     return this.transaction(async context => {
@@ -325,7 +324,7 @@ export class RepeatRunRepository {
   /** The connection on which a finished Worker reports back to the Orchestrator that asked for its work. */
   readWorkCallerReport(sourceExecutionId: string): Promise<string | undefined> {
     return this.transaction(context => readWorkCallerReportLocked({ ...context,
-      assertActive: () => this.active(context) }, sourceExecutionId), { observation: true })
+      assertActive: () => this.active(context) }, sourceExecutionId))
   }
   /** One business request on the already-owned Run; replay returns its first receipt. */
   admitWorkRequest(sourceExecutionId: string, selectedRelationshipId?: string): Promise<WorkRequestAdmission> {
@@ -386,7 +385,7 @@ export class RepeatRunRepository {
         requestId: input.parentRequest.requestId,
         requesterNodeId: input.parentRequest.requesterNodeId,
       } : null }
-    }, { observation: true })
+    })
   }
   /** Queue one exact activation through the existing native receipt and launch path. */
   admitWorkActivation(activationId: string, candidate: (nodeId: string) => HarnessExecution): Promise<{ execution: HarnessExecution; reused: boolean }> {
@@ -831,7 +830,7 @@ export class RepeatRunRepository {
       await this.recordedEffect(context, 'input.bind', executionId)
       await assertHierarchyDirectionReleasedLocked(context.sql, context.scope.runId, executionId)
       await context.hooks.assertAdmissionLocked(context.sql, stored.execution, stored.ref)
-    }, { observation: true })
+    })
   }
 
   private nativeChange(context: Context, stored: StoredRepeatExecution, next: HarnessExecution,
@@ -914,7 +913,7 @@ export class RepeatRunRepository {
       const session = NativeSessionReferenceSchema.parse(rows.rows[0]?.reference)
       await this.assertSession(context, stored.execution, session)
       return session
-    }, { observation: true })
+    })
   }
 
   /** Recheck before EVERY allocation/preflight/create/attach/turn boundary of
@@ -936,7 +935,7 @@ export class RepeatRunRepository {
         await this.assertSession(context, stored.execution, session)
       } else if (stored.execution.nativeSessionId) return repeatConflict('NATIVE_SESSION_START_UNCERTAIN')
       await native.assertBoundaryLocked(context.sql, stored.execution, stored.ref, evidence)
-    }, { observation: true })
+    })
   }
 
   async readWorkResultRepairAttempt(executionId: string): Promise<number> {
