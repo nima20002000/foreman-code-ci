@@ -89,8 +89,9 @@ describe.skipIf(!postgresEnabled)('plain workspace Worker placement', () => {
         .some(policy => policy.hostRef.kind === 'main')).toBe(false)
       const accepted = await f.start('mcp', startInput(f, selected))
       expect(accepted.run.workflowVersionId).toBe(selected.currentVersionId)
-      expect(accepted.run.executionLocation.rootPath).toBe(f.placement.local.projectRoot)
-      expect(accepted.run.executionLocation.locationRevision).toBe(f.placement.locationRevision)
+      expect(accepted.run.executionLocation).toMatchObject({
+        rootPath: f.placement.local.projectRoot, locationRevision: f.placement.locationRevision,
+      })
       for (const item of selected.version.definition.nodes) {
         const placement = await f.placement.reads.get(f.base.writer.principal, {
           workspaceId, workflowId: selected.workflowId, runId: accepted.run.id, nodeId: item.id,
