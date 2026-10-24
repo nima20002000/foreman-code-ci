@@ -103,7 +103,7 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
   const failure=query.error??blocked
   const error=failure instanceof Error?failure.message:'Chat could not refresh. Your selection has been kept.'
   const retry=<button type="button" onClick={()=>void query.refetch()} disabled={query.isFetching && !query.isRefetching}>Retry</button>
-  const chooseExecution=selection.runId&&selection.workflowVersionId?<button type="button"
+  const chooseExecution=selection.runId&&selection.workflowVersionId&&(selection.executionId||selection.waitingActivationId)?<button type="button"
     onClick={()=>onSelectRun({runId:selection.runId!,workflowVersionId:selection.workflowVersionId!})}>Choose another execution</button>:null
   if(!first) return failure?<div role="alert">{error} {retry} {chooseExecution}</div>:<p role="status">Loading selected Agent chat…</p>
   const status=query.isError?<div role="alert">{error} {retry}</div>:null

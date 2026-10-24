@@ -113,7 +113,7 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
   // A finished execution takes no new turn here; its Agent chat continues the same session with its history.
   const closed = state?.state === 'idle' && target.kind === 'workflow_execution' && !presentation.capabilities.queue
   // Messages still in doubt keep their status and recovery controls in view before handing over to that chat.
-  const unsettled = !!delivery.pending || !!delivery.pendingControl || retained.items.some(input => !receipts.some(receipt => receipt.id === input.receiptId))
+  const unsettled = !!delivery.pending || !!delivery.pendingControl
     || receipts.some(receipt => receipt.state === 'queued' || receipt.state === 'unknown')
   if (denied || delivery.denied) return <Alert tone="warning" title="Chat access unavailable"><Button onClick={() => {
     detailAbort.current = new AbortController(); setDenied(false); delivery.refresh()
