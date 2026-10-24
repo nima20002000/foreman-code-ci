@@ -1,9 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { agentChatFixtures, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
-import { installBrowserLocks } from '../../../test/browserLocks'
 import { server } from '../../../mocks/server'
 import { createAgentChatMock } from '../../../shared/mocks/agentChatHandlers'
 import { useConversationDraftStore } from '../conversationDraftStore'
@@ -12,9 +11,7 @@ import { LiveAgentConversation } from './LiveAgentConversation'
 import { ephemeralFixture } from './f7.testSupport'
 
 const clients: QueryClient[] = []
-let restoreLocks: () => void
-beforeEach(() => { localStorage.clear(); restoreLocks = installBrowserLocks() })
-afterEach(() => { cleanup(); restoreLocks(); clients.splice(0).forEach(client => client.clear()); useConversationDraftStore.getState().clearAllDrafts() })
+afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); useConversationDraftStore.getState().clearAllDrafts() })
 
 it.each([LiveAgentConversation, AgentConversation])('starts a separate conversation from a missing session without losing the unsent draft (%#)', async View => {
   const original = ephemeralFixture('restarted'), mock = createAgentChatMock(original)
