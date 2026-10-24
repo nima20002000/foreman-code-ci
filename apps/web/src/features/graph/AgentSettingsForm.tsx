@@ -46,7 +46,7 @@ export type AgentSettingsSave = {
 export type AgentSettingsNode = {
   initialPrompt?: string
   /** This node's change to the Agent's default Foreman Code MCP tools. */
-  graphqlTools?: RecordedForemanToolOverride
+  [INSTALLATION_NAMES.fields.agentTools]?: RecordedForemanToolOverride
   placement?: SavedNodePlacement
   worktree?: AgentWorktreeSettings
   executionPolicy?: WorkflowExecutionPolicy

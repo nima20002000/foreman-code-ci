@@ -394,7 +394,7 @@ export type RecordedAgentDefaults = z.infer<typeof RecordedAgentDefaultsSchema>;
 /** A new settings submission contains only active choices; the saved template stays untouched. */
 export function activeAgentDefaults(defaults: RecordedAgentDefaults): AgentDefaults {
   const value = structuredClone(defaults);
-  for (const template of Object.values(value)) if (template?[INSTALLATION_NAMES.fields.agentTools]) {
+  for (const template of Object.values(value)) if (template?.[INSTALLATION_NAMES.fields.agentTools]) {
     template[INSTALLATION_NAMES.fields.agentTools] = activeForemanTools(template[INSTALLATION_NAMES.fields.agentTools]);
   }
   return AgentDefaultsSchema.parse(value);

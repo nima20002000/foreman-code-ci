@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../installationNames.mjs'
 import { FOREMAN_OPERATOR_TOOLS, ForemanToolDefaultsSchema } from '../foremanMcpTools.js'
 import { AgentProductRoleSchema } from '../agentIdentity.js'
 import { OperationalFailureSchema } from '../operationalFailures.js'
@@ -264,7 +265,7 @@ const AgentAddOperationSchema = z.object({
   configuration: ManagementHarnessConfigurationSchema.optional(),
   prompt: AgentSchema.shape.prompt,
   assignedSkills: AgentSchema.shape.assignedSkills,
-  graphqlTools: ForemanToolDefaultsSchema.optional(),
+  [INSTALLATION_NAMES.fields.agentTools]: ForemanToolDefaultsSchema.optional(),
   nativeTools: AgentSchema.shape.nativeTools,
   description: z.string().max(10_000).optional(),
   role: z.string().trim().min(1).max(200).optional(),
@@ -289,7 +290,7 @@ const AgentConfigureOperationSchema = z.object({
   harnessProfileSelection: AgentSchema.shape.harnessProfileSelection,
   prompt: AgentSchema.shape.prompt,
   assignedSkills: AgentSchema.shape.assignedSkills,
-  graphqlTools: ForemanToolDefaultsSchema.optional(),
+  [INSTALLATION_NAMES.fields.agentTools]: ForemanToolDefaultsSchema.optional(),
   nativeTools: AgentSchema.shape.nativeTools,
   description: z.string().max(10_000).nullable().optional(),
   role: z.string().trim().min(1).max(200).nullable().optional(),
@@ -404,7 +405,7 @@ export const GraphDraftOperationSchema = z.discriminatedUnion("type", [
 
 export const StagedAgentSchema = z.object({ agent: AgentSchema, baseRevision: ExpectedRevisionSchema.nullable() }).strict();
 export const AuthoringStagedAgentSchema = StagedAgentSchema.extend({
-  agent: AgentSchema.extend({ graphqlTools: ForemanToolDefaultsSchema.optional() }),
+  agent: AgentSchema.extend({ [INSTALLATION_NAMES.fields.agentTools]: ForemanToolDefaultsSchema.optional() }),
 });
 const GraphDraftRecordFields = {
   id: IdSchema,
