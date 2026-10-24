@@ -5,7 +5,7 @@ import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/pro
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { NativeSessionStart } from '../harnesses/port.js'
-import type { ClaudeSdkClient, ClaudeSdkUserMessage } from '../harnesses/index.js'
+import type { ClaudeSdkClient, ClaudeSdkUserMessage } from '../harnesses/claudeSdk/port.js'
 import { ClaudeBoundedQueue } from '../harnesses/claudeSdk/queue.js'
 import { createClaudeSdkRunner } from '../harnesses/claudeSdk/runner.js'
 import { createClaudeNativeSessionManager } from '../harnesses/claudeSdk/sessionManager.js'

@@ -121,7 +121,7 @@ it('keeps concurrent Agent locks while removing only Main’s destination locks 
   const f = await fixture()
   const writer = await interruptedFetchWriter(f.root, f.common, { [`${destinationRef}.lock`]: 41 })
   const controller = new AbortController()
-  const agentNames = ['refs/remotes/origin/agent.lock', 'packed-refs.lock', 'shallow.lock',
+  const agentNames = ['refs/remotes/origin/agent.lock', 'packed-refs.lock',
     'refs/foreman/ci/fetch/agent.lock']
   const agentFiles = agentNames.map(name => join(f.common, name))
   let running: ReturnType<typeof runGitWithCacheStorage> | undefined
@@ -133,11 +133,14 @@ it('keeps concurrent Agent locks while removing only Main’s destination locks 
       throw new Error('Fetch ended before its writer started.')
     })])
     await started.write()
+    // A shallow lock without a live fetch writer is recoverable immediately; ref locks keep their age-based contract.
+    await writeFile(join(f.common, 'shallow.lock'), 'abandoned', { flag: 'wx' })
     for (const path of agentFiles) await writeFile(path, 'agent', { flag: 'wx' })
     const before = await Promise.all(agentFiles.map(path => stat(path)))
     controller.abort()
     await expect(running).resolves.toMatchObject({ code: 1 })
     await expect(readFile(join(f.common, `${destinationRef}.lock`))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(join(f.common, 'shallow.lock'))).rejects.toMatchObject({ code: 'ENOENT' })
     for (const [index, path] of agentFiles.entries()) {
       expect(await readFile(path, 'utf8')).toBe('agent')
       expect((await stat(path)).mtimeMs).toBe(before[index]!.mtimeMs)

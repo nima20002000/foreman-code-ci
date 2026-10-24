@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { CircleAccountIdSchema, DEFAULT_CIRCLE_ACCOUNT_ID, type CiHostRun } from '@foreman-code/contracts'
 import type { CiContext } from './environment.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import type { HostCiPorts } from './runner.js'
 import { configuredCircleToken } from './circleCredentials.js'
 

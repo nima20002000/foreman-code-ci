@@ -5,7 +5,7 @@ import { useProtectedAccessError } from '../../shared/api/useProtectedAccessErro
 import { Button } from '../../shared/ui/nocturne'
 import { useFloatingSurface } from '../../shared/ui/nocturne/useFloatingSurface'
 import { useDismissableSurface } from '../../shared/ui/useDismissableSurface'
-import { ChatNotice } from '../chat-core'
+import { ChatNotice } from '../conversations/ChatNotice'
 import { PinnedProviderAccount } from './PinnedProviderAccount'
 import { useProviderAccount } from './providerAccountsQueries'
 import './providerAccounts.css'

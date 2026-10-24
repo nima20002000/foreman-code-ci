@@ -16,7 +16,7 @@ function EditableHarnessConfigurationFields({ editor, onChange, routedApproval =
   allowHarnessChange = true, compact = false, advancedOnly = false, workspaceId, harnessDefaults, issues = [],
   section: selectedSection, onSectionChange, frameless = false,
 }: {
-  editor: HarnessEditor & { configuration: HarnessConfiguration }; onChange(editor: HarnessEditor): void; routedApproval?: boolean; allowAutoReview?: boolean; requiresResume?: boolean;
+  editor: HarnessEditor; onChange(editor: HarnessEditor): void; routedApproval?: boolean; allowAutoReview?: boolean; requiresResume?: boolean;
   allowHarnessChange?: boolean; compact?: boolean; advancedOnly?: boolean; workspaceId?: string;
   harnessDefaults?: HarnessDefaults; issues?: readonly FieldIssue[];
   section?: HarnessSettingsSection; onSectionChange?(section: HarnessSettingsSection): void; frameless?: boolean;
@@ -49,6 +49,7 @@ function EditableHarnessConfigurationFields({ editor, onChange, routedApproval =
     return () => cancelAnimationFrame(frame)
   }, [issuePath])
   const status = check.current && check.result.isFetching ? 'Checking…' : check.current && check.result.isSuccess ? 'Ready' : ''
+  if (value.harness === 'opencode') return null
   return <div className={`harness-workbench${frameless ? ' harness-workbench--page' : ''}`} ref={root} role="group" aria-label={harnessNames[value.harness]}>
     {!frameless ? <nav className="harness-section-nav" aria-label="Harness sections">{sections.map((item) => <Button key={item.id} size="sm"
       variant={section === item.id ? 'secondary' : 'ghost'} aria-pressed={section === item.id} onClick={() => {
@@ -77,7 +78,7 @@ function EditableHarnessConfigurationFields({ editor, onChange, routedApproval =
   </div>
 }
 
-export function HarnessConfigurationFields(props: Omit<Parameters<typeof EditableHarnessConfigurationFields>[0], 'editor'> & { editor: HarnessEditor }) {
+export function HarnessConfigurationFields(props: Parameters<typeof EditableHarnessConfigurationFields>[0]) {
   if (props.editor.configuration.harness === 'opencode') return <p role="status">{retiredHarnessLabel}</p>
-  return <EditableHarnessConfigurationFields {...props} editor={{ ...props.editor, configuration: props.editor.configuration }} />
+  return <EditableHarnessConfigurationFields {...props} />
 }

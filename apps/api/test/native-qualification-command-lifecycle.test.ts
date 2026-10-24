@@ -8,6 +8,7 @@ import { calls, errorCode, fixture, until } from './fixtures/codex-test-helpers.
 
 it.skipIf(process.platform !== 'linux')('keeps qualification commands inside one recovery lifetime and closes them before rejecting a schema', async () => {
   const f = await fixture()
+  await writeFile(join(f.directory, 'schema.json'), JSON.stringify({ definitions: {} }))
   const registry = new NativeProcessRegistry(join(f.directory, 'recovery'))
   const owner = 'qualification-owner'
   const lifetime = new AbortController()

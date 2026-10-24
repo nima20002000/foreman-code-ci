@@ -1,4 +1,4 @@
-import { isReadOnlyHarnessConfiguration, COLLABORATION_AGENT_TOOLS, memoryBoardTools, RecordedHarnessConfigurationSchema } from '@foreman-code/contracts'
+import { isReadOnlyHarnessConfiguration, COLLABORATION_AGENT_TOOLS, memoryBoardTools, HarnessConfigurationSchema } from '@foreman-code/contracts'
 import { browserAgentTools } from '../collaboration/index.js'
 import { readConversationCredential } from '../access/conversationCredentials.js'
 import {
@@ -20,7 +20,7 @@ import {
 import { AcceptedWorkflowRunCurrentSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { WORKER_NATIVE_OUTPUT_TOOL_NAMES, WorkerNativeOutputOperationSchema } from '@foreman-code/contracts/worker-native-output'
 import { resolveImmutableApprovalRoute } from '../workflows/index.js'
-import { assertCurrentWorkerBinding } from './current/credentialAuthority.js'
+import { assertWave25WorkerBinding } from './current/credentialAuthority.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { AgentRunStatus } from '@foreman-code/contracts'
 import { AgentRunStatusService } from '../runs/agentRunStatus.js'
@@ -179,7 +179,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
     const subject = row.purpose === 'consultation'
       ? await readConsultationCredentialSubject(this.pool, principal.id) : undefined
     const implemented = [...memoryBoardTools('write'), 'workflow_chat_read', 'workflow_chat_post', ...(row.browser?.enabled ? browserAgentTools : [])] as const
-    const harness = RecordedHarnessConfigurationSchema.parse(row.harness)
+    const harness = HarnessConfigurationSchema.parse(row.harness)
     const readOnly = isReadOnlyHarnessConfiguration(harness)
     const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null, implemented).filter(tool => {
       if (tool.startsWith('browser_') && readOnly && !COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly) return false
@@ -203,7 +203,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
   async canRespond(principal: ManagementPrincipal): Promise<boolean> {
     if (!this.orchestration) return false
     if (!hasWorkerAction(principal, 'interactions:respond') || !hasWorkerAction(principal, 'interactions:read')) return false
-    try { await assertCurrentWorkerBinding(this.pool, principal.id) }
+    try { await assertWave25WorkerBinding(this.pool, principal.id) }
     catch (error) { if (error instanceof DomainError) return false; throw error }
     workerScope(principal)
     const scopes = workerScopesForAction(principal, 'interactions:respond')

@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
-import type { RecordedHarnessConfiguration } from '@foreman-code/contracts'
+import type { HarnessConfiguration } from '@foreman-code/contracts'
 import { AcceptedProviderAccountBindingSchema, type AcceptedProviderAccountBinding,
   type ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
@@ -15,12 +15,12 @@ type AcceptanceOptions = {
 }
 export interface AccountBindingAcceptance {
   id: string
-  configuration: RecordedHarnessConfiguration
+  configuration: HarnessConfiguration
   selection?: HarnessProfileSelection | undefined
   options?: AcceptanceOptions | undefined
 }
 
-export function legacyProviderAccountBinding(configuration: RecordedHarnessConfiguration,
+export function legacyProviderAccountBinding(configuration: HarnessConfiguration,
   selection?: HarnessProfileSelection): AcceptedProviderAccountBinding | undefined {
   if (configuration.harness === 'opencode') return undefined
   return { kind: 'legacy-profile', provider: configuration.harness, target: selection?.target.hostRef.kind === 'main' ? {
@@ -51,7 +51,7 @@ export async function saveProviderAccountBinding(sql: SqlQuery, kind: AccountBin
   return parsed
 }
 
-export function assertAccountConfiguration(binding: ProviderAccountBinding, configuration: RecordedHarnessConfiguration,
+export function assertAccountConfiguration(binding: ProviderAccountBinding, configuration: HarnessConfiguration,
   selection?: HarnessProfileSelection): void {
   if (binding.provider !== configuration.harness
     || ('accountId' in configuration && configuration.accountId && configuration.accountId !== binding.accountId)) {
@@ -69,7 +69,7 @@ export function assertAccountConfiguration(binding: ProviderAccountBinding, conf
 export class AcceptedProviderAccountBindings {
   constructor(private readonly accounts: ProviderAccountResolver) {}
 
-  async prepare(configuration: RecordedHarnessConfiguration, selection?: HarnessProfileSelection,
+  async prepare(configuration: HarnessConfiguration, selection?: HarnessProfileSelection,
     options: { signal?: AbortSignal } = {}) {
     options.signal?.throwIfAborted()
     if (configuration.harness === 'opencode') return undefined
@@ -94,7 +94,7 @@ export class AcceptedProviderAccountBindings {
   }
 
   async accept(sql: SqlQuery, kind: AccountBindingOwner, id: string,
-    configuration: RecordedHarnessConfiguration, selection?: HarnessProfileSelection,
+    configuration: HarnessConfiguration, selection?: HarnessProfileSelection,
     options: AcceptanceOptions = {}): Promise<AcceptedProviderAccountBinding | undefined> {
     const prior = await readProviderAccountBinding(sql, kind, id)
     if (prior) return prior
@@ -143,7 +143,7 @@ export class AcceptedProviderAccountBindings {
     return bindings
   }
 
-  private async resolveAccepted(sql: SqlQuery, configuration: RecordedHarnessConfiguration,
+  private async resolveAccepted(sql: SqlQuery, configuration: HarnessConfiguration,
     selection?: HarnessProfileSelection, { source, prepared }: AcceptanceOptions = {}) {
     if (configuration.harness === 'opencode') return undefined
     if (source) {

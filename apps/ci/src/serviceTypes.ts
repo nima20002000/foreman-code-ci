@@ -24,8 +24,10 @@ export interface HostCiEndpoint {
   statusKey?(computer: HostCiComputer): string
   publishMirror?(input: CiMirrorInput): Promise<void>
 }
-/** Resolves the commit to test and makes sure GitHub has it, so build computers can fetch it. */
+/** Resolves the commit to test; source publication is a dispatch prerequisite. */
 export interface CiCommits {
+  /** Publish before dispatch, outside admission and database locks. Resolvers already backed by GitHub may omit it. */
+  publish?(repository: string, commit: string): Promise<void>
   infrastructureOnly?(repository: string, commit: string): Promise<boolean>
   branch?(repository: string, defaultBranch: string, commit: string): Promise<string | null>
   isAncestor?(repository: string, ancestor: string, commit: string): Promise<boolean>

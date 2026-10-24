@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import type { CiContext, SqlQuery } from './environment.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 
 // A cloud recovery can make two bounded 75-second requests before it writes again.
 const CLAIM_TTL_MS = 300_000

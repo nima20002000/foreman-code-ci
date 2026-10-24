@@ -1,5 +1,5 @@
 import type { CiContext } from './environment.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 
 export function temporaryCiConnectionError(context: CiContext, error: unknown): boolean {
   if (context.platform.isDeviceApplicationError(error)) return error.retryable
