@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
+import { HostHarnessProfileEvidenceSchema } from '@foreman-code/contracts/harness-registry'
 import { NodePlacementChoicesResultSchema } from '@foreman-code/contracts/placement-readback'
 import { SourceListResultSchema, SourceRootListResultSchema } from '@foreman-code/contracts/source-admission'
 import { expect, it, vi } from 'vitest'
@@ -8,6 +9,9 @@ import { buildApp } from '../src/app.js'
 import { HarnessInstanceSettingsRepository } from '../src/modules/harnesses/instanceSettings/repository.js'
 import { ProductionPlacementChoiceDiscovery } from '../src/modules/placement/choiceDiscovery.js'
 import { NodePlacementChoicesService } from '../src/modules/placement/choicesService.js'
+import { DomainError } from '../src/modules/errors.js'
+import { PrivateSourceSnapshotStore } from '../src/modules/sources/store.js'
+import { deferred } from './helpers/deferred.js'
 import { fixture, toolError } from './helpers/nodePlacementStartFixture.js'
 
 it('repairs released source choices through authenticated HTTP and MCP with persisted readback and denied callers',
@@ -21,7 +25,11 @@ it('repairs released source choices through authenticated HTTP and MCP with pers
         nodeId: saved.version.definition.nodes[0]!.id,
         agentConfigurationVersionId: f.base.f.configurations[0]!.id }
       const pool = f.base.db.pool
-      const profileEvidence = vi.fn(async () => ({ qualified: true }))
+      const profileEvidence = vi.fn(async () => {
+        const row = (await pool.query<{ record: unknown }>(
+          'select record from harness_instance_profile_evidence limit 1')).rows[0]!
+        return HostHarnessProfileEvidenceSchema.parse(row.record)
+      })
       const discovery = new ProductionPlacementChoiceDiscovery(pool, () => ({
         roots: f.placement.policies, sources: f.placement.sources,
         profiles: new HarnessInstanceSettingsRepository(pool),
@@ -127,3 +135,65 @@ it('repairs released source choices through authenticated HTTP and MCP with pers
       vi.restoreAllMocks()
     }
   }, 120_000)
+
+it('retries failed automatic captures on discovery and shares the active retry between callers', async () => {
+  const f = await fixture()
+  const resume = deferred()
+  const retries: Promise<unknown>[] = []
+  try {
+    const saved = await f.save('http')
+    const pool = f.base.db.pool
+    const input = { workspaceId: saved.version.workspaceId, workflowId: saved.workflowId,
+      nodeId: saved.version.definition.nodes[0]!.id,
+      agentConfigurationVersionId: f.base.f.configurations[0]!.id }
+    const discovery = new ProductionPlacementChoiceDiscovery(pool, () => ({
+      roots: f.placement.policies, sources: f.placement.sources,
+      profiles: new HarnessInstanceSettingsRepository(pool),
+      registry: { installations: f.placement.installations, profileEvidence: async () => {
+        const row = (await pool.query<{ record: unknown }>(
+          'select record from harness_instance_profile_evidence limit 1')).rows[0]!
+        return HostHarnessProfileEvidenceSchema.parse(row.record)
+      } },
+    }))
+    await pool.query("update source_snapshots set availability='unavailable' where snapshot_id=$1",
+      [f.placement.source.snapshotId])
+    const write = PrivateSourceSnapshotStore.prototype.write
+    const writer = vi.spyOn(PrivateSourceSnapshotStore.prototype, 'write').mockRejectedValue(
+      new DomainError('SOURCE_CAPTURE_FAILED', 'The source snapshot could not be written.', 503))
+    const failed = await discovery.list(f.base.writer.principal, input, 'http')
+    expect(failed.choices).toHaveLength(2)
+    expect(failed.choices).toEqual(Array(2).fill(expect.objectContaining({ availability: 'unavailable',
+      reason: 'The source snapshot could not be written.' })))
+    expect((await pool.query('select state from source_approvals where workspace_id=$1 and state=$2',
+      [input.workspaceId, 'failed'])).rows).toHaveLength(2)
+
+    writer.mockClear().mockImplementation(async function (...args) {
+      await resume.promise
+      return write.apply(this, args)
+    })
+    const setup = vi.spyOn(f.placement.sources, 'setupRoot')
+    const first = discovery.list(f.base.writer.principal, input, 'http')
+    const second = discovery.list(f.base.writer.principal, input, 'http')
+    retries.push(first, second)
+    await expect.poll(() => setup.mock.calls.length).toBeGreaterThanOrEqual(2)
+    resume.resolve()
+    const results = await Promise.all([first, second])
+    expect(results[0]).toEqual(results[1])
+    for (const result of results) {
+      expect(result.choices).toHaveLength(2)
+      for (const choice of result.choices) {
+        expect(choice).toMatchObject({ availability: 'ready', reason: null,
+          placement: { rootBinding: { bindingRevision: 2 } } })
+        expect(choice.placement.source!.snapshotId).not.toBe(f.placement.source.snapshotId)
+      }
+    }
+    expect(writer).toHaveBeenCalledOnce()
+    expect(await discovery.list(f.base.writer.principal, input, 'http')).toEqual(results[0])
+    expect(writer).toHaveBeenCalledOnce()
+  } finally {
+    resume.resolve()
+    await Promise.allSettled(retries)
+    vi.restoreAllMocks()
+    await f.close()
+  }
+}, 120_000)
