@@ -187,7 +187,8 @@ it('recovers a missing exact execution by explicitly clearing only its attempt p
   wire.controls.status = 200
   const choice = selected()
   if (choice.kind !== 'selected') throw new Error('Expected selected fixture')
-  wire.controls.resolution = { kind: 'selection_required', items: [choice], revision: 1, nextCursor: null, hasMore: false }
+  wire.controls.resolution = { kind: 'selection_required', items: [{ target: choice.target, agent: choice.agent,
+    workflowVersionId: choice.workflowVersionId, source: choice.source, state: choice.state }], revision: 1, nextCursor: null, hasMore: false }
   fireEvent.click(screen.getByRole('button', { name: 'Choose another execution' }))
   expect(await screen.findByRole('button', { name: 'Execution execution · Attempt 1' })).toBeInTheDocument()
   expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"runId":"run"')
