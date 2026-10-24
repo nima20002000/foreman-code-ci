@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { HostCiRunner, type HostCiPorts } from '../src/runner.js'
 import { testCiContext } from './helpers/ciContext.js'
 
@@ -32,6 +32,7 @@ it('batches all active units once per status poll and keeps their resource usage
       await writeFile(join(directory, 'log'), '')
     }
     const runner = new HostCiRunner(testCiContext, root, ports)
+    const lock = vi.spyOn(testCiContext.platform, 'withPrivateDirectoryLock')
     const status = await runner.handle({ operation: 'status' })
     expect(status).toMatchObject({ operation: 'status', ready: true, slotsUsed: 3 })
     if (status.operation !== 'status') throw new Error('Expected CI status')
@@ -41,7 +42,9 @@ it('batches all active units once per status poll and keeps their resource usage
     expect(calls[0]).toEqual(expect.arrayContaining(ids.map(id => `foreman-ci-${id}.service`)))
     await runner.handle({ operation: 'status' })
     expect(calls).toHaveLength(2)
+    expect(lock).not.toHaveBeenCalled()
   } finally {
+    vi.restoreAllMocks()
     await rm(root, { recursive: true, force: true })
   }
 })
