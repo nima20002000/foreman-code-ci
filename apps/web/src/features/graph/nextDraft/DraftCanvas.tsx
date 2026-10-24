@@ -123,10 +123,8 @@ const DraftJob=memo(function DraftJob({id,data,selected}:NodeProps<JobGraphNode>
   const {draftKey,inspect,open,setOpen,selectNode}=useContext(CanvasContext)
   const entry=useGraphDraftStore(state=>state.nextDrafts[draftKey]?.graph.entryNodeId===id)
   const panel=open?.nodeId===id?open.panel:undefined
-  const live = useContext(RunLiveNodes)?.get(id)
-  return <AgentNodeView name={data.label} harnessLabel="Job" statusLabel={live?.label ?? 'Saved job'}
-    state={live?.state} transition={live?.transition} transitionKey={live?.transitionKey} selected={selected} entry={entry} openPanel={panel}
-    ariaLabel={`${data.label}, job, ${live?.label ?? `saved revision ${data.jobDefinitionRevision}`}`}
+  return <AgentNodeView name={data.label} harnessLabel="Job" statusLabel="Saved job" selected={selected} entry={entry} openPanel={panel}
+    ariaLabel={`${data.label}, job, saved revision ${data.jobDefinitionRevision}`}
     onSelect={(event)=>{event.stopPropagation();inspect(()=>{selectNode?.(id);setOpen({nodeId:id,panel:'info'})})}}
 ><AgentHandles name={data.label}/></AgentNodeView>
 })

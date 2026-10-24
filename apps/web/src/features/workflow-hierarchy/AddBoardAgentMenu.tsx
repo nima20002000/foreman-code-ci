@@ -44,6 +44,7 @@ export function AddBoardAgentMenu({ draftKey, edit, disabled, report }: {
   const catalog = useManagedHarnessCatalogQuery()
   const hasMaster = !!edit.graph.hierarchy || hierarchyNodes(edit).some(item => item.role === 'master')
   const add = (role: WorkflowAgentProductRole, label: string) => {
+    if (disabled) return
     try {
       if (!defaults.data) throw new Error('Agent profiles from Settings are still loading.')
       const value = defaults.data.value
@@ -56,7 +57,7 @@ export function AddBoardAgentMenu({ draftKey, edit, disabled, report }: {
   }
   return <ActionMenu label="Add agent" icon="plus" width={200} disabled={disabled}
     items={roles.map(([role, label]) => ({ id: role, label,
-      disabled: !defaults.data || role === 'master' && hasMaster,
+      disabled: disabled || !defaults.data || role === 'master' && hasMaster,
       ...(defaults.isError ? { description: 'Agent profiles are unavailable.' }
         : role === 'master' && hasMaster ? { description: 'This workflow already has a Master.' } : {}),
       // Stays open so several Agents can be added in a row.
