@@ -17,14 +17,6 @@ import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 
 afterEach(() => vi.restoreAllMocks())
 
-type RunDetails = ReturnType<typeof SavedRunDetailsSchema.parse>
-// A two-node Run prepares two source copies and two native attempts; under parallel CI load the whole Run can take
-// longer than one fixed deadline while still advancing, so each wait bounds time without a visible step instead.
-const runProgress = (value: RunDetails) => ({ state: value.run.executionState, cleanupPending: value.cleanupPending,
-  executions: value.executions.map(execution => ({ id: execution.id, state: execution.state })),
-  worktrees: value.worktrees?.map(tree => ({ executionId: tree.executionId, state: tree.state })),
-  activity: value.activity.length })
-
 async function retainedFixture() {
   const f = await sourceWorktreeMcpFixture({ approvalNodeIds: [] })
   try {
@@ -41,8 +33,7 @@ async function retainedFixture() {
     }
     const firstRunId = await start()
     const first = await readUntil(() => read(firstRunId), value => value.run.executionState === 'completed' && !value.cleanupPending,
-      { timeoutMs: 30_000, description: 'the first completed Run',
-        progress: runProgress })
+      { timeoutMs: 30_000, description: 'the first completed Run' })
     expect(first.run.outcome).toBe('succeeded')
     await closeCompletedWorkflowSources(f.base.db.pool, f.production.sources, error => { throw error })
     const rows = (await f.base.db.pool.query<{ record: SourceMaterializationRecord; reservation: SourceReservation;
@@ -91,8 +82,7 @@ it('reclaims the oldest closed copy under byte pressure, admits the next Run and
   try {
     const runId = await f.startAnotherWorkflow()
     const finished = await readUntil(() => f.read(runId), value => value.run.executionState === 'completed',
-      { timeoutMs: 30_000, description: 'the next Run under retained byte pressure',
-        progress: runProgress })
+      { timeoutMs: 30_000, description: 'the next Run under retained byte pressure' })
     expect(finished.run, JSON.stringify(finished.executions.map(execution => execution.result)))
       .toMatchObject({ outcome: 'succeeded' })
     await expect(stat(f.retainedPath)).rejects.toMatchObject({ code: 'ENOENT' })
@@ -118,8 +108,7 @@ it('keeps pending Run cleanup pinned and reports hard capacity with persisted di
     await f.base.db.pool.query('update run_cleanup_intents set pending=true where run_id=$1', [f.first.run.id])
     const runId = await f.startAnotherWorkflow()
     const finished = await readUntil(() => f.read(runId), value => value.run.executionState === 'completed',
-      { timeoutMs: 30_000, description: 'the pinned retained capacity rejection',
-        progress: runProgress })
+      { timeoutMs: 30_000, description: 'the pinned retained capacity rejection' })
     expect(finished.run).toMatchObject({ outcome: 'failed', result: { error: { code: 'SOURCE_CAPACITY',
       retryable: false, details: { exhausted: ['retained_bytes'], scopeId: f.oldest.scope_id } } } })
     expect(await stat(f.retainedPath)).toBeDefined()

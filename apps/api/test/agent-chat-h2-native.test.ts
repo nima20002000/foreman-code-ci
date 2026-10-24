@@ -92,6 +92,7 @@ function installCodexWire() {
 beforeEach(() => {
   vi.resetAllMocks(); calls.length = 0; ignoreOverride = false; configured = true; codexServers = ['graphql']
   vi.stubEnv('GRAPHQL_MCP_TOKEN', 'must-never-reach-chat')
+  vi.stubEnv('FOREMAN_CODE_MCP_TOKEN', 'native-must-never-reach-chat')
   vi.stubEnv('DATABASE_URL', 'must-never-reach-chat')
   vi.mocked(runCommand).mockImplementation(async (_binary, args) => {
     const launcher = appLauncherConnection()
@@ -132,7 +133,7 @@ describe('H2 A-R01: chat-only App MCP exclusion, real adapters with in-memory na
         assert.deepEqual(launched.args, ['app-server', '--stdio',
           '-c', `mcp_servers.graphql.command=${JSON.stringify(appLauncherConnection().executable)}`,
           '-c', 'mcp_servers.graphql.enabled=false'])
-        assert.equal(launched.environment?.GRAPHQL_MCP_TOKEN, undefined); assert.equal(launched.environment?.DATABASE_URL, undefined)
+        assert.equal(launched.environment?.GRAPHQL_MCP_TOKEN, undefined); assert.equal(launched.environment?.FOREMAN_CODE_MCP_TOKEN, undefined); assert.equal(launched.environment?.DATABASE_URL, undefined)
         const method = operation === 'create' ? 'thread/start' : operation === 'attach' ? 'thread/resume' : 'thread/fork'
         const request = calls.find((call) => call.method === method)!
         assert.equal(request.params.model, start.request.configuration.harness.model)
@@ -222,7 +223,8 @@ describe('H2 A-R01: chat-only App MCP exclusion, real adapters with in-memory na
     assert.equal(vi.mocked(spawnOwnedStdioProcess).mock.calls.length, 0)
     await manager.createSession({ ...start, environment: { agentId: start.request.configuration.agentId, variables: { GRAPHQL_MCP_TOKEN: 'scoped-workflow-fixture' } } })
     const launch = vi.mocked(spawnOwnedStdioProcess).mock.calls[0]![0]
-    assert.deepEqual(launch.args, ['app-server', '--stdio']); assert.equal(launch.environment?.GRAPHQL_MCP_TOKEN, 'scoped-workflow-fixture')
+    assert.deepEqual(launch.args, ['app-server', '--stdio']); assert.equal(launch.environment?.FOREMAN_CODE_MCP_TOKEN, 'scoped-workflow-fixture')
+    assert.equal(launch.environment?.GRAPHQL_MCP_TOKEN, undefined)
     assert.ok(!calls.some((call) => call.method === 'config/read'))
     assert.equal(object(calls.find((call) => call.method === 'thread/start')!.params.config)['mcp_servers.graphql.enabled'], undefined)
   })
@@ -240,6 +242,7 @@ describe('H2 A-R01: chat-only App MCP exclusion, real adapters with in-memory na
         '-c', `mcp_servers.graphql.command=${JSON.stringify(appLauncherConnection().executable)}`,
         '-c', 'mcp_servers.graphql.enabled=false'])
       assert.equal(options.environment?.GRAPHQL_MCP_TOKEN, undefined)
+      assert.equal(options.environment?.FOREMAN_CODE_MCP_TOKEN, undefined)
     }
     assert.equal(calls.filter((call) => call.method === 'config/read').length, 2)
     assert.equal(calls.filter((call) => call.method === 'thread/start').length, 1)

@@ -96,9 +96,9 @@ test('rejects a corrupt scheduler slot count instead of silently reducing capaci
   const state = join(root, '.git', 'graphql-heavy-jobs')
   await mkdir(state)
   await writeFile(join(state, 'slots'), 'invalid')
-  const env = { ...process.env, TMPDIR: root, GRAPHQL_HEAVY_BASE_TMPDIR: root }
-  for (const key of ['GRAPHQL_HEAVY_JOB_COMMON',
-    'GRAPHQL_HEAVY_JOB_TOKEN', 'CI_HOST_RUNNER']) delete env[key]
+  const env = { ...process.env, TMPDIR: root, FOREMAN_CODE_HEAVY_BASE_TMPDIR: root }
+  for (const key of ['FOREMAN_CODE_HEAVY_JOB_COMMON',
+    'FOREMAN_CODE_HEAVY_JOB_TOKEN', 'CI_HOST_RUNNER']) delete env[key]
   const result = spawnSync(process.execPath, ['scripts/heavy-job.mjs', '--', process.execPath, '-e', ''],
     { cwd: root, env, encoding: 'utf8', timeout: 5000 })
   assert.notEqual(result.status, 0)

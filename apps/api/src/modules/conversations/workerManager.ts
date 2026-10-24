@@ -7,7 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
-import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { NativeMessageSubmission } from '@foreman-code/contracts/claude'
 import {
   CompactionStateSchema, ContextSnapshotSchema, McpDetectionSchema, NativeHarnessCapabilitiesSchema,
@@ -324,7 +324,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     const ownerId = this.options.binding.owner.kind === 'operator'
       ? this.options.binding.owner.operatorId : this.options.binding.owner.agentId
     if (environment && (environment.agentId !== ownerId
-      || Object.keys(environment.variables).some(name => !(APP_MCP_TOKEN_NAMES as readonly string[]).includes(name)))) {
+      || Object.keys(environment.variables).some(name => name !== INSTALLATION_NAMES.environment.MCP_TOKEN))) {
       conflict('Only this conversation’s scoped application credential may cross the worker channel.')
     }
     const token = environment && readProductEnvironment(environment.variables, 'MCP_TOKEN')

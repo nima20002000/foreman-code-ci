@@ -53,7 +53,7 @@ export async function currentOperatorIntegration(options: Parameters<typeof chec
     supportsCancellation: true, supportsWorkingDirectory: true, supportsStartupPrompt: true,
     supportedNativeTools: [], supportedSettings: [], unsupportedCapabilities: [] }) }, settings, commands, f.db.directory)
   const workerServices = workerToolServices(f.db.pool, commands)
-  const services = { memoryBoards: createMemoryBoardService(f.db.pool, memoryBoardAuthority), ci: workerServices.ci, executionReadiness: new ExecutionReadinessService(new NativeRollout({ GRAPHQL_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '1' }), harnesses), commands, locations: f.locations, workflows: new WorkflowManagementService(f.db.pool, commands),
+  const services = { memoryBoards: createMemoryBoardService(f.db.pool, memoryBoardAuthority), ci: workerServices.ci, executionReadiness: new ExecutionReadinessService(new NativeRollout({ FOREMAN_CODE_ENABLE_EXPERIMENTAL_CODEX_APP_SERVER: '1' }), harnesses), commands, locations: f.locations, workflows: new WorkflowManagementService(f.db.pool, commands),
     runs: new RunManagementService(f.db.pool, commands, f.runs, f.engine, f.locations, binding),
     workspaces: new WorkspaceManagementService(f.db.pool, commands, f.locations), agents: new AgentManagementService(f.db.pool), harnesses,
     settings: new FoundationSettingsManagementService(new PostgresFoundationSettingsRepository(f.db.pool), commands, harnesses, new PostgresOperatorRepository(f.db.pool)) }

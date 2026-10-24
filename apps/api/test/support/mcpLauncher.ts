@@ -48,7 +48,7 @@ export async function mcpLauncherFixture(
     args.unshift('--import', preload)
   }
   const child = spawn(process.execPath, args, {
-    env: { ...process.env, GRAPHQL_MCP_TOKEN: token }, stdio: 'pipe',
+    env: { ...process.env, FOREMAN_CODE_MCP_TOKEN: token }, stdio: 'pipe',
   })
   const messages: LauncherOutput[] = []
   const waiters = new Map<string | number, (value: LauncherOutput) => void>()

@@ -78,32 +78,32 @@ it('strips both ambient credential namespaces and injects only the frozen admitt
     GRAPHQL_PRODUCTION_DB_PASSWORD: 'database-old', FOREMAN_CODE_PRODUCTION_DB_PASSWORD: 'database-new',
     FOREMAN_CODE_OPERATOR_SECRET: 'operator-secret', FOREMAN_CODE_APP_SECRET: 'app-secret', PATH: '/usr/bin' })
   expect(clean).toEqual({ PATH: '/usr/bin', NO_COLOR: '1' })
-  const runtime = { GRAPHQL_APP_MCP_DIRECTORY: '/runtime/mcp' }
+  const runtime = { FOREMAN_CODE_APP_MCP_DIRECTORY: '/runtime/mcp' }
   expect(appMcpTokenEnvironment({ GRAPHQL_MCP_TOKEN: 'admitted' }, runtime)).toEqual({
-    GRAPHQL_MCP_TOKEN: 'admitted', GRAPHQL_APP_MCP_DIRECTORY: '/runtime/mcp',
+    FOREMAN_CODE_MCP_TOKEN: 'admitted', FOREMAN_CODE_APP_MCP_DIRECTORY: '/runtime/mcp',
   })
   expect(appMcpTokenEnvironment({ FOREMAN_CODE_MCP_TOKEN: 'unused-alias' }, runtime)).toEqual({ FOREMAN_CODE_MCP_TOKEN: 'unused-alias' })
 })
 
 it('withholds the configured bridge and both ambient token names from Codex until MCP admission', () => {
-  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', '/runtime/mcp')
-  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', '/ignored/mcp')
+  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', '/runtime/mcp')
+  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', '/ignored/mcp')
   vi.stubEnv('GRAPHQL_MCP_TOKEN', 'ambient-token')
   vi.stubEnv('FOREMAN_CODE_MCP_TOKEN', 'ambient-token')
   const clean = safeEnvironment()
-  expect(clean.GRAPHQL_APP_MCP_DIRECTORY).toBeUndefined()
   expect(clean.FOREMAN_CODE_APP_MCP_DIRECTORY).toBeUndefined()
+  expect(clean.GRAPHQL_APP_MCP_DIRECTORY).toBeUndefined()
   expect(clean.GRAPHQL_MCP_TOKEN).toBeUndefined()
   expect(clean.FOREMAN_CODE_MCP_TOKEN).toBeUndefined()
   const admitted = safeEnvironment({ agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: 'admitted-token' } })
-  expect(admitted.GRAPHQL_APP_MCP_DIRECTORY).toBe('/runtime/mcp')
-  expect(admitted.FOREMAN_CODE_APP_MCP_DIRECTORY).toBeUndefined()
-  expect(admitted.GRAPHQL_MCP_TOKEN).toBe('admitted-token')
-  expect(admitted.FOREMAN_CODE_MCP_TOKEN).toBeUndefined()
+  expect(admitted.FOREMAN_CODE_APP_MCP_DIRECTORY).toBe('/runtime/mcp')
+  expect(admitted.GRAPHQL_APP_MCP_DIRECTORY).toBeUndefined()
+  expect(admitted.FOREMAN_CODE_MCP_TOKEN).toBe('admitted-token')
+  expect(admitted.GRAPHQL_MCP_TOKEN).toBeUndefined()
 })
 
 it.each([false, true])('delivers the frozen bridge to a native child only with admitted MCP access (%s)', async admitted => {
-  const source = { GRAPHQL_APP_MCP_DIRECTORY: '/runtime/mcp', GRAPHQL_MCP_TOKEN: 'ambient-token',
+  const source = { FOREMAN_CODE_APP_MCP_DIRECTORY: '/runtime/mcp', GRAPHQL_MCP_TOKEN: 'ambient-token',
     FOREMAN_CODE_MCP_TOKEN: 'ambient-alias', FOREMAN_CODE_APP_SECRET: 'ambient-secret' }
   for (const [key, value] of Object.entries(source)) vi.stubEnv(key, value)
   const environmentOrScope = admitted ? {
@@ -111,9 +111,9 @@ it.each([false, true])('delivers the frozen bridge to a native child only with a
     beforeSpawn: async () => ({ agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: 'admitted-token' } }),
   } : source
   const result = await runCommand(process.execPath, ['-e', `console.log(JSON.stringify({
-    directory: process.env.GRAPHQL_APP_MCP_DIRECTORY,
-    token: process.env.GRAPHQL_MCP_TOKEN,
-    aliasToken: process.env.FOREMAN_CODE_MCP_TOKEN,
+    directory: process.env.FOREMAN_CODE_APP_MCP_DIRECTORY,
+    token: process.env.FOREMAN_CODE_MCP_TOKEN,
+    aliasToken: process.env.GRAPHQL_MCP_TOKEN,
     secret: process.env.FOREMAN_CODE_APP_SECRET,
   }))`], process.cwd(), AbortSignal.timeout(5_000), environmentOrScope)
   expect(result.exitCode).toBe(0)
@@ -122,7 +122,7 @@ it.each([false, true])('delivers the frozen bridge to a native child only with a
 
 it('delivers and redacts the frozen scoped token and rejects a product-name injection', async () => {
   const result = await runCommand(process.execPath,
-    ['-e', 'console.log(JSON.stringify({token:process.env.GRAPHQL_MCP_TOKEN,alias:process.env.FOREMAN_CODE_MCP_TOKEN}))'],
+    ['-e', 'console.log(JSON.stringify({token:process.env.FOREMAN_CODE_MCP_TOKEN,alias:process.env.GRAPHQL_MCP_TOKEN}))'],
     process.cwd(), AbortSignal.timeout(5_000), {
       expectedAgentId: 'scoped-agent', beforeSpawn: async () => ({ agentId: 'scoped-agent', variables: { GRAPHQL_MCP_TOKEN: 'admitted-token' } }),
     })

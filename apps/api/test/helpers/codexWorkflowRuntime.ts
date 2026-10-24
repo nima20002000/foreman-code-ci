@@ -42,7 +42,7 @@ export async function codexWorkflowRuntime(kind: 'questions' | 'form') {
   const journal = new NativeResponseJournal(join(provider.directory, 'response-journal'))
   try {
     await provider.json('mcp.json', { name: 'foreman-code', enabled: true, required: true,
-      transport: { type: 'streamable_http', url: providerAppEndpoint, bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } })
+      transport: { type: 'streamable_http', url: providerAppEndpoint, bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } })
     await provider.json('workflow-input.json', kind === 'questions'
       ? { method: 'item/tool/requestUserInput', params: { itemId: 'question-tool', isBlocking: true,
         questions: [{ id: 'answer', header: 'Answer', question: 'What should happen next?',

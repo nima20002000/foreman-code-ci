@@ -5,16 +5,16 @@ import { appLauncherConnection, isAppLauncher } from '../src/modules/harnesses/a
 afterEach(() => vi.unstubAllEnvs())
 
 it.each(['codex'] as const)('production routing recognizes the reviewed %s launcher', async harness => {
-  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
-  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
+  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', undefined)
+  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', undefined)
   const reviewed = appLauncherConnection()
   const runtimeModule = new URL('../../../scripts/local-production-runtime.mjs', import.meta.url).href
   const { localProductionEnvironment } = await import(runtimeModule)
   const environment = localProductionEnvironment(homedir(), 'a'.repeat(64))
-  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', environment.GRAPHQL_APP_MCP_DIRECTORY)
+  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', environment.FOREMAN_CODE_APP_MCP_DIRECTORY)
   const entry = harness === 'codex'
-    ? { command: reviewed.executable, args: reviewed.arguments, env_vars: ['GRAPHQL_MCP_TOKEN'] }
+    ? { command: reviewed.executable, args: reviewed.arguments, env_vars: ['FOREMAN_CODE_MCP_TOKEN'] }
     : { type: 'local', command: [reviewed.executable, ...reviewed.arguments],
-      environment: { GRAPHQL_MCP_TOKEN: '{env:GRAPHQL_MCP_TOKEN}' } }
+      environment: { FOREMAN_CODE_MCP_TOKEN: '{env:FOREMAN_CODE_MCP_TOKEN}' } }
   expect(isAppLauncher(entry)).toBe(true)
 })

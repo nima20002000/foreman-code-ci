@@ -23,7 +23,7 @@ export function remoteReviewEnvironment(
     LOG_LEVEL: source.LOG_LEVEL ?? 'warn',
   }
   environment.DBUS_SESSION_BUS_ADDRESS = `unix:path=${environment.XDG_RUNTIME_DIR}/bus`
-  delete environment[INSTALLATION_NAMES.privateEnvironment.productAppMcpDirectory]
+  delete environment[INSTALLATION_NAMES.privateEnvironment.unusedAppMcpDirectory]
   delete environment.NODE_OPTIONS
   delete environment.NODE_PATH
   return environment
