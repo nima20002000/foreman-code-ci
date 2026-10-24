@@ -92,6 +92,7 @@ export const pendingWebFeatureImports = new Set([
   'apps/web/src/features/workflow-hierarchy/RemoveHierarchyNodeDialog.tsx > apps/web/src/features/graph/nextDraft/placement.ts',
   'apps/web/src/features/workflow-hierarchy/RemoveHierarchyNodeDialog.tsx > apps/web/src/features/graph/store.ts',
   'apps/web/src/features/workflow-hierarchy/WorkerParentField.tsx > apps/web/src/features/graph/store.ts',
+  'apps/web/src/features/workflows/RemoveWorkflowButton.tsx > apps/web/src/features/graph/store.ts',
   'apps/web/src/features/workflows/WorkflowNavigation.tsx > apps/web/src/features/workspaces/useReorderableNavigation.ts',
   'apps/web/src/features/workflows/useWorkflowReorder.ts > apps/web/src/features/workspaces/navigationOrder.ts',
   'apps/web/src/routes/SettingsExperienceRoutes.tsx > apps/web/src/features/settings/ComputerSettings.tsx',
