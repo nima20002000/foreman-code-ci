@@ -176,11 +176,23 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   (2,824 occurrences; no name collided, so none was skipped). `RepeatGraphCurrentV3` became
   `RepeatGraphCurrentCurrent`, which the owner should review. Left alone: `wave25_*` SQL,
   migration file names, `wave25*` test file names, string literals, JSON keys, prose, docs and history.
-- [~] #35 Code rename reconciled on `fix/re2-a35-graphql` over `merge/arch2` at `b33a05a909`.
+- [~] #35 Code rename reconciled on `fix/re2-a35-graphql` over `merge/arch2` at `b33a05a909`; code complete, inherited verification failures remain.
   Frozen deployed and saved names live in contracts `installationNames.mjs`; no environment alias layer.
   Preserved the newer harness capabilities, recorded configuration types, contracts-node split and worker build inputs.
   Deployed manifests, migration SQL and historical evidence stay unchanged; standalone artifacts embed frozen names.
-  Foreman CI verification pending. No deployed installation cutover.
+  Corrected missing frozen-name imports, computed-property narrowing, the credential lifecycle test header, isolated
+  fixture environment ownership, standalone old-writer packaging, and stale alias-only fixture setup. Pre-fix affected
+  unit `46f189eb-9015-40fa-ba51-ae63acdf793b` and integration `d97e7d0f-5c16-4652-9acc-f4ae4a7fc0f9`
+  retain the failing evidence; no tests were skipped or weakened. The slow umask check retains its behavior in integration.
+  Affected unit retry `c686e8d7-cd83-4b63-a99f-1f55d5bbbc09` has exactly the same five failed files as
+  base `681cd269-4794-4a12-a853-4e805903c48c` (missing Worker API output, existing import cycle and MCP UI failures).
+  Integration base `fd7733a4-257d-4273-89df-38b89c34dc57` confirms the Worker packaging, Kanban import-cycle
+  and Operator Codex-schema failures. Final corrected fixture selection: `7171b4ae-2c4b-4deb-85b8-20a65e78b25f`.
+  Changed-file API lint part `47526b12-f1f5-4545-bf23-8bca70741e8d` and supported other-package lint
+  `5b05b363-649f-4d61-9259-b9a5a2bab23a` pass. CI's affected selector rejects the verification-runner package;
+  that selector is outside this finding. Full base typecheck `40533888-3eda-4240-8f8b-9d2a942980f0` and lint
+  `75cc4c71-5388-4e44-a657-0ebb1c96887a` record inherited errors. Full checks are requested again after this
+  evidence update; their exact final-commit tickets are reported in the lane handoff. No deployed installation cutover.
 - [~] #36 Retired `opencode` harness: active/recorded configuration split reconciled on `fix/re-a16-provider`; verification blocked by the shared CI build (see #16).
   - Done: one `isReadOnlyHarnessConfiguration` (contracts) replaces 8 copies of the "retired or read-only" check, and one
     `retiredHarnessError()` (`harnesses/retiredHarness.ts`) replaces 20 `HARNESS_RETIRED` throws. The unused
