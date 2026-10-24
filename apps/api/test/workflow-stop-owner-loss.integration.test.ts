@@ -207,3 +207,50 @@ it('keeps a Run fenced while another live owner holds it', async () => {
     await f.close()
   }
 }, 90_000)
+
+it('joins a local engine drive that takes the Run owner between Stop cleanup and verification', async () => {
+  const f = await runtime()
+  let client: Awaited<ReturnType<typeof operator>> | undefined
+  let drive: Promise<void> | undefined
+  try {
+    const runId = f.f.run.id
+    await f.engine.start(runId)
+    f.disconnect()
+    client = await operator(f)
+    let armed = false, entered!: () => void, open!: () => void
+    const holding = new Promise<void>(resolve => { entered = resolve })
+    const gate = new Promise<void>(resolve => { open = resolve })
+    const snapshot = f.runs.getRepeatSnapshot.bind(f.runs)
+    vi.spyOn(f.runs, 'getRepeatSnapshot').mockImplementation(async (...args) => {
+      // The drive's first owned read: it now holds the Run owner.
+      if (armed && args[1]) { armed = false; entered(); await gate }
+      return snapshot(...args)
+    })
+    const acquire = f.runs.acquireOwnership.bind(f.runs)
+    vi.spyOn(f.runs, 'acquireOwnership').mockImplementation(async (...args) => {
+      const owner = await acquire(...args)
+      if (!owner) open()
+      return owner
+    })
+    const cancel = f.engine.cancel.bind(f.engine)
+    vi.spyOn(f.engine, 'cancel').mockImplementation(async (...args) => {
+      const settled = await cancel(...args)
+      // A reconciliation sweep read the Run while it was open and starts its drive now.
+      armed = true
+      drive = f.engine.start(runId)
+      await holding
+      return settled
+    })
+    const stopped = await client.call('run_stop', client.input)
+    open()
+    await drive
+    expect(stopped.result?.isError, JSON.stringify(graphRpcValue(stopped.result))).not.toBe(true)
+    expect(graphRpcValue(stopped.result)).toMatchObject({ runId, status: 'accepted', replayed: false })
+    expect(await f.runs.getRepeatSnapshot(runId)).toMatchObject({
+      run: { executionState: 'completed', outcome: 'canceled' }, cleanupPending: false,
+    })
+  } finally {
+    await client?.app.close()
+    await f.close()
+  }
+}, 90_000)
