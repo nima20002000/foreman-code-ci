@@ -237,6 +237,8 @@ describe('WorkspaceRouteEntry integration', () => {
     const title = 'Main coordinator'
     expect(node).toHaveAccessibleName(/Claude/)
     expect(node).toHaveAttribute('aria-pressed', 'false')
+    { const walk = (el: Element | null) => { let n = 0; const t = performance.now(); for (; el; el = el.parentElement) { getComputedStyle(el).pointerEvents; n++ } return `${n} ancestors ${Math.round(performance.now() - t)}ms` }
+      console.log(`WALK node ${walk(node)} rules ${[...document.styleSheets].reduce((sum, sheet) => sum + sheet.cssRules.length, 0)} elements ${document.querySelectorAll('*').length}`); t0 = performance.now() }
     await user.hover(node)
     mark('hover')
     const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
