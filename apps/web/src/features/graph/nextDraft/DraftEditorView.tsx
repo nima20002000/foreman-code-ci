@@ -44,7 +44,8 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
   const editLocked = editIntent.locked || !!board?.boardRunLive
   const runAction = <><Button size={board?.runActionHost ? 'sm' : undefined} variant="primary" leading={<Icon name="play" size={14} />} aria-label={pendingStart ? 'Reconcile Start' : needsSave ? 'Save and run' : 'Start saved version'}
     title={startReason} disabled={startDisabled} loading={starting} onClick={() => void (pendingStart ? start() : prepare(() => needsSave ? startMutation.mutateAsync({ saveFirst: true }) : start())).catch(report)}>{pendingStart ? 'Confirm start' : needsSave ? 'Save and run' : board?.authoringActive === false ? 'Run current workflow' : 'Run'}</Button>
-    {board?.authoringActive === false && !pendingStart ? <span aria-label="Start target">
+    {board?.authoringActive === false && !pendingStart ? <span aria-label="Start target"
+      style={{ maxWidth: '28rem', font: 'var(--type-caption)', color: 'var(--text-muted)', overflowWrap: 'anywhere' }}>
       {needsSave ? 'Current draft, saved before Start.' : <>Current workflow · saved version <code>{preflight.data?.version?.id ?? context.draft.baseWorkflowVersionId}</code>.</>}
       {' '}New input, without reusing the selected Run’s input.
     </span> : null}</>

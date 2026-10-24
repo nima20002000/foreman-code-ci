@@ -308,7 +308,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         </ActivitiesPopover>
       </BoardSelectionContext.Provider>
       <WorkflowSidePanel scope={side.scope} workspaceId={workspaceId} workflowId={workflowId}
-        savedNodeName={!current ? (picked?.kind === 'available' ? picked.nodes.find(node => node.id === side.agentSelection?.nodeId)?.name : undefined) : undefined}
+        savedNodeName={!current ? (picked?.kind === 'available' ? picked.nodes.find(node => node.id === side.agentSelection?.nodeId)?.name : undefined) ?? 'Agent' : undefined}
         workflowVersionId={displayedRun.scope?.workflowVersionId ?? legacyRun?.workflowVersionId ?? (picked?.kind === 'available' ? picked.workflowVersionId : undefined)}
         opener={side.opener} runId={displayedRun.scope?.runId ?? legacyRun?.runId ?? pickedRunId} selection={side.panel} agentSelection={side.agentSelection} onSelect={selectPanel} bodyRef={setSidePanelHost} headerSlotRef={setPanelHeaderSlot} footerSlotRef={setPanelFooterSlot}
         onSelectTarget={selectChatTarget} onSelectRun={selectChatRun}

@@ -66,7 +66,7 @@ const SavedConnection = memo(function SavedConnection(props: EdgeProps<SavedBoar
       ...props.data!.members.filter(member => member.id !== edge.id).map(member => member.label)].filter(Boolean).join(' · ')}</title>
     <SignalEdgeShape id={props.id} curve={curve} kind={edge.kind} pulses={pulses} />
     {board ? <foreignObject x={curve.mid.x - 54} y={curve.mid.y + 12} width={108} height={42}>
-      <button type="button" className="work-connection-limit-pill nodrag nopan"
+      <button type="button" className="work-connection-limit-pill nodrag nopan" style={{ pointerEvents: 'all' }}
         aria-label={work ? `Maximum work handoffs per Run: ${edge.maxWorkHandoffsPerRun ?? 'unlimited'}. Inspect saved connection.` : 'Inspect saved connection.'}
         onClick={event => {
           event.stopPropagation()
