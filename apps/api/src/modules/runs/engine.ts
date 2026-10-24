@@ -410,9 +410,11 @@ export class LangGraphWorkflowEngine {
    * other holder, such as another process, still leaves the Run fenced. */
   async acquireStopOwner(runId: string): Promise<RunOwnership | undefined> {
     for (;;) {
+      const pending = this.resumeTasks.get(runId) ?? this.activeTasks.get(runId)
       const owner = await this.runs.acquireOwnership(runId, () => undefined)
       if (owner) return owner
-      const local = this.resumeTasks.get(runId) ?? this.activeTasks.get(runId)
+      // A local task can finish while the failed try-lock connection closes.
+      const local = this.resumeTasks.get(runId) ?? this.activeTasks.get(runId) ?? pending
       if (!local) return undefined
       await local.catch(() => { /* ignore: that task's caller receives its failure; Stop only waits for its owner release. */ })
     }
