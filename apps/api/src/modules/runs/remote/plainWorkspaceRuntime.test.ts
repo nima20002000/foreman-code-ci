@@ -70,7 +70,7 @@ it('uses the actual plain project as CWD without a source operation and detects 
   expect(await readdir(project)).toEqual([])
   await rename(project, join(root, 'old-project'))
   await mkdir(project, { mode: 0o700 })
-  await expect(attestInstalledWorkflowRuntimeLeaf(input)).rejects.toMatchObject({ code: 'WORKER_WORKFLOW_UNAVAILABLE' })
+  await expect(attestInstalledWorkflowRuntimeLeaf(input)).rejects.toMatchObject({ code: 'ROOT_BASE_CHANGED' })
 })
 
 it('launches and reads the original Worker session in the plain folder', async () => {

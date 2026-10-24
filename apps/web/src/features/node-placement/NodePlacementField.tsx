@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type RefObject } from 'react'
 import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
 import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import type { NodePlacementChoicesResult } from '@foreman-code/contracts/placement-readback'
@@ -29,6 +29,21 @@ export type NodePlacementFieldProps = {
   inheritedWorktree?: string | undefined
 }
 
+function SetupComputerButton({ workspaceId, computer, disabled, triggerRef, onSelectionRequired, onPrepared }: {
+  workspaceId: string; computer: UnavailableComputer; disabled?: boolean | undefined
+  triggerRef: RefObject<HTMLButtonElement | null>; onSelectionRequired(): void; onPrepared(): void
+}) {
+  const setup = useSetupWorkspaceSourceRoot(workspaceId)
+  return <><Button size="sm" variant="ghost" ref={triggerRef} disabled={disabled || setup.isPending} onClick={() => {
+    setup.mutate({ workspaceId, commandId: crypto.randomUUID(), hostRef: computer.hostRef }, {
+      onSuccess: result => {
+        if ('kind' in result.value && result.value.kind === 'selection-required') onSelectionRequired()
+        else onPrepared()
+      },
+    })
+  }}>Set up on {computer.name}</Button>{setup.error ? <span role="alert">{setup.error.message}</span> : null}</>
+}
+
 /** Choice labels read "<computer> · <harness> · <folder>"; show the computer, and the folder only to tell two apart. */
 function optionLabels(options: readonly NodePlacementOption[]): string[] {
   const hosts = options.map(option => option.label.split(' · ')[0] ?? option.label)
@@ -41,7 +56,6 @@ function optionLabels(options: readonly NodePlacementOption[]): string[] {
 
 export function NodePlacementField({ workspaceId, value, options, unavailableComputers = [], onChange, disabled, optionsState = 'ready', note,
   inheritedWorktree }: NodePlacementFieldProps) {
-  const setup = useSetupWorkspaceSourceRoot(workspaceId ?? '')
   const [blocked, setBlocked] = useState<string>()
   const [setupComputer, setSetupComputer] = useState<UnavailableComputer>()
   const setupTrigger = useRef<HTMLButtonElement>(null)
@@ -53,23 +67,17 @@ export function NodePlacementField({ workspaceId, value, options, unavailableCom
   const blockedComputer = blocked?.startsWith('computer:') ? unavailableComputers[Number(blocked.slice(9))] : undefined
   const blockedReason = blocked?.startsWith('computer:') ? blockedComputer?.reason
     : blocked ? options[Number(blocked)]?.unavailableReason : undefined
-  let message: string | undefined = setup.error?.message ?? blockedReason
+  let message: string | undefined = blockedReason
   if (!message && value && current?.unavailableReason) message = current.unavailableReason
   else if (!message && value && !current && optionsState === 'ready') message = 'The saved computer is no longer available. Choose another.'
   else if (!message && optionsState === 'loading') message = 'Checking computers…'
   else if (!message && optionsState === 'unavailable') message = note ?? 'Computers can’t be checked right now.'
   const needsSetup = blockedComputer?.reason === `This workspace’s project isn’t set up on ${blockedComputer?.name} yet.`
   return <><NodeRow label="Computer" note={message ? <>{message}{workspaceId && blockedComputer && needsSetup ? <>{' '}
-    <Button size="sm" variant="ghost" ref={setupTrigger} disabled={disabled || setup.isPending} onClick={() => {
-      setup.mutate({ workspaceId, commandId: crypto.randomUUID(), hostRef: blockedComputer.hostRef }, {
-        onSuccess: result => {
-          if ('kind' in result.value && result.value.kind === 'selection-required') setSetupComputer(blockedComputer)
-          else setBlocked(undefined)
-        },
-      })
-    }}>Set up on {blockedComputer.name}</Button>
+    <SetupComputerButton workspaceId={workspaceId} computer={blockedComputer} disabled={disabled} triggerRef={setupTrigger}
+      onSelectionRequired={() => setSetupComputer(blockedComputer)} onPrepared={() => setBlocked(undefined)} />
   </> : null}</> : undefined} tone={blockedReason || current?.unavailableReason ? 'warning' : undefined}>
-    <Select label="Computer" aria-label="Computer" className="agent-node-inline" value={selection} disabled={disabled || setup.isPending}
+    <Select label="Computer" aria-label="Computer" className="agent-node-inline" value={selection} disabled={disabled}
       options={[
         { value: 'inherited', label: inheritedWorktree ? 'Workflow default' : 'Main (default)' },
         ...(value && selected < 0 ? [{ value: 'retained', label: 'Saved computer', disabled: true }] : []),

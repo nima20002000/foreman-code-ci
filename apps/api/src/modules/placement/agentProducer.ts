@@ -267,6 +267,12 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
       const current = await this.readVersion(sql, input)
       if (!sameWorkflowValue(current, version)
         || !sameWorkflowValue(version.agentConfigurationVersionIds, input.expectedAgentConfigurationVersionIds)) this.conflict()
+      const assertRepository = async (sql: SqlQuery) => {
+        const row = (await sql.query<{ record: unknown }>(
+          'select record from workspaces where id=$1 for share', [input.workspaceId])).rows[0]
+        if (WorkspaceSchema.parse(row?.record).repository) this.conflict()
+      }
+      await assertRepository(sql)
       const policies = await this.roots.read(sql, principal, input.workspaceId)
       const prepared: { pins: Omit<AcceptedNodePlacement, 'runId' | 'bindingHash'>; saved: SavedNodePlacement;
         configuration: AgentConfigurationVersion; implicit: boolean; selection: RegistryHarnessSelection }[] = []
@@ -317,7 +323,7 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
             harnessInstallationId: selection.selection.harnessInstallationId, installationFingerprint: selection.selection.installationFingerprint,
             runtimeContractVersion: 1, protocolRevision: selection.installation.protocolRevision, credentialScopeRefs: [] },
         }
-        const facts = await this.harnessFacts(sql, { ...pins, runId: 'preparing', bindingHash: '' })
+        const facts = await readPlacementHarnessFacts(sql, pins, this.registry.installations, this.qualificationSuites)
         if (pins.payload.kind !== 'agent') this.conflict()
         pins.payload.profileProofDigest = placementDigest(facts.profileProof)
         if (facts.qualification) pins.payload.qualificationDigest = placementDigest(facts.qualification)
@@ -331,7 +337,13 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
           this.registry.installations.assertCurrent(saved.selection)
           return saved
         }, async pin => {
+          if (this.accounts && pin.payload.kind === 'agent' && pin.payload.accountBinding?.kind === 'slot') {
+            const binding = pin.payload.accountBinding
+            await this.accounts.resolve(binding.provider, binding.accountId, { sql: transaction,
+              allowDefault: false, acceptedBinding: binding })
+          }
           const live = await readLiveManagementPrincipal(transaction, principal.id)
+          await assertRepository(transaction)
           await this.assertPinsCurrent(transaction, pin, live, input.workspaceId)
         }) }
     })), signal ?? new AbortController().signal, undefined, options.sourcePreparationStarted)

@@ -60,6 +60,7 @@ describe.skipIf(!postgresEnabled)('plain workspace Worker placement', () => {
         })
         expect(repeated.value).toEqual(setup.json().value)
       }
+      delete agentWorkflowNode(f.saveInput.graph.nodes[1]).placement
       const saved = await f.save('mcp')
       const node = agentWorkflowNode(saved.version.definition.nodes[1])
       const result = await app.inject({ method: 'GET', headers: f.headers,

@@ -488,6 +488,7 @@ export class PostgresSourceService implements SourceAdmissionPort {
     })
   }
   async isPlainWorkspace(principal: ManagementPrincipal, workspaceId: string): Promise<boolean> {
+    requireAuthorization(principal, 'workspace_locations:read', { workspaceId })
     const location = await this.transaction(async sql => {
       await authorizeSource(sql, principal, 'source_roots:read', workspaceId)
       const row = (await sql.query<{ record: unknown; location_revision: string }>(
