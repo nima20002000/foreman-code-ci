@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, type RefObject } from 'react'
 import { useStore } from 'zustand'
 import type { ScheduleGetInput } from '@foreman-code/contracts/schedules'
 import { Button, Dialog, LoadingState, Select, Switch, TextField } from '../../shared/ui/nocturne'
+import { ApiError } from '../../shared/api/client'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import {
   buildScheduleCommand, draftIdentity, weeklyCalendarChanged,
@@ -101,6 +102,15 @@ export function ScheduleModal({ scope, store, returnFocusRef }: {
   const failure = write.unconfirmed ? 'Save unconfirmed.' : conflict ? 'Schedule changed.'
     : write.error && write.command?.input.expectedRevision === state.expectedRevision ? 'Not saved.' : null
 
+  const error = ApiError.is(write.error) ? write.error : undefined
+  const explanation = write.unconfirmed ? 'Retry checks the original save before you can edit or close this dialog.'
+    : error?.code === 'REVISION_CONFLICT' ? 'Reload the saved schedule before applying your changes again.'
+      : error?.code === 'REVISION_EXHAUSTED' ? 'The schedule revision limit was reached. Contact the app operator to resolve it; reloading cannot reset the limit.'
+        : error?.code === 'SCHEDULE_NOT_FOUND' ? 'This saved schedule no longer exists. Close and reopen Schedule to create it again.'
+          : error?.status === 401 || error?.status === 403 ? 'Editing access is unavailable. Your edits are kept. Check access before saving again.'
+            : error?.code === 'INVALID_SCHEDULE' || error?.code === 'INVALID_REQUEST' ? `${error.message} Review the schedule inputs before saving again.`
+              : error?.message
+
   return <Dialog open={state.open} onOpenChange={(open) => { if (!open) close() }} title="Schedule" size="sm"
     description="Runs the latest saved version of this workflow." 
     className="schedule-dialog" closeLabel="Close schedule" busy={write.pending} dismissible={!write.unconfirmed}
@@ -170,7 +180,7 @@ export function ScheduleModal({ scope, store, returnFocusRef }: {
           ? <time dateTime={nextAt} title={nextLabel ?? undefined}>{nextLabel}</time> : 'not scheduled'}</p>
         <ScheduleLastAttempt scope={scope} open={state.open} />
       </> : null}
-      {(failure || state.errors.form) && <div className="schedule-feedback"><p role="alert">{state.errors.form ?? failure}</p>
+      {(failure || state.errors.form) && <div className="schedule-feedback"><p role="alert">{state.errors.form ?? failure}{!state.errors.form && explanation ? <> {explanation}</> : null}</p>
         {conflict && <Button size="sm" onClick={reload}>Reload</Button>}</div>}
     </form>
   </Dialog>
