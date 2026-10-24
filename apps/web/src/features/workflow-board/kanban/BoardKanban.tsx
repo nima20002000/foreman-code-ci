@@ -24,14 +24,11 @@ export type KanbanFlowNode = Node<{ workspaceId: string; workflowId: string; sav
 /** The workflow's memory board as one Board object: drag it by its bar, resize it from its edges, close it into
  * the dock with its X. Each card inside is its own element and shows an Agent's change live. */
 export const BoardKanbanNode = memo(function BoardKanbanNode({ data }: NodeProps<KanbanFlowNode>) {
-  const board = useBoardSelection()
   return <section className="board-kanban" aria-label="Kanban">
     <NodeResizer minWidth={KANBAN_MIN.width} minHeight={KANBAN_MIN.height} handleClassName="board-kanban-resize"
       onResizeEnd={(_event, frame) => data.resized(frame)} />
     <header className="board-kanban-bar" title="Drag to move the Kanban">
       <h2><Icon name="grid" size={14} />Kanban</h2>
-      {board?.openMemoryCard ? <Button size="sm" variant="ghost" className="nodrag nopan"
-        onClick={() => board.openMemoryCard?.()}>Open memory board</Button> : null}
       {data.saveError ? <span className="board-kanban-error" role="alert">Layout not saved: {data.saveError}</span> : null}
       <button type="button" className="board-object-close nodrag nopan" aria-label="Close Kanban to the dock" title="Close to the dock"
         onClick={data.close}><Icon name="close" size={14} /></button>
