@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import { captureVerificationInventory } from '../../shared/verificationRunner.js'
 import { constants } from 'node:fs'
@@ -152,14 +151,14 @@ async function observeContainerIsolation(input: {
   let observation: Record<string, unknown>
   try {
     observation = JSON.parse(await checked(['exec', containerId, 'node',
-      INSTALLATION_NAMES.paths.verificationObservation, JSON.stringify({ ownerSentinelPaths: [ownerSentinel],
+      '/opt/graphql-ci/verification-observation.mjs', JSON.stringify({ ownerSentinelPaths: [ownerSentinel],
         tools: fingerprint.tools })]))
   } finally { await rm(ownerSentinel, { force: true }) }
   validateVerificationIsolationObservation({ observation, resources: fingerprint.resources,
     hostPidNamespace: await readlink('/proc/self/ns/pid'), hostNetworkNamespace: await readlink('/proc/self/ns/net'),
     hostCgroupNamespace: await readlink('/proc/self/ns/cgroup'),
     ownerSentinelPaths: [ownerSentinel] })
-  const environment = ['CI', INSTALLATION_NAMES.environment.JOB_INPUT_MANIFEST,
+  const environment = ['CI', 'FOREMAN_CODE_JOB_INPUT_MANIFEST', 'GRAPHQL_JOB_INPUT_MANIFEST',
     'FOREMAN_CODE_VERIFICATION_ENVIRONMENT', 'HOME', 'LANG',
     'PATH', 'TMPDIR', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', ...Object.keys(JOB_GIT_ENVIRONMENT)]
   if (Array.isArray(observation.environment) && observation.environment.includes('HOSTNAME')) environment.push('HOSTNAME')
@@ -457,7 +456,7 @@ async function runOrdinaryQualificationSuites(input: QualificationSuiteExecution
       { context, startedAt, materialization, terminal: { outcome: 'build_failed', exitCode: null, signal: null, finishedAt: startedAt } }))
     await writeVerificationQualificationContext(inputRoot, JSON.stringify({ ...context,
       measurement: { mutableDirectory: '/job-scratch', cgroupDirectory: '/sys/fs/cgroup' } }))
-    const execution = await podman(['exec', state.containerId, 'node', INSTALLATION_NAMES.paths.verificationRunner,
+    const execution = await podman(['exec', state.containerId, 'node', '/opt/graphql-ci/verification/verify-repository.mjs',
       '--context', `/workspace/${JOB_INPUT_DIRECTORY}/qualification-context.json`],
     context.executionTimeoutMs + context.cancellationTimeoutMs + candidate.profile.spec.policy.publicationTimeoutMs)
     const terminal = { outcome: execution.exitCode === 0 ? 'succeeded' as const : 'build_failed' as const,

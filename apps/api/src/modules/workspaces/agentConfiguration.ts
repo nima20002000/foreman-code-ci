@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { randomUUID } from 'node:crypto'
 
 import {
@@ -7,8 +6,8 @@ import {
   projectHarnessEffort,
   type Agent,
   type AgentConfigurationVersion,
-  foremanToolsOutsideRole,
-  newAgentForemanTools,
+  graphqlToolsOutsideRole,
+  newAgentGraphqlTools,
 } from '@foreman-code/contracts'
 import type pg from 'pg'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
@@ -38,15 +37,15 @@ export function configurationInput(
   const prompt = agent.prompt ?? current?.prompt ?? {}
   const assignedSkills = agent.assignedSkills ?? current?.assignedSkills ?? []
   const productRole = agent.productRole ?? current?.productRole
-  const foremanTools = agent[INSTALLATION_NAMES.fields.agentTools] ?? current?.[INSTALLATION_NAMES.fields.agentTools]
-    ?? (creation && productRole ? newAgentForemanTools(productRole) : undefined)
+  const graphqlTools = agent.graphqlTools ?? current?.graphqlTools
+    ?? (creation && productRole ? newAgentGraphqlTools(productRole) : undefined)
   const nativeTools = Object.hasOwn(agent, 'nativeTools') ? agent.nativeTools : current?.nativeTools
   const nativePolicy = nativeTools ? { nativeTools } : {}
   const harnessProfileSelection = Object.hasOwn(agent, 'harnessProfileSelection') ? agent.harnessProfileSelection : current?.harnessProfileSelection
   const profile = harnessProfileSelection ? { harnessProfileSelection } : {}
-  const outside = foremanToolsOutsideRole(productRole ?? 'coder', foremanTools ?? [])
+  const outside = graphqlToolsOutsideRole(productRole ?? 'coder', graphqlTools ?? [])
   if (outside.length) {
-    throw new DomainError(INSTALLATION_NAMES.protocol.toolRoleError,
+    throw new DomainError('GRAPHQL_TOOL_NOT_ALLOWED_FOR_ROLE',
       `The ${productRole === 'master' ? 'Master' : productRole === 'orchestrator' ? 'Orchestrator' : 'Worker'} role cannot use ${outside.join(', ')}.`, 400, { tools: outside })
   }
   if (harness === 'claude') {
@@ -54,7 +53,7 @@ export function configurationInput(
       : current?.harness.harness === 'claude' ? current.harness : undefined
     if (!configuration) throw new DomainError('AGENT_CONFIGURATION_REQUIRED', 'Claude requires an explicit accepted configuration.', 400)
     return { workspaceId, agentId: agent.id, productRole, prompt, assignedSkills, ...profile, ...nativePolicy,
-      ...(foremanTools ? { [INSTALLATION_NAMES.fields.agentTools]: foremanTools } : {}), harness: configuration } as const
+      ...(graphqlTools ? { graphqlTools } : {}), harness: configuration } as const
   }
   const suppliedHarness = agent.harnessConfiguration?.harness === 'codex'
     ? agent.harnessConfiguration
@@ -69,7 +68,7 @@ export function configurationInput(
     productRole,
     prompt,
     assignedSkills,
-    ...(foremanTools ? { [INSTALLATION_NAMES.fields.agentTools]: foremanTools } : {}),
+    ...(graphqlTools ? { graphqlTools } : {}),
     harness: {
       harness,
       model: agent.model ?? currentHarness?.model ?? 'gpt-5.6-luna',
@@ -202,7 +201,7 @@ export async function saveAgentConfiguration(
     configurationVersionId: configuration.id,
     prompt: configuration.prompt,
     assignedSkills: configuration.assignedSkills,
-    [INSTALLATION_NAMES.fields.agentTools]: configuration[INSTALLATION_NAMES.fields.agentTools],
+    graphqlTools: configuration.graphqlTools,
     nativeTools: configuration.nativeTools,
     createdAt: previousAgent?.createdAt ?? parsed.createdAt ?? now,
     updatedAt: now,

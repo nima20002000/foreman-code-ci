@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 // Managed stdio bridge to the owning app's authenticated, stateless MCP endpoint.
 // Routes contain only a credential digest, never the credential itself.
 import { createHash } from 'node:crypto'
@@ -9,7 +8,9 @@ import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
 import { setTimeout as wait } from 'node:timers/promises'
 
-const token = process.env[INSTALLATION_NAMES.environment.MCP_TOKEN]
+const token = process.env.FOREMAN_CODE_MCP_TOKEN ?? process.env.GRAPHQL_MCP_TOKEN
+const tokenConflict = process.env.FOREMAN_CODE_MCP_TOKEN !== undefined && process.env.GRAPHQL_MCP_TOKEN !== undefined
+  && process.env.FOREMAN_CODE_MCP_TOKEN !== process.env.GRAPHQL_MCP_TOKEN
 const directory = join(dirname(fileURLToPath(import.meta.url)), 'routes')
 const output = (value) => process.stdout.write(`${JSON.stringify(value)}\n`)
 let protocolVersion = '2025-03-26'
@@ -101,6 +102,8 @@ async function routeExpired(route) {
 }
 
 async function readRoute() {
+  if (tokenConflict) throw new BridgeFailure('configuration',
+    'FOREMAN_CODE_MCP_TOKEN conflicts with GRAPHQL_MCP_TOKEN. Supply one credential or matching credentials.')
   if (!token) throw new BridgeFailure('authentication', 'The MCP credential is missing. Refresh the owning app credential.')
   const key = createHash('sha256').update(token).digest('hex')
   let route

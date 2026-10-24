@@ -306,13 +306,13 @@ async function fixture(t, browserRuntimeStatus) {
   const productManifestPath = join(repository, 'installed-product.json')
   const calls = []
   const run = async (command, args, options) => {
-    calls.push({ command, args, commit: options.env.GRAPHQL_WORKER_BUILD_COMMIT })
-    const selected = JSON.parse(git(['show', `${options.env.GRAPHQL_WORKER_BUILD_COMMIT}:${args[1]}`]))
+    calls.push({ command, args, commit: options.env.FOREMAN_CODE_WORKER_BUILD_COMMIT })
+    const selected = JSON.parse(git(['show', `${options.env.FOREMAN_CODE_WORKER_BUILD_COMMIT}:${args[1]}`]))
     const output = args[2]
     await mkdir(join(output, 'src'), { recursive: true, mode: 0o700 })
     const bytes = Buffer.from('export const worker = true\n')
     await writeFile(join(output, 'src/cli.mjs'), bytes)
-    const buildCommit = options.env.GRAPHQL_WORKER_BUILD_COMMIT
+    const buildCommit = options.env.FOREMAN_CODE_WORKER_BUILD_COMMIT
     const product = JSON.parse(git(['show', `${buildCommit}:package.json`]))
     const manifest = { format: 1, version: product.version, commit: buildCommit, lockfileSha256: 'b'.repeat(64),
       packageManager: 'pnpm@11.27.0', protocolVersion: 1, identityFormat: 1, target: selected,

@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { ContextSnapshot, SessionMode, SessionPreferences, WorkflowSessionContinuation } from '@foreman-code/contracts'
 import { readNativeExecutionBinding } from '../../placement/executionBinding.js'
 import { isDeepStrictEqual } from 'node:util'
@@ -351,7 +350,7 @@ export class RemoteExecutionHost {
       if (access && (access.executionId !== intent.executionId || access.agentId !== request.configuration.agentId || access.operationId !== intent.operationId
         || access.attemptId !== intent.attemptId || access.bindingHash !== intent.bindingHash)) throw new Error('Wrong main worker MCP lease binding')
       const environment = await this.ports.preflight(request, access, controller.signal)
-      if ((environment?.variables[INSTALLATION_NAMES.environment.MCP_TOKEN] ?? undefined) !== access?.token) throw new Error('Worker must reuse the exact main-owned application lease')
+      if ((environment?.variables.GRAPHQL_MCP_TOKEN ?? undefined) !== access?.token) throw new Error('Worker must reuse the exact main-owned application lease')
       if (environment && environment.agentId !== request.configuration.agentId) throw new Error('Wrong worker-local credential owner')
       await this.ports.authorize(intent, placement, 'start', controller.signal)
       const before = await this.ports.journal.status(intent.operationId)
