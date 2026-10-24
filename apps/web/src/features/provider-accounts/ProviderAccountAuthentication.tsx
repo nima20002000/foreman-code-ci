@@ -19,7 +19,7 @@ const stateLabels: Record<ProviderAccountAuthenticationOperation['state'], strin
 
 type Props = {
   account: ProviderAccount; revision: number; open: boolean; canManage: boolean;
-  operationId?: string; onOperation(operationId: string | undefined): void; onClose(): void;
+  operationId?: string; onOperation(operationId: string): void; onClose(): void;
 }
 export function ProviderAccountAuthentication({ account, revision, open, canManage,
   operationId, onOperation, onClose }: Props) {
@@ -117,7 +117,7 @@ export function ProviderAccountAuthentication({ account, revision, open, canMana
     description="Sign-in keeps going on its computer if you close this."
     onOpenChange={next => { if (!next && !busy && !uncertain) onClose() }}>
     <div className="provider-account-form">
-      {records.length > 1 || (records.length && !selectedId) || (selectedId && !records.some(item => item.id === selectedId)) ? <Select label="Attempt" value={selectedId ?? ''} disabled={busy || uncertain}
+      {records.length > 1 || (records.length && !selectedId) ? <Select label="Attempt" value={selectedId ?? ''} disabled={busy || uncertain}
         options={[...(!selectedId ? [{ value: '', label: 'New attempt' }] : []),
           ...records.map(item => ({ value: item.id, label: `${stateLabels[item.state]} · ${new Date(item.createdAt).toLocaleString()}` })),
           ...(selectedId && !records.some(item => item.id === selectedId)
@@ -159,10 +159,6 @@ export function ProviderAccountAuthentication({ account, revision, open, canMana
       {failure ? <Alert live tone="danger"
         title={(denied ?? write.error ?? query.error ?? discovery.error ?? access.eligibility.error)?.message
           ?? 'Sign-in status is unavailable.'} /> : null}
-      {selectedId && query.isError && !operation ? <Button disabled={busy || uncertain} onClick={() => {
-        setChoosingAction(false)
-        onOperation(discovered?.id)
-      }}>Leave unavailable attempt</Button> : null}
       <div className="provider-account-dialog-actions">
         <Button variant="ghost" disabled={discovery.isFetching || query.isFetching || busy}
           onClick={() => { void discovery.refetch(); if (selectedId) void query.refetch() }}>Refresh</Button>
