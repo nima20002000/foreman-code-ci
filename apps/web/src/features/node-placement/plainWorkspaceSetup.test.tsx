@@ -29,7 +29,7 @@ it.each([true, false])('sets up a plain folder and refreshes the Computer picker
   server.use(
     http.get(`*/api/management/workspaces/${workspaceId}`, () => HttpResponse.json(managed)),
     http.get('*/api/management/workspaces/:workspaceId/workflows/:workflowId/nodes/:nodeId/placement-choices', () => HttpResponse.json({
-      ...scope, pending: false, choices: ready ? [{ id: 'paired', label: 'Paired computer · empty-workspace', placement, availability: 'ready', reason: null }] : [],
+      ...scope, pending: false, choices: ready ? [{ id: 'paired', label: 'Paired computer · codex', placement, availability: 'ready', reason: null }] : [],
       unavailableComputers: ready ? [] : [{ hostRef: workerRoot.hostRef, name: 'Paired computer', reason: 'This workspace’s project isn’t set up on Paired computer yet.' }],
     })),
     http.get(`*/api/management/workspaces/${workspaceId}/root-location`, () => HttpResponse.json({ evidence: 'legacy_missing', workspaceId,
@@ -74,7 +74,7 @@ it.each([true, false])('sets up a plain folder and refreshes the Computer picker
       await user.type(await screen.findByRole('textbox', { name: 'Subfolder' }), 'empty-workspace')
       await user.click(screen.getByRole('button', { name: 'Use this folder' }))
     }
-    await screen.findByRole('option', { name: 'Paired computer · empty-workspace' })
+    await screen.findByRole('option', { name: 'Paired computer' })
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await user.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), '0')
     expect(selected).toEqual(placement)
