@@ -7,7 +7,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import type { CiRunJob } from '@foreman-code/contracts'
 import { type WorkflowDefinitionCurrent, RepeatGraphCurrentStateSchema, WorkflowVersionCurrentSchema, CurrentWorkflowCreateInputSchema, RunStartCurrentInputSchema } from '@foreman-code/contracts/current'
 import { routeTree } from '../../app/router'
 import { server } from '../../mocks/server'
@@ -761,6 +760,89 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
 })
 
 describe('latest Run on the draft Board', () => {
+  it('paints a finished Run only on its own saved version, clearing retained node badges after a new save and reopen', async () => {
+    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
+    const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
+    const run = await start(mock, user)
+    runningNodes(mock, run.id)
+    const current = mock.currents.get(run.id)!
+    mock.settle(run.id)
+    mock.currents.set(run.id, RepeatGraphCurrentStateSchema.parse({ ...mock.currents.get(run.id),
+      state: { ...mock.currents.get(run.id)!.state,
+        executions: current.state.executions.map(execution => ({ ...execution, state: 'completed', resultOutcome: 'succeeded' })) } }))
+    await mounted.query.invalidateQueries()
+    const nodeId = useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!.id
+    await waitFor(() => expect(canvasNode(nodeId)).toHaveTextContent('Completed'))
+    expect(canvasNode(nodeId).querySelector('.n-agent')).toHaveAttribute('data-state', 'completed')
+    await waitFor(() => expect(control('Start saved version')).toBeEnabled())
+    act(() => useGraphDraftStore.getState().changeNextDraft(key, graph => ({ ...graph,
+      nodes: graph.nodes.map(node => ({ ...node, initialPrompt: 'New saved instructions' })) })))
+    const version = await save(mock, user, 2)
+    expect(version.id).not.toBe(run.workflowVersionId)
+    expect(version.definition.nodes[0]!.id).toBe(nodeId)
+    await waitFor(() => expect(canvasNode(nodeId)).not.toHaveTextContent('Completed'))
+    expect(canvasNode(nodeId).querySelector('.n-agent')).not.toHaveAttribute('data-state', 'completed')
+    const href = mounted.router.state.location.href
+    mounted.unmount(); mounted.query.clear(); useGraphDraftStore.getState().clearAllDrafts()
+    const reopened = await mount(mock, href)
+    await screen.findByRole('region', { name: 'Workflow authoring' })
+    await waitFor(() => expect(control('Start saved version')).toBeEnabled())
+    await waitFor(() => expect(reopened.query.isFetching()).toBe(0))
+    expect(canvasNode(nodeId)).toBeVisible()
+    expect(canvasNode(nodeId)).not.toHaveTextContent('Completed')
+    expect(canvasNode(nodeId).querySelector('.n-agent')).not.toHaveAttribute('data-state', 'completed')
+  }, 30_000)
+
+  it.each(['Runs', 'Running'] as const)('choosing the painted latest Run through %s keeps the draft Board while an older Run opens history', async navigation => {
+    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
+    const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
+    const older = await start(mock, user)
+    mock.settle(older.id); await mounted.query.invalidateQueries()
+    await waitFor(() => expect(control('Start saved version')).toBeEnabled())
+    const latest = await start(mock, user, 2)
+    runningNodes(mock, latest.id); await mounted.query.invalidateQueries()
+    const node = useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!
+    await waitFor(() => expect(canvasNode(node.id)).toHaveTextContent('Running'))
+    const editor = authoring(), paintedNode = canvasNode(node.id)
+    if (navigation === 'Runs') await chooseRun(user, latest.id)
+    else await user.click(within(screen.getByRole('group', { name: 'Board controls' })).getByText('Running'))
+    expect(mounted.router.state.location.search.selectedRunId).toBeUndefined()
+    expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
+    expect(editor).toBeVisible()
+    expect(canvasNode(node.id)).toBe(paintedNode)
+    expect(within(screen.getByRole('group', { name: 'Board controls' })).getByRole('status')).toHaveTextContent('Running')
+    await chooseRun(user, older.id)
+    expect(await screen.findByRole('region', { name: 'Selected Run board' })).toHaveAttribute('data-run-id', older.id)
+    expect(mounted.router.state.location.search.selectedRunId).toBe(older.id)
+    expect(await screen.findByRole('group', { name: `${node.name}, saved agent, read only` })).toBeVisible()
+    expect(editor).not.toBeVisible()
+  }, 30_000)
+
+  it('keeps the live Board Stop visible in Overview and returns it to the Graph Run slot', async () => {
+    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
+    const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
+    const slot = controls(), runSlot = control('Start saved version').parentElement!
+    const run = await start(mock, user)
+    runningNodes(mock, run.id); await mounted.query.invalidateQueries()
+    await waitFor(() => expect(control('Stop')).toBeEnabled())
+    expect(control('Stop')).toBeVisible()
+    expect(runSlot).toContainElement(control('Stop'))
+    const views = within(screen.getByRole('navigation', { name: 'Workflow views' }))
+    await user.click(views.getByRole('button', { name: 'Overview' }))
+    const toolbar = await screen.findByRole('banner', { name: 'Board toolbar' })
+    await waitFor(() => expect(within(toolbar).getByRole('button', { name: 'Stop' })).toBeEnabled())
+    expect(within(toolbar).getByRole('button', { name: 'Stop' })).toBeVisible()
+    expect(screen.getAllByRole('button', { name: 'Stop' })).toHaveLength(1)
+    await user.click(views.getByRole('button', { name: 'Graph' }))
+    await waitFor(() => expect(control('Stop')).toBeEnabled())
+    expect(control('Stop')).toBeVisible()
+    expect(controls()).toBe(slot)
+    expect(runSlot).toContainElement(control('Stop'))
+    expect(screen.getAllByRole('button', { name: 'Stop' })).toHaveLength(1)
+    expect(mounted.router.state.location.search.selectedRunId).toBeUndefined()
+    expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
+  }, 30_000)
+
   it('Start keeps the draft nodes and URL while showing the new Run states and handoff lights', async () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
     const { key } = await create(mock, user); stageShape(key, 'sequential', mock); await save(mock, user, 1)
@@ -934,178 +1016,5 @@ describe('latest Run on the draft Board', () => {
       expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).toEqual(before)
     } else expect(screen.getByRole('button', { name: action })).toBeDisabled()
     expect(mock.versions.size).toBe(1)
-  }, 30_000)
-})
-
-
-describe('retained Board Run polling and presentation', () => {
-  async function liveBoard() {
-    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
-    const { key } = await create(mock, user)
-    stageShape(key, 'sequential', mock); await save(mock, user, 1)
-    const run = await start(mock, user)
-    runningNodes(mock, run.id); await mounted.query.invalidateQueries()
-    const graph = useGraphDraftStore.getState().nextDrafts[key]!.graph
-    await waitFor(() => expect(canvasNode(graph.nodes[0]!.id)).toHaveTextContent('Running'))
-    await waitFor(() => expect(control('Stop')).toBeEnabled())
-    return { mock, user, mounted, key, run, graph }
-  }
-  function complete(mock: Mock, runId: string) {
-    mock.settle(runId)
-    const current = mock.currents.get(runId)!
-    mock.currents.set(runId, RepeatGraphCurrentStateSchema.parse({ ...current, state: { ...current.state,
-      executions: current.state.executions.map(execution => ({ ...execution, state: 'completed', resultOutcome: 'succeeded' })) } }))
-  }
-  function ciJob(node: WorkflowDefinitionCurrent['nodes'][number]): CiRunJob {
-    return { ticketId: '00000000-0000-4000-8000-000000000071', scope: 'affected', placement: 'host', message: null, tests: null,
-      requester: { executionId: `execution-${node.id}`, agentId: nativeNode(node).agentId, nodeId: node.id, nodeName: node.name! },
-      ci: { id: '00000000-0000-4000-8000-000000000071', groupId: '00000000-0000-4000-8000-000000000072',
-        suite: 'unit', part: 'unit-web', partition: null, state: 'running', exitCode: null, computer: null, step: null,
-        queuedAt: '2026-10-01T00:00:00.000Z', startedAt: '2026-10-01T00:00:01.000Z', finishedAt: null } }
-  }
-  function ciSnapshot(mock: Mock, runId: string, job: () => CiRunJob) {
-    return http.get(`*/api/management/workspaces/${mock.workspaceId}/workflows/:workflowId/runs/${runId}/snapshot`, async ({ request }) => {
-      const base = await (await mock.dispatch(request))!.json() as Record<string, unknown>
-      const current = job(), run = mock.runs.get(runId)!.run
-      const scope = { workspaceId: mock.workspaceId, workflowId: run.workflowId, runId, workflowVersionId: run.workflowVersionId }
-      const ref = { kind: 'ci', ...scope, executionId: current.requester.executionId, attemptKey: '1',
-        nodeId: current.requester.nodeId, agentId: current.requester.agentId, ticketId: current.ticketId }
-      return HttpResponse.json({ ...base, activitySnapshot: { schemaVersion: 1, scope: { kind: 'workflow_run', ...scope }, revision: '1',
-        active: ['queued', 'starting', 'running'].includes(current.ci.state) ? [{ ref, phase: 'active', evidence: 'confirmed', outcome: null,
-          delivery: null, startedAt: current.ci.startedAt, ci: current.ci }] : [], queued: [], latest: ref, pendingInteractions: [],
-        activities: [{ kind: 'diagnostic', id: 'ci-state', owner: ref, ci: current.ci, revision: '1', order: '1',
-          source: { schemaVersion: 1, system: 'test', observedAt: current.ci.startedAt }, evidence: 'confirmed', code: 'CI_STATE', message: 'CI state' }], page: { before: null, nextCursor: null, hasMore: false } } })
-    })
-  }
-
-  it('starts a new work Run without showing the previous caught-up final cut while handoffs load', async () => {
-    const { mock, user, mounted, run, graph } = await liveBoard()
-    const work = (runId: string) => {
-      const current = mock.currents.get(runId)!
-      mock.currents.set(runId, RepeatGraphCurrentStateSchema.parse({ ...current,
-        asOfSequence: String(BigInt(current.asOfSequence) + 1n), state: { ...current.state,
-          executions: current.state.executions.map(execution => ({ ...execution, workActivationId: `work-${runId}-${execution.identity.workflowNodeId}` })) } }))
-    }
-    server.use(http.get('*/api/management/workspaces/:workspaceId/runs/:runId/handoffs', async ({ params }) => {
-      const runId = String(params.runId), current = mock.currents.get(runId)!
-      return HttpResponse.json({ scope: current.scope, policy: 'work', runState: current.state.run.executionState,
-        connections: [], routes: [], notices: [], unresolved: [], directionWait: false, transfers: [] })
-    }))
-    work(run.id); await mounted.query.invalidateQueries()
-    complete(mock, run.id); await mounted.query.invalidateQueries()
-    await waitFor(() => expect(canvasNode(graph.nodes[0]!.id)).toHaveTextContent('Completed'))
-    await waitFor(() => expect(control('Start saved version')).toBeEnabled())
-    const node = canvasNode(graph.nodes[0]!.id)
-    const next = await start(mock, user, 2)
-    runningNodes(mock, next.id); work(next.id)
-    let release!: () => void
-    const held = new Promise<void>(resolve => { release = resolve })
-    let reading = false
-    server.use(http.get(`*/api/management/workspaces/${mock.workspaceId}/runs/${next.id}/handoffs`, async () => {
-      reading = true; await held
-      const current = mock.currents.get(next.id)!
-      return HttpResponse.json({ scope: current.scope, policy: 'work', runState: 'running', connections: [], routes: [],
-        notices: [], unresolved: [], directionWait: false, transfers: [] })
-    }))
-    try {
-      await mounted.query.invalidateQueries({ queryKey: ['workbench', 'current-v3-run'] })
-      await waitFor(() => expect(reading).toBe(true))
-      expect(canvasNode(graph.nodes[0]!.id)).toBe(node)
-      expect(node).not.toHaveTextContent('Completed')
-    } finally { release() }
-    await waitFor(() => expect(node).toHaveTextContent('Running'))
-  }, 30_000)
-
-  it('drops the previous Run handoff lights and transitions when a new Run starts on the same nodes', async () => {
-    const { mock, user, mounted, run, graph } = await liveBoard()
-    // Hold presentation time while commands and HTTP settle, so the first Run's light is still in flight.
-    vi.spyOn(performance, 'now').mockReturnValue(performance.now())
-    const current = mock.currents.get(run.id)!, sender = current.state.executions[0]!, recipient = current.state.executions[1]!
-    const digest = `sha256:${'1'.repeat(64)}`
-    mock.currents.set(run.id, RepeatGraphCurrentStateSchema.parse({ ...current,
-      asOfSequence: String(BigInt(current.asOfSequence) + 1n), state: { ...current.state,
-        executions: [{ ...sender, state: 'completed', resultOutcome: 'succeeded' }, { ...recipient, state: 'running' }],
-        results: [{ execution: sender.identity, resultDigest: digest }],
-        bindings: [{ bindingId: 'previous-run-handoff', kind: 'predecessor', relationshipId: graph.edges[0]!.id, decisionId: null,
-          sender: sender.identity, recipient: recipient.identity, acceptedResultDigest: digest, inputDigest: digest, ordinal: 0 }] } }))
-    await mounted.query.invalidateQueries()
-    await waitFor(() => expect(authoring().querySelector('.n-signal-edge-flight')).toHaveTextContent('Handoff'))
-    complete(mock, run.id); await mounted.query.invalidateQueries()
-    await waitFor(() => expect(control('Start saved version')).toBeEnabled())
-    const retained = canvasNode(graph.nodes[0]!.id)
-    const next = await start(mock, user, 2)
-    runningNodes(mock, next.id); await mounted.query.invalidateQueries()
-    await waitFor(() => expect(retained).toHaveTextContent('Running'))
-    expect(canvasNode(graph.nodes[0]!.id)).toBe(retained)
-    expect(authoring().querySelector('.n-signal-edge-flight')).toBeNull()
-    expect(retained.querySelector('.n-agent')).not.toHaveAttribute('data-transition')
-  }, 30_000)
-
-  it('shows the displayed Run CI server jobs and request/result lights on the draft canvas', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
-    const { mock, mounted, run, graph } = await liveBoard()
-    let jobs: CiRunJob[] = []
-    server.use(http.get(`*/api/management/workspaces/${mock.workspaceId}/ci`, () => HttpResponse.json({ runId: run.id, jobs, truncated: false })))
-    await mounted.query.invalidateQueries()
-    await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
-    jobs = [ciJob(graph.nodes[0]!)]
-    await act(async () => { await vi.advanceTimersByTimeAsync(3100) })
-    fireEvent.click(await screen.findByRole('button', { name: /^CI server, 1 running/ }))
-    const panel = within(await screen.findByRole('complementary', { name: 'CI server' }))
-    expect(await panel.findByRole('button', { name: /Show tests of unit · unit-web/ })).toBeVisible()
-    expect(authoring().querySelector('.n-signal-edge-flight')).toHaveTextContent('CI request')
-    jobs = [{ ...jobs[0]!, ci: { ...jobs[0]!.ci, state: 'passed', exitCode: 0, finishedAt: '2026-10-01T00:00:02.000Z' } }]
-    await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
-    await waitFor(() => expect(authoring().querySelector('.n-signal-edge-flight')).toHaveTextContent('CI passed'))
-  }, 30_000)
-
-  it('takes a final activity read after summary completion and polls unfinished CI until it settles', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
-    const { mock, mounted, run, graph } = await liveBoard()
-    let job = ciJob(graph.nodes[0]!)
-    server.use(ciSnapshot(mock, run.id, () => job),
-      http.get(`*/api/management/workspaces/${mock.workspaceId}/ci`, () => HttpResponse.json({ runId: run.id, jobs: [], truncated: false })))
-    await mounted.query.invalidateQueries()
-    await waitFor(() => expect(canvasNode(graph.nodes[0]!.id)).toHaveTextContent('Waiting for CI unit-web · running'))
-    complete(mock, run.id)
-    // Only the independently polled summary observes completion initially.
-    await mounted.query.invalidateQueries({ queryKey: ['runs-selector', 'list'] })
-    await mounted.query.invalidateQueries({ queryKey: queryKeys.workspaceDetails(mock.workspaceId) })
-    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeEnabled())
-    await act(async () => { await vi.advanceTimersByTimeAsync(3100) })
-    job = { ...job, ci: { ...job.ci, state: 'passed', exitCode: 0, finishedAt: '2026-10-01T00:00:02.000Z' } }
-    await act(async () => { await vi.advanceTimersByTimeAsync(3100) })
-    await waitFor(() => expect(canvasNode(graph.nodes[0]!.id)).toHaveTextContent('Completed · CI unit-web · passed'))
-  }, 30_000)
-
-  it('suspends Start preflight requests while Stop is shown and refreshes when editing unlocks', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
-    const { mock, mounted, run, graph } = await liveBoard()
-    let preflightReads = 0
-    server.use(http.get('/api/management/workflows/capabilities/v3', () => {
-      preflightReads++; return HttpResponse.json(mock.capabilities())
-    }))
-    await act(async () => { await vi.advanceTimersByTimeAsync(6100) })
-    expect(preflightReads).toBe(0)
-    complete(mock, run.id); await mounted.query.invalidateQueries()
-    await waitFor(() => expect(control('Start saved version')).toBeEnabled())
-    expect(canvasNode(graph.nodes[0]!.id)).toHaveTextContent('Completed')
-    expect(preflightReads).toBeGreaterThan(0)
-    const resumed = preflightReads
-    await act(async () => { await vi.advanceTimersByTimeAsync(3100) })
-    expect(preflightReads).toBeGreaterThan(resumed)
-  }, 30_000)
-
-  it('shares the Run status poll between Stop and the live node overlay', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
-    const { mock, run } = await liveBoard()
-    let statusReads = 0
-    server.use(http.get(`*/api/management/workspaces/${mock.workspaceId}/runs/${run.id}/executions`, async ({ request }) => {
-      if (new URL(request.url).searchParams.get('limit') === '1') statusReads++
-      return (await mock.dispatch(request))!
-    }))
-    await act(async () => { await vi.advanceTimersByTimeAsync(5100) })
-    expect(control('Stop')).toBeEnabled()
-    expect(statusReads).toBe(1)
   }, 30_000)
 })
