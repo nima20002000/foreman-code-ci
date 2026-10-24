@@ -213,8 +213,10 @@ describe('WorkspaceRouteEntry integration', () => {
     await user.clear(name)
     await user.paste('Activities persisted workflow')
     await user.keyboard('{Enter}')
-    await user.click(screen.getByRole('button', { name: 'Save workflow' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Save workflow' })).not.toBeInTheDocument())
+    // Query Save inside the Board toolbar: a whole-screen ByRole name scan on every poll costs seconds under load.
+    const toolbar = () => within(screen.getByRole('banner', { name: 'Board toolbar' }))
+    await user.click(toolbar().getByRole('button', { name: 'Save workflow' }))
+    await waitFor(() => expect(toolbar().queryByRole('button', { name: 'Save workflow' })).not.toBeInTheDocument())
     first.unmount()
     first.queryClient.clear()
     act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
@@ -224,9 +226,12 @@ describe('WorkspaceRouteEntry integration', () => {
     const title = 'Main coordinator'
     expect(node).toHaveAccessibleName(/Claude/)
     expect(node).toHaveAttribute('aria-pressed', 'false')
-    await user.hover(node)
+    // Find the always-rendered rim actions before hovering: hover changes the DOM, and a cold ByRole
+    // visibility walk up the deep canvas then costs seconds under load. The click still checks hover-gated pointer access.
     const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
-    await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
+    const openSettings = within(actions).getByRole('button', { name: `Open ${title} settings` })
+    await user.hover(node)
+    await user.click(openSettings)
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
     expect(rail).toBeVisible()
     await user.click(within(rail).getByText('More settings'))
