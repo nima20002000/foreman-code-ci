@@ -595,7 +595,6 @@ test('verifies readiness without putting an installed file inventory in process 
 
 test('Worker browser lifecycle diagnostics reach structured stdout without a caller-supplied logger', async t => {
   const writes = [];
-  t.mock.method(process.stdout, 'write', chunk => { writes.push(String(chunk)); return true; });
   const f = bootstrapFixture();
   f.module.createBrowserHost = async options => ({ ...f.host, close: async () => {
     options.log?.('Agent browser tab closed by the agent', { sessionId: 'worker-session', tabId: 'worker-tab' });
@@ -603,6 +602,7 @@ test('Worker browser lifecycle diagnostics reach structured stdout without a cal
   } });
   try {
     assert.equal((await f.runtime.start()).ready, true);
+    t.mock.method(process.stdout, 'write', chunk => { writes.push(String(chunk)); return true; });
   } finally { await f.runtime.close(); }
   assert.equal(writes.length, 1);
   const record = JSON.parse(writes[0]);
