@@ -79,10 +79,8 @@ export function AppNavigationTrail({ activeWorkflowId }: { activeWorkflowId?: st
   const ancestors = segments[0] === 'settings' && segments[1] === 'harnesses'
     && (search.section === undefined || search.section === 'model')
     && crumbs.length > 2 ? crumbs.slice(0, 2) : crumbs.slice(0, -1)
-  const ordinaryBoard = workflowId && segments[4] !== 'runs' && !search.runId && !search.selectedRunId
-  const draftPath = `${workspacePath}/workflows/${encodeURIComponent(workflowId)}/draft`
-  const parent = ancestors.reverse().find(crumb => !(ordinaryBoard && crumb.to === draftPath) && (crumb.to !== location.pathname
-    || [...new Set([...Object.keys(search), ...Object.keys(crumb.search ?? {})])].some(key => search[key] !== crumb.search?.[key])))
+  const parent = ancestors.reverse().find(crumb => crumb.to !== location.pathname
+    || [...new Set([...Object.keys(search), ...Object.keys(crumb.search ?? {})])].some(key => search[key] !== crumb.search?.[key]))
     ?? { label: 'Workspaces', to: '/workspaces' }
   const back = () => {
     if (canGoBack) router.history.back()
