@@ -155,3 +155,14 @@ it('reconnects only the explicitly selected owned browser and never replays gest
   expect(fake.port.input).not.toHaveBeenCalled()
   expect(fake.port.prepare).not.toHaveBeenCalled()
 })
+
+it('explains watch-only browsing and never acquires control from the selected tab', async () => {
+  const fake = browserPortFake()
+  mount(panel(fake, { readOnly: true }))
+  await waitFor(() => expect(fake.port.openView).toHaveBeenCalled())
+  act(() => fake.observer!.frame(frame()))
+  expect(screen.getByText(/Watch.only/)).toBeVisible()
+  expect(screen.queryByText('Click the page to take control.')).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('tab', { name: 'Fixture page' }))
+  expect(fake.port.acquire).not.toHaveBeenCalled()
+})

@@ -1,7 +1,7 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { defaultStringifySearch, useLocation, useRouter } from '@tanstack/react-router'
+import { defaultStringifySearch, useLocation, useNavigate, useRouter } from '@tanstack/react-router'
 import type { RepeatGraphScopeCurrent, RunActivityPublic, RunDirectionWait } from '@foreman-code/contracts/current'
 import { Alert, Button, Icon, IconButton, Select } from '../../shared/ui/nocturne'
 import { ApiError } from '../../shared/api/client'
@@ -265,6 +265,8 @@ function DirectionWaitRow({ direction, showActor }: { direction: RunDirectionWai
 }
 
 function ActivityRow({ item, count = 1, showActor = true }: { item: RunActivityPublic; count?: number; showActor?: boolean }) {
+  const navigate = useNavigate()
+  const ciTicketId = item.refs.ciTicketId ?? item.ci?.id
   const participant = item.actor ?? item.subject
   const label = participant ? 'agentId' in participant ? participant.agentName : `Job · ${participant.nodeName}` : 'Workflow'
   return <li data-severity={item.severity} data-status={item.status}><span className="board-activity-dot" aria-hidden="true" />
@@ -280,6 +282,10 @@ function ActivityRow({ item, count = 1, showActor = true }: { item: RunActivityP
         {item.ci.step ? ` · ${item.ci.step}` : ''}
         {item.ci.exitCode !== null ? ` · Exit code ${item.ci.exitCode}` : ''}
       </p> : null}
+      {ciTicketId ? <Button size="sm" variant="ghost" onClick={() => {
+        void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId: item.scope.workspaceId },
+          search: previous => ({ ...previous, workflowId: item.scope.workflowId, boardCiTicketId: ciTicketId }) })
+      }}>Open CI results</Button> : null}
       {item.workResult ? <div className="board-activity-work-result">
         <p>Outcome: {item.workResult.outcome}</p>
         <strong>Result summary</strong>

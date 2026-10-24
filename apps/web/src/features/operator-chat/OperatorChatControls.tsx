@@ -69,7 +69,8 @@ export function OperatorChatControls({ conversation, retired, settings, preferen
         onChange={preferences.change} access={preferences.harness ? <OperatorAccessPicker key={preferences.harness.harness}
           value={preferences.harness} disabled={active || !!pending.command || attachmentReceiptPending || preferences.form.isSaving || preferences.form.uncertain || preferences.query.isError}
           saving={preferences.form.isSaving} saveError={preferences.form.error} onChange={preferences.changeAccess} /> : undefined} /> : undefined}
-      reason={archived ? 'This chat is archived.' : !setupReady || !settingsReady ? 'Finish Operator setup and save settings before sending.'
+      reason={archived ? 'This chat is archived.' : pendingHandoff ? 'Start a new chat to use the changed Operator settings.'
+        : !setupReady || !settingsReady ? 'Finish Operator setup and save settings before sending.'
           : attachmentReceiptPending || pending.command || pending.error ? 'Confirm the previous message before sending.' : undefined}
       onNewChat={() => void createConversation()} onDenied={canonical.onDenied} refresh={canonical.refresh} />
   </footer>
