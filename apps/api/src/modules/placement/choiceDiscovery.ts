@@ -265,7 +265,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
       return { reason: null, pending: false }
     } catch (error) {
       const availability = computerAvailabilityFailure(error)
-      return { reason: error instanceof Error ? error.message : String(error),
+      return { reason: availability?.reason ?? (error instanceof Error ? error.message : String(error)),
         pending: availability?.pending === true
           || error instanceof DomainError && error.code === 'HARNESS_PROFILE_CHECK_PENDING'
           || error instanceof Error && 'retryable' in error && error.retryable === true }
