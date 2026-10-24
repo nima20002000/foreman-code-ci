@@ -58,7 +58,7 @@ describe('open schedule readback refresh', () => {
   it.each([false, true])('refreshes Next while preserving the initialized draft (edited: %s)', async (edited) => {
     const view = mount()
     await open(view.user)
-    const time = screen.getByLabelText('Time') as HTMLInputElement
+    const time = screen.getByLabelText('Time on this device') as HTMLInputElement
     const draftTime = edited ? '10:15' : time.value
     if (edited) fireEvent.change(time, { target: { value: draftTime } })
     const nextOccurrenceAt = '2099-08-31T09:00:00.000Z'
@@ -98,13 +98,13 @@ describe('open schedule readback refresh', () => {
   it('keeps unsaved edits when a background read fails', async () => {
     const view = mount()
     await open(view.user)
-    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '10:15' } })
+    fireEvent.change(screen.getByLabelText('Time on this device'), { target: { value: '10:15' } })
     server.use(http.get(schedulePath(scope), () => HttpResponse.json({
       error: { code: 'UNAVAILABLE', message: 'Unavailable.' },
     }, { status: 503 })))
     await poll()
     expect(await screen.findByText('Next run unavailable')).toBeVisible()
-    expect(screen.getByLabelText('Time')).toHaveValue('10:15')
+    expect(screen.getByLabelText('Time on this device')).toHaveValue('10:15')
     expect(screen.getByRole('button', { name: /^Save$/ })).toBeEnabled()
   })
 })

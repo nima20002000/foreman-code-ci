@@ -47,6 +47,14 @@ afterEach(() => {
 })
 
 describe('Run activity list summary freshness', () => {
+  it('uses the Runs history outcome labels for successful and canceled activity history', async () => {
+    const canceled = { ...completedRun, id: 'run-canceled-history', outcome: 'canceled', result: { outcome: 'canceled', output: {} } }
+    server.use(http.get(listRoute, () => HttpResponse.json({ items: [completedRun, canceled], pageInfo: { nextCursor: null } })))
+    mount()
+    expect(await screen.findByRole('button', { name: `Open Run ${completedRun.id} · completed · succeeded` })).toHaveTextContent('Succeeded')
+    expect(screen.getByRole('button', { name: 'Open Run run-canceled-history · completed · canceled' })).toHaveTextContent('Canceled')
+  })
+
   it('reads the initial page for a completed summary after six pages evict the newest page', async () => {
     const cursors: Array<string | null> = []
     let arrived = false
@@ -132,7 +140,7 @@ describe('Run activity list summary freshness', () => {
     const initialReads = reads
     mounted.update([summary(completedRun)])
     const completed = screen.getByRole('button', { name: `Open Run ${fixture.run.id} · completed · succeeded` })
-    expect(completed).toHaveTextContent('Completed')
+    expect(completed).toHaveTextContent('Succeeded')
     expect(completed).toHaveTextContent(shortRunId(fixture.run.id))
     await waitFor(() => expect(reads).toBeGreaterThan(initialReads))
     await userEvent.click(completed)
@@ -156,7 +164,7 @@ describe('Run activity list summary freshness', () => {
     const settling = deferred<{ items: typeof fixture.run[]; pageInfo: { nextCursor: null } }>()
     next = settling
     mounted.update([summary(completedRun)])
-    expect(screen.getByRole('button', { name: `Open Run ${fixture.run.id} · completed · succeeded` })).toHaveTextContent('Completed')
+    expect(screen.getByRole('button', { name: `Open Run ${fixture.run.id} · completed · succeeded` })).toHaveTextContent('Succeeded')
     await waitFor(() => expect(reads).toBe(3))
     await act(async () => { settling.resolve({ items: [completedRun], pageInfo: { nextCursor: null } }) })
     await waitFor(() => expect(mounted.client.getQueryState(boardRunListKey(workspaceId, workflowId))?.fetchStatus).toBe('idle'))
@@ -177,7 +185,7 @@ describe('Run activity list summary freshness', () => {
     mounted.update([summary(fixture.run)])
     await waitFor(() => expect(reads).toBe(2))
     mounted.update([summary(completedRun)])
-    expect(screen.getByRole('button', { name: `Inspect ${fixture.run.id}` })).toHaveTextContent('Completed')
+    expect(screen.getByRole('button', { name: `Inspect ${fixture.run.id}` })).toHaveTextContent('Succeeded')
     await act(async () => { pending.resolve({ items: [completedRun], pageInfo: { nextCursor: null } }) })
     await screen.findByRole('button', { name: `Open Run ${fixture.run.id} · completed · succeeded` })
   })

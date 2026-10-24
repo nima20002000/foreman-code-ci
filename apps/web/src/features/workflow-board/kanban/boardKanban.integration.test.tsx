@@ -194,8 +194,8 @@ it('opens a card in its own window with what its Agent did and every update acro
   await userEvent.click(within(window).getByRole('button', { name: 'History' }))
   const updates = within(window).getAllByText(/Release Agent updated this card/)
   expect(updates).toHaveLength(3)
-  expect(within(window).getAllByText(/Run run-firs/)).toHaveLength(2)
-  expect(within(window).getByText(/Run run-seco/)).toBeVisible()
+  expect(within(window).getAllByText(/Run first/)).toHaveLength(2)
+  expect(within(window).getByText(/Run second/)).toBeVisible()
   // The same history preserves exact before/after values for every recorded change.
   await userEvent.click(within(window).getAllByText('status changed')[0]!)
   expect(within(window).getByText('Previously: doing')).toBeVisible()
