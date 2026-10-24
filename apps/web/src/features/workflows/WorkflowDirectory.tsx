@@ -201,7 +201,8 @@ function WorkflowDirectoryContent({ workspaceId, headingLevel, hideHeading }: { 
       <ConfirmDialog open={selection.confirming} onOpenChange={(open) => { if (!open) closeConfirmation() }}
         title={`Delete ${count} ${count === 1 ? 'workflow' : 'workflows'}?`}
         description="They leave this workspace. Saved versions and run history stay. Workflows with active runs can’t be deleted."
-        pending={batch.isPending} confirmLabel={attempt.current.unresolved ? 'Retry' : 'Delete'}
+        dismissalReason={attempt.current.unresolved ? 'Removal is unconfirmed. Retry checks the original removal before you can close this dialog.' : undefined}
+      pending={batch.isPending} confirmLabel={attempt.current.unresolved ? 'Retry' : 'Delete'}
         error={batch.isError ? batch.error.message : attempt.current.unresolved && !batch.isPending ? 'It may already be done. Retry to check.' : undefined}
         onConfirm={() => void deleteSelected()} />
     </section>

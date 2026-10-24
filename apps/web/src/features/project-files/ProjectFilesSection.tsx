@@ -179,7 +179,8 @@ function ProjectFileRemoval({ workspaceId, row, onClose, onRemoved }: ProjectFil
   }
   return <ConfirmDialog open title={`Remove ${row.revision.filename}?`}
     description="It’s removed from the project files. Runs that already used it keep their copy."
-    pending={mutation.isPending} confirmLabel={mutation.isError ? 'Retry' : 'Remove'}
+    dismissalReason={attempt.current.unresolved ? 'Removal is unconfirmed. Retry checks the original removal before you can close this dialog.' : undefined}
+      pending={mutation.isPending} confirmLabel={mutation.isError ? 'Retry' : 'Remove'}
     error={mutation.isError ? 'Couldn’t remove the file.' : undefined}
     onOpenChange={(open) => { if (!open) close() }} onConfirm={() => { void remove() }} />
 }

@@ -1695,7 +1695,7 @@ export * from './memoryBoards.js';
 export * from './memoryBoardViews.js';
 export * from './workflowKanban.js';
 export * from './chatDelivery.js';
-export * from './engineChat.js';
+export * from './workflowChat.js';
 export * from './browserProfiles.js';
 export * from './browserSessions.js';
 export * from './workflowHierarchy.js';

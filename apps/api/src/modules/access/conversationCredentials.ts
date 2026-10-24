@@ -8,10 +8,15 @@ import { conversationFeatureContext, type ConversationFeatureContext } from '../
 import { DomainError } from '../errors.js'
 import { readLiveManagementPrincipal } from './liveManagementPrincipal.js'
 
+const groupTools = new Set<GraphqlAgentTool>([
+  'workflow_chat_read', 'workflow_chat_post',
+])
 export function conversationChatTools(context: ConversationFeatureContext): GraphqlAgentTool[] {
+  // A draft chat has no saved workflow yet, so no Group chat; its browser is the chat's own and works anyway.
   const configuration = context.configuration
   const readOnly = isReadOnlyHarnessConfiguration(configuration.harness)
-  const implemented = context.node.browser?.enabled ? browserAgentTools : []
+  const implemented = [...context.workflowVersionId === null ? [] : groupTools,
+    ...(context.node.browser?.enabled ? browserAgentTools : [])]
   return effectiveGraphqlTools(context.subject.agent.productRole, configuration.graphqlTools,
     chatToolOverride(context.node.graphqlTools, context.node.browser), false, implemented)
     .filter(tool => implemented.includes(tool) && (!readOnly || COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly))

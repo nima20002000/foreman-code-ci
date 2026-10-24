@@ -62,17 +62,6 @@ describe('Foreman Code MCP tools per Agent', () => {
     expect(GraphqlToolOverrideSchema.safeParse({ add: ['context_get'], remove: ['context_get'] }).success).toBe(false)
     expect(CurrentWorkflowNodeSchema.safeParse({ id: 'n', agentId: 'a', name: 'N', graphqlTools: { add: ['interaction_get'], remove: [] } }).success).toBe(true)
   })
-
-  it('rejects removed group tools in Agent settings and the Operator catalog', () => {
-    for (const name of ['workflow_chat_read', 'workflow_chat_post', 'workflow_chat_deliveries_read', 'workflow_chat_delivery_cancel']) {
-      expect(AgentSchema.shape.graphqlTools.safeParse([name]).success).toBe(false)
-      expect(GraphqlToolOverrideSchema.safeParse({ add: [name], remove: [] }).success).toBe(false)
-      expect(OperatorToolNameSchema.safeParse(name).success).toBe(false)
-    }
-    for (const name of ['agent_chat_read', 'agent_chat_send', 'operator_chat_send']) {
-      expect(OperatorToolNameSchema.parse(name)).toBe(name)
-    }
-  })
 })
 
 it('requires both grants for protected root adoption and keeps it out of Agent tools', () => {

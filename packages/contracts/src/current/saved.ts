@@ -24,7 +24,7 @@ export type SavedWorkflowVersion = z.infer<typeof SavedWorkflowVersionSchema>
 type SavedWorkflowRun = z.infer<typeof SavedWorkflowRunSchema>
 
 /** A Master finished with remaining findings and no work instructions. Its next turn is held
- * (the Run stays open) until someone sends that Master a direction, through the Agent chat. */
+ * (the Run stays open) until someone sends that Master a direction, e.g. in group chat. */
 export const RunDirectionWaitSchema = z.object({
   workflowNodeId: GraphIdSchema, agentId: GraphIdSchema, agentName: z.string().min(1).max(200),
   /** The held next turn; a direction delivered to it releases the Run. */
