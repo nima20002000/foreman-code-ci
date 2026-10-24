@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { endpointFixture, browserSubjects } from '../browser-runtime/endpoints.test-support.js'
 import { createBrowserSessionRouter, type BrowserSessionLocations, type BrowserSessionTransport } from '../browser-runtime/sessionRouter.js'
 import type { BrowserSessionService } from '../browser-runtime/service.js'
-import type { ManagementPrincipal } from '@foreman-code/contracts/management'
+import type { LaptopgementPrincipal } from '@foreman-code/contracts/laptopgement'
 import { DomainError } from '../errors.js'
 
 let fixture: Awaited<ReturnType<typeof endpointFixture>> | undefined
@@ -11,11 +11,11 @@ afterEach(async () => { await fixture?.close(); vi.restoreAllMocks() })
 it('routes a healthy remote browser when the local native installation is unavailable', async () => {
   const remote = fixture = await endpointFixture()
   const records = new Map<string, Awaited<ReturnType<BrowserSessionLocations['session']>>>()
-  const transport: BrowserSessionTransport<ManagementPrincipal> = {
+  const transport: BrowserSessionTransport<LaptopgementPrincipal> = {
     invoke: async (_binding, method, principal, args) => Reflect.apply(remote.sessions[method], remote.sessions, [principal, ...args]),
   }
   const router = createBrowserSessionRouter({ localComputerId: 'unavailable-local',
-    local: new Proxy({} as BrowserSessionService<ManagementPrincipal>, { get() { throw new Error('Local browser runtime is unavailable') } }),
+    local: new Proxy({} as BrowserSessionService<LaptopgementPrincipal>, { get() { throw new Error('Local browser runtime is unavailable') } }),
     locations: { session: async id => records.get(id), save: async (session, installationId) => { records.set(session.id, { session, installationId }) },
       view: async () => undefined, saveView: async () => { throw new Error('Unexpected viewer') } },
     pairing: { current: async computerId => ({ computerId, installationId: 'installation', connectionId: 'connection' }),
@@ -23,6 +23,7 @@ it('routes a healthy remote browser when the local native installation is unavai
       wrappingKey: async () => { throw new Error('Unexpected key operation') } },
     authority: { callerId: principal => principal.id, actor: async () => 'viewer',
       subject: async () => undefined, session: async () => undefined, setup: async () => undefined },
+    runtimeStatus: async computerId => ({ computerId, ready: true, phase: 'ready', reason: null }),
     computers: async () => ['main'], subjectComputer: async () => 'main', transport,
     media: () => { throw new Error('Unexpected media') },
   })
@@ -41,7 +42,7 @@ it('routes a healthy remote browser when the local native installation is unavai
 it('paginates past offline computers without hiding healthy sessions or swallowing scoped errors', async () => {
   const local = fixture = await endpointFixture()
   let failure = new DomainError('BROWSER_COMPUTER_OFFLINE', 'The paired computer is offline.', 503)
-  const router = createBrowserSessionRouter({ localComputerId: 'main', local: local.sessions as BrowserSessionService<ManagementPrincipal>,
+  const router = createBrowserSessionRouter({ localComputerId: 'main', local: local.sessions as BrowserSessionService<LaptopgementPrincipal>,
     locations: { session: async () => undefined, save: async () => undefined,
       view: async () => undefined, saveView: async () => undefined },
     pairing: { current: async computerId => ({ computerId, installationId: 'installation', connectionId: 'connection' }),
@@ -49,6 +50,7 @@ it('paginates past offline computers without hiding healthy sessions or swallowi
       wrappingKey: async () => { throw new Error('Unexpected key operation') } },
     authority: { callerId: principal => principal.id, actor: async () => 'viewer',
       subject: async () => undefined, session: async () => undefined, setup: async () => undefined },
+    runtimeStatus: async computerId => ({ computerId, ready: true, phase: 'ready', reason: null }),
     computers: async () => ['z-offline', 'main', 'a-offline'], subjectComputer: async () => 'a-offline',
     transport: { invoke: async () => { throw failure } }, media: () => { throw new Error('Unexpected media') },
   })
@@ -63,4 +65,27 @@ it('paginates past offline computers without hiding healthy sessions or swallowi
   await expect(router.list(local.owner, { subject: input.subject })).rejects.toMatchObject({ code: 'BROWSER_COMPUTER_OFFLINE' })
   failure = new DomainError('FORBIDDEN', 'The caller cannot read this computer.', 403)
   await expect(router.list(local.owner)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+})
+
+
+it('reports a reachable Worker runtime failure without dispatching rejected session-list polls', async () => {
+  const local = fixture = await endpointFixture()
+  const runtime = { computerId: 'laptop', ready: false, phase: 'failed',
+    reason: 'Chromium: No usable sandbox! Install the Foreman AppArmor profile on Laptop.' }
+  const invoke = vi.fn(async () => { throw new Error('extension-rejected: BROWSER_RUNTIME_UNAVAILABLE') })
+  const router = createBrowserSessionRouter({ localComputerId: 'main', local: local.sessions as BrowserSessionService<LaptopgementPrincipal>,
+    locations: { session: async () => undefined, save: async () => undefined, view: async () => undefined, saveView: async () => undefined },
+    pairing: { current: async computerId => ({ computerId, installationId: 'installation', connectionId: 'connection' }),
+      assertCurrent: async () => undefined, assertInstallation: async () => undefined,
+      wrappingKey: async () => { throw new Error('Unexpected key operation') } },
+    authority: { callerId: principal => principal.id, actor: async () => 'viewer',
+      subject: async () => undefined, session: async () => undefined, setup: async () => undefined },
+    computers: async () => ['laptop'], subjectComputer: async () => 'laptop', transport: { invoke },
+    media: () => { throw new Error('Unexpected media') },
+    runtimeStatus: async () => runtime,
+  })
+  for (let poll = 0; poll < 3; poll++) {
+    expect(await router.list(local.owner, { computerId: 'laptop' })).toEqual({ sessions: [], nextCursor: null, runtime })
+  }
+  expect(invoke).not.toHaveBeenCalled()
 })
