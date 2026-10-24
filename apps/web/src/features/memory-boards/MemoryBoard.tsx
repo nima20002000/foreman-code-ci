@@ -1,5 +1,5 @@
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MemoryBoardMutation, MemoryBoardScope, MemoryCard as Card, MemoryCardWorkBinding } from '@foreman-code/contracts'
 import { Button } from '../../shared/ui/nocturne/Button'
 import { useMemoryBoard } from './queries'
@@ -28,7 +28,6 @@ export interface MemoryBoardProps {
   visible?: boolean
   canWrite: boolean
   restriction?: string
-  workOptionsNotice?: ReactNode
   nodes: readonly MemoryNodeOption[]
   health?: readonly MemoryWorkHealth[]
   selectedCardId?: string
@@ -123,7 +122,6 @@ function BoardBody(props: MemoryBoardProps & { board: MemoryBoardView; online: b
     else requestLeave(() => { setMemoryDraft(boardId); onSelectCard(cardId) })
   }
   return <div className="n-stack">
-    {props.workOptionsNotice}
     {props.restriction && <p>{props.restriction}</p>}
     {!props.canWrite && !props.restriction && <p>Memory changes are unavailable for this caller.</p>}
     {leaveAction && <section role="alert" className="memory-unsaved"><h3>Discard unsaved changes?</h3>

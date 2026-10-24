@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { readFile } from 'node:fs/promises';
 import { resolve, isAbsolute } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -56,7 +57,7 @@ async function main() {
     console.log(JSON.stringify(await publish(stateDirectory, args[4])));
     return;
   }
-  const { loadOrCreateWorkerIdentity, loadWorkerPairing } = await import('../../../packages/contracts/src/deviceIdentityNode.ts');
+  const { loadOrCreateWorkerIdentity, loadWorkerPairing } = await import('../../../packages/contracts-node/src/deviceIdentityNode.ts');
   const { prepareWorkerState, startConfiguredWorker, initializeInstalledNativeRuntime } = await import('./workerFactory.mjs');
   const enrollment = command === 'pair' ? await import('./enrollment.mjs') : null;
   pairingErrorMessage = enrollment?.pairingErrorMessage;
@@ -88,7 +89,7 @@ async function main() {
     } catch { errors.push('identity_invalid'); }
     let service = { active: false, userManagerAvailable: false };
     try {
-      const { stdout } = await execute('/usr/bin/systemctl', ['--user', 'show', 'graphql-worker.service', '--property=ActiveState', '--property=LoadState'], { timeout: 2000, maxBuffer: 4096, env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } });
+      const { stdout } = await execute('/usr/bin/systemctl', ['--user', 'show', INSTALLATION_NAMES.services.worker, '--property=ActiveState', '--property=LoadState'], { timeout: 2000, maxBuffer: 4096, env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } });
       service = { active: stdout.includes('ActiveState=active\n'), userManagerAvailable: true };
     } catch { errors.push('systemd_user_manager_missing'); }
     let status;
@@ -121,7 +122,7 @@ async function main() {
     console.log(JSON.stringify(result));
     return;
   }
-  if(command==='identity-request'){await requirePrivateDirectory(stateDirectory);const identity=await loadOrCreateWorkerIdentity(stateDirectory);const {workerIdentityRequestCode}=await import('../../../packages/contracts/src/deviceSetupNode.ts');process.stdout.write(workerIdentityRequestCode(identity)+'\n');return;}
+  if(command==='identity-request'){await requirePrivateDirectory(stateDirectory);const identity=await loadOrCreateWorkerIdentity(stateDirectory);const {workerIdentityRequestCode}=await import('../../../packages/contracts-node/src/deviceSetupNode.ts');process.stdout.write(workerIdentityRequestCode(identity)+'\n');return;}
   if (command === 'identity') {
     await requirePrivateDirectory(stateDirectory);
     const identity = await loadOrCreateWorkerIdentity(stateDirectory);

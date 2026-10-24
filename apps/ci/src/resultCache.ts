@@ -1,7 +1,7 @@
 import { isBuiltin } from 'node:module'
 import { posix } from 'node:path'
 import { ciCodeFile, ciInfrastructureFile, importSpecifiers, resolveImport } from '@foreman-code/contracts/ci-import-graph'
-import { sha256Hex } from '@foreman-code/contracts/server-kit'
+import { sha256Hex } from '@foreman-code/contracts-node/server-kit'
 
 /** Bump when the key inputs or the doubt rules change, so earlier passes stop matching. */
 const CI_RESULT_CACHE_VERSION = 1

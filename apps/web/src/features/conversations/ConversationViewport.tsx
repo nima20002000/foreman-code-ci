@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
-import { useRememberedChatScroll } from './chatScrollStore'
+import { useRememberedChatScroll } from '../chat-core'
 
 /** Shared transcript scrolling, following the Operator transcript pattern. No server data lives here. */
 export function ConversationViewport({ revision, children, storageKey }: {

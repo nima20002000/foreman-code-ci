@@ -18,6 +18,7 @@ it('reuses installed dependencies across contracts rebuilds while keeping rollba
   const api = join(source, 'apps/api')
   const contracts = join(source, 'packages/contracts')
   const ci = join(source, 'apps/ci')
+  const nodeContracts = join(source, 'packages/contracts-node')
   const valuePackage = join(source, 'packages/value')
   const environment = { ...process.env, npm_config_offline: 'true', npm_config_update_notifier: 'false',
     COREPACK_ENABLE_NETWORK: '0' }
@@ -37,6 +38,7 @@ it('reuses installed dependencies across contracts rebuilds while keeping rollba
     await mkdir(join(api, 'dist'), { recursive: true })
     await mkdir(join(contracts, 'dist'), { recursive: true })
     await mkdir(join(ci, 'dist'), { recursive: true })
+    await mkdir(join(nodeContracts, 'dist'), { recursive: true })
     await mkdir(valuePackage, { recursive: true })
     await writeFile(join(valuePackage, 'package.json'), JSON.stringify({
       name: 'cache-value', version: '1.0.0', type: 'module', main: 'index.js', files: ['index.js'],
@@ -51,34 +53,42 @@ it('reuses installed dependencies across contracts rebuilds while keeping rollba
     ].join('\n') + '\n')
     await writeFile(join(api, 'package.json'), JSON.stringify({
       name: '@foreman-code/api', private: true, version: '1.0.0', type: 'module', files: ['dist'],
-      dependencies: { '@foreman-code/contracts': 'workspace:*', '@foreman-code/ci': 'workspace:*', 'cache-value': 'workspace:*' },
+      dependencies: { '@foreman-code/contracts-node': 'workspace:*', '@foreman-code/contracts': 'workspace:*', '@foreman-code/ci': 'workspace:*', 'cache-value': 'workspace:*' },
     }))
     await writeFile(join(contracts, 'package.json'), JSON.stringify({
       name: '@foreman-code/contracts', private: true, version: '1.0.0', type: 'module',
       main: 'dist/index.js', files: ['dist'], dependencies: { 'cache-value': 'workspace:*' },
     }))
+    await writeFile(join(nodeContracts, 'package.json'), JSON.stringify({
+      name: '@foreman-code/contracts-node', private: true, version: '1.0.0', type: 'module',
+      main: 'dist/index.js', files: ['dist'], dependencies: { '@foreman-code/contracts': 'workspace:*' },
+    }))
+    await writeFile(join(nodeContracts, 'dist/index.js'), "export { value } from '@foreman-code/contracts';\n")
     await writeFile(join(ci, 'package.json'), JSON.stringify({
       name: '@foreman-code/ci', private: true, version: '1.0.0', type: 'module',
-      main: 'dist/index.js', files: ['dist'], dependencies: { '@foreman-code/contracts': 'workspace:*' },
+      main: 'dist/index.js', files: ['dist'], dependencies: { '@foreman-code/contracts-node': 'workspace:*' },
     }))
     // Strict age verification visits every registry entry, even unused entries in an offline install.
     await writeFile(join(source, 'pnpm-lock.yaml'), JSON.stringify({
       lockfileVersion: '9.0', settings: { autoInstallPeers: false, excludeLinksFromLockfile: false }, importers: {
         '.': {}, 'apps/api': { dependencies: {
           '@foreman-code/contracts': { specifier: 'workspace:*', version: 'link:../../packages/contracts' },
+          '@foreman-code/contracts-node': { specifier: 'workspace:*', version: 'link:../../packages/contracts-node' },
           '@foreman-code/ci': { specifier: 'workspace:*', version: 'link:../ci' },
           'cache-value': { specifier: 'workspace:*', version: 'link:../../packages/value' },
         } }, 'apps/ci': { dependencies: {
-          '@foreman-code/contracts': { specifier: 'workspace:*', version: 'link:../../packages/contracts' },
+          '@foreman-code/contracts-node': { specifier: 'workspace:*', version: 'link:../../packages/contracts-node' },
         } }, 'packages/contracts': { dependencies: {
           'cache-value': { specifier: 'workspace:*', version: 'link:../value' },
+        } }, 'packages/contracts-node': { dependencies: {
+          '@foreman-code/contracts': { specifier: 'workspace:*', version: 'link:../contracts' },
         } }, 'packages/value': {},
       },
     }))
     const buildContracts = async (value: string) => writeFile(join(contracts, 'dist/index.js'),
       `import { identity } from 'cache-value'; export const value = () => identity(${JSON.stringify(value)});\n`)
     const buildCi = async (value: string) => writeFile(join(ci, 'dist/index.js'),
-      `import { value } from '@foreman-code/contracts'; export const result = () => value() + ${JSON.stringify(value)};\n`)
+      `import { value } from '@foreman-code/contracts-node'; export const result = () => value() + ${JSON.stringify(value)};\n`)
     await buildContracts('first contracts')
     await buildCi(' first CI')
     await writeFile(join(api, 'dist/index.js'),

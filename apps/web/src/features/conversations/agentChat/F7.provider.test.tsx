@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { agentChatFixtures, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
-import { useConversationDraftStore } from '../conversationDraftStore'
+import { useConversationDraftStore } from '../../chat-core'
 import { approvalFixture, chatHarnesses, completedFixture, providerFixture, startedFixture } from './f7.testSupport'
 import { mountChat } from './testSupport'
 

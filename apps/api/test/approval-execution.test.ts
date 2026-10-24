@@ -19,7 +19,7 @@ import type { ExecutionCredentialProvider } from '../src/modules/harnesses/mcpDe
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput } from '../src/modules/harnesses/port.js'
 import type { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
-import type { Wave25InteractionRepository as PostgresInteractionRepository } from '../src/modules/interactions/current/repository.js'
+import type { CurrentInteractionRepository as PostgresInteractionRepository } from '../src/modules/interactions/current/repository.js'
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import type { RepeatNativeObservationStore } from '../src/modules/interactions/repeatObservation.js'
 import type { UnboundWorkflowClosure, WorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'

@@ -13,11 +13,11 @@ describe.skipIf(!postgresEnabled)('native process local-human isolation', { time
   it('denies tokenless mutations and approvals while retaining credentialed MCP access', async () => {
     await nativeHttpIsolation(input => runCommand(process.execPath, ['-e', input.script], input.directory,
       undefined, { expectedAgentId: input.owner, beforeSpawn: async () => ({ agentId: input.owner,
-        variables: { FOREMAN_CODE_MCP_TOKEN: input.token } }) }, { recovery: input.recovery }), { database })
+        variables: { GRAPHQL_MCP_TOKEN: input.token } }) }, { recovery: input.recovery }), { database })
   })
   it('denies an independently launched restricted MCP client with Authorization omitted', async () => {
     await nativeHttpIsolation(input => runCommand(process.execPath, ['-e', input.script], input.directory,
       undefined, { expectedAgentId: input.owner, beforeSpawn: async () => ({ agentId: input.owner,
-        variables: { FOREMAN_CODE_MCP_TOKEN: input.token } }) }), { database })
+        variables: { GRAPHQL_MCP_TOKEN: input.token } }) }), { database })
   })
 })

@@ -1,5 +1,5 @@
-import type { BrowserBroker } from '../browser-runtime/broker.js'
-import type { BrowserPrepareResult } from '../browser-runtime/types.js'
+import type { BrowserBroker } from '../browser-runtime/index.js'
+import type { BrowserPrepareResult } from '../browser-runtime/index.js'
 
 type Broker = Pick<BrowserBroker, 'prepare' | 'list' | 'read'>
 

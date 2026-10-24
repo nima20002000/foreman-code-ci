@@ -18,7 +18,7 @@ it.skipIf(!postgresEnabled)('preserves the Master identity and designated review
     appMcp: tools.appMcp(f.access, new PostgresAppInteractionService(f.pool, f.repository, f.commands, f.service)),
     operator: { access: f.access, services: {
       commands: f.commands, ci: tools.ci, bugReports: tools.bugReports,
-    } as OperatorServices },
+    } as unknown as OperatorServices },
   })
   const clients: Client[] = []
   try {

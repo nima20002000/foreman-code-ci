@@ -141,7 +141,7 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   const towerNodes = useMemo(() => nodes.map((node) => ({ position: node.position, width: node.initialWidth, height: node.initialHeight })), [nodes])
   const ci = useBoardCiServer({ nodes: towerNodes, names, scope, workflow: { workspaceId: scope.workspaceId, workflowId: scope.workflowId },
     jobs: !ciDenied && ciList.data?.runId === scope.runId ? ciList.data.jobs : undefined,
-    truncated: !ciDenied && (ciList.data?.truncated ?? false), error: Boolean(ciDenied) || ciList.isError, loading: ciList.isPending, readError: ciDenied ?? ciList.error, onRefresh: () => void ciList.refetch() })
+    truncated: !ciDenied && (ciList.data?.truncated ?? false), error: Boolean(ciDenied) || ciList.isError, loading: ciList.isPending })
   // The workflow's Kanban sits on its Board in every view, so Agents' card changes show live during the Run.
   const shownIds = useMemo(() => new Set(visibleNodes.map(node => node.id)), [visibleNodes])
   const kanban = useBoardKanban({ workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId, nodes: towerNodes,

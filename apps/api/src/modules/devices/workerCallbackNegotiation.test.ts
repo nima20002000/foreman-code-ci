@@ -1,7 +1,7 @@
 import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { expect, it, vi } from 'vitest'
-import { mainIdentityProofMessage } from '@foreman-code/contracts/device-identity-node'
+import { mainIdentityProofMessage } from '@foreman-code/contracts-node/device-identity-node'
 import { DeviceConnectionSupervisor } from './connectionSupervisor.js'
 import { DeviceEndpoint } from './deviceEndpoint.js'
 import { adaptDeviceSocket } from './deviceWire.js'

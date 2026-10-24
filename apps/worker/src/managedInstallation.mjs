@@ -1,10 +1,11 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { readdir, unlink, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { ApprovedRootAllowlistSchema } from '../../../packages/contracts/src/workspaceRootPolicies.ts';
 import { WorkerPairingConfigurationSchema } from '../../../packages/contracts/src/deviceIdentity.ts';
 import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES }
-  from '../../../packages/contracts/src/installedRuntimeNode.ts';
+  from '../../../packages/contracts-node/src/installedRuntimeNode.ts';
 import { fingerprintQualificationPath, readVerificationQuotaPool, readProtectedRuntimeFile } from '@foreman-code/api/worker/jobs';
 import { anchored, identity, openPrivateRoot, openChildDirectory } from '@foreman-code/api/worker/sources';
 import { readPrivateBytes, assertRuntimeQuiescent } from './jobRuntimeCapture.mjs';
@@ -54,7 +55,7 @@ export async function discoverManagedInstallation(home, stateDirectory, currentP
       if (target.hostRef.kind !== 'device' || !target.registration) throw new WorkerError('managed_installation_identity_mismatch');
       const pairing = { mainId: target.hostRef.mainId, deviceId: target.hostRef.deviceId, ...target.registration };
       const allowedRuntimeRoots = [join(home, '.local/share/foreman-code/ci-verification/volume/managed'),
-        join(home, '.local/share/graphql-ci/volume/managed'), join(stateDirectory, 'managed/runtime')];
+        join(home, INSTALLATION_NAMES.paths.ciManagedData), join(stateDirectory, 'managed/runtime')];
       if (!allowedRuntimeRoots.includes(roots.managedRuntimeRoot) || runtime.descriptor.runtimeRoot !== roots.managedRuntimeRoot
         || roots.applicationInstallationId !== pairing.workerInstallationId
         || roots.hostRef.kind !== 'device' || roots.hostRef.mainId !== pairing.mainId || roots.hostRef.deviceId !== pairing.deviceId
@@ -83,7 +84,7 @@ export async function inspectManagedInstallation(installation, home, { readQuota
     || !runtime.qualificationSource.directory.startsWith(`${descriptor.runtimeRoot}/installer/`)) {
     throw new WorkerError('managed_installation_path_mismatch');
   }
-  const productStorage = [join(home, '.local/share/foreman-code/ci-verification'), join(home, '.local/share/graphql-ci'),
+  const productStorage = [join(home, '.local/share/foreman-code/ci-verification'), join(home, INSTALLATION_NAMES.paths.ciData),
     installation.stateDirectory];
   if (!productStorage.some(base => runtime.seedReceiptPath.startsWith(`${base}/`))) {
     throw new WorkerError('managed_installation_path_mismatch');
