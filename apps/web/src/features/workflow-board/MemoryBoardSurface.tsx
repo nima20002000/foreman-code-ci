@@ -9,6 +9,8 @@ import { useManagedWorkflowQuery } from '../../shared/api/query'
 import { apiClient, ApiError } from '../../shared/api/client'
 import { Button } from '../../shared/ui/nocturne'
 import { useMemoryNodes } from './useMemoryNodes'
+import { readRunExecution } from './runDetailsClient'
+import { scopeForBoardRun } from './client'
 import { canUseBoardAction } from './permissions'
 
 const client = createMemoryBoardClient()
@@ -62,9 +64,10 @@ export function MemoryBoardSurface({ scope, scopeName, dialog }: {
     if (detail.run.workflowVersionId !== work.workflowVersionId) {
       throw new ApiError({ code: 'INVALID_RESPONSE', message: 'The recorded work does not match its saved Run.' })
     }
-    const node = recorded?.subject?.agent
+    const nodeId = recorded?.subject?.agent.workflowNodeId
+      ?? (execution ? (await readRunExecution(scopeForBoardRun(detail.run), execution.executionId)).execution.workflowNodeId : undefined)
     return { workflowId: detail.run.workflowId, selectedRunId: work.runId,
-      ...(node ? { boardPanel: 'agent' as const, boardNodeId: node.workflowNodeId, boardAgentTab: 'details' as const } : {}),
+      ...(nodeId ? { boardPanel: 'agent' as const, boardNodeId: nodeId, boardAgentTab: 'details' as const } : {}),
       ...(execution ? { boardExecutionId: execution.executionId } : {}),
     }
   } })
