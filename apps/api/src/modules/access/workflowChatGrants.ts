@@ -1,5 +1,4 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
-import { isReadOnlyHarnessConfiguration, AgentConfigurationVersionSchema, effectiveForemanTools } from '@foreman-code/contracts'
+import { isReadOnlyHarnessConfiguration, AgentConfigurationVersionSchema, effectiveGraphqlTools } from '@foreman-code/contracts'
 import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import type { ManagementGrant } from '@foreman-code/contracts/management'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
@@ -15,7 +14,7 @@ export async function workflowChatGrants(sql: SqlQuery, executionId: string): Pr
   const version = WorkflowVersionCurrentSchema.parse(row.version)
   const node = version.definition.nodes.find(item => item.id === row.node_id)
   if (!node || node.kind === 'job') throw new DomainError('WORKER_EXECUTION_NOT_FOUND', 'The saved Agent node is unavailable.', 409)
-  const tools = effectiveForemanTools(configuration.productRole ?? 'coder', configuration[INSTALLATION_NAMES.fields.agentTools], node[INSTALLATION_NAMES.fields.agentTools], Boolean(node.interval), ['workflow_chat_read', 'workflow_chat_post'])
+  const tools = effectiveGraphqlTools(configuration.productRole ?? 'coder', configuration.graphqlTools, node.graphqlTools, Boolean(node.interval), ['workflow_chat_read', 'workflow_chat_post'])
   const readOnly = isReadOnlyHarnessConfiguration(configuration.harness)
   const actions: ManagementGrant['actions'] = []
   if (tools.includes('workflow_chat_read')) actions.push('agent_chat:read')

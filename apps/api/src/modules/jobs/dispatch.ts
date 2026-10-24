@@ -1,6 +1,6 @@
 import { readRunJobCleanup,requestRunJobCleanup } from './runCleanup.js'
 import type { JobRunCleanup } from '@foreman-code/contracts/job-run-cleanup'
-import type { RunOwnership } from '../runs/index.js'
+import type { RunOwnership } from '../runs/ownership.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { agentChatFixtures, type AgentChatState } from '@foreman-code/contracts/agent-chat'
 import { agentChatApi } from '../../../shared/api/agentChat'
 import { deferred } from '../../../test/deferred'
-import { useConversationDraftStore } from '../../chat-core'
+import { useConversationDraftStore } from '../conversationDraftStore'
 import { AgentChatTestSource, approvalState, installChatSource, mountChat } from './testSupport'
 
 const clients: ReturnType<typeof mountChat>['client'][] = []

@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(new URL('../../api/package.json', import.meta.url));
 const { tsImport } = await import(require.resolve('tsx/esm/api'));
 const { loadOrCreateWorkerIdentity, persistWorkerPairing, loadWorkerPairing } =
-  await tsImport('../../../packages/contracts-node/src/deviceIdentityNode.ts', import.meta.url);
+  await tsImport('../../../packages/contracts/src/deviceIdentityNode.ts', import.meta.url);
 import { installVersion, rollbackVersion, requireReleaseState } from '../src/installation.mjs';
 import { doctorReport, persistentFilesystems } from '../src/diagnostics.mjs';
 import { startWorker, readWorkerStatus, acquireWorkerLock } from '../src/runtime.mjs';
@@ -276,7 +276,7 @@ test('doctor projects allowlisted fields and recognizes overlay or ephemeral hom
 });
 
 test('service absolute paths, controlled environment and bounded cgroup shutdown', async () => {
-  const template = await readFile(new URL('../artifacts/foreman-worker.service.in', import.meta.url), 'utf8');
+  const template = await readFile(new URL('../artifacts/graphql-worker.service.in', import.meta.url), 'utf8');
   const fields = { node: '/usr/bin/node', app: '/home/user/.local/lib/graphql-worker', state: '/home/user/.local/state/graphql-worker', home: '/home/user', path: '/usr/bin:/bin' };
   assert.match(template, /UnsetEnvironment=NODE_OPTIONS NODE_PATH NODE_TLS_REJECT_UNAUTHORIZED/);
   const rendered = renderUserService(template, fields);

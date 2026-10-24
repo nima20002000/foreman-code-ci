@@ -26,12 +26,17 @@ it('delivers independent node skill additions and removals to concurrent native 
   right!.skills = { remove: ['common'], add: [reference(3)] }
   const finish = deferred()
   const instructions = new Map<string, string>()
+  const startedAt = performance.now()
   const fixture = await codexApprovalRuntime('user', { fixture: f, skills, approvalPolicy: 'never',
     onRequest(executionId, method, params) {
-      if (method === 'thread/start') instructions.set(executionId, String(params?.developerInstructions))
+      if (method === 'thread/start') {
+        instructions.set(executionId, String(params?.developerInstructions))
+        console.info('node-skills startup', { executionId, elapsedMs: performance.now() - startedAt })
+      }
     },
     workflowOutput: async executionId => {
       const execution = await fixture.runs.getExecution(executionId)
+      console.info('node-skills turn', { node: execution?.workflowNodeId, elapsedMs: performance.now() - startedAt })
       if (execution?.workflowNodeId !== entry!.id) await finish.promise
       return 'Done'
     },
@@ -55,6 +60,7 @@ it('delivers independent node skill additions and removals to concurrent native 
       rows => rows.length === 2 && rows.every(row => row.state === 'running' && instructions.has(row.id)),
       { timeoutMs: 10_000, description: 'both native branches running' })
     const leftId = branches.find(row => row.node === left!.id)!.id
+    console.info('node-skills both running', { elapsedMs: performance.now() - startedAt })
     const rightId = branches.find(row => row.node === right!.id)!.id
     expect(instructions.get(leftId)).toContain('Shared instructions.')
     expect(instructions.get(leftId)).toContain('Left instructions.')

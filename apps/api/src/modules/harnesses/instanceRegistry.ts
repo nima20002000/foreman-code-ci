@@ -1,4 +1,4 @@
-import { RecordedHarnessConfigurationSchema, RETIRED_OPENCODE_MESSAGE, type HarnessDefaults } from '@foreman-code/contracts'
+import { HarnessConfigurationSchema, RETIRED_OPENCODE_MESSAGE, type HarnessDefaults } from '@foreman-code/contracts'
 import { isDeepStrictEqual } from 'node:util'
 import { DomainError } from '../errors.js'
 import { deepFreeze } from '../../shared/deepFreeze.js'
@@ -53,7 +53,7 @@ export class HarnessInstanceRegistry {
         catch { availability = 'invalid-configuration' }
       }
       if (!instance.enabled) availability = 'disabled'
-      const savedConfiguration = RecordedHarnessConfigurationSchema.safeParse(configuration)
+      const savedConfiguration = HarnessConfigurationSchema.safeParse(configuration)
       const retired = instance.driverId === 'opencode'
         || savedConfiguration.success && savedConfiguration.data.harness === 'opencode'
       if (retired) availability = 'retired'
@@ -80,7 +80,7 @@ export class HarnessInstanceRegistry {
 
 export const localHarnessDrivers: readonly HarnessDriverRegistration[] = ['codex', 'claude'].map((driverId) => ({
   driverId, driverRevision: '1', decodeConfiguration: (value: unknown) => {
-    const configuration = RecordedHarnessConfigurationSchema.parse(value)
+    const configuration = HarnessConfigurationSchema.parse(value)
     if (configuration.harness !== driverId) throw new Error('Harness configuration driver mismatch.')
     return configuration
   },

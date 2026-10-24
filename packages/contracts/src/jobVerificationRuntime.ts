@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from './installationNames.mjs'
 import { z } from 'zod'
 import { DeviceDigestSchema, DeviceSafeIntegerSchema, DeviceExecutionAdmissionFields } from './deviceResources.js'
 import {
@@ -64,7 +63,7 @@ export const JobVerificationRepositoryContextSchema = z.object({
     logBytes: DeviceSafeIntegerSchema.positive() }).strict(),
   mutableDirectory: z.literal('/job-scratch'), storeDirectory: z.literal('/job-scratch/pnpm-store'),
   preseedReceipt: JobVerificationPreseedFactsSchema,
-  unitCodex: z.object({ executable: z.literal(INSTALLATION_NAMES.paths.ciCodex),
+  unitCodex: z.object({ executable: z.literal('/opt/graphql-ci/tools/codex'),
     binarySha256: DeviceDigestSchema, version: IdSchema }).strict().optional(),
 }).strict()
 

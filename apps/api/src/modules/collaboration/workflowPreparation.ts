@@ -1,6 +1,5 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import {
-  AgentConfigurationVersionSchema, AgentSubjectSchema, BoardDigestSchema, effectiveForemanTools,
+  AgentConfigurationVersionSchema, AgentSubjectSchema, BoardDigestSchema, effectiveGraphqlTools,
   type AgentSubject, type BoardDigest, type HarnessExecution, type LogicalWorkRef,
 } from '@foreman-code/contracts'
 import { AcceptedWorkflowRunCurrentSchema, type AcceptedWorkflowRunCurrent,
@@ -9,7 +8,7 @@ import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
 import { assertGraphTransaction, beforeGraphCommit } from '../run-graph/index.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import type { RunOwnership } from '../runs/index.js'
+import type { RunOwnership } from '../runs/ownership.js'
 import type { MemoryBoardPort } from './ports.js'
 import { readWorkflowCollaborationBindingLocked } from './workflowHooks.js'
 import { isOpenRunState } from '../runs/runState.js'
@@ -89,8 +88,8 @@ export class WorkflowMemoryContext {
         [execution.agentConfigurationVersionId])).rows[0]
       if (!row) throw new DomainError('AGENT_CONFIGURATION_NOT_FOUND', 'The saved Agent is unavailable.', 409)
       const configuration = AgentConfigurationVersionSchema.parse(row.record)
-      if (!configuration.productRole || !effectiveForemanTools(configuration.productRole,
-        configuration[INSTALLATION_NAMES.fields.agentTools], node[INSTALLATION_NAMES.fields.agentTools], false, ['memory_board_get']).includes('memory_board_get')) return undefined
+      if (!configuration.productRole || !effectiveGraphqlTools(configuration.productRole,
+        configuration.graphqlTools, node.graphqlTools, false, ['memory_board_get']).includes('memory_board_get')) return undefined
       const identity = await workflowPreparationIdentityLocked(sql, actualRun, version, execution)
       if (!identity) return undefined
       await retainWorkflowPreparationLocked(sql, execution, identity)

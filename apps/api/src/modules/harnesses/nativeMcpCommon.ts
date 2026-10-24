@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { APP_MCP_PATH, APP_MCP_SERVER_NAME, APP_MCP_TOKEN, APP_MCP_TIMEOUTS, LEGACY_APP_MCP_SERVER_NAMES, appLauncherConnection, appLauncherPath, appLauncherTokenName, isAppLauncher, isManagedLauncherCommand, isStaleAppLauncher, isSupportedAppMcpServerName, isSupportedAppMcpTokenName } from './appMcpLauncher.js'
 import { APP_MCP_SERVER_NAMES } from '@foreman-code/contracts/product'
 import { basename, dirname, join } from 'node:path'
@@ -23,11 +22,11 @@ export interface NativeMcpAdapter {
 }
 export const LINEAR_MCP_ENDPOINT = 'https://mcp.linear.app/mcp/readonly'
 const LINEAR_READ_WRITE_ENDPOINT = 'https://mcp.linear.app/mcp'
-export function managedName(preset: HarnessMcpManagedPreset): string { return preset === INSTALLATION_NAMES.mcp.server ? APP_MCP_SERVER_NAME : 'linear' }
+export function managedName(preset: HarnessMcpManagedPreset): string { return preset === 'graphql' ? APP_MCP_SERVER_NAME : 'linear' }
 export function managedChange(preset: HarnessMcpManagedPreset, installed: boolean, _endpoint: string): HarnessMcpChange {
   void _endpoint // Existing callers also pass the endpoint used by legacy presets.
   const name = managedName(preset)
-  return installed ? { kind: 'add', name, connection: preset === INSTALLATION_NAMES.mcp.server ? { ...appLauncherConnection(), environmentVariables: [] } : { transport: 'remote', url: LINEAR_MCP_ENDPOINT } }
+  return installed ? { kind: 'add', name, connection: preset === 'graphql' ? { ...appLauncherConnection(), environmentVariables: [] } : { transport: 'remote', url: LINEAR_MCP_ENDPOINT } }
     : { kind: 'remove', name }
 }
 export function managedEnableChange(preset: HarnessMcpManagedPreset, enabled: boolean): HarnessMcpChange {
@@ -47,12 +46,12 @@ function appReference(entry: JsonObject): boolean {
     && authorizationHeaders(entry.http_headers).length === 0 && authorizationHeaders(entry.env_http_headers).length === 0
 }
 function configuredManagedName(snapshot: NativeMcpSnapshot, preset: HarnessMcpManagedPreset): string {
-  if (preset !== INSTALLATION_NAMES.mcp.server) return managedName(preset)
+  if (preset !== 'graphql') return managedName(preset)
   const names = APP_MCP_SERVER_NAMES.filter((name) => Object.hasOwn(snapshot.user, name) || Object.hasOwn(snapshot.effective, name))
   return names[0] ?? APP_MCP_SERVER_NAME
 }
 export function appMcpNeedsMigration(snapshot: NativeMcpSnapshot): boolean {
-  const name = configuredManagedName(snapshot, INSTALLATION_NAMES.mcp.server)
+  const name = configuredManagedName(snapshot, 'graphql')
   const entry = record(snapshot.user[name])
   return userOwnsMcpEntry(snapshot, name) && isAppLauncher(entry)
     && (name !== APP_MCP_SERVER_NAME || appLauncherTokenName(entry) !== APP_MCP_TOKEN
@@ -73,7 +72,7 @@ function legacyAppPolicies(snapshot: NativeMcpSnapshot): JsonObject {
     if (!userOwnsMcpEntry(snapshot, name)) throw new DomainError('MCP_SERVER_INHERITED',
       'A retired app connection is inherited. Remove it at its owning source before installing another app connection.', 409)
     const entry = record(snapshot.user[name])
-    const token = name === INSTALLATION_NAMES.mcp.app ? INSTALLATION_NAMES.environment.APP_MCP_TOKEN : INSTALLATION_NAMES.environment.OPERATOR_MCP_TOKEN
+    const token = name === 'graphql-app' ? 'GRAPHQL_APP_MCP_TOKEN' : 'GRAPHQL_OPERATOR_MCP_TOKEN'
     const credential = entry.bearer_token_env_var === token
     let standard = Object.keys(entry).every((key) => key === 'enabled')
     if (remote(entry) && credential) {
@@ -88,7 +87,7 @@ function legacyAppPolicies(snapshot: NativeMcpSnapshot): JsonObject {
         && (!Array.isArray(entry.env_vars) || entry.env_vars.length === 0)
     }
     const command = [entry.command, ...(Array.isArray(entry.args) ? entry.args : [])]
-    const launcher = join(dirname(dirname(appLauncherPath())), name === INSTALLATION_NAMES.mcp.app ? 'worker-mcp' : 'operator-mcp', 'launcher.mjs')
+    const launcher = join(dirname(dirname(appLauncherPath())), name === 'graphql-app' ? 'worker-mcp' : 'operator-mcp', 'launcher.mjs')
     if (isManagedLauncherCommand(command, launcher)) {
       standard = entry.url === undefined && entry.bearer_token_env_var === undefined && entry.oauth === undefined
         && [entry.headers, entry.http_headers, entry.env_http_headers].every((value) => Object.keys(record(value)).length === 0)
@@ -137,7 +136,7 @@ export function userOwnsMcpEntry(snapshot: NativeMcpSnapshot, name: string): boo
 
 function managedNativeConnection(snapshot: NativeMcpSnapshot, preset: HarnessMcpManagedPreset): JsonObject {
   const name = configuredManagedName(snapshot, preset)
-  if (preset === INSTALLATION_NAMES.mcp.server) {
+  if (preset === 'graphql') {
     const retiredPolicies = legacyAppPolicies(snapshot)
     if (!Object.hasOwn(snapshot.user, name)) return { ...retiredPolicies, ...nativeConnection(appLauncherConnection()),
       enabled: retiredPolicies.enabled }
@@ -168,13 +167,13 @@ function managedNativeConnection(snapshot: NativeMcpSnapshot, preset: HarnessMcp
 export function managedStatus(snapshot: NativeMcpSnapshot, preset: HarnessMcpManagedPreset, _endpoint?: string) {
   void _endpoint // The graphql preset is a launcher; routing follows the owning app automatically.
   const name = configuredManagedName(snapshot, preset)
-  if (preset === INSTALLATION_NAMES.mcp.server && APP_MCP_SERVER_NAMES.every((server) => Object.hasOwn(snapshot.user, server) || Object.hasOwn(snapshot.effective, server))) return 'mismatch' as const
-  const legacy = preset === INSTALLATION_NAMES.mcp.server && legacyAppEntries(snapshot).length > 0
+  if (preset === 'graphql' && APP_MCP_SERVER_NAMES.every((server) => Object.hasOwn(snapshot.user, server) || Object.hasOwn(snapshot.effective, server))) return 'mismatch' as const
+  const legacy = preset === 'graphql' && legacyAppEntries(snapshot).length > 0
   if (!Object.hasOwn(snapshot.effective, name) && !Object.hasOwn(snapshot.user, name)) return legacy ? 'legacy' as const : 'missing' as const
   if (!userOwnsMcpEntry(snapshot, name)) return 'inherited' as const
   const entry = record(snapshot.user[name])
   const effective = record(snapshot.effective[name])
-  if (preset === INSTALLATION_NAMES.mcp.server) {
+  if (preset === 'graphql') {
     const reference = appReference(entry) && appReference(effective)
     if (!isAppLauncher(entry) || !isAppLauncher(effective) || !reference) return 'mismatch' as const
     if (legacy) return 'legacy' as const
@@ -193,7 +192,7 @@ export function assertManagedChange(snapshot: NativeMcpSnapshot, change: Harness
   if (fingerprint(change) !== fingerprint(expected)) {
     throw new DomainError('MCP_PRESET_INVALID', 'The requested MCP preset does not match the server-managed connection.', 409)
   }
-  if (preset === INSTALLATION_NAMES.mcp.server) {
+  if (preset === 'graphql') {
     assertNoAppCollision(snapshot)
   }
   if (preset === 'linear' && (protectedServer(change.name, snapshot.user[change.name])
@@ -201,7 +200,7 @@ export function assertManagedChange(snapshot: NativeMcpSnapshot, change: Harness
     throw new DomainError('MCP_SERVER_PROTECTED', 'Application credential-bearing connections cannot be changed as a Linear preset.', 403)
   }
   const status = managedStatus(snapshot, preset, endpoint)
-  const migrate = preset === INSTALLATION_NAMES.mcp.server && appMcpNeedsMigration(snapshot)
+  const migrate = preset === 'graphql' && appMcpNeedsMigration(snapshot)
   if (change.kind === 'add' && status !== 'missing' && status !== 'mismatch' && status !== 'legacy'
     && !(migrate && (status === 'installed' || status === 'disabled'))) {
     throw new DomainError('MCP_SERVER_EXISTS', 'This MCP server already has a native configuration. Inspect it before changing the preset.', 409)
@@ -213,7 +212,7 @@ export function assertManagedChange(snapshot: NativeMcpSnapshot, change: Harness
     throw new DomainError('MCP_PRESET_MISMATCH', 'Only a matching user-owned preset can be enabled or disabled here.', 409)
 }
 export function protectedServer(name: string, entry: unknown): boolean {
-  if (/^(graphql[-_]|foreman-code[-_]|__)/i.test(name) || [INSTALLATION_NAMES.mcp.server, 'foreman-code', 'app', 'operator'].includes(name.toLowerCase())) return true
+  if (/^(graphql[-_]|foreman-code[-_]|__)/i.test(name) || ['graphql', 'foreman-code', 'app', 'operator'].includes(name.toLowerCase())) return true
   // Also protect renamed credential-bearing application entries. This value never leaves the adapter.
   return /(?:GRAPHQL|FOREMAN_CODE)_(?:(?:APP|OPERATOR)_)?MCP_TOKEN|\/mcp\/(?:tools|operator)(?:["'/?\s]|$)|\/graphql\/(?:mcp|worker-mcp|operator-mcp)\/launcher\.mjs/i.test(JSON.stringify(entry))
 }
@@ -247,7 +246,7 @@ export function replacement(snapshot: NativeMcpSnapshot, change: HarnessMcpChang
     if (change.kind === 'enable') {
       return {
         ...record(snapshot.user[configuredManagedName(snapshot, managed.preset)]),
-        ...(managed.preset === INSTALLATION_NAMES.mcp.server ? APP_MCP_TIMEOUTS : {}),
+        ...(managed.preset === 'graphql' ? APP_MCP_TIMEOUTS : {}),
         enabled: change.enabled,
       }
     }
@@ -263,7 +262,7 @@ export function mcpEdits(snapshot: NativeMcpSnapshot, change: HarnessMcpChange,
   managed?: { preset: HarnessMcpManagedPreset; endpoint: string }): { name: string; value: JsonObject | undefined }[] {
   const name = managed && change.kind !== 'add' ? configuredManagedName(snapshot, managed.preset) : change.name
   const edits = [{ name, value: replacement(snapshot, change, managed) }]
-  if (managed?.preset === INSTALLATION_NAMES.mcp.server && change.kind === 'add') {
+  if (managed?.preset === 'graphql' && change.kind === 'add') {
     const installed = configuredManagedName(snapshot, managed.preset)
     if (installed !== APP_MCP_SERVER_NAME) edits.push({ name: installed, value: undefined })
     for (const name of legacyAppEntries(snapshot)) edits.push({ name, value: undefined })

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import {
-  AgentEffortSchema, ClaudeEffortSchema, changeCodexSandbox, effectiveForemanTools, memoryBoardTools, ForemanAgentToolSchema,
-  type ForemanAgentTool, type ForemanToolOverride, type HarnessConfiguration, type RecordedHarnessConfiguration, type WorkflowAgentProductRole,
+  AgentEffortSchema, ClaudeEffortSchema, changeCodexSandbox, effectiveGraphqlTools, memoryBoardTools, GraphqlAgentToolSchema,
+  type GraphqlAgentTool, type GraphqlToolOverride, type HarnessConfiguration, type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 import { Combobox, Select, Switch } from '../../shared/ui/nocturne'
 import { useProviderHarnessModels } from '../provider-accounts'
@@ -22,11 +22,12 @@ const codexAccess = [{ value: 'read-only', label: 'Read only' }, { value: 'works
   { value: 'danger-full-access', label: 'Full access' }]
 
 /** Model, effort, access and fast mode for the selected harness. Account and sign-in live under More settings. */
-function EditableAgentHarnessRows({ value, onChange, issues = [], accountHost }: {
+export function AgentHarnessRows({ value, onChange, issues = [], accountHost }: {
   value: HarnessConfiguration; onChange(value: HarnessConfiguration): void; issues?: readonly FieldIssue[]
   accountHost?: DeviceProvisioningTarget['hostRef'] | undefined
 }) {
-  const query = useProviderHarnessModels(value.harness, value.accountId, accountHost)
+  const query = useProviderHarnessModels(value.harness, value.harness === 'opencode' ? undefined : value.accountId, accountHost)
+  if (value.harness === 'opencode') return null
   const models = query.data?.models ?? []
   const selected = models.find(model => model.id === value.model)
   const modelOptions: { value: string; label: string; description?: string; disabled?: boolean }[] = models.map(model => ({ value: model.id, label: model.name || model.id }))
@@ -76,13 +77,13 @@ const memoryLabels = { none: 'Off', read: 'Read', write: 'Read and write', custo
 
 /** Memory board access for this node, stored as the node's change to the Agent's default tools. */
 export function AgentMemoryRow({ role, defaults, override, readOnly, onChange }: {
-  role: WorkflowAgentProductRole; defaults: readonly ForemanAgentTool[] | undefined; override: ForemanToolOverride | undefined
-  readOnly: boolean; onChange(defaults: ForemanAgentTool[] | undefined, override: ForemanToolOverride | undefined): void
+  role: WorkflowAgentProductRole; defaults: readonly GraphqlAgentTool[] | undefined; override: GraphqlToolOverride | undefined
+  readOnly: boolean; onChange(defaults: GraphqlAgentTool[] | undefined, override: GraphqlToolOverride | undefined): void
 }) {
-  const memoryTools: ForemanAgentTool[] = memoryBoardTools('write')
-  const agentDefault = effectiveForemanTools(role, defaults, undefined, false, memoryTools)
+  const memoryTools: GraphqlAgentTool[] = memoryBoardTools('write')
+  const agentDefault = effectiveGraphqlTools(role, defaults, undefined, false, memoryTools)
   const changed = Boolean(override?.add.some(tool => memoryTools.includes(tool)) || override?.remove.some(tool => memoryTools.includes(tool)))
-  const effective = changed ? effectiveForemanTools(role, defaults, override, false, memoryTools) : agentDefault
+  const effective = changed ? effectiveGraphqlTools(role, defaults, override, false, memoryTools) : agentDefault
   const access = memoryAccess(effective)
   return <NodeRow label="Memory" note={readOnly && access !== 'none' && access !== 'read' ? 'Read-only agents can only read memory.' : undefined}>
     <Select label="Memory" className="agent-node-inline" value={changed ? access : 'inherit'}
@@ -97,15 +98,10 @@ export function AgentMemoryRow({ role, defaults, override, readOnly, onChange }:
         const add = (override?.add ?? []).filter(tool => !memoryTools.includes(tool))
         const remove = (override?.remove ?? []).filter(tool => !memoryTools.includes(tool))
         for (const tool of memoryTools) {
-          if (next.includes(tool) && !agentDefault.includes(tool)) add.push(ForemanAgentToolSchema.parse(tool))
-          if (!next.includes(tool) && agentDefault.includes(tool)) remove.push(ForemanAgentToolSchema.parse(tool))
+          if (next.includes(tool) && !agentDefault.includes(tool)) add.push(GraphqlAgentToolSchema.parse(tool))
+          if (!next.includes(tool) && agentDefault.includes(tool)) remove.push(GraphqlAgentToolSchema.parse(tool))
         }
         onChange(defaults ? [...defaults] : undefined, add.length || remove.length ? { add, remove } : undefined)
       }} />
   </NodeRow>
-}
-
-export function AgentHarnessRows(props: Omit<Parameters<typeof EditableAgentHarnessRows>[0], 'value'> & { value: RecordedHarnessConfiguration }) {
-  if (props.value.harness === 'opencode') return null
-  return <EditableAgentHarnessRows {...props} value={props.value} />
 }

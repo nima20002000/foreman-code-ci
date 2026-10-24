@@ -9,5 +9,3 @@ export { resolveImmutableApprovalRoute, usesNativeSelfReview } from './approvalR
 export { validateReviewerBootstrap } from './reviewerBootstrap.js'
 export { assertWorktreeComputers } from './worktreeComputers.js'
 export { readPinnedAgentConfigurations } from './immutableRead.js'
-export type { CurrentWorkflowAuthoring } from './currentAuthoring.js'
-export type { WorkflowManagementService } from './management.js'

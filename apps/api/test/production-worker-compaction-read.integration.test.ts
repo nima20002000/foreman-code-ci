@@ -9,7 +9,7 @@ import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { WorkerConversationBindingSchema, type WorkerConversationReceipt,
   type WorkerConversationRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
 import { loadConfig } from '../src/config.js'
-import { createCheckpointStore } from '../src/composition/checkpoints.js'
+import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
 import { buildProductionApp } from '../src/production.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { agentChatKey, PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'

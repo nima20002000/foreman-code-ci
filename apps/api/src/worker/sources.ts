@@ -2,6 +2,3 @@ export { sourceBindingHash, sourceMaterializationDigest } from '../modules/sourc
 export { preparationChildrenClosed, releaseMaterializationClaimForCancellation } from '../modules/sources/materialization.js'
 export { anchored, identity, openChildDirectory, openPrivateRoot } from '../modules/sources/privateFilesystem.js'
 export { createWorkspaceRootWorkerHandler, qualifyApprovedRootAllowlist, verifyApprovedRootAllowlist } from '../modules/sources/rootAttestation.js'
-export { PrivateSourceMaterializer } from '../modules/sources/materialization.js'
-export { sourceMaterializationClaimName } from '../modules/sources/quotaClaims.js'
-export { createSourceManifest } from '../modules/sources/manifest.js'
