@@ -182,11 +182,11 @@ describe('schedule Last attempt feedback', () => {
     await view.user.click(screen.getByRole('button', { name: 'Attempt history' }))
     arrived = true
     await view.user.click(screen.getByRole('button', { name: 'Attempt history' }))
-    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '10:15' } })
+    fireEvent.change(screen.getByLabelText('Time on this device'), { target: { value: '10:15' } })
     const history = await screen.findByRole('region', { name: 'Schedule attempt history' })
     await view.user.click(within(history).getByRole('button', { name: 'Newest attempts' }))
     expect(await within(history).findByText('Missed')).toBeVisible()
-    expect(screen.getByLabelText('Time')).toHaveValue('10:15')
+    expect(screen.getByLabelText('Time on this device')).toHaveValue('10:15')
   })
 
   it('offers a direct workflow repair action for an unexecutable saved workflow', async () => {
@@ -218,14 +218,14 @@ describe('schedule Last attempt feedback', () => {
     const view = mount({ ...occurrence, status: 'missed', reason: 'outside_grace' })
     const section = await open(view.user)
     await within(section).findByText('Missed')
-    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '10:15' } })
+    fireEvent.change(screen.getByLabelText('Time on this device'), { target: { value: '10:15' } })
     const latestDue = '2099-08-31T09:00:00.000Z'
     view.advance({ ...occurrence, id: scheduleOccurrenceId(scope.workflowId, latestDue), dueAt: latestDue,
       status: 'rejected', reason: 'workflow_not_executable' })
     await act(async () => { vi.advanceTimersByTime(5_001) })
     expect(await within(section).findByText('Rejected')).toBeVisible()
     expect(section.querySelector('time')).toHaveAttribute('datetime', latestDue)
-    expect(screen.getByLabelText('Time')).toHaveValue('10:15')
+    expect(screen.getByLabelText('Time on this device')).toHaveValue('10:15')
   })
 
   it('hides cached history after a denied read and allows an explicit retry', async () => {

@@ -1,3 +1,4 @@
+import { RunDropdownStatusSchema } from '../runSnapshots.js'
 import { MemoryBoardSearchSchema } from '../memoryBoardViews.js'
 import { z } from 'zod'
 import { UrlSearchSelectionSchema } from '../index.js'
@@ -73,6 +74,7 @@ export const WorkspaceBoardSearchSchema = UrlSearchSelectionSchema.extend({
   ...BoardSurfaceSelectionFields,
   ...MemoryBoardSearchSchema.shape,
   ...WorkspaceBoardInspectionSchema.shape,
+  runStatus: RunDropdownStatusSchema.optional(),
   activityKind: RunActivityPublicKindSchema.optional(), activityAgentId: GraphIdSchema.optional(),
   runId: GraphIdSchema.optional(),
   workflowVersionId: GraphIdSchema.optional(),

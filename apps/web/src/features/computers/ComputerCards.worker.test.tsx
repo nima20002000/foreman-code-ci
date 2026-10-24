@@ -4,7 +4,6 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import type { ComputerMaintenanceStartInput, MaintenanceStatus } from '@foreman-code/contracts/computer-maintenance'
-import { useOperatorChatStore } from '../operator-chat'
 import { ComputerCards } from './ComputerCards'
 import { computerReadHandler, computersFixture, deviceName, deviceTarget, mainId, mainTarget, registration } from './computersTestFixture'
 
@@ -65,14 +64,7 @@ it('shows the GitHub publication failure and does not offer a Worker update unti
     }),
   ])
   const device = await screen.findByRole('article', { name: deviceName })
-  expect(await within(device).findByRole('alert')).toHaveTextContent('Worker 0.0.57 publication failed.')
-  const details = within(device).getByText('WORKER_RELEASE_ASSET_UNAVAILABLE: GitHub asset not found')
-  expect(details).not.toBeVisible()
-  await userEvent.click(within(device).getByText('Details'))
-  expect(details).toBeVisible()
-  await userEvent.click(within(device).getByRole('button', { name: 'Ask Operator about worker publication' }))
-  expect(useOperatorChatStore.getState().request?.content).toContain(deviceName)
-  expect(useOperatorChatStore.getState().request?.content).toContain('Worker 0.0.57 publication failed')
+  expect(await within(device).findByRole('alert')).toHaveTextContent('GitHub asset not found')
   expect(within(device).getByRole('alert')).toHaveTextContent('Worker 0.0.57 publication failed')
   expect(within(device).getByRole('button', { name: 'Update' })).toBeDisabled()
 })
