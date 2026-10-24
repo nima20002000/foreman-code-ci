@@ -52,8 +52,12 @@ async function fixture() {
     return browser
   }
   const first = await start()
-  const seed = async (subject: AgentSubject) => first.lifecycle.prepare({ subject, browser: { enabled: true, profileId: 'profile' },
-    computerId: deviceId, commandId: randomUUID() })
+  const seed = async (subject: AgentSubject) => {
+    // Retain the paired host's existing session without launching a new browser/profile.
+    const prepared = await prepare({ subject })
+    await first.locations.save(prepared.session, installationId)
+    return prepared
+  }
   return { first, start, seed, deviceId, prepare, release, archive: () => { active = false } }
 }
 
@@ -63,6 +67,7 @@ it.each(['Run', 'idle', 'archived'] as const)('recovers a paired Worker chat bro
   if (prepared.kind !== 'ready') throw new Error('Expected the chat browser')
   await f.first.stop()
   const restarted = await f.start()
+  const prepareReplica = vi.spyOn(restarted.profiles.service, 'prepareReplica')
   if (reason === 'Run') await restarted.chat.yieldToRun('profile', f.deviceId)
   else {
     await restarted.chat.sweep()
@@ -71,6 +76,7 @@ it.each(['Run', 'idle', 'archived'] as const)('recovers a paired Worker chat bro
     else f.archive()
     await restarted.chat.sweep()
   }
+  expect(prepareReplica).not.toHaveBeenCalled()
   expect(f.release).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sessionId: prepared.session.id, subject: chatSubject }))
   await restarted.chat.sweep()
   expect(f.release).toHaveBeenCalledTimes(1)
@@ -82,6 +88,7 @@ it('blocks chat beside a retained paired Worker Run after Main restarts and allo
   if (prepared.kind !== 'ready') throw new Error('Expected the Run browser')
   await f.first.stop()
   const restarted = await f.start()
+  const prepareReplica = vi.spyOn(restarted.profiles.service, 'prepareReplica')
   vi.spyOn(credentials, 'readConversationCredential').mockResolvedValue({ subject: chatSubject } as
     NonNullable<Awaited<ReturnType<typeof credentials.readConversationCredential>>>)
   const principal = { id: 'chat-principal', audience: 'worker' } as ManagementPrincipal
@@ -89,6 +96,10 @@ it('blocks chat beside a retained paired Worker Run after Main restarts and allo
   expect(f.prepare).toHaveBeenCalledTimes(1)
   await restarted.lifecycle.release({ sessionId: prepared.session.id, subject: runSubject,
     commandId: 'close-run', reason: 'terminal' })
+  expect(prepareReplica).not.toHaveBeenCalled()
+  // A fresh chat launch uses the separate profile preparation port.
+  prepareReplica.mockResolvedValue()
   await expect(restarted.chat.sessionFor(principal)).resolves.toEqual(expect.any(String))
   expect(f.prepare).toHaveBeenCalledTimes(2)
+  expect(prepareReplica).toHaveBeenCalledWith('profile', f.deviceId, expect.any(Object))
 })

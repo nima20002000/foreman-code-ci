@@ -76,7 +76,8 @@ async function fixture() {
     return browser
   }
   const original = await start()
-  await original.lifecycle.prepare({ subject, browser: { enabled: true, profileId: session.profileId }, computerId, commandId: 'chat-open' })
+  // The Worker already owns this session; recovery must not provision its profile again.
+  await original.locations.save(session, installationId)
   await original.stop()
   return { session, release, restarted: await start(), start }
 }
@@ -85,7 +86,9 @@ it('closes a retained Worker chat after API restart and ten idle minutes without
   let now = Date.now()
   vi.spyOn(Date, 'now').mockImplementation(() => now)
   const f = await fixture()
+  const prepareReplica = vi.spyOn(f.restarted.profiles.service, 'prepareReplica')
   await f.restarted.chat.sweep()
+  expect(prepareReplica).not.toHaveBeenCalled()
   expect(f.release).not.toHaveBeenCalled()
   now += CHAT_BROWSER_IDLE_MS
   await f.restarted.chat.sweep()
@@ -100,7 +103,9 @@ it('closes a retained Worker chat after API restart and ten idle minutes without
 
 it('yields a retained Worker chat to a Run on the same profile after API restart', async () => {
   const f = await fixture()
+  const prepareReplica = vi.spyOn(f.restarted.profiles.service, 'prepareReplica')
   await f.restarted.chat.yieldToRun(f.session.profileId, computerId)
+  expect(prepareReplica).not.toHaveBeenCalled()
   expect(f.release).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sessionId: f.session.id, subject: f.session.subject }))
 })
 

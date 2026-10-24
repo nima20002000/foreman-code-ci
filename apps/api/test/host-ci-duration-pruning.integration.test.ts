@@ -13,7 +13,7 @@ it('commits collection and its duration sample before waiting for expired histor
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
       suite: 'integration', commandId: 'prune-after-collection',
     }))
-    await f.ci.dispatch()
+    await f.waitFor(f.operator, started.ticketId, output => output.run.state === 'running')
     await f.pool.query(`insert into ci_file_durations(repository,file,duration_ms,updated_at)
       values('octo/site',$1,1000,now()),('octo/site',$2,1000,now() - interval '31 days')`, [file, expired])
 

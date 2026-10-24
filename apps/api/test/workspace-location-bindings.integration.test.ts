@@ -191,6 +191,7 @@ describe.skipIf(!postgresEnabled)('workspace location preserves host bindings', 
         .then(value => JobAuthoringChoicesRecordSchema.parse(value))
       const before = await choices()
       expect(before.choices).toHaveLength(2)
+      expect(new Set(before.choices.map(choice => choice.placement.hostRef.kind))).toEqual(new Set(['main', 'device']))
       expect(before.choices.every(choice => choice.availability === 'ready')).toBe(true)
       const jobsBefore = await jobChoices()
       expect(jobsBefore.targets).toHaveLength(2)
