@@ -1,5 +1,5 @@
 import { OperatorRuntimeOwner } from '../infrastructure/operatorRuntimeOwner.js'
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import { loadProductEnvFile } from '@foreman-code/contracts/product-environment-node'
 
 import type { ManagementGrant } from '@foreman-code/contracts/management'

@@ -1,7 +1,7 @@
 import { logIgnoredError } from '../diagnostics/index.js'
 import { beginRuntimeTiming, timeRuntimeOperation, runtimeTimingPoint } from '../../infrastructure/runtimeTiming.js'
 import type { ResponseAvailabilityInspector } from '../harnesses/responseAvailability.js'
-import { supportsExpectedTurnSteer } from '../harnesses/index.js'
+import { supportsExpectedTurnSteer } from '../harnesses/capabilities.js'
 import { randomUUID } from 'node:crypto'
 import { nativeEventBatches } from './nativeEventBatches.js'
 import { reviewPreflightIdentity } from './reviewPolicy.js'

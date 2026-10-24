@@ -12,7 +12,7 @@ import { isRestartCancellation } from './executionPredicates.js'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import { runtimeTimingPoint, timeRuntimeOperation, withRuntimeTimingContext } from '../../infrastructure/runtimeTiming.js'
 import { inspectNativeResponse } from '../harnesses/responseAvailability.js'
-import { supportsExpectedTurnSteer } from '../harnesses/index.js'
+import { supportsExpectedTurnSteer } from '../harnesses/capabilities.js'
 import type { InteractionActivityEvidence } from './activityProjection.js'
 import type { ReviewNativeCapture, ReviewNativeCapturePort, ReviewOriginalNativeSource } from './reviewNativeCapture.js'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -73,7 +73,7 @@ import type { SessionWriteLease } from './sessionWriter.js'
 import type { WorkflowNativeLease } from '../runs/workflowNativeGraph.js'
 import { normalizeNativeProducerEvent } from '../run-graph/nativeProducerNormalization.js'
 import type { PostgresApprovalBudgetRepository } from './budget.js'
-import type { Wave25InteractionRepository as PostgresInteractionRepository } from './current/repository.js'
+import type { CurrentInteractionRepository as PostgresInteractionRepository } from './current/repository.js'
 import type {
   AttachedInteractionSession,
   NativeManagerResolutionContext,

@@ -1,5 +1,5 @@
 import { logIgnoredError, settleObserved } from '../diagnostics/index.js'
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import { assertClaudeFullAccess } from './nativeWorkflowConfiguration.js'
 import { isDeepStrictEqual } from 'node:util'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'

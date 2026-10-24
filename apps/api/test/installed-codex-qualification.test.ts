@@ -8,7 +8,7 @@ import { DEFAULT_HARNESS_DEFAULTS, withAdvancedDefaults } from '@foreman-code/co
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { ExecutionFactsResultSchema } from '@foreman-code/contracts/execution-authority'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import { loadOrCreateWorkerIdentity, persistWorkerPairing } from '@foreman-code/contracts/device-identity-node'
+import { loadOrCreateWorkerIdentity, persistWorkerPairing } from '@foreman-code/contracts-node/device-identity-node'
 import { createInstalledCodexQualificationReader } from '../src/modules/harnesses/installedCodexQualification.js'
 import type { InstalledCodexInspection } from '../src/modules/harnesses/installedCodexInspection.js'
 import { inspectInstalledCodex } from '../src/modules/harnesses/installedCodexInspection.js'

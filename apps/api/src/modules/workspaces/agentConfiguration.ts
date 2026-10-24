@@ -18,7 +18,7 @@ import { assertClaudeFullAccess } from '../harnesses/index.js'
 import { resolveAssignedSkills } from '../skills/catalog.js'
 import { composeInstructionText, instructionsTooLarge } from '../skills/instructions.js'
 import { sha256Hex } from '../../shared/hash.js'
-import { retiredHarnessError } from '../harnesses/index.js'
+import { retiredHarnessError } from '../harnesses/retiredHarness.js'
 
 export function configurationInput(
   workspaceId: string,

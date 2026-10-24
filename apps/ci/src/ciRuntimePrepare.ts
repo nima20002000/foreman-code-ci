@@ -10,11 +10,11 @@ import { JobVerificationQuotaPoolSchema } from '@foreman-code/contracts/job-veri
 import { z } from 'zod'
 import { pruneCiRuntimeCache, readCiRuntimeCache, writeCiRuntimeCache } from './ciRuntimeCache.js'
 import { MAX_VERIFICATION_CONFIGURATION_BYTES, readProtectedRuntimeConfiguration, readProtectedRuntimeFile }
-  from '@foreman-code/contracts/installed-runtime-node'
+  from '@foreman-code/contracts-node/installed-runtime-node'
 import { closeCiRuntimeCommand, runCiRuntimeCommand } from './ciRuntimeCommands.js'
 import { pruneCiImages } from './ciRuntimeImages.js'
 import { ciPreparationBuildArgs, ciPreparationLimits, ciPreparationResourceArgs } from './ciPreparationLimits.js'
-import { sha256Hex } from '@foreman-code/contracts/server-kit'
+import { sha256Hex } from '@foreman-code/contracts-node/server-kit'
 
 const hash = (bytes: Uint8Array | string) => sha256Hex(bytes)
 const COMMIT = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u

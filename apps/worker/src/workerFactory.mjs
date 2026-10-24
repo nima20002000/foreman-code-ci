@@ -8,7 +8,7 @@ import { createInstalledWorkerDomains, createWorkerConnection } from '@foreman-c
 import { codexQualificationSuite, qualificationRevisionWithIdentity, registerWorkerMcpInstallation } from '@foreman-code/api/worker/harnesses';
 import { loadApprovedRoots } from './approvedRoots.mjs';
 import { mkdir, readFile, realpath } from 'node:fs/promises';
-import { loadOrCreateWorkerIdentity, loadWorkerPairing } from '../../../packages/contracts/src/deviceIdentityNode.ts';
+import { loadOrCreateWorkerIdentity, loadWorkerPairing } from '../../../packages/contracts-node/src/deviceIdentityNode.ts';
 import { hostFacts, requirePrivateDirectory, WorkerError } from './diagnostics.mjs';
 import { validateManifest, requireReleaseState } from './installation.mjs';
 import { startWorker, acquireWorkerLock } from './runtime.mjs';

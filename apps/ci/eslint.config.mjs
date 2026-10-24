@@ -25,7 +25,7 @@ export default tseslint.config(
     rules: {
       'no-restricted-syntax': ['error',
         { selector: "CallExpression[callee.property.name='digest'] > MemberExpression.callee > CallExpression.object[callee.property.name='update'] > MemberExpression.callee > CallExpression.object[callee.name='createHash'][arguments.0.value='sha256']",
-          message: "Use sha256Hex/sha256Digest from '@foreman-code/contracts/server-kit'." },
+          message: "Use sha256Hex/sha256Digest from '@foreman-code/contracts-node/server-kit'." },
       ],
     },
   },

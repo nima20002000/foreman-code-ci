@@ -1,10 +1,10 @@
 import { request as httpsRequest } from 'node:https';
-import { deviceTlsOptions } from '../../../packages/contracts/src/deviceTlsNode.ts';
-import { verifiedWorkerEnrollmentCode } from '../../../packages/contracts/src/deviceSetupNode.ts';
+import { deviceTlsOptions } from '../../../packages/contracts-node/src/deviceTlsNode.ts';
+import { verifiedWorkerEnrollmentCode } from '../../../packages/contracts-node/src/deviceSetupNode.ts';
 import { randomBytes, sign } from 'node:crypto';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { WorkerEnrollmentInputSchema, DevicePairingResultSchema } from '../../../packages/contracts/src/deviceIdentity.ts';
-import { pairingProof, verifyMainEnrollmentProof, persistWorkerPairing, loadWorkerPairing } from '../../../packages/contracts/src/deviceIdentityNode.ts';
+import { pairingProof, verifyMainEnrollmentProof, persistWorkerPairing, loadWorkerPairing } from '../../../packages/contracts-node/src/deviceIdentityNode.ts';
 import { requirePrivateDirectory, WorkerError } from './diagnostics.mjs';
 import { ensurePairedManagedSetup } from './managedSetup.mjs';
 import { acquireWorkerLock } from './runtime.mjs';

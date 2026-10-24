@@ -5,7 +5,7 @@ import { deliverableFailure, deliverableVerdict, type DeliverableContract } from
 import { assertGraphTransaction } from '../run-graph/connection.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { repeatTickIndex } from './repeatResolution.js'
-import { ciTicketIdsRequestedByExecution } from '../ci/index.js'
+import { ciTicketIdsRequestedByExecution } from '../ci/reads.js'
 
 interface Queryable {
   readonly transaction?: true
