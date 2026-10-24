@@ -1,18 +1,20 @@
-import { mkdir, readFile, readdir, lstat } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, readdir, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { browserInputHash } from '../browser-profiles/identity.js'
 import type { BrowserRuntimeJournal, BrowserRuntimeReceipt, BrowserRuntimeSessionRecord } from './types.js'
-import { writeDurableFile } from '../../shared/durableFile.js'
 
 export async function atomicBrowserPrivateJson(directory: string, name: string, value: unknown): Promise<void> {
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const info = await lstat(directory)
   if (!info.isDirectory() || info.isSymbolicLink() || (info.mode & 0o077) !== 0
     || process.getuid && info.uid !== process.getuid()) throw new Error('Browser journal directory is not private')
-  await writeDurableFile(join(directory, name), JSON.stringify(value), {
-    createParent: false, temporaryPath: join(directory, `.${randomUUID()}.tmp`),
-  })
+  const temporary = join(directory, `.${randomUUID()}.tmp`)
+  const handle = await open(temporary, 'wx', 0o600)
+  try { await handle.writeFile(JSON.stringify(value)); await handle.sync() } finally { await handle.close() }
+  await rename(temporary, join(directory, name))
+  const parent = await open(directory, 'r')
+  try { await parent.sync() } finally { await parent.close() }
 }
 
 async function readPrivateJson<T>(path: string): Promise<T | undefined> {

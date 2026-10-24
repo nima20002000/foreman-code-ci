@@ -89,6 +89,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const code = await run(['corepack', 'pnpm', '--filter', `@foreman-code/${name}`, 'build'])
     if (code) process.exit(code)
   }
+  if (suite === 'unit' && files.some(file => file.startsWith('apps/worker/'))) {
+    const code = await run(['corepack', 'pnpm', '--filter', '@foreman-code/api', 'build:worker-runtime'])
+    if (code) process.exit(code)
+  }
   // With TEST_RESULTS_OUTPUT, each Vitest and Node test command also writes a JSON report; together they become the results.
   const output = suite === 'unit' && process.env.TEST_RESULTS_OUTPUT ? resolve(process.env.TEST_RESULTS_OUTPUT) : null
   const reports = []

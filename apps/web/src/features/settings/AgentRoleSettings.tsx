@@ -1,6 +1,6 @@
 import {
   agentTemplateForRole, DEFAULT_HARNESS_DEFAULTS, memoryBoardTools, nativeToolsSummary, newAgentGraphqlTools,
-  operatorHarnessDefaults, type AgentDefaults, type RecordedHarnessConfiguration,
+  operatorHarnessDefaults, type AgentDefaults, type HarnessConfiguration,
 } from '@foreman-code/contracts'
 import type { SettingsAgentRole } from '@foreman-code/contracts/management'
 import { Button, ErrorState, LoadingState, Select, SettingRow, SettingsSection, Switch } from '../../shared/ui/nocturne'
@@ -75,7 +75,7 @@ export function AgentRoleSettings({ role, onEditPrompt }: { role: SettingsAgentR
           onChange={event => changeHarness(event.target.value as 'codex' | 'claude')} />
       </SettingRow>
       <HarnessBasicFields value={template.harness} issues={form.issues}
-        onChange={(harness: RecordedHarnessConfiguration) => change({ ...template, harness })} />
+        onChange={(harness: HarnessConfiguration) => change({ ...template, harness })} />
     </SettingsSection>
     <SettingsSection title="Tools" description={`Native tools: ${nativeToolsSummary(template.nativeTools)}.`}>
       {role === 'operator' ? null : <SettingRow title="Memory board" description="What this role can do with workspace memory.">

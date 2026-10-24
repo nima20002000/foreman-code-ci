@@ -7,8 +7,8 @@ import { VerifiedTransferReceiptSchema } from '@foreman-code/contracts/byte-tran
 import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { cancelBackendQuery } from '../../../infrastructure/pool.js'
 import { componentLogger } from '../../diagnostics/index.js'
-import type { DistributedPublicationLink } from '../../files/index.js'
-import type { FileQuery } from '../../files/index.js'
+import type { DistributedPublicationLink } from '../../files/distributed/publicationLedger.js'
+import type { FileQuery } from '../../files/repository.js'
 import { fileScopeIdentity } from '../../files/requests.js'
 import { DomainError } from '../../errors.js'
 import { NativeArtifactOutputSchema, LocalNativeArtifactOutputSchema, WorkflowNativeArtifactOutputSchema,
@@ -144,7 +144,7 @@ export class PostgresNativeArtifactOutputRepository implements NativeArtifactOut
       } catch (error) {
         if (rollbackFailure) {
           throw new AggregateError([error, rollbackFailure], 'Artifact binding and rollback both failed.', {
-            cause: rollbackFailure,
+            cause: error,
           })
         }
         throw error

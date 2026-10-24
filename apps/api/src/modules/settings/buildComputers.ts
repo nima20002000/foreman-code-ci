@@ -16,7 +16,7 @@ import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
 import { DomainError } from '../errors.js'
-import type { JobSql } from '../jobs/index.js'
+import type { JobSql } from '../jobs/repository.js'
 import { buildComputerKey } from '../ci/values.js'
 
 export { buildComputerKey, buildComputerTarget } from '../ci/values.js'

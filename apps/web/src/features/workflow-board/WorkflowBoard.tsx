@@ -64,6 +64,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const [panelHeaderSlot, setPanelHeaderSlot] = useState<HTMLDivElement | null>(null)
   const [panelFooterSlot, setPanelFooterSlot] = useState<HTMLDivElement | null>(null)
   const [runCaptionHost, setRunCaptionHost] = useState<HTMLDivElement | null>(null)
+  const [runActionHost, setRunActionHost] = useState<HTMLElement | null>(null)
   const [authoringActions, setAuthoringActions] = useState<WorkflowAuthoringActions>()
   const registerAuthoringActions = useCallback((actions?: WorkflowAuthoringActions) => setAuthoringActions(actions), [])
   const selection = useRef({ location: router.history.location, generation: 0 })
@@ -137,7 +138,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     openLocation: () => setLocationOpen(true), openRuns: () => setRunsOpen(true), activeRuns, liveRunId, authoringActive: current,
     navigationControls: current && side.view === 'graph' ? <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /> : undefined,
   }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam])
-  const hosts = useMemo(() => ({ sidePanelHost, runCaptionHost }), [sidePanelHost, runCaptionHost])
+  const hosts = useMemo(() => ({ sidePanelHost, runCaptionHost, runActionHost }), [sidePanelHost, runCaptionHost, runActionHost])
   const authoring = useMemo<WorkflowBoardAuthoring>(() => ({ registerAuthoringActions,
     // A shown Run moves agents exactly as the draft Board does (owner rule: one Board, the same rules).
     moveDraftNodes: authoringActions?.moveNodes,
@@ -146,7 +147,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   }), [registerAuthoringActions, authoringActions, collaborationSlots, current])
   const detailsValue = useMemo(() => detailsScope ? { ...value, run: detailsScope } : value, [value, detailsScope])
   const authoringEvent = (event: SyntheticEvent) => {
-    if (event.target instanceof Element && event.target.closest('.workflow-floating-panel')) return
+    if (event.target instanceof Element && event.target.closest('.workflow-floating-panel, .selected-run-controls')) return
     // React capture also covers descendants portalled outside the inert subtree.
     if (!currentRef.current) { event.preventDefault(); event.stopPropagation() }
   }
@@ -178,7 +179,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         <IconButton label="Group chat" onClick={() => side.selectPanel({ kind: 'group_chat' })}><Icon name="chat" size={16} /></IconButton>
         {runControlsScope ?
           <SelectedRunControls key={boardSelection.identity.runId} visible={!side.memoryOpen}
-            scope={runControlsScope} /> : null}
+            scope={runControlsScope} runActionRef={setRunActionHost} /> : null}
       </header> : null
   return <BoardSelectionContext.Provider value={value}><BoardHostsContext.Provider value={hosts}><BoardAuthoringContext.Provider value={authoring}>
     <PanelHeaderSlotContext.Provider value={panelHeaderSlot}><PanelFooterSlotContext.Provider value={panelFooterSlot}>

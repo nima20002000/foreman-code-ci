@@ -11,6 +11,7 @@ import { writeSourceClaim } from './quotaClaims.js'
 import { SourceError } from './manifest.js'
 import type { GitProcessOptions, GitProcessResult } from './gitProcess.js'
 import { awaitFetchLocks, removeAbandonedFetchArtifacts } from './gitFetchRecovery.js'
+import { componentLogger } from '../diagnostics/index.js'
 
 type GitRunner = (args: string[], options: GitProcessOptions) => Promise<GitProcessResult>
 
@@ -245,6 +246,21 @@ interface CacheTransfer {
   createdTarget: boolean; options: GitProcessOptions; run: GitRunner; lockFd?: number
 }
 
+/** Keep disabled auto-GC from accumulating one pack per fetch. The repository lock and transfer reservation cover
+ * repacking too; a large old cache gets at most five seconds of maintenance on a request. */
+async function compactPacks(common: string, options: GitProcessOptions, run: GitRunner): Promise<void> {
+  const packs = (await readdir(resolve(common, 'objects', 'pack'))).filter(name => name.endsWith('.pack'))
+  if (packs.length < 64) return
+  const result = await run(['-c', 'pack.threads=1', 'repack', '-d', '-l', '--geometric=2'], {
+    ...options, timeoutMs: Math.min(options.timeoutMs ?? 5000, 5000),
+  })
+  options.signal.throwIfAborted()
+  if (result.code !== 0) {
+    componentLogger('byte-transfer').warn({ common, packs: packs.length, code: result.code, stderr: result.stderr.trim().slice(0, 2048) },
+      'Git cache repack did not finish; continuing with fetch and retrying maintenance on the next fetch.')
+  }
+}
+
 async function runReservedTransfer(input: CacheTransfer, lockStorage: StorageLock): Promise<GitProcessResult> {
   const { root, cacheRoot, args, index, command, target, common, createdTarget, options, run, lockFd } = input
   if (command === 'fetch') await awaitFetchLocks(common, options.signal)
@@ -258,6 +274,9 @@ async function runReservedTransfer(input: CacheTransfer, lockStorage: StorageLoc
   let result: GitProcessResult | undefined
   let fetchHead = false
   try {
+    const execution = { ...options, maximumFileBytes: SOURCE_GIT_CACHE_LIMITS.maximumFileBytes,
+      transferLockFd: reservation.guard.fd, ...(lockFd !== undefined ? { lockFd } : {}) }
+    if (command === 'fetch' && inside(cacheRoot, common)) await compactPacks(common, execution, run)
     const fetchDepth: string[] = []
     if (command === 'fetch' && inside(cacheRoot, common)) {
       const shallow = await run(['rev-parse', '--is-shallow-repository'], options)
@@ -269,10 +288,7 @@ async function runReservedTransfer(input: CacheTransfer, lockStorage: StorageLoc
         fetchHead = directory.stdout.trim() === common
       }
     }
-    result = await run(boundedArgs(args, index, fetchDepth), { ...options,
-      maximumFileBytes: SOURCE_GIT_CACHE_LIMITS.maximumFileBytes, transferLockFd: reservation.guard.fd,
-      ...(lockFd !== undefined ? { lockFd } : {}),
-    })
+    result = await run(boundedArgs(args, index, fetchDepth), execution)
     if (command === 'clone' && createdTarget && result.code === 0) completedStaging = target
     return result
   } finally {

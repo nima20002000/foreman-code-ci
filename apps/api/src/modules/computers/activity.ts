@@ -18,7 +18,7 @@ import { computerNameKey, readComputerNames, renameComputer } from './names.js'
 import { cloudCiId } from '../ci/values.js'
 import { countRunningCloudCi, readRunningHostCiJobs } from '../ci/index.js'
 import { logIgnoredError } from '../diagnostics/index.js'
-import type { CircleCreditsReader, CircleSchedulingReading } from '../ci/index.js'
+import type { CircleCreditsReader, CircleSchedulingReading } from '../ci/types.js'
 
 const jobRow = z.object({ target: DeviceProvisioningTargetSchema, activity: ComputerJobActivitySchema })
 const agentRow = z.object({ target: DeviceProvisioningTargetSchema, activity: ComputerAgentActivitySchema })
