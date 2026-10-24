@@ -149,8 +149,6 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const boardSnapshot = !displayedRun.isError && displayedRun.data?.snapshot
   const boardVersionId = boardSnapshot && boardSnapshot.kind === 'available' && boardSnapshot.runId === boardRunId
     ? boardSnapshot.workflowVersionId : undefined
-  const boardRunStopping = !!boardSnapshot && boardSnapshot.kind === 'available'
-    && (boardSnapshot.state.run.stopRequested || boardSnapshot.state.run.cleanupPending)
   const previousBoardRunId = useRef(boardRunId)
   useEffect(() => {
     const previous = previousBoardRunId.current
@@ -218,8 +216,8 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     boardRunLive, boardRunControls, paintedRunId,
     // Starting from an older Run's view returns to the Board, where the new Run shows.
     showRunOnBoard: (runId: string) => { setStartedRunId(runId); if (!current) void navigationSelection.selectRun(null) },
-    navigationControls: current ? <>{directionNotice}<BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} stopping={boardRunStopping} /></> : undefined,
-  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, inspectRun, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, boardRunLive, boardRunControls, paintedRunId, boardRunStopping, directionNotice, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam])
+    navigationControls: current ? <>{directionNotice}<BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /></> : undefined,
+  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, inspectRun, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, boardRunLive, boardRunControls, paintedRunId, directionNotice, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam])
   const hosts = useMemo(() => ({ sidePanelHost, runCaptionHost, runActionHost,
     authoringToolbarHost: current ? authoringToolbarHost : null, authoringPanelHost: current ? authoringPanelHost : null }),
   [sidePanelHost, runCaptionHost, runActionHost, current, authoringToolbarHost, authoringPanelHost])
@@ -251,7 +249,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         {side.view === 'graph' ? <div className="board-run-caption" ref={setRunCaptionHost} /> : null}
         {directionNotice}
         <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection}
-          stopping={boardRunStopping} runsLabel={current && side.view === 'overview' ? 'Choose run' : undefined} />
+          runsLabel={current && side.view === 'overview' ? 'Choose run' : undefined} />
         {(current || detailsScope && !runUnreadable) ? <IconButton label="Activities" onClick={() => setRunsOpen(true)}><Icon name="history" size={16} /></IconButton> : null}
         {runControlsScope ?
           <SelectedRunControls key={boardSelection.identity.runId} visible={!side.memoryOpen}
