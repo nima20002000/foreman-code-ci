@@ -38,7 +38,9 @@ function PopoverSurface({ onClose, findAnchor, children }: { onClose(): void; fi
   // Not a top-layer popover: Activities stacks with the other Board containers, newest or focused on top.
   const zIndex = useFloatingZ(STACK_ID)
   useFloatingSurface(anchorEl !== null, anchor, surface, 420, 'end', 'block', false)
-  useOutsidePress(true, (target) => !!surface.current?.contains(target) || !!find.current()?.contains(target), () => close.current())
+  useOutsidePress(true, (target) => !!surface.current?.contains(target) || !!find.current()?.contains(target)
+    // Changing the Board view keeps this inspection window open.
+    || target instanceof Element && !!target.closest('.workflow-collaboration-toolbar'), () => close.current())
   useEffect(() => {
     const onButton = (target: EventTarget | null) => target instanceof Node && !!find.current()?.contains(target)
     const escape = (event: KeyboardEvent) => {
