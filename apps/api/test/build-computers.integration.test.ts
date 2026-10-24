@@ -22,7 +22,7 @@ import { buildComputerFixture, buildQueueConfigurationFixture } from './helpers/
 import { JobAdmissionResultSchema } from '@foreman-code/contracts/job-admission'
 import { BuildComputerBatchResultSchema, BuildComputerStatusSchema } from '@foreman-code/contracts/build-computers'
 import { JobDefinitionSchema, JobExecutionSchema, type JobDefinition, type ResolvedJobDefinitionSpec } from '@foreman-code/contracts/jobs'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 
 // Real settings/command/admission SQL and authenticated transports; runtime/source I/O is a bounded fixture.
 describe.skipIf(!postgresEnabled)('automatic build computer admission and settings parity', () => {
@@ -225,29 +225,28 @@ describe.skipIf(!postgresEnabled)('automatic build computer admission and settin
     const original = await Promise.all(f.computers.map((_computer, index) => f.enroll(index, true, 100 - index * 50)))
     const sql = await database.pool.connect()
     let saving: ReturnType<BuildComputerSettings['updateBatch']> | undefined
+    const definition = await f.save()
     try {
-      await beginTransaction(sql)
-      const first = await f.settings.preference(sql, f.computers[0]!.target)
-      expect(first.buildPriority).toBe(100)
-      saving = f.settings.updateBatch(writer.principal, 'http', { commandId: randomUUID(),
-        updates: original.map((status, index) => ({ target: status.preference.target,
-          expectedRevision: status.preference.revision, buildEnabled: true, buildPriority: index * 50 })),
+      await withTransaction({ client: sql }, async transaction => {
+        const first = await f.settings.preference(transaction, f.computers[0]!.target)
+        expect(first.buildPriority).toBe(100)
+        saving = f.settings.updateBatch(writer.principal, 'http', { commandId: randomUUID(),
+          updates: original.map((status, index) => ({ target: status.preference.target,
+            expectedRevision: status.preference.revision, buildEnabled: true, buildPriority: index * 50 })),
+        })
+        for (const computer of f.computers.slice(1)) {
+          const preference = await f.settings.preference(transaction, computer.target)
+          expect(preference).toEqual(original[f.computers.indexOf(computer)]!.preference)
+        }
+        const identity = { executionId: randomUUID(), attemptId: randomUUID(), operationId: randomUUID() }
+        const claim = await f.placement.claim(transaction, writer.principal, definition, identity)
+        expect(claim.spec?.target).toEqual(f.computers[0]!.candidate.spec.target)
       })
-      for (const computer of f.computers.slice(1)) {
-        const preference = await f.settings.preference(sql, computer.target)
-        expect(preference).toEqual(original[f.computers.indexOf(computer)]!.preference)
-      }
-      const definition = await f.save()
-      const identity = { executionId: randomUUID(), attemptId: randomUUID(), operationId: randomUUID() }
-      const claim = await f.placement.claim(sql, writer.principal, definition, identity)
-      expect(claim.spec?.target).toEqual(f.computers[0]!.candidate.spec.target)
-      await commitTransaction(sql)
       await saving
       const after = await f.jobs.start(writer.principal, 'http', f.workspaceId,
         { commandId: randomUUID(), definitionId: definition.id, expectedRevision: 1 })
       expect(after.acceptedSpec.target).toEqual(f.computers[2]!.candidate.spec.target)
     } finally {
-      await rollbackTransaction(sql)
       sql.release()
       await saving
     }
@@ -452,11 +451,8 @@ describe.skipIf(!postgresEnabled)('automatic build computer admission and settin
       originalOperation = row.operation_id
       const sql = await database.pool.connect()
       try {
-        await beginTransaction(sql)
-        await new PostgresSourceReservations(async () => sourceStorageCapacityFixture()).reserve(sql,
-          { ...f.computers[0]!.candidate.sourceReservation,
-            ownerKind: 'materialization', ownerId: originalOperation! })
-        await commitTransaction(sql)
+        await withTransaction({ client: sql }, transaction => new PostgresSourceReservations(async () => sourceStorageCapacityFixture()).reserve(transaction,
+          { ...f.computers[0]!.candidate.sourceReservation, ownerKind: 'materialization', ownerId: originalOperation! }))
       } finally { sql.release() }
       throw new DomainError('SOURCE_TRANSFER_PENDING', 'Transfer interrupted', 503)
     })
@@ -491,9 +487,7 @@ describe.skipIf(!postgresEnabled)('automatic build computer admission and settin
     const identity = { executionId: randomUUID(), attemptId: randomUUID(), operationId: randomUUID() }
     const sql = await database.pool.connect()
     try {
-      await beginTransaction(sql)
-      await f.jobs.resolveDefinition(sql, writer.principal, definition, identity)
-      await commitTransaction(sql)
+      await withTransaction({ client: sql }, transaction => f.jobs.resolveDefinition(transaction, writer.principal, definition, identity))
     } finally { sql.release() }
     await f.enroll(1, true, 100)
     const prepared = await f.jobs.prepareDefinition(database.pool, writer.principal, definition, identity)

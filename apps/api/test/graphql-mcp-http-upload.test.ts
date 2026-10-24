@@ -1,13 +1,13 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { afterEach, expect, it, vi } from 'vitest'
-import { APP_MCP_TIMEOUTS } from '../src/modules/harnesses/appMcpLauncher.js'
+import { APP_MCP_TIMEOUTS, installManagedLauncher } from '../src/modules/harnesses/appMcpLauncher.js'
 import { deviceRequestTimeoutMs } from '../src/modules/devices/deviceRequestRetry.js'
 import { deviceForegroundWaitMs } from '../src/modules/devices/deviceRequestQueue.js'
 import { withWorkerMcpDeadline } from '../src/modules/devices/workerMcpDeadline.js'
@@ -29,7 +29,7 @@ async function uploadBridge(format: 'json' | 'sse' = 'json') {
   const directory = await mkdtemp(join(cache, 'mcp-http-upload-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const launcher = join(directory, 'launcher.mjs')
-  await copyFile(new URL('../../../scripts/graphql-mcp.mjs', import.meta.url), launcher)
+  await installManagedLauncher(new URL('../../../scripts/foreman-mcp.mjs', import.meta.url), launcher)
   let begin!: () => void
   let progress!: (bytes: number) => void
   let uploaded!: () => void
@@ -108,7 +108,7 @@ async function uploadBridge(format: 'json' | 'sse' = 'json') {
     process.send('ready')
   `)
   const child = spawn(process.execPath, ['--import', clock, launcher], {
-    env: { ...process.env, FOREMAN_CODE_MCP_TOKEN: token, GRAPHQL_MCP_TOKEN: token },
+    env: { ...process.env, GRAPHQL_MCP_TOKEN: token, },
     stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
   })
   cleanup.push(async () => {

@@ -4,7 +4,7 @@ import type { CiContext, MainCiContext } from './environment.js'
 import { claimCiDispatch } from './dispatch.js'
 import { CI_BUSY_TICKET } from './deadlines.js'
 import { CI_RETAINED_EXECUTORS } from './executorRecovery.js'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import type { HostCiComputer } from './serviceTypes.js'
 
 /** Cloud slots a gate leaves free for non-gate tickets, such as fix verifications, unless the product sets another count. */

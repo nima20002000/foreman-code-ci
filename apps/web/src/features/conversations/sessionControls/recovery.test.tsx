@@ -3,9 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { SessionControlStateSchema, unavailableSessionControls } from '@foreman-code/contracts'
 import { OperatorComposer } from '../../operator-chat'
 import { ConversationComposer } from '../ConversationComposer'
-import { SessionContext } from './SessionControls'
-import { useConversationDraftStore } from '../conversationDraftStore'
-import type { ComposerSessionControls } from './useSessionControls'
+import { SessionContext, useConversationDraftStore, type ComposerSessionControls } from '../../chat-core'
 
 function controller() {
   const capabilities = unavailableSessionControls('profile')

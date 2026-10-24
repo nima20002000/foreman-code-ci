@@ -6,7 +6,7 @@ import { JobInputEntrySchema, type JobInputEntry } from '@foreman-code/contracts
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { readLiveManagementPrincipal } from '../../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../../access/policy.js'
-import type { PostgresJobDispatch } from '../../jobs/dispatch.js'
+import type { PostgresJobDispatch } from '../../jobs/index.js'
 import { JobRepository, type JobSql } from '../../jobs/repository.js'
 import { PostgresFileReferenceAuthorization } from '../references/authorization.js'
 import { PostgresFileRepository } from '../postgres.js'

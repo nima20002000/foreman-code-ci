@@ -80,9 +80,11 @@ describe('installed API fixture packaging', () => {
       await mkdir(join(directory, 'apps', name), { recursive: true })
       await copyFile(join(repository, 'apps', name, 'package.json'), join(directory, 'apps', name, 'package.json'))
     }
-    await cp(join(repository, 'packages/contracts'), join(directory, 'packages/contracts'), {
-      recursive: true, filter: path => path !== join(repository, 'packages/contracts/node_modules'),
-    })
+    for (const name of ['contracts', 'contracts-node']) {
+      await cp(join(repository, 'packages', name), join(directory, 'packages', name), {
+        recursive: true, filter: path => path !== join(repository, 'packages', name, 'node_modules'),
+      })
+    }
     await cp(join(repository, 'apps/ci/dist'), join(directory, 'apps/ci/dist'), { recursive: true })
     const workspace = parse(await readFile(join(repository, 'pnpm-workspace.yaml'), 'utf8')) as {
       patchedDependencies: Record<string, string>

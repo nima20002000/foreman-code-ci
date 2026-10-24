@@ -10,14 +10,14 @@ export function AgentChatHeader({ name, state, detail, controls, onClose }: {
     tabIndex={detail ? 0 : undefined}>{state}</span>
   const slot = usePanelHeaderSlot()
   const footer = usePanelFooterSlot()
-  const stateChip = detail ? <Tooltip content={detail}>{chip}</Tooltip> : chip
   const status = <>
-    {stateChip}
+    {detail ? <Tooltip content={detail}>{chip}</Tooltip> : chip}
     {controls ? <div className="agent-chat-header-controls">{controls}</div> : null}
   </>
-  // Inside a floating panel the name and state join the header, with the context meter below the composer.
+  // Inside a floating panel the name joins the panel's header and the context meter its footer, below the composer;
+  // the state chip is left out there.
   if (slot) return <header className="agent-chat-header agent-chat-header--slotted"><div className="agent-chat-identity"><h2>{name}</h2></div>
-    {createPortal(<><strong className="agent-chat-header-name">{name}</strong>{stateChip}</>, slot)}
+    {createPortal(<strong className="agent-chat-header-name">{name}</strong>, slot)}
     {footer && controls ? createPortal(<div className="agent-chat-header-controls">{controls}</div>, footer) : null}</header>
   return <header className="agent-chat-header"><nav aria-label={`${name} chat controls`}>
     <div className="agent-chat-identity"><h2>{name}</h2></div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { containsAttachmentRefs, messageAttachmentRefs, sameAttachmentRefs } from './chatAttachmentAttempt'
+import { containsAttachmentRefs, messageAttachmentRefs, sameAttachmentRefs } from '../chat-core'
 
 const input = { fileId: 'input', revisionId: 'input-v1' }
 const other = { fileId: 'other', revisionId: 'other-v1' }

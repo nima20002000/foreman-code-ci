@@ -1,7 +1,7 @@
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { removeFixtureDirectory } from './helpers/testResources.js'
 import { randomUUID } from 'node:crypto'
-import { cp, mkdir, mkdtemp, realpath } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, realpath } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { performance } from 'node:perf_hooks'
@@ -20,9 +20,10 @@ import type { RegisteredSourceRootPort } from '../src/modules/sources/admissionP
 import { PrivateSourceSnapshotStore } from '../src/modules/sources/store.js'
 import { qualifiedGit } from '../src/modules/sources/capture.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { reportIntegrationPhase } from './helpers/integrationPhase.js'
 
 // Passive timings around the actual Git calls; no output consumer, process, pipe or deadline is substituted.
-const metrics = vi.hoisted(() => ({ active: false, gitMs: {} as Record<string, number>, gitCalls: {} as Record<string, number>, batchReadWaitMs: 0, hashMs: 0, sqlMs: 0, sqlCalls: 0, snapshotInsertMs: 0, snapshotInserts: 0 }))
+const metrics = vi.hoisted(() => ({ active: false, gitMs: {} as Record<string, number>, gitCalls: {} as Record<string, number>, batchReadWaitMs: 0, hashMs: 0, sqlMs: 0, sqlCalls: 0 }))
 vi.mock('node:crypto', async importOriginal => {
   const actual = await importOriginal<typeof import('node:crypto')>()
   return { ...actual, createHash: (...args: Parameters<typeof actual.createHash>) => {
@@ -96,8 +97,8 @@ it.skipIf(!postgresEnabled)('profiles complete repository approval through real 
     operator: { access, services: { commands, workspaces, locations, sources: service } as unknown as OperatorServices } })
   const query = pg.Client.prototype.query
   vi.spyOn(pg.Client.prototype, 'query').mockImplementation(function (this: pg.Client, ...args: unknown[]) {
-    const active = metrics.active, start = performance.now(), snapshot = typeof args[0] === 'string' && args[0].startsWith('insert into source_snapshots')
-    const finished = () => { if (active) { metrics.sqlCalls++; metrics.sqlMs += performance.now() - start; if (snapshot) { metrics.snapshotInserts++; metrics.snapshotInsertMs += performance.now() - start } } }
+    const active = metrics.active, start = performance.now()
+    const finished = () => { if (active) { metrics.sqlCalls++; metrics.sqlMs += performance.now() - start } }
     const last = args.at(-1)
     if (typeof last === 'function') args[args.length - 1] = (...values: unknown[]) => { finished(); Reflect.apply(last, undefined, values) }
     const result = Reflect.apply(query, this, args)
@@ -110,6 +111,9 @@ it.skipIf(!postgresEnabled)('profiles complete repository approval through real 
     metrics.active = true; const start = performance.now()
     const response = await app.inject({ method: 'POST', url: `/api/management/workspaces/${workspaceId}/sources/approve`, headers, payload: input })
     stages.totalMs = performance.now() - start; metrics.active = false
+    reportIntegrationPhase('source-approval', stages.totalMs)
+    reportIntegrationPhase('private-commit', stages.privateCommitMs)
+    reportIntegrationPhase('sql', metrics.sqlMs)
     process.stdout.write(`${JSON.stringify({ sourceApprovalProfile: { commit, paths: approvedPaths.length, lsTreeMs, ...stages, ...metrics, status: response.statusCode } })}\n`)
     expect(response.statusCode, response.body).toBe(200)
     const result = response.json()
@@ -119,7 +123,14 @@ it.skipIf(!postgresEnabled)('profiles complete repository approval through real 
     const retry = await client.callTool({ name: 'source_approve', arguments: input })
     expect(retry.isError, JSON.stringify(retry.content)).not.toBe(true); expect(decodeMcpToolResult(retry)).toEqual({ ...result, replayed: true })
     expect((await db.pool.query('select record from source_snapshots')).rows).toEqual([{ record: result.value }])
-    expect(metrics.snapshotInserts).toBe(1); expect(metrics.sqlCalls).toBeLessThan(75)
+    const reopened = new PrivateSourceSnapshotStore(storage)
+    expect(await reopened.manifest(result.value.manifest.snapshotId)).toEqual(result.value.manifest)
+    for (const entry of [result.value.manifest.entries[0], result.value.manifest.entries.at(-1)]) {
+      expect(await reopened.read(result.value.manifest, entry, AbortSignal.timeout(5000)))
+        .toEqual(await readFile(join(root, entry.path)))
+    }
+    expect((await db.pool.query('select count(*)::int as count from source_snapshots')).rows[0].count).toBe(1)
+    expect(metrics.sqlCalls).toBeLessThan(75)
     const denied = await access.issue({ name: 'Denied profile caller', audience: 'operator', grants: [{ actions: ['sources:read', 'source_roots:bind', 'workspace_locations:read'], scope: { workspaceIds: ['foreign'] } }], expiresAt: new Date(Date.now() + 600_000) })
     const deniedClient = new Client({ name: 'Denied source profile', version: '1' }); clients.push(deniedClient)
     await deniedClient.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => denied.token } }))

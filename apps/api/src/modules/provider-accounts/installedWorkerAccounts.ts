@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { ProviderAccountSchema, ProviderAccountIdSchema,
   type ProviderAccount, type ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
-import { HarnessConfigurationSchema } from '@foreman-code/contracts'
+import { RecordedHarnessConfigurationSchema } from '@foreman-code/contracts'
 import { HarnessOptionsResultSchema, type HarnessOptions } from '@foreman-code/contracts/management'
 import type { DeviceApplicationResult } from '@foreman-code/contracts/device-application'
 import type { InstalledWorkflowConfigurationLocation } from '../runs/index.js'
@@ -111,7 +111,7 @@ export function createInstalledWorkerAccounts(input: {
       if (binding.provider === 'claude') {
         const selected = selection.selectAccount(binding)
         const binary = selected.installation.launcher.resolvedLauncher
-        const configuration = HarnessConfigurationSchema.parse(selected.instance.configuration)
+        const configuration = RecordedHarnessConfigurationSchema.parse(selected.instance.configuration)
         if (!binary || configuration?.harness !== 'claude') throw new DomainError('PROVIDER_MODELS_UNAVAILABLE',
           'The qualified Claude model profile is unavailable.', 409)
         const recovery = await input.registry.reserveLaunch(`account-models:${randomUUID()}`)

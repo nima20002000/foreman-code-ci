@@ -1,4 +1,5 @@
-import { isReadOnlyHarnessConfiguration, COLLABORATION_AGENT_TOOLS, memoryBoardTools, HarnessConfigurationSchema } from '@foreman-code/contracts'
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
+import { isReadOnlyHarnessConfiguration, COLLABORATION_AGENT_TOOLS, memoryBoardTools, RecordedHarnessConfigurationSchema } from '@foreman-code/contracts'
 import { browserAgentTools } from '../collaboration/index.js'
 import { readConversationCredential } from '../access/conversationCredentials.js'
 import {
@@ -10,17 +11,17 @@ import {
   RespondToInteractionRequestSchema,
   RespondToInteractionResponseSchema,
   HarnessExecutionSchema,
-  GraphqlToolDefaultsSchema,
-  GraphqlToolOverrideSchema,
-  effectiveGraphqlTools,
-  type GraphqlAgentTool,
+  ForemanToolDefaultsSchema,
+  ForemanToolOverrideSchema,
+  effectiveForemanTools,
+  type ForemanAgentTool,
   type AgentSubject,
   type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 import { AcceptedWorkflowRunCurrentSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { WORKER_NATIVE_OUTPUT_TOOL_NAMES, WorkerNativeOutputOperationSchema } from '@foreman-code/contracts/worker-native-output'
 import { resolveImmutableApprovalRoute } from '../workflows/index.js'
-import { assertWave25WorkerBinding } from './current/credentialAuthority.js'
+import { assertCurrentWorkerBinding } from './current/credentialAuthority.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { AgentRunStatus } from '@foreman-code/contracts'
 import { AgentRunStatusService } from '../runs/agentRunStatus.js'
@@ -61,7 +62,7 @@ export function decodeInteractionCursor(cursor: string | undefined): string | un
   }
 }
 
-export interface WorkerToolAccess { role: WorkflowAgentProductRole; tools: GraphqlAgentTool[]; subject?: AgentSubject }
+export interface WorkerToolAccess { role: WorkflowAgentProductRole; tools: ForemanAgentTool[]; subject?: AgentSubject }
 
 export interface AppInteractionService {
   context(principal: ManagementPrincipal): Promise<unknown>
@@ -149,11 +150,11 @@ export class PostgresAppInteractionService implements AppInteractionService {
     // The Run pins the exact configuration version and workflow version; both are immutable for this credential.
     const result = await this.pool.query<{ role: string | null; defaults: unknown; override: unknown;
       harness: unknown; artifact_outputs: unknown; purpose: string; local_outputs: boolean; interval: unknown; browser: { enabled?: boolean } | null }>(
-      `select c.record->>'productRole' as role, c.record->'graphqlTools' as defaults,
+      `select c.record->>'productRole' as role, c.record->'${INSTALLATION_NAMES.fields.agentTools}' as defaults,
          c.record->'harness' as harness,b.purpose,
          ((p.run_id is null and r.record#>>'{executionLocation,runnerId}'='runner-local')
            or p.record#>>'{hostRef,kind}'='main') as local_outputs,
-         n->'graphqlTools' as override,n->'artifactOutputs' as artifact_outputs,n->'interval' as interval,n->'browser' as browser
+         n->'${INSTALLATION_NAMES.fields.agentTools}' as override,n->'artifactOutputs' as artifact_outputs,n->'interval' as interval,n->'browser' as browser
        from worker_credential_bindings b
        join runs r on r.id=b.run_id
        join agent_configuration_versions c on c.id=(r.record->'agentConfigurationVersionIds'->>b.agent_id)
@@ -174,14 +175,14 @@ export class PostgresAppInteractionService implements AppInteractionService {
       throw new DomainError('MCP_TOOL_DISCOVERY_FAILED', 'The pinned Agent role is unavailable.', 503)
     }
     const role = row.role
-    const defaults = row.defaults == null ? undefined : GraphqlToolDefaultsSchema.parse(row.defaults)
-    const override = row.override == null ? undefined : GraphqlToolOverrideSchema.parse(row.override)
+    const defaults = row.defaults == null ? undefined : ForemanToolDefaultsSchema.parse(row.defaults)
+    const override = row.override == null ? undefined : ForemanToolOverrideSchema.parse(row.override)
     const subject = row.purpose === 'consultation'
       ? await readConsultationCredentialSubject(this.pool, principal.id) : undefined
     const implemented = [...memoryBoardTools('write'), 'workflow_chat_read', 'workflow_chat_post', ...(row.browser?.enabled ? browserAgentTools : [])] as const
-    const harness = HarnessConfigurationSchema.parse(row.harness)
+    const harness = RecordedHarnessConfigurationSchema.parse(row.harness)
     const readOnly = isReadOnlyHarnessConfiguration(harness)
-    const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null, implemented).filter(tool => {
+    const tools = effectiveForemanTools(role, defaults, override, row.interval != null, implemented).filter(tool => {
       if (tool.startsWith('browser_') && readOnly && !COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly) return false
       if (subject && tool === 'interaction_respond') return false
       const operation = WorkerNativeOutputOperationSchema.options.find(operation =>
@@ -203,7 +204,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
   async canRespond(principal: ManagementPrincipal): Promise<boolean> {
     if (!this.orchestration) return false
     if (!hasWorkerAction(principal, 'interactions:respond') || !hasWorkerAction(principal, 'interactions:read')) return false
-    try { await assertWave25WorkerBinding(this.pool, principal.id) }
+    try { await assertCurrentWorkerBinding(this.pool, principal.id) }
     catch (error) { if (error instanceof DomainError) return false; throw error }
     workerScope(principal)
     const scopes = workerScopesForAction(principal, 'interactions:respond')

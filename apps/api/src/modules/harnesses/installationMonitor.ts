@@ -6,7 +6,7 @@ import type { CanonicalMachineReference } from '@foreman-code/contracts/device-i
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { commandInputHash } from '../commands/postgres.js'
 import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
-import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
+import type { DeviceEndpoint } from '../devices/index.js'
 import { deviceBackpressured } from '../devices/deviceBusyError.js'
 import { DomainError } from '../errors.js'
 import { harnessConnectionGeneration } from './hostConnectionGeneration.js'

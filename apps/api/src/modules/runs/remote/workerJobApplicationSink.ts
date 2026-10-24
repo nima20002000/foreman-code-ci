@@ -4,7 +4,7 @@ import {
   type RemoteJobDispatchIntent,
   type RemoteJobOperationReceiptRecord,
 } from '@foreman-code/contracts/remote-job-execution'
-import type { JobWorkerService } from '../../jobs/worker.js'
+import type { JobWorkerService } from '../../jobs/index.js'
 
 export interface WorkerJobApplicationChannel { request(namespace: 'execution-v1', payload: unknown): Promise<{ payload: unknown }> }
 /** Worker callbacks use only narrow selected-main application RPC, not a DB handle. */

@@ -19,8 +19,7 @@ it('stops workflow credential maintenance once terminal publication commits, bef
     // A fresh credential is outside its renewal window, so the heartbeat has nothing to renew.
     fixture.internals.credentialLedger.set(fixture.manager, { principalId: 'principal-native2-captured',
       expiresAt: new Date(Date.now() + DEFAULT_WORKER_CREDENTIAL_TTL_MS).toISOString(), environment: { variables: {} } })
-    fixture.internals.resolveManager = () => ({ manager: fixture.manager, processState: 'resident' })
-    fixture.internals.prepareEnvironment = async () => undefined
+    fixture.managers.resolve = () => ({ manager: fixture.manager, processState: 'resident' })
     const reconcile = fixture.manager.reconcile
     fixture.manager.reconcile = async () => {
       await vi.advanceTimersByTimeAsync(1)
