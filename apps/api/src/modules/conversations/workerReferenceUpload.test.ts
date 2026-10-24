@@ -110,7 +110,7 @@ it('accepts a reference larger than one MiB on the authenticated private HTTP en
   let received: unknown
   const endpoint = await createWorkerMcpEndpoint({ launcher: join(directory, 'launcher.mjs'),
     signal: new AbortController().signal, relay: {
-      environment: { agentId: 'operator', variables: { FOREMAN_CODE_MCP_TOKEN: 'operator-token' } },
+      environment: { agentId: 'operator', variables: { GRAPHQL_MCP_TOKEN: 'operator-token' } },
       expiresAt: new Date(Date.now() + 600_000).toISOString(), request: async body => {
         received = body
         return { statusCode: 200, contentType: 'application/json', body: '{"result":"stored"}' }

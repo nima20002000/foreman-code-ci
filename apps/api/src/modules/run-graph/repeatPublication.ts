@@ -7,11 +7,11 @@ import {
   qualifyRepeatGraphExecution, validateRepeatGraphFactsCurrent, RUN_GRAPH_LIMITS,
   type RepeatGraphEffectCurrent, type RepeatGraphFactCurrent, type RepeatGraphScopeCurrent, type WorkflowVersionCurrent,
 } from '@foreman-code/contracts/current'
-import type { RepeatEffect, RepeatFact } from '../runs/repeatPostgres.js'
-import type { RepeatCanonicalPublication } from '../runs/repeatRepositoryHost.js'
+import type { RepeatEffect, RepeatFact } from '../runs/index.js'
+import type { RepeatCanonicalPublication } from '../runs/index.js'
 import { repeatDigest, repeatId, repeatSlotId, repeatExecutionIdentity } from '../runs/repeatResolution.js'
 import { repeatLaunchClaim, type RepeatLaunchClaim, type RepeatNativeChange } from '../runs/repeatNativeRepository.js'
-import type { RunOwnership } from '../runs/ownership.js'
+import type { RunOwnership } from '../runs/index.js'
 import {
   assertGraphTransaction,
   beforeGraphCommit,

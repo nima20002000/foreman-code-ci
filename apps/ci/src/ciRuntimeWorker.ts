@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { CiRuntimeRequestSchema, CiRuntimeWorkerStateSchema, PreparedCiRuntimeSchema,
   type CiRuntimeRequest, type CiRuntimeWorkerState } from '@foreman-code/contracts'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import type { CiContext, GitWorktreePorts } from './environment.js'
 import { prepareCiRuntime } from './ciRuntimePrepare.js'
 import { lastCiRuntimeRefresh, scheduleCiRuntimeRefresh } from './ciRuntimeRefresh.js'

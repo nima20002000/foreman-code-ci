@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../../packages/contracts/src/installationNames.mjs'
 import { createServer } from 'node:net'
 import { lstat, readFile, realpath } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
@@ -47,7 +48,7 @@ export function environment(source) {
     'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR',
     'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'CODEX_BINARY',
     'FILE_STORAGE_ROOT', 'HARNESS_WORKSPACE_ROOT', 'LOG_DIR', 'COREPACK_HOME',
-    'FOREMAN_CODE_TEST_ROOT', 'FOREMAN_CODE_TEST_OWNER', 'TEST_DATABASE_URL',
+    INSTALLATION_NAMES.environment.TEST_ROOT, INSTALLATION_NAMES.environment.TEST_OWNER, 'TEST_DATABASE_URL',
     'FOREMAN_CODE_CI_TEST_ADMIN_URL', 'FOREMAN_CODE_CI_HOST_RUN_ID',
     'OPENAI_API_KEY', 'ANTHROPIC_API_KEY']
   return Object.fromEntries(keys.filter((key) => source[key] !== undefined).map((key) => [key, source[key]]))
@@ -58,7 +59,7 @@ export function verificationToolEnvironment(source) {
   if (!readVerificationEnvironment(source)) return {}
   return {
     FOREMAN_CODE_VERIFICATION_ENVIRONMENT: source.FOREMAN_CODE_VERIFICATION_ENVIRONMENT,
-    GIT_DIR: '/graphql-job-git', GIT_WORK_TREE: '/workspace',
+    GIT_DIR: INSTALLATION_NAMES.paths.privateGit, GIT_WORK_TREE: '/workspace',
     GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1',
   }

@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { emptyCheckpoint } from '@langchain/langgraph-checkpoint'
 import { afterEach, expect, it, vi } from 'vitest'
-import { ApprovalPostgresSaver } from '../src/infrastructure/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../src/modules/runs/approvalCheckpointSaver.js'
 
 afterEach(() => vi.restoreAllMocks())
 

@@ -1,10 +1,10 @@
-import { randomUUID } from 'node:crypto'
-import { lstat, open, readFile, rename } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { lstat, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { DomainError } from '../errors.js'
 import { BrowserCdpConnection } from './cdp.js'
 import type { BrowserRuntimeDirectory } from '../../../../worker/src/browserRuntimeInstall.mjs'
+import { writeDurableFile } from '../../shared/durableFile.js'
 
 export interface BrowserProcessIdentity {
   pid: number; generation: number; token: string; executable: string; directory: string
@@ -49,12 +49,7 @@ export async function readBrowserProcessIdentity(directory: string): Promise<Bro
 }
 
 export async function writeBrowserProcessIdentity(value: BrowserProcessIdentity): Promise<void> {
-  const path = join(value.directory, 'foreman-process.json'), temporary = `${path}.${randomUUID()}.tmp`
-  const handle = await open(temporary, 'wx', 0o600)
-  try { await handle.writeFile(JSON.stringify(value)); await handle.sync() } finally { await handle.close() }
-  await rename(temporary, path)
-  const parent = await open(dirname(path), 'r')
-  try { await parent.sync() } finally { await parent.close() }
+  await writeDurableFile(join(value.directory, 'foreman-process.json'), JSON.stringify(value), { createParent: false })
 }
 
 /** Chromium rewrites its process title into one space-joined string, so arguments are matched as text. */

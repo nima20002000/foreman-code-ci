@@ -54,7 +54,7 @@ test('native subprocesses keep configuration and credentials but write disposabl
   })
 })
 
-for (const name of ['FOREMAN_CODE_APP_MCP_DIRECTORY', 'GRAPHQL_APP_MCP_DIRECTORY']) {
+for (const name of ['GRAPHQL_APP_MCP_DIRECTORY']) {
   test(`preserves ${name} provenance while native route writes use owned storage`, async () => {
     await fixture(async source => {
       const original = join(source.HOME, 'source-mcp')
@@ -64,7 +64,8 @@ for (const name of ['FOREMAN_CODE_APP_MCP_DIRECTORY', 'GRAPHQL_APP_MCP_DIRECTORY
         owned = environment.FOREMAN_CODE_NATIVE_TEST_ROOT
         assert.equal(environment.FOREMAN_CODE_NATIVE_SOURCE_APP_MCP_DIRECTORY, original)
         assert.equal(readProductEnvironment(environment, 'APP_MCP_DIRECTORY'), join(owned, 'app-mcp'))
-        assert.equal(environment.GRAPHQL_APP_MCP_DIRECTORY, undefined)
+        assert.equal(environment.GRAPHQL_APP_MCP_DIRECTORY, join(owned, 'app-mcp'))
+        assert.equal(environment.FOREMAN_CODE_APP_MCP_DIRECTORY, undefined)
         assert.equal(source[name], original)
       })
       await assert.rejects(access(owned), { code: 'ENOENT' })

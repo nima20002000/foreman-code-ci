@@ -6,7 +6,7 @@ import { loadConfig } from '../src/config.js'
 import { createAppMcpRuntime, localAppMcpEndpoint } from '../src/modules/app-runtime/composition.js'
 import { McpDetectionService, WorkerLaunchCredentialService } from '../src/modules/harnesses/mcpDetection.js'
 import { registerMcpDetectionRoute } from '../src/routes/mcpDetection.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -39,14 +39,14 @@ describe('application MCP composition and HTTP detection', () => {
     assert(runtime.mcpDetection.service instanceof McpDetectionService)
     assert.equal(runtime.mcpDetection.pool, pool)
     assert.equal(runtime.appMcp.access, access)
-    const credential = { principalId: 'worker', environment: { agentId: 'agent', variables: { FOREMAN_CODE_MCP_TOKEN: 'token' } },
+    const credential = { principalId: 'worker', environment: { agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: 'token' } },
       expiresAt: new Date(Date.now() + 900_000).toISOString() }
     const inspected = {} as Awaited<ReturnType<McpDetectionService['preflight']>>
     const preflight = vi.spyOn(runtime.mcpDetection.service, 'preflight').mockResolvedValue(inspected)
-    const revoke = vi.spyOn(Wave25WorkerCredentialService.prototype, 'revokeSupersededForExecution').mockResolvedValue(0)
-    const issue = vi.spyOn(Wave25WorkerCredentialService.prototype, 'issueForExecution').mockResolvedValue(credential)
+    const revoke = vi.spyOn(CurrentWorkerCredentialService.prototype, 'revokeSupersededForExecution').mockResolvedValue(0)
+    const issue = vi.spyOn(CurrentWorkerCredentialService.prototype, 'issueForExecution').mockResolvedValue(credential)
     const renewedExpiry = new Date(Date.now() + 1_800_000).toISOString()
-    const renew = vi.spyOn(Wave25WorkerCredentialService.prototype, 'renewForExecution').mockResolvedValue(renewedExpiry)
+    const renew = vi.spyOn(CurrentWorkerCredentialService.prototype, 'renewForExecution').mockResolvedValue(renewedExpiry)
     const prepared = await runtime.executionCredentials.prepare({ executionId: 'execution', harness: 'codex', workingDirectory: '/workspace' })
     assert.deepEqual(prepared, { credential, detection: inspected })
     assert.deepEqual(preflight.mock.calls, [[{ harness: 'codex', runnerId: 'runner-local', workingDirectory: '/workspace' }]])

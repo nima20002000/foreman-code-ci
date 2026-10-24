@@ -11,7 +11,7 @@ import { CiIntegrationCoverageSchema, CiSelectionSchema, CiWatchdogFailureSchema
   integrationPartition, requiresUserSystemd,
   type CiCoverageSelection, type CiDurations, type CiHostReply, type CiHostRequest, type CiHostRun, type CiPartition, type CiMirrorRepair } from '@foreman-code/contracts'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import { systemHostCiPorts, type HostCiPorts } from './runner.js'
 import type { HostCiComputer } from './service.js'
 import type { CiMirrorInput } from './serviceTypes.js'
@@ -30,7 +30,7 @@ import { readFleetIdentityInventory } from './fleetIdentityInventory.js'
 import type { CircleAccountContext, CircleAccountRegistry } from './circleAccounts.js'
 import { CircleStandby } from './circleStandby.js'
 import { unresolvedCloudAttemptIds } from './cloudAttempts.js'
-import { sha256Hex } from '@foreman-code/contracts/server-kit'
+import { sha256Hex } from '@foreman-code/contracts-node/server-kit'
 
 const MAX_DISPATCH_ATTEMPTS = 3
 const GITHUB_INPUT_LIMIT_BYTES = 65_535

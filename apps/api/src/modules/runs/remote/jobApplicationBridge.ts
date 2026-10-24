@@ -8,9 +8,9 @@ import {
   type RemoteJobDispatchIntent, type RemoteJobConnectionIdentity,
 } from '@foreman-code/contracts/remote-job-execution'
 import { JobRepository } from '../../jobs/repository.js'
-import type { PostgresJobDispatch } from '../../jobs/dispatch.js'
-import type { JobWorkerService } from '../../jobs/worker.js'
-import type { JobPublicationAuthority } from '../../jobs/authority.js'
+import type { PostgresJobDispatch } from '../../jobs/index.js'
+import type { JobWorkerService } from '../../jobs/index.js'
+import type { JobPublicationAuthority } from '../../jobs/index.js'
 import { readLiveManagementPrincipal } from '../../access/liveManagementPrincipal.js'
 import { readAcceptedJobSource, type AcceptedJobSourceReadout } from './jobAcceptedSource.js'
 import { requireAuthorization } from '../../access/policy.js'
