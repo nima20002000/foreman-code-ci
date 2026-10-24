@@ -1,15 +1,15 @@
 import { useRef } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ConversationComposer } from './ConversationComposer'
+import { ConversationComposer, type ConversationComposerProps } from './ConversationComposer'
 import { AgentChatComposer } from './agentChat/AgentChatComposer'
 import { OperatorComposer } from '../operator-chat/OperatorComposer'
-import { useConversationDraftStore } from './conversationDraftStore'
+import { useConversationDraftStore } from '../chat-core'
 
 afterEach(() => { cleanup(); useConversationDraftStore.getState().clearAllDrafts() })
 
 for (const kind of ['conversation', 'agent', 'operator'] as const) describe(`${kind} composer draft interactions`, () => {
-  function Composer({ id, send, attachments = false }: { id: string; send: ReturnType<typeof vi.fn>; attachments?: boolean }) {
+  function Composer({ id, send, attachments = false }: { id: string; send: ConversationComposerProps['onSubmit']; attachments?: boolean }) {
     const input = useRef<HTMLTextAreaElement>(null)
     if (kind === 'conversation') return <ConversationComposer conversationId={id} onSubmit={send} hasAttachments={attachments} />
     if (kind === 'operator') return <OperatorComposer conversationId={id} onSubmit={send} onNewChat={vi.fn()} hasAttachments={attachments} />

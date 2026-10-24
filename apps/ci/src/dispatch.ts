@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { CiRunRecordSchema, type CiHostRequest, type CiRunRecord } from '@foreman-code/contracts'
 import type { HostCiComputer } from './service.js'
 import type { CiContext, SqlQuery } from './environment.js'
-import { errorMessage } from '@foreman-code/contracts-node/server-kit'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { sanitizeCiText, serializeCiJson } from './text.js'
 export { withCiTicketLock, type CiTicketSql } from './ticketLock.js'
 

@@ -8,7 +8,7 @@ import {
 } from '@foreman-code/contracts/job-inputs'
 import { TransferIntentSchema, type TransferIntent, type TransferContext } from '@foreman-code/contracts/byte-transfer'
 import { type JobExecutionRecord } from '@foreman-code/contracts/job-verification'
-import type { DeviceEndpoint } from '../../devices/deviceEndpoint.js'
+import type { DeviceEndpoint } from '../../devices/index.js'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'

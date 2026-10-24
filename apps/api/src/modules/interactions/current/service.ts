@@ -3,7 +3,7 @@ import { withInteractionDeliveryReconciliation, withOriginalInteractionDeliveryC
 import { randomUUID } from 'node:crypto'
 import { withInteractionResponse, type DurableInteraction, type InteractionResponseValue } from '@foreman-code/contracts'
 import { requireAuthorization } from '../../access/policy.js'
-import type { NativeResponseJournal } from '../../harnesses/recovery/responseJournal.js'
+import type { NativeResponseJournal } from '../../harnesses/index.js'
 import type { InteractionNativeRuntime } from '../runtimePorts.js'
 import type { InteractionResponder } from '../responder.js'
 import type { GraphResumeClaim } from '../deliveryPostgres.js'

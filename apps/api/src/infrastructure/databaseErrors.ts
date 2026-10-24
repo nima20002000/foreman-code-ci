@@ -1,4 +1,4 @@
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 
 const repeatRules = new Set([
   'COORDINATION_TERMINAL_CONFLICT',

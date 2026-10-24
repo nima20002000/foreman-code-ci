@@ -1,7 +1,7 @@
 import { useState, type RefObject } from 'react'
 import { parseSessionCommand, type SessionMode } from '@foreman-code/contracts'
 import { errorMessage } from '../../../shared/errorMessage'
-import type { ComposerSessionControls } from './useSessionControls'
+import type { ComposerSessionControls } from '../../chat-core'
 
 /** Native commands share dispatch and receipt feedback; message admission stays with the caller. */
 export function useSessionCommandSubmit({ conversationId, sessionControls, onSubmit, onNewChat, inputRef }: {

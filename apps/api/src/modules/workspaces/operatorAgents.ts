@@ -2,7 +2,7 @@ import type pg from 'pg'
 import {
   AgentSchema, AgentConfigurationVersionSchema, agentTemplateForRole, projectHarnessEffort,
   validateHarnessWorkflowCompatibility, CodexSessionCompatibilitySchema,
-  type Agent, type HarnessConfiguration,
+  type Agent, type RecordedHarnessConfiguration,
 } from '@foreman-code/contracts'
 import {
   AgentCreateInputSchema, AgentUpdateInputSchema, AgentCloneInputSchema,
@@ -21,7 +21,7 @@ import { lockAgentConfigurations, saveAgentConfiguration } from './agentConfigur
 import type { ProviderAccountConfigurationService } from '../harnesses/index.js'
 import { prepareAgentConfiguration } from './agentConfigurationPreparation.js'
 
-export function agentWithConfiguration(agent: Agent, configuration: HarnessConfiguration): Agent {
+export function agentWithConfiguration(agent: Agent, configuration: RecordedHarnessConfiguration): Agent {
   return AgentSchema.parse({...agent, harness: configuration.harness, model: configuration.model,
     effort: projectHarnessEffort(configuration),
     fastMode: configuration.harness === 'codex' ? configuration.serviceTier === 'priority' : undefined,
@@ -58,7 +58,7 @@ export async function readAgentForReuse(client: pg.ClientBase, principal: Manage
   return {agent, baseRevision: Number(row.metadata_revision), workflowIds: references.rows.map((item) => item.id)}
 }
 
-export function authorizeAgentConfiguration(principal: ManagementPrincipal, workspaceId: string, configuration: HarnessConfiguration, assignedSkills: Agent['assignedSkills']): void {
+export function authorizeAgentConfiguration(principal: ManagementPrincipal, workspaceId: string, configuration: RecordedHarnessConfiguration, assignedSkills: Agent['assignedSkills']): void {
   if (configuration.harness === 'codex' && configuration.sandbox === 'danger-full-access') requireAuthorization(principal,'harnesses:update',{workspaceId})
   if (assignedSkills?.length) requireAuthorization(principal,'skills:read',{workspaceId})
   // An Agent may be configured before its workflow assigns approval authority.
@@ -82,7 +82,7 @@ export class OperatorAgentMutationService {
     private readonly accountConfigurations?: ProviderAccountConfigurationService) {}
 
   private validateProfile(principal: ManagementPrincipal) {
-    return async (selection: HarnessProfileSelection, configuration: HarnessConfiguration, client: pg.PoolClient) => {
+    return async (selection: HarnessProfileSelection, configuration: RecordedHarnessConfiguration, client: pg.PoolClient) => {
       if (!this.profiles) throw new DomainError('HARNESS_PROFILE_SELECTION_UNAVAILABLE', 'Selected host profile validation is not composed.', 503)
       await this.profiles.validateSelection(principal, selection, configuration, client)
     }

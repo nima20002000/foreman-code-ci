@@ -6,7 +6,7 @@ import {
   TemporaryFileScopeSchema, MAX_FILE_BYTES, MAX_FILE_READ_BYTES, MAX_MESSAGE_ATTACHMENTS,
   parseAgentFileReadResult,
 } from '@foreman-code/contracts/files'
-import type { FileToolOperation } from '../../files/tools/types.js'
+import type { FileToolOperation } from '../../files/index.js'
 import type { NativeImageOptions, ImageMediaType } from '../../files/images/index.js'
 import { CODEX_FILE_TOOL_ALIASES, CodexFileTurn, type CodexFileTurnDependencies } from './turn.js'
 import type { AcceptedCodexFileTurn } from './port.js'

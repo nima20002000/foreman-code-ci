@@ -1,4 +1,4 @@
-import { Button } from '../../shared/ui/nocturne'
+import { Button } from '../../shared/ui/nocturne/index'
 
 export function HistoryWindowNotice({ onReload, pending }: { onReload(): void; pending: boolean }) {
   return <p role="status" aria-label="History window">

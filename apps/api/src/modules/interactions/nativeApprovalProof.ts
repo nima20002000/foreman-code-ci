@@ -7,7 +7,7 @@ import { beforeGraphCommit, poisonGraphTransaction } from '../run-graph/connecti
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { currentRunGraphPublication, graphSourceDigest } from '../run-graph/publication.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
-import type { WorkflowNativeProofRecord } from '../runs/workflowNativeProof.js'
+import type { WorkflowNativeProofRecord } from '../runs/index.js'
 import { readRepeatExecutionLocked } from '../runs/repeatExecutionRead.js'
 import { readAcceptedRepeatRunLocked } from '../runs/repeatStartRead.js'
 import { repeatExecutionIdentity, sameRepeatValue } from '../runs/repeatResolution.js'

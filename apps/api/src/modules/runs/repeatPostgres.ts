@@ -60,7 +60,7 @@ import { declaresRepeatBlocks, usesWorkHandoffGraph } from './workflowRunMode.js
 import { assertHierarchyDirectionReleasedLocked, readHierarchyDirectionForSourceLocked,
   reserveHierarchyDirectionLocked } from './hierarchyDirection.js'
 import { hierarchyCompletionLocked } from './hierarchyCompletion.js'
-import type { WorkflowCollaborationHooks } from '../collaboration/workflowHooks.js'
+import type { WorkflowCollaborationHooks } from '../collaboration/index.js'
 import { workflowAdmissionLifecycleLocked, workflowLifecycleLocked,
   workflowNativeLifecycleLocked } from './workflowCollaborationRuntime.js'
 import { parseWorkflowWorkResult } from './workflowCoordinationResult.js'
@@ -75,7 +75,7 @@ import { ControlAdmissionFailure, finalControlAdmissionRefusal, workflowControlF
 import { claimWorkflowCoordinatorGraphLocked } from '../collaboration/workflowConsultations.js'
 import { readWorkflowChatIdentity } from '../collaboration/workflowChatIdentity.js'
 import { readCoordinatorConsultationLocked } from '../collaboration/workflowConsultations.js'
-import type { WorkflowChatLockedTarget, WorkflowChatNativeTarget, WorkflowChatTarget } from '../collaboration/workflowControlTypes.js'
+import type { WorkflowChatLockedTarget, WorkflowChatNativeTarget, WorkflowChatTarget } from '../collaboration/index.js'
 import {
   assertRepeatBodyComplete, assertRepeatExecution, assertRepeatRef, assertRepeatSource,
   bindRepeatNodeInput, blockForNode, decideRepeatAdmission, decideRepeatBlockEntry, decideRepeatExit, finalRepeatExport,

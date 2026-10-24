@@ -1,6 +1,5 @@
-import { ChatAttachmentBoundary } from '../ChatAttachmentBoundary'
+import { ChatAttachmentBoundary, agentChatContextKey } from '../../chat-core'
 import { identityEpoch } from '../../../shared/api/protectedChatStorage'
-import { agentChatContextKey } from './model'
 import { AgentConversationContent, type AgentConversationContentProps } from './AgentConversationContent'
 
 type LiveAgentConversationProps = Omit<AgentConversationContentProps, 'canonical' | 'selection'> & {

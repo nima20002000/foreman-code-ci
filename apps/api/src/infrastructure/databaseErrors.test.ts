@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { databaseDomainError } from './databaseErrors.js'
 
 it.each([

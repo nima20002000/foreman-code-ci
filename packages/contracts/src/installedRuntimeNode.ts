@@ -4,11 +4,11 @@ import { constants } from 'node:fs'
 import { open, realpath } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
-import { JobRuntimeFingerprintSchema } from '@foreman-code/contracts/job-runtime'
+import { JobRuntimeFingerprintSchema } from './jobRuntime.js'
 import { JobVerificationRuntimeFingerprintSchema, JobVerificationInstalledRuntimeDescriptorSchema, VerificationToolKindSchema,
-  type JobRuntimeNativeAdmissionRecord } from '@foreman-code/contracts/job-verification-runtime'
-import { SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
-import { SourceManifestSchema } from '@foreman-code/contracts/source-materialization'
+  type JobRuntimeNativeAdmissionRecord } from './jobVerificationRuntime.js'
+import { SourceRootRecordSchema } from './sourceAdmission.js'
+import { SourceManifestSchema } from './sourceMaterialization.js'
 import { DomainError } from './serverKit.js'
 
 export const MAX_VERIFICATION_CONFIGURATION_BYTES = 2 * 1024 * 1024 + 65536

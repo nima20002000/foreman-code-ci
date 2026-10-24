@@ -1,6 +1,6 @@
 import type { DurableInteraction, InteractionResponseValue } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { NativeResponseJournal } from '../harnesses/recovery/responseJournal.js'
+import type { NativeResponseJournal } from '../harnesses/index.js'
 import { hasAction, isAuthorized, requireAuthorization } from '../access/policy.js'
 import { projectInteractionActivity, type InteractionActivityEvidence } from './activityProjection.js'
 import { DomainError } from '../errors.js'

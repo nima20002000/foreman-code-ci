@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { SyncIdentitySchema, TailscaleAddressSchema, type SyncIdentity } from '@foreman-code/contracts/computer-accounts'
 import { createSyncthingAvailability } from './syncthingAvailability.js'
 import { SyncthingConflictScanner } from './syncthingConflictScan.js'
-import { DomainError, sha256Hex } from '@foreman-code/contracts-node/server-kit'
+import { DomainError, sha256Hex } from '@foreman-code/contracts/server-kit'
 
 export interface SyncthingProcessPorts {
   find(name: string): Promise<string | null>

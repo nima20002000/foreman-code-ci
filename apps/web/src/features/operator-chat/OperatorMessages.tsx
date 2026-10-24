@@ -1,11 +1,9 @@
 import type { Message, OperatorActivity } from '@foreman-code/contracts'
 import type { HarnessOptions } from '@foreman-code/contracts/management'
-import { ChatMessageFiles } from '../conversations/ChatMessageFiles'
-import { TextTruncationNotice } from '../conversations/TextTruncationNotice'
+import { ChatMessageFiles, TextTruncationNotice, messageTextPartKey, savedTextPartKeys, selectLiveTextTimeline } from '../chat-core'
 import { MessageBubble } from '../../shared/ui/nocturne'
 import { OperatorActivityList } from './OperatorActivityList'
 import { OperatorThinking } from './OperatorThinking'
-import { messageTextPartKey, savedTextPartKeys, selectLiveTextTimeline } from '../conversations/chatTimeline'
 import type { OperatorTextProjection } from './operatorTextProjection'
 
 /** Allocate activity once over the complete loaded message sequence. */

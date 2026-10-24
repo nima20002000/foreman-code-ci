@@ -3,7 +3,7 @@ import { JobRuntimeProfileSaveRecordSchema, jobRuntimeProfilePolicy, jobRuntimeP
   type JobRuntimeProfileRecord, type JobRuntimeProfileSaveRecord } from '@foreman-code/contracts/job-verification-runtime'
 import type { SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import { jobPolicyRequirementsRecord } from '@foreman-code/contracts/job-verification'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { jobDigest } from './jobDigest.js'
 
 export function ciEnrollmentTemplateDigest(profile: JobRuntimeProfileRecord): string {
