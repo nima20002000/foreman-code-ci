@@ -5,7 +5,7 @@ import { REPEAT_GRAPH_LIMITS, type WorkflowVersionCurrent } from '@foreman-code/
 import { DomainError } from '../errors.js'
 import { RUN_ACTIVITIES_BOUNDS_SQL, RUN_ACTIVITIES_PAGE_SQL } from './activitiesSql.js'
 import { readNativeActivityFacts, projectNativeActivityFacts } from './nativeActivitySnapshot.js'
-import { AGENT_CI_SNAPSHOT_SQL } from '../ci/reads.js'
+import { AGENT_CI_SNAPSHOT_SQL } from '../ci/index.js'
 import { publicRunActivity, type ActivityReadRow } from './activityProjection.js'
 
 type Queryable = SqlQuery

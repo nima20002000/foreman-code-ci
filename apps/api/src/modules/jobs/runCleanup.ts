@@ -6,7 +6,7 @@ import type { JobExecutionRecord } from '@foreman-code/contracts/job-verificatio
 import { RemoteJobDispatchIntentSchema } from '@foreman-code/contracts/remote-job-execution'
 import { assertGraphTransaction, beforeGraphCommit } from '../run-graph/connection.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import type { RunOwnership } from '../runs/index.js'
+import type { RunOwnership } from '../runs/ownership.js'
 import { DomainError } from '../errors.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { JobRepository, type JobSql } from './repository.js'

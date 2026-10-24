@@ -5,7 +5,7 @@ import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { HostHarnessProfileCheckRequestSchema, type HostHarnessOverride,
   type HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
-import type { ProviderAccountResolver } from '../provider-accounts/index.js'
+import type { ProviderAccountResolver } from '../provider-accounts/service.js'
 import { readInstalledWorkerAccountBinding } from './installedWorkerAccountBinding.js'
 import { requireClaudeProductionCredentialDelivery } from './claudeSdk/productionCredentials.js'
 import { DomainError } from '../errors.js'

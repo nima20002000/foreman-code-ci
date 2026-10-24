@@ -1,8 +1,8 @@
 import type { AcceptedNodePlacement, DispatchIntent } from '@foreman-code/contracts/node-placement'
 import { RemoteApplicationAccessSchema, type RemoteApplicationAccess } from '@foreman-code/contracts/remote-execution'
 import { WORKER_MCP_EXTENSION, decodeWorkerMcpResult, encodeWorkerMcpRequest, WorkerMcpRelayAuthorizationSchema, WorkerMcpRelayRequestSchema, WorkerMcpRelayResponseSchema } from '@foreman-code/contracts/worker-mcp-relay'
-import type { ChildProcessEnvironment } from '../../harnesses/index.js'
-import type { DeviceConnectionSupervisor } from '../../devices/index.js'
+import type { ChildProcessEnvironment } from '../../harnesses/port.js'
+import type { DeviceConnectionSupervisor } from '../../devices/connectionSupervisor.js'
 import { deviceRequestTimeoutMs, retryDeviceRequest } from '../../devices/deviceRequestRetry.js'
 import { withWorkerMcpDeadline, workerMcpUploadCeilingMs } from '../../devices/workerMcpDeadline.js'
 

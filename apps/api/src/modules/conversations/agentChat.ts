@@ -1,4 +1,3 @@
-import { capabilityDescriptorsOf, currentOperatorHistory, operatorActivity, completedNativeAssistantMessage } from '../harnesses/index.js'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { withWorkflowChatContext } from '../workflow-chat/index.js'
 import { nativeChatPrompt, preflightChatInput, restoreAcceptedChatInput, type AcceptedChatInput, type AcceptedChatSettings, type PreparedChatInput } from './nativeChatInput.js'
@@ -12,7 +11,7 @@ import { withInteractionResponse, isSessionNativeInteraction } from '@foreman-co
 import { missingAgentChatDirectory, missingChatFolderMessage, resolveAgentChatDirectory, revalidateAgentChatDirectory } from './agentChatDirectory.js'
 import type { SessionControlRequest } from '@foreman-code/contracts'
 import { pendingSessionControls, type ChatModelCatalog } from '../harnesses/sessionControlDefaults.js'
-import { supportsExpectedTurnSteer } from '../harnesses/capabilities.js'
+import { supportsExpectedTurnSteer } from '../harnesses/index.js'
 import { readRunChatTranscript } from './runChatTranscript.js'
 import { ExecutionActivityReader, type ExecutionActivityRequest } from './executionActivity.js'
 import { SessionControlStateSchema } from '@foreman-code/contracts'
@@ -69,10 +68,12 @@ import { nativePersistenceRedactor } from '../interactions/index.js'
 import { agentMessagePrompt } from './agentMessagePrompt.js'
 import { assertAgentChatInputSize } from './agentInputSize.js'
 import { configurationWithNodeSkills } from '../skills/index.js'
-import type { PostgresRunRepository } from '../runs/index.js'
+import type { PostgresRunRepository } from '../runs/postgres.js'
 import { PostgresWorkflowRepository } from '../workflows/index.js'
 import { PostgresOperatorActivityRepository } from './operatorActivityRepository.js'
+import { currentOperatorHistory, operatorActivity } from './operatorActivity.js'
 import type { PostgresOperatorConversationRepository } from './operatorChatRepository.js'
+import { completedNativeAssistantMessage } from './operatorText.js'
 import { nativeActivityFence } from './nativeActivityFence.js'
 import { createNativeTextStream } from './nativeTextStream.js'
 import type { ActivityScope } from '@foreman-code/contracts/activity'
@@ -1927,8 +1928,8 @@ export class AgentChatService {
     }
     if (this.closing || observer.signal.aborted) return // Restart recovery reconciles in-flight work.
     const current = await this.repository.get(id)
-    const uncertainTurnCreation = creatingSession && current && capabilityDescriptorsOf(current).inputIdentity === 'turn'
-    const unavailable = uncertainTurnCreation ? false : await this.markNativeUnavailable(id, error)
+    const uncertainCodexCreation = creatingSession && current?.harness === 'codex'
+    const unavailable = uncertainCodexCreation ? false : await this.markNativeUnavailable(id, error)
     if (!unavailable && creatingSession && current?.record.sessionCreation) {
       // No reliable identity/commit means read-only, not another create/fork attempt.
       await this.repository.abandon(id, requestId, 'Native session creation or binding is unconfirmed.')
@@ -2148,7 +2149,7 @@ export class AgentChatService {
     if (this.runtimes.get(row.id) !== runtime || runtime.retiring || runtime.disposal) return false
     runtime.session = session
     if (!forksRunHistory(row) && (await this.repository.initialInputOffered(row.id, requestId)
-      || capabilityDescriptorsOf(row).inputIdentity === 'message')) {
+      || row.harness === 'claude')) {
       await this.repository.bindSession(row.id, session.providerVersion, session.nativeSessionId)
       await this.observe(row.id, requestId, runtime, agentChatCorrelation(row.id, requestId), true)
       return true
@@ -2182,8 +2183,7 @@ export class AgentChatService {
             const runtime = this.runtimes.get(candidate)
             return runtime?.session && !runtime.disposal && !runtime.retiring ? { manager: runtime.manager, session: runtime.session } : undefined
           }, publish: (candidate, settled) => this.events.publish(candidate, 'activity', settled) })
-        const runtime = this.runtimes.get(id)
-        if (remaining && runtime && capabilityDescriptorsOf(runtime.manager).files === 'turn_mcp') this.scheduleReconcile(id)
+        if (remaining && this.runtimes.get(id)?.manager.harness === 'codex') this.scheduleReconcile(id)
         for (const steer of steers) if (steer.delivery === 'submitting') {
           await this.repository.unknown(id, steer.requestId, 'The original steering target is not established. No input was resent.')
           this.events.publish(id, 'turn', { requestId: steer.requestId, delivery: 'unknown' })
@@ -2218,12 +2218,12 @@ export class AgentChatService {
         const principalId = await this.repository.turnPrincipalId(id, recoveryRequestId)
         // A Claude turn lives only in the query of the process that started it. When recovery has to open a fresh
         // local runtime, that process died with the previous API and the turn can never produce terminal evidence.
-        const orphanedMessageTurn = Boolean(requestId) && capabilityDescriptorsOf(row).inputIdentity === 'message' && !this.runtimes.has(id)
+        const orphanedClaudeTurn = Boolean(requestId) && row.harness === 'claude' && !this.runtimes.has(id)
           && configuration.harnessProfileSelection?.target.hostRef.kind !== 'device'
         const runtime = await this.runtime(binding, configuration, correlationId,
           AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(60_000)]), principalId)
         if (requestId) await this.observe(id, requestId, runtime, correlationId, true)
-        if (requestId && orphanedMessageTurn && (await this.repository.get(id))?.active_request_id === requestId) {
+        if (requestId && orphanedClaudeTurn && (await this.repository.get(id))?.active_request_id === requestId) {
           await this.settle(id, requestId, row.cancel_requested ? { outcome: 'canceled' } : { outcome: 'failed', error: {
             code: 'NATIVE_TURN_INTERRUPTED', retryable: true,
             message: 'The Agent process stopped when the API restarted before this message finished. Send it again.' } })
