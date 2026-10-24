@@ -393,6 +393,8 @@ interface StartedServices {
   localWorkflowArtifacts?: LocalWorkflowArtifacts
   telemetry?: ResourceTelemetryRuntime
   hostCi?: CiServiceClient
+  /** Closes the private CI HTTP listener; runs only after the runtime drain, which can still finish Runs. */
+  closeCiTransport?: () => Promise<void>
   cloudCis?: CloudCis
 }
 
@@ -2034,6 +2036,8 @@ function createRuntimeHooks({ base, started, runtimeState, accountStage, reposit
     beginShutdown()
     return lifecycle.finish()
   }
+  // onClose hooks run last-registered first: this one runs after the drain below, whose Runs still call CI.
+  app.addHook('onClose', async () => { await started.closeCiTransport?.() })
   app.addHook('onClose', async () => { await drainShutdown() })
   const shutdown = (): Promise<void> => {
     beginShutdown()
@@ -2370,10 +2374,8 @@ async function initializeCiServices(
   const ci = ciTransport.client
   started.hostCi = ci
   hostCi.start()
-  app.addHook('onClose', async () => {
-    await ciTransport.close()
-    await hostCi.close()
-  })
+  started.closeCiTransport = ciTransport.close
+  app.addHook('onClose', async () => { await hostCi.close() })
   const stopDeadlineSweeper = startStateDeadlineSweeper(database.pool, {
     ciRuns: now => ci.expireOverdueRuns(now),
     workerPublication: () => readProductionWorkerReleasePublication({ environment: process.env,
