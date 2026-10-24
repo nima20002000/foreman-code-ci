@@ -1,12 +1,10 @@
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react'
-import { Button, Select } from '../../shared/ui/nocturne'
-import { defaultStringifySearch, useLocation, useRouter } from '@tanstack/react-router'
-import { RunsSelectorSearchSchema } from './search'
+import { Button } from '../../shared/ui/nocturne/Button'
 import { useQueryClient } from '@tanstack/react-query'
 import { Icon } from '../../shared/ui/nocturne/Icon'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { RunsWindow } from './RunsWindow'
-import { labelRuns, runStatusLabels } from './presentation'
+import { labelRuns } from './presentation'
 import { isRunAccessError, runReadErrorLabel, runsSelectorKeys, useRunSummaries, useSelectedRunSnapshot } from './query'
 import { useRunsSelectorUi } from './uiStore'
 import type { SelectedRunState } from './useSelectedRun'
@@ -27,14 +25,7 @@ export function RunsSelector({ selection, className = '', triggerLabel = 'Runs' 
   const typeahead = useRef({ text: '', at: 0 })
   const history = useRunSummaries(identity, open && selection.active, true)
   const selected = useSelectedRunSnapshot(selection)
-  const location = useLocation(), router = useRouter()
-  const status = RunsSelectorSearchSchema.parse(location.search).runStatus
-  const rows = labelRuns(history.items).filter(row => !status || row.run.status === status)
-  function filterStatus(value: string) {
-    const next = RunsSelectorSearchSchema.parse({ ...router.state.location.search, runStatus: value || undefined })
-    const query = (router.options.stringifySearch ?? defaultStringifySearch)(next)
-    void router.navigate({ href: `${router.state.location.pathname}${query}${router.history.location.hash}`, resetScroll: false })
-  }
+  const rows = labelRuns(history.items)
   const denied = isRunAccessError(history.error)
   const brokenCursor = !history.hasNextPage && history.data?.pages.at(-1)?.pageInfo.nextCursor != null
   const selectedMessage = selection.invalid ? 'Invalid Run' : identity.runId === null ? null
@@ -110,9 +101,6 @@ export function RunsSelector({ selection, className = '', triggerLabel = 'Runs' 
       disabled={!selection.active} onClick={() => choose(null)}>Return to workflow</Button> : null}
     {selectedMessage && <span role="status" className="runs-selector-selection-status">{selectedMessage}</span>}
     {open && <RunsWindow id={id} scope={geometryScope} anchor={trigger} close={() => close(true)}>
-      <Select className="runs-selector-filter" label="Run status" value={status ?? ''}
-        onChange={event => filterStatus(event.currentTarget.value)}
-        options={[{ value: '', label: 'All statuses' }, ...Object.entries(runStatusLabels).map(([value, label]) => ({ value, label }))]} />
       <div ref={surface} role="menu" tabIndex={-1} aria-label="Runs" className="n-menu-list runs-selector-menu"
       aria-busy={history.isPending || history.isFetchingNextPage} onKeyDown={keyboard}>
       {rows.length > 0 && <div className="runs-selector-head" aria-hidden="true">
@@ -135,11 +123,10 @@ export function RunsSelector({ selection, className = '', triggerLabel = 'Runs' 
       </button>)}
       {history.isPending && <p role="status" className="runs-selector-state">Loading…</p>}
       {history.isError && <p role="status" className="runs-selector-state">{runReadErrorLabel(history.error, 'list')}</p>}
-      {history.isSuccess && rows.length === 0 && <p role="status" className="runs-selector-state">{status
-        ? 'No runs match this status in loaded history.' : 'No runs'}</p>}
+      {history.isSuccess && rows.length === 0 && <p role="status" className="runs-selector-state">No runs</p>}
       {history.data?.pageParams[0] !== undefined ? <button type="button" role="menuitem" tabIndex={-1}
         onClick={() => void cache.resetQueries({ queryKey: [...runsSelectorKeys.list(identity), 'history'], exact: true })}>Newest runs</button> : null}
-      {!denied && selected.snapshot && identity.runId !== null && !history.items.some(run => run.runId === identity.runId)
+      {!denied && selected.snapshot && identity.runId !== null && !rows.some(({ run }) => run.runId === identity.runId)
         && <p role="status" className="runs-selector-state">Selected Run outside page</p>}
       {history.isError && !history.isFetchNextPageError && !denied && <button type="button" role="menuitem" tabIndex={-1}
         aria-disabled={history.isFetching && !history.isRefetching} onClick={() => { if (!history.isFetching) void history.refetch() }}>Retry</button>}

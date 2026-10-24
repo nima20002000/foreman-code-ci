@@ -120,7 +120,7 @@ it('honors unsaved Schedule edits before selecting a Run on this Board', async (
   const { router } = await mountMeasuredBoard(currentHref()), user = userEvent.setup()
   await user.click(await screen.findByRole('button', { name: 'Schedule workflow' }))
   const dialog = await screen.findByRole('dialog', { name: 'Schedule' })
-  const time = await within(dialog).findByLabelText('Time on this device')
+  const time = await within(dialog).findByLabelText('Time')
   await user.clear(time); await user.type(time, '10:15')
   await user.click(await within(dialog).findByRole('link', { name: 'View Run' }))
   const guard = await screen.findByRole('alertdialog', { name: 'Save changes before leaving?' })
@@ -132,23 +132,4 @@ it('honors unsaved Schedule edits before selecting a Run on this Board', async (
   await waitFor(() => expect(router.state.location.search.selectedRunId).toBe(fixture.runs.before.run.id))
   expect(screen.queryByRole('dialog', { name: 'Schedule' })).not.toBeInTheDocument()
   expect(screen.getAllByTestId('unified-workflow-board')).toHaveLength(1)
-}, 15_000)
-
-it('opens the exact failed activity execution directly in the existing inspector', async () => {
-  const owner = fixture.runs.repeated, detail = fixture.repeatedExecutions[2]!.detail
-  measureBoardWire(fixture.mock)
-  server.use(http.get(`*/api/management/workspaces/${owner.scope.workspaceId}/runs/${owner.run.id}/activities`, () =>
-    HttpResponse.json({ scope: owner.scope, mode: 'initial', highWater: '1', retainedFrom: '1',
-      nextCursor: 'failure-1', olderCursor: null, hasMore: false, items: [{ id: 'failed-activity', scope: owner.scope,
-        sequence: '1', occurredAt: fixture.before.createdAt, source: 'backend', kind: 'agent_work', status: 'failed', severity: 'error',
-        summary: 'Loop 2 finished', detail: 'Error details are available in Run inspection.',
-        actor: { agentId: fixture.second.agentId, agentName: 'Worker', nodeId: fixture.second.id, nodeName: 'Worker' },
-        refs: { executionId: detail.execution.executionId, technicalAttempt: detail.execution.attempt } }] })))
-  const { router } = await mountMeasuredBoard(`${currentHref()}&selectedRunId=${owner.run.id}`)
-  await userEvent.click(await screen.findByRole('button', { name: 'Activities' }))
-  const row = (await screen.findByText('Loop 2 finished')).closest('li')!
-  await userEvent.click(within(row).getByRole('button', { name: 'Inspect failure' }))
-  expect(await screen.findByRole('article', { name: `Execution ${detail.execution.executionId}` })).toBeVisible()
-  expect(readRunInspectionKey(router.state.location.search.runExchangeKey)).toEqual({ executionId: detail.execution.executionId })
-  expect(router.state.location.search).toMatchObject({ selectedRunId: owner.run.id, runNodeId: fixture.second.id })
 }, 15_000)

@@ -66,7 +66,6 @@ function WorkspaceProjectFiles({ workspaceId }: ProjectFilesSectionProps) {
       <Button ref={uploadButton} size="sm" disabled={upload.isPending || Boolean(ui.removing)} onClick={() => input.current?.click()}
         leading={<Upload size={16} aria-hidden="true" />}>Upload</Button>
     </header>
-    <p className="project-files-message">Uploaded reference files shared with workflows in this workspace. Repository files stay in the working tree.</p>
     {drop.isDragging && <p className="project-files-message">Drop to upload</p>}
     {drop.dropError && <p className="project-files-message" role="alert">{drop.dropError}</p>}
     {ui.selectionIssue && <p className="project-files-message" role="alert">{ui.selectionIssue}</p>}

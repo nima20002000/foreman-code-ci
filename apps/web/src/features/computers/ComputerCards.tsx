@@ -150,11 +150,11 @@ function ComputerCard({ card, observed, fresh, namePending, activityComplete, co
         <WorkerState worker={maintenance?.worker} readiness={workerReadiness} />
       </dd></div> : null}
       {publicationBlocked ? <div><dt>Worker release</dt><dd>
-        <p role={workerPublication!.state === 'failed' ? 'alert' : 'status'}>
-          Worker {workerPublication!.version} {workerPublication!.state === 'failed'
-            ? 'publication failed' : 'is waiting for GitHub publication and verification'}.
-          {workerPublication!.lastError ? <small>{workerPublication!.lastError}</small> : null}
-        </p>
+        <div role={workerPublication!.state === 'failed' ? 'alert' : 'status'}>
+          <p>Worker {workerPublication!.version} {workerPublication!.state === 'failed'
+            ? 'publication failed' : 'is waiting for GitHub publication and verification'}.</p>
+          {workerPublication!.lastError ? <details><summary>Details</summary><small>{workerPublication!.lastError}</small></details> : null}
+        </div>
       </dd></div> : null}
       <div><dt>Builds</dt><dd>{buildSummary(card, buildPosition, buildCount)}
         {card.build?.state === 'setup-required' ? <Badge tone="warning">Setup needed</Badge> : null}</dd></div>
@@ -175,7 +175,11 @@ function ComputerCard({ card, observed, fresh, namePending, activityComplete, co
       {maintenance?.system.rebootRequired ? <Badge tone="warning">Restart needed</Badge> : null}
       <RestartButton status={maintenance} busy={maintaining || maintenanceError} onRestart={() => onMaintain([{ kind: 'restart' }])}
         agents={observed?.agents.length ?? 0} jobs={observed?.jobs.length ?? 0} activityComplete={Boolean(observed) && fresh && activityComplete} />
-      <Button size="sm" variant="ghost" onClick={() => askOperator(`On ${name}: `, { send: false })}>Ask Operator to change…</Button>
+      <Button size="sm" variant="ghost" onClick={() => askOperator(workerPublication?.state === 'failed'
+        ? `On ${name}: Worker ${workerPublication.version} publication failed. Investigate the publication error and help restore worker updates: ${workerPublication.lastError ?? ''}`
+        : `On ${name}: `, { send: false })}>
+        {workerPublication?.state === 'failed' ? 'Ask Operator about worker publication' : 'Ask Operator to change…'}
+      </Button>
       <Button size="sm" disabled={maintaining || maintenanceError || !maintenance || updateState === 'running' || updateTasks.length === 0}
         title={updateTasks.length === 0 && maintenance ? 'Nothing to update' : undefined}
         onClick={() => onMaintain(updateTasks)}>Update</Button>
