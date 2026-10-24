@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../mocks/server'
 import { afterEach, expect, it, vi } from 'vitest'
-import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
+import { DEFAULT_AGENT_DEFAULTS, DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { queryKeys } from '../../shared/api/query'
 import { accountTarget, accountTargetInfo, observedAccount, workerAccountTarget } from '../provider-accounts/providerAccounts.fixtures'
 import { providerTargetsKey, providerAccountsKey } from '../provider-accounts'
@@ -134,4 +134,35 @@ it('uses discovered canonical targets for both account cards without placing con
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Claude account computer' }), JSON.stringify(accountTarget))
   expect(onAccountTargetChange).toHaveBeenCalledWith(accountTarget)
   expect(screen.getAllByRole('combobox', { name: /account computer$/ })).toHaveLength(2)
+})
+
+
+it.each([422, 503])('exposes recovery for an Operator default save rejected with HTTP %s', async status => {
+  const requests: unknown[] = []
+  server.use(
+    http.get('/api/management/settings/agents', () => HttpResponse.json({ revision: 3, value: DEFAULT_AGENT_DEFAULTS })),
+    http.put('/api/management/settings/agents', async ({ request }) => {
+      const input = await request.json() as { value: typeof DEFAULT_AGENT_DEFAULTS }; requests.push(input)
+      return requests.length === 1
+        ? HttpResponse.json({ error: { code: status === 503 ? 'UNAVAILABLE' : 'INVALID_INPUT', message: 'Default save failed' } }, { status })
+        : HttpResponse.json({ replayed: false, value: { revision: 4, value: input.value } })
+    }),
+  )
+  mount()
+  const card = screen.getByRole('button', { name: 'Edit Claude defaults' }).closest('.settings-choice') as HTMLElement
+  const toggle = within(card).getByRole('switch', { name: 'Operator default' })
+  await waitFor(() => expect(toggle).toBeEnabled())
+  await userEvent.click(toggle)
+  expect(await screen.findByText(/Operator default has unsaved changes/)).toBeVisible()
+  if (status === 422) {
+    expect(await screen.findByText(/Default save failed/)).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(toggle).not.toBeChecked()
+  } else {
+    expect(await screen.findByText(/Save not confirmed/)).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Save Operator default' }))
+    await waitFor(() => expect(requests).toHaveLength(2))
+    expect(requests[1]).toEqual(requests[0])
+    expect(await screen.findByText('Saved.')).toBeVisible()
+  }
 })
