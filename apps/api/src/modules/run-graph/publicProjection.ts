@@ -58,7 +58,7 @@ export const PUBLIC_NODE_EXECUTIONS_SQL = `with latest as materialized (
      from harness_executions e join run_repeat_executions x on x.execution_id=e.id and x.run_id=e.run_id
      left join run_repeat_occurrences o on o.occurrence_id=x.occurrence_id and o.run_id=e.run_id
      left join run_work_activations w on w.activation_id=x.work_activation_id and w.run_id=e.run_id
-     where e.run_id=$1 and e.workflow_node_id=any($2::text[]) and e.tick_index is null
+     where e.run_id=$1 and e.workflow_node_id=any($2::text[]) and e.record #> '{input,tick}' is null
      order by e.workflow_node_id,w.activation_sequence desc nulls last,
        coalesce(o.occurrence_index,0) desc,x.technical_attempt desc,x.execution_id desc limit 1001
    ) select e.id,e.workflow_node_id,e.record->>'agentId' as agent_id,

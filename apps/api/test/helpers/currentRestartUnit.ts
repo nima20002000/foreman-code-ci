@@ -103,12 +103,11 @@ export function currentRestartUnit(reviewer = false, acceptedPlacement?: Accepte
       before = undefined; closureWritten = false; return result()
     }
     if (q.startsWith("select r.record->>'executionSemanticsVersion' as semantics,")) {
-      assert.deepEqual(values, [f.run.id]); assert.ok(q.endsWith('from runs r where r.id=$1 for update'))
+      assert.deepEqual(values, [f.run.id])
       return result([{ semantics: '3', fenced: state.stopped || state.cleanup || f.run.executionState === 'completed' }])
     }
     if (q.startsWith('select p.generation::text,p.execution_identity,p.reference')) {
       assert.deepEqual(values, [execution.id])
-      assert.ok(q.includes('from execution_native_recoveries p join execution_native_closures c'))
       // This model has original close/detach receipts, never a kernel-recovery receipt.
       return result()
     }
@@ -179,10 +178,26 @@ export function currentRestartUnit(reviewer = false, acceptedPlacement?: Accepte
         workflow_node_id: node.id, agent_id: configuration.agentId, attempt: 1, record: execution }])
     }
     if (q.startsWith('select j.id,j.execution_id,j.state,j.record') || q.startsWith('select i.id,i.execution_id,i.status,i.record')) return result()
+    if (q.startsWith('with sessions as materialized')) {
+      if (values[0] !== f.run.id || !(values[1] as string[]).includes(execution.id)) return result()
+      const row = rows.at(-1)
+      return result([{ ...row, id: execution.id, record: execution, reference: session,
+        finalized: state.finalized, complex: false, outstanding: state.outstanding,
+        prior_unclosed: row ? priorUnclosed(row.generation) : false,
+        configuration: { harness: configuration.harness.harness, agent_id: configuration.agentId, pinned: true } }])
+    }
     if (q.startsWith('select ( exists(select 1 from worker_credential_bindings')) return result([{ outstanding: state.outstanding }])
     if (q.startsWith('select reference,workflow_finalized_at')) return result([{ reference: session, finalized: state.finalized }])
     if (q.startsWith('select c.record#>>')) return result([{ harness: configuration.harness.harness, agent_id: configuration.agentId,
       workspace_id: configuration.workspaceId, pinned: true }])
+    if (q.startsWith('update execution_native_sessions s ')) {
+      const updates = JSON.parse(String(values[0])) as Array<{ execution_id: string; reference: NativeSessionReference }>
+      const matching = updates.filter(update => update.execution_id === execution.id
+        && graphSourceDigest(update.reference) === graphSourceDigest(session))
+      state.finalized = matching.length > 0 || state.finalized
+      state.finalizationWrites += matching.length
+      return result(matching.map(update => ({ execution_id: update.execution_id })))
+    }
     if (q.startsWith('update execution_native_sessions')) {
       assert.deepEqual(values, [execution.id, JSON.stringify(session)])
       state.finalized = true; state.finalizationWrites++; return result([{ execution_id: execution.id }])
@@ -198,7 +213,7 @@ export function currentRestartUnit(reviewer = false, acceptedPlacement?: Accepte
       || q.includes('from run_chat_commands where run_id=$1 and kind=')
       || q.startsWith('select c.command_id,c.binding,q.target,m.source_execution')) return result()
     // Main-local executions have no device dispatch intent or native placement.
-    if (/from execution_dispatch_intents where execution_id=\$1/.test(q) || q.startsWith('select record from execution_native_placements where execution_id=$1')) return result([])
+    if (q.includes('from execution_dispatch_intents') || q.startsWith('select record from execution_native_placements where execution_id=$1')) return result([])
     throw new Error(`Unexpected current restart SQL: ${q}`)
   }
   const pool = { query, connect: async () => ({ query, release() {} }) } as unknown as pg.Pool

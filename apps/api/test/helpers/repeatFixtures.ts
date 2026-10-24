@@ -526,6 +526,18 @@ export function createRepeatHarness(fixture = makeSimpleRepeatFixture()): Repeat
         }]
       } else if (q.startsWith('select j.id,j.execution_id,j.state,j.record,i.run_id')) {
         rows = []
+      } else if (q.startsWith('with sessions as materialized')) {
+        const ids = values[1] as string[]
+        rows = [...state.executions.values()]
+          .filter(item => item.execution_run_id === v[0] && ids.includes(item.execution_id))
+          .sort((a, b) => a.execution_id.localeCompare(b.execution_id))
+          .map(item => ({
+            ...state.nativeClosures.get(item.execution_id),
+            ...state.nativeSessions.get(item.execution_id),
+            id: item.execution_id, record: item.record, complex: false, outstanding: false,
+            configuration: { harness: 'codex', agent_id: item.record.agentId,
+              pinned: fixture.version.agentConfigurationVersionIds[item.record.agentId] === item.record.agentConfigurationVersionId },
+          }))
       } else if (q.includes('as outstanding') && q.includes('worker_credential_bindings')) {
         rows = [{ outstanding: false }]
       } else if (q.startsWith('select reference,workflow_finalized_at is not null as finalized')) {
@@ -545,6 +557,15 @@ export function createRepeatHarness(fixture = makeSimpleRepeatFixture()): Repeat
         const native = state.nativeSessions.get(v[0]!)
         const closure = state.nativeClosures.get(v[0]!)
         if (item && native && closure) rows = [{ ...closure, record: item.record, reference: native.reference }]
+      } else if (q.startsWith('update execution_native_sessions s ')) {
+        const updates = JSON.parse(v[0]!) as Array<{ execution_id: string; reference: NativeSessionReference }>
+        for (const update of updates) {
+          const native = state.nativeSessions.get(update.execution_id)
+          if (native && canonicalGraphJson(native.reference) === canonicalGraphJson(update.reference)) {
+            native.finalized = true
+            rows.push({ execution_id: update.execution_id })
+          }
+        }
       } else if (q.startsWith('update execution_native_sessions set workflow_finalized_at')) {
         const native = state.nativeSessions.get(v[0]!)
         if (native && JSON.stringify(native.reference) === v[1]) {
@@ -579,7 +600,7 @@ export function createRepeatHarness(fixture = makeSimpleRepeatFixture()): Repeat
         || q.startsWith("select id from run_chat_commands where run_id=$1 and kind='stop'")
         || q.startsWith('with recursive lineage(id) as')) {
         // No workflow control command, continuation or Stop receipt exists in the repeat fixture.
-      } else if (/from execution_dispatch_intents where execution_id=\$1/.test(q) || q.startsWith('select record from execution_native_placements where execution_id=$1')) {
+      } else if (q.includes('from execution_dispatch_intents') || q.startsWith('select record from execution_native_placements where execution_id=$1')) {
         // Main-local executions have no device dispatch intent or native placement.
       } else {
         throw new Error(`Unscripted ENG04-D SQL: ${q}`)
