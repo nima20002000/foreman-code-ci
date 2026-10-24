@@ -27,13 +27,13 @@ import { InstalledJobRuntimeConfigurationSchema, InstalledJobRuntimeCaptureInput
   readProtectedRuntimeConfiguration, installedRuntimeUnavailable as unavailable, type InstalledJobRuntimeConfiguration,
   type InstalledJobRuntimeCaptureInput, type InstalledRuntimeConfigurationLocation, type InstalledRuntimeObservedHost,
   type InstalledVerificationRuntimeConfiguration,
-} from '@foreman-code/contracts/installed-runtime-node'
+} from '@foreman-code/contracts-node/installed-runtime-node'
 import { sha256Hex } from '../../shared/hash.js'
 export { InstalledJobRuntimeConfigurationSchema, InstalledJobRuntimeCaptureInputSchema, InstalledJobRuntimeCaptureInputRecordSchema,
   InstalledJobRuntimeRefreshInputSchema, InstalledJobRuntimeConfigurationRecordSchema, readProtectedRuntimeConfiguration,
   readProtectedRuntimeFile, type InstalledJobRuntimeConfiguration, type InstalledJobRuntimeCaptureInput,
   type InstalledRuntimeConfigurationLocation, type InstalledRuntimeObservedHost,
-} from '@foreman-code/contracts/installed-runtime-node'
+} from '@foreman-code/contracts-node/installed-runtime-node'
 
 export async function captureInstalledRuntimeConfigurationRecord(
   input: z.infer<typeof InstalledJobRuntimeCaptureInputRecordSchema>,

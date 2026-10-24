@@ -23,7 +23,7 @@ it('writes the managed Claude entry through a user-owned symlink and preserves o
     const settings = JSON.parse(await readFile(target, 'utf8'))
     expect(settings).toMatchObject(original)
     expect(settings.mcpServers['foreman-code']).toMatchObject({ type: 'stdio', command: process.execPath,
-      env: { FOREMAN_CODE_MCP_TOKEN: '${FOREMAN_CODE_MCP_TOKEN}' }, enabled: true })
+      env: { GRAPHQL_MCP_TOKEN: '${GRAPHQL_MCP_TOKEN}' }, enabled: true })
     expect((await worker.list('claude', AbortSignal.timeout(5000))).presets.graphql).toBe('installed')
     await worker.apply({ harness: 'claude', preset: 'graphql', enabled: false, commandId: 'claude-disable' },
       'operator', AbortSignal.timeout(5000))

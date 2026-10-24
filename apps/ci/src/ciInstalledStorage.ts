@@ -3,7 +3,7 @@ import { lstat } from 'node:fs/promises'
 import type { CiInstalledStorage } from '@foreman-code/contracts'
 import { DEVICE_RESOURCE_CONTROL_RESERVE } from '@foreman-code/contracts/device-resources'
 import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES, readProtectedRuntimeFile,
-  type InstalledVerificationRuntimeConfiguration } from '@foreman-code/contracts/installed-runtime-node'
+  type InstalledVerificationRuntimeConfiguration } from '@foreman-code/contracts-node/installed-runtime-node'
 import { readCiRuntimeInstallation } from './ciRuntimeInstallation.js'
 
 export async function readCiInstalledStorage(stateDirectory: string): Promise<CiInstalledStorage | null> {

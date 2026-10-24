@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 #!/usr/bin/env node
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
@@ -34,7 +35,7 @@ const { QUALIFICATION_TARGET_PROFILE, runAsQualificationCandidate, codexQualific
   discoverLauncher, passiveDriverPayloads } = await tsImport(source('cliEntry.ts'), import.meta.url)
 ownedTestDatabaseUrl()
 const resource = createTestRoot(tmpdir(), `graphql-${values.harness}-qualification-`)
-const invocation = { directory: process.env.FOREMAN_CODE_TEST_ROOT, token: process.env.FOREMAN_CODE_TEST_OWNER }
+const invocation = { directory: process.env[INSTALLATION_NAMES.environment.TEST_ROOT], token: process.env[INSTALLATION_NAMES.environment.TEST_OWNER] }
 const cleanupId = registerTestResourceCleanup(invocation, {
   kind: 'native-qualification', registryDirectory: join(resource.directory, 'native-process-registry'),
 })

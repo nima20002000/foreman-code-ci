@@ -68,3 +68,4 @@ jobs:
           path: packages/contracts/dist
           key: contracts-build-${{ runner.os }}-${{ steps.cache-inputs.outputs.contracts }}
       - run: corepack pnpm --filter @foreman-code/contracts build
+      - run: corepack pnpm --filter @foreman-code/contracts-node build

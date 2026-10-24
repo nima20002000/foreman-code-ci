@@ -34,7 +34,7 @@ it('finishes the native review after its decision is recorded while delivery is 
   await writeFile(join(directory, 'release-review'), '')
   const provider = spawn(process.execPath, [fileURLToPath(new URL('./fixtures/remote-review-codex.mjs', import.meta.url)),
     directory, 'app-server'], { stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, FOREMAN_CODE_MCP_TOKEN: token } })
+    env: { ...process.env, GRAPHQL_MCP_TOKEN: token } })
   const messages: Array<{ id?: number; method?: string; result?: { thread: { id: string } } }> = []
   const lines = createInterface({ input: provider.stdout })
   lines.on('line', line => { messages.push(JSON.parse(line)) })

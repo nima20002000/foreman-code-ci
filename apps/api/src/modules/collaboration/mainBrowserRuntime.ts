@@ -1,8 +1,8 @@
 import { readFile, lstat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type { BrowserHostOptions, createBrowserHost } from '../browser-runtime/hostFactory.js'
-import type { BrowserRuntimeInstallation } from '../browser-runtime/browserUseAdapter.js'
+import type { BrowserHostOptions, createBrowserHost } from '../browser-runtime/index.js'
+import type { BrowserRuntimeInstallation } from '../browser-runtime/index.js'
 import { DomainError } from '../errors.js'
 import { configuredHome } from '../../config.js'
 

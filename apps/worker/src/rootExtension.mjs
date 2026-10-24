@@ -1,4 +1,4 @@
-import { loadWorkerPairing } from '../../../packages/contracts/src/deviceIdentityNode.ts';
+import { loadWorkerPairing } from '../../../packages/contracts-node/src/deviceIdentityNode.ts';
 import { WORKSPACE_ROOT_EXTENSION } from '../../../packages/contracts/src/workspaceRootPolicies.ts';
 import { createWorkspaceRootWorkerHandler } from '@foreman-code/api/worker/sources';
 import { loadApprovedRoots } from './approvedRoots.mjs';
