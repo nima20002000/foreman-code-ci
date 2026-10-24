@@ -27,7 +27,7 @@ import {
   ExecutionFactsResultSchema,
   ExecutionAuthorityRequestSchema,
 } from '@foreman-code/contracts/execution-authority'
-import { PlainNativeExecutionPlacementSchema, DispatchIntentSchema } from '@foreman-code/contracts/node-placement'
+import { DispatchIntentSchema } from '@foreman-code/contracts/node-placement'
 import { DeviceConnectionIdentitySchema } from '@foreman-code/contracts/device-identity'
 import { CodexAppServerSessionManager } from '../../../harnesses/codexAppServer.js'
 import * as installedInspection from '../../../harnesses/installedCodexInspection.js'
@@ -48,13 +48,11 @@ import {
 import { SourceOperationWorkerService } from '../../../sources/operationWorker.js'
 import { PrivateSourceMaterializer } from '../../../sources/materialization.js'
 import { createSourceManifest, sourceSha256 } from '../../../sources/manifest.js'
-import { attestWorkspaceRoot } from '../../../sources/rootAttestation.js'
-import { WorkspaceRootPolicySchema } from '@foreman-code/contracts/workspace-root-policies'
 import { sourceBindingHash } from '../../../sources/bindingHash.js'
 import { identity, openPrivateRoot } from '../../../sources/privateFilesystem.js'
 import { verifyMaterializedWorkingDirectory } from '../../../sources/workingDirectory.js'
 import { freezePlacement, deriveDispatch } from '../../../placement/binding.js'
-import { bindNativeExecution, nativePlacementDigest } from '../../../placement/executionBinding.js'
+import { bindNativeExecution } from '../../../placement/executionBinding.js'
 import type { SourceRootRecord, SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
 import type { SourceOperationOwner } from '@foreman-code/contracts/source-operations'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
@@ -159,7 +157,7 @@ export async function sourceFixture(relativeCwd='', options: {
 }
 
 export async function runningInstalledFixture(phase: 'generation' | 'approval wait' = 'generation',
-  fixtureOptions: { plain?: boolean; retainReviewer?: boolean; deferTurn?: boolean; artifactOutputKeys?: string[];
+  fixtureOptions: { retainReviewer?: boolean; deferTurn?: boolean; artifactOutputKeys?: string[];
     resultProtocol?: ResultProtocol;
     mainNow?: () => number; realMcp?: true;
     authorizeReviewer?: () => Promise<void>;
@@ -167,31 +165,6 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
   const { artifactOutputKeys } = fixtureOptions
   const f = await sourceFixture('', artifactOutputKeys
     ? { artifactOutputKeys, attemptId: randomUUID(), operationId: randomUUID() } : {})
-  const nativePlacement = fixtureOptions.plain ? await (async () => {
-    f.approvedRoots.bases[0]!.accessModes.push('read-write')
-    const proof = await attestWorkspaceRoot(f.approvedRoots, { workspaceId: f.request.workspaceId,
-      hostRef: f.placement.hostRef, allowedBaseId: f.approvedRoots.bases[0]!.baseId, configurationRevision: '1',
-      relativePath: '', accessMode: 'read-write', expectedLocationRevision: 1, expectedRootPolicyRevision: 0 })
-    const attestation: Partial<typeof proof> = { ...proof }
-    delete attestation.requestDigest
-    const policy = WorkspaceRootPolicySchema.parse({ ...attestation, workspaceId: f.request.workspaceId,
-      rootPolicyId: f.placement.destination.rootPolicyId, rootPolicyRevision: '1', locationRevision: '1',
-      ownerPrincipalId: 'owner', registration: f.placement.registration })
-    const pins = { ...f.placement }
-    Reflect.deleteProperty(pins, 'bindingHash')
-    f.placement = freezePlacement({ ...pins, source: { kind: 'plain', filesystem: policy.filesystem, accessMode: 'read-write' },
-      destination: { ...pins.destination, directoryIdentityHash: policy.directoryIdentityHash,
-        attestationId: policy.attestationId, attestationHash: policy.attestationDigest } })
-    f.intent = { ...f.intent, bindingHash: f.placement.bindingHash }
-    f.request.workingDirectory = policy.canonicalProjectRoot
-    const fields = { version: 1 as const, kind: 'plain' as const, policy,
-      acceptedBindingHash: f.placement.bindingHash, runId: f.intent.runId, nodeId: f.intent.nodeId,
-      executionId: f.intent.executionId, attemptId: f.intent.attemptId, operationId: f.intent.operationId,
-      workingTree: { canonicalProjectRoot: policy.canonicalProjectRoot, canonicalCwd: policy.canonicalProjectRoot,
-        directoryIdentityHash: policy.directoryIdentityHash, filesystem: policy.filesystem,
-        accessMode: 'exclusive-write' as const, privateGit: null } }
-    return PlainNativeExecutionPlacementSchema.parse({ ...fields, bindingHash: nativePlacementDigest(fields) })
-  })() : f.nativePlacement
   if (fixtureOptions.resultProtocol) Object.assign(f.request, { resultProtocol: fixtureOptions.resultProtocol })
   if (fixtureOptions.retainReviewer) f.request.configuration.productRole = 'orchestrator'
   if (artifactOutputKeys) {
@@ -212,7 +185,7 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
   // Qualification and native provider doubles isolate installed-host transport/ownership behavior.
   const capture = { binding: f.context.binding, qualification: { version: '0.132.0' },
     inspection: { currentTarget: { installation } }, facts: { intent: f.intent, placement: f.placement,
-      executionPlacement: nativePlacement, configuration: f.request.configuration,
+      executionPlacement: f.nativePlacement, configuration: f.request.configuration,
       harness: { installation, override: { target, instanceId: f.placement.payload.kind === 'agent'
         ? f.placement.payload.instanceId : '', instanceRevision: '1', driverId: 'codex', enabled: true,
         configuration: f.request.configuration.harness } } },
@@ -314,8 +287,8 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
     roots.push(outputDirectory)
     outputMain = await workflowNativeOutputMain({ directory: outputDirectory,
       currentIntent: () => f.intent, currentBinding: () => live,
-      rootId: 'kind' in nativePlacement ? nativePlacement.policy.rootPolicyId : nativePlacement.materialization.receipt.binding.rootId,
-      rootBindingRevision: 'kind' in nativePlacement ? Number(nativePlacement.policy.rootPolicyRevision) : nativePlacement.materialization.receipt.binding.bindingRevision })
+      rootId: f.nativePlacement.materialization.receipt.binding.rootId,
+      rootBindingRevision: f.nativePlacement.materialization.receipt.binding.bindingRevision })
     // Native qualification is a boundary double; the installed output store and publication path remain real.
     vi.spyOn(codexOutputProtection, 'qualifyCodexOutputProtection').mockResolvedValue()
     const createOutputs = installedNativeOutput.createInstalledNativeOutputs
@@ -403,7 +376,7 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
         observeReceipt: async () => {}, controlFor: async () => { throw new Error('No native controls in startup') },
         transport: { request: async (method, raw) => {
           const result = await call(method, {
-            ...(raw as Record<string, unknown>), executionPlacement: nativePlacement,
+            ...(raw as Record<string, unknown>), executionPlacement: f.nativePlacement,
           })
           return result.payload
         } } })
@@ -411,7 +384,7 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
         environment: { agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: applicationAccess.token } } })
       prepared = { payload: { session, status: await log.status(f.intent.operationId) } }
     } else {
-      prepared = await call('prepare', { request: f.request, executionPlacement: nativePlacement, applicationAccess })
+      prepared = await call('prepare', { request: f.request, executionPlacement: f.nativePlacement, applicationAccess })
     }
   } catch (error) {
     await host.close()
@@ -437,7 +410,7 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
     return nextIntent
   }
   return { ...f, host, journal: log, prepared, call, stop, finish, settled, retained, history, create, attach, turns, cancel, closeOwner, requests,
-    outputs, outputMain, session, renewOwner, executionPlacement: nativePlacement,
+    outputs, outputMain, session, renewOwner,
     denyMcp: () => { mcpDenied = true },
     revokeRetention: () => { retentionDenied = true },
     disconnect: () => { live = undefined }, reconnect: (binding: DeviceSessionBinding) => { live = binding },
@@ -648,11 +621,9 @@ export async function physicalFixture(relativeCwd='') {
   const history={events:[],pendingInteractions:[],correlationId:`execution:${f.intent.executionId}`,nativeTurnId:'original-turn'}
   const source={type:'history' as const,history}
   const runtimeLeaf=await attestInstalledWorkflowRuntimeLeaf(f)
-  const parsedReadout=RemoteWorkflowPhysicalReadoutSchema.parse({version:1,expiresAt:new Date(Date.now()+60_000).toISOString(),
+  const readout=RemoteWorkflowPhysicalReadoutSchema.parse({version:1,expiresAt:new Date(Date.now()+60_000).toISOString(),
     receipt:status.receipt,session:n.session,launch:captured.launch,
     observation:captured.launch,runtimeLeaf,source:{record:f.nativePlacement.materialization,workingTree:f.nativePlacement.workingTree},history})
-  if ('kind' in parsedReadout.source) throw new Error('Expected a materialized source fixture')
-  const readout = { ...parsedReadout, source: parsedReadout.source }
   const execution:HarnessExecution={id:f.intent.executionId,runId:f.intent.runId,workflowNodeId:f.intent.nodeId,agentId:f.request.configuration.agentId,
     agentConfigurationVersionId:f.request.configuration.id,attempt:f.intent.technicalAttempt,state:'running',nativeSessionId:n.session.nativeSessionId,
     input:{},createdAt:new Date().toISOString(),workingDirectory:f.request.workingDirectory,runtimeDirectory:f.request.runtimeDirectory}

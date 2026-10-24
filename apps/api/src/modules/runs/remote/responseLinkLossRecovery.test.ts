@@ -68,8 +68,8 @@ async function workerWithPendingApproval() {
   authorize: async () => {},
   attestRuntimeLeaf: async (intent, placement, request) => ({ executionId: intent.executionId, attemptId: intent.attemptId,
     operationId: intent.operationId, bindingHash: intent.bindingHash, canonicalRuntimeDirectory: request.runtimeDirectory,
-    directoryIdentityHash: digest, materializationId: 'materializationId' in placement.source ? placement.source.materializationId : null,
-    materializationDigest: 'materializationDigest' in placement.source ? placement.source.materializationDigest : null }),
+    directoryIdentityHash: digest, materializationId: placement.source.materializationId!,
+    materializationDigest: placement.source.materializationDigest! }),
   preflight: async () => undefined,
   nativeEvidence: async () => ({ sessionId: 'native-session', processIdentityDigest: digest }), settle: async () => null }
   const host = new RemoteExecutionHost(ports)

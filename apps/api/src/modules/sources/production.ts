@@ -103,7 +103,6 @@ export async function createProductionSources(input: ProductionSourcesInput) {
         || intent.attemptId !== record.receipt.attemptId || intent.operationId !== record.operationId
         || original.bindingHash !== intent.bindingHash || !record.finalDispatchBindingHash) return false
       const native = readNativeExecutionBinding(parent, intent, rawNative)
-      if ('kind' in native) return false
       if (native.bindingHash !== record.finalDispatchBindingHash || native.workingTree.materializationId !== record.receipt.materializationId
         || native.workingTree.materializationDigest !== sourceMaterializationDigest(record)) return false
       if (parent.hostRef.kind === 'main') {

@@ -78,8 +78,8 @@ export async function faultWorkflowWorker(directory: string, options: { mcpUnava
       executionId: intent.executionId, attemptId: intent.attemptId, operationId: intent.operationId,
       bindingHash: executionPlacement?.bindingHash ?? intent.bindingHash,
       canonicalRuntimeDirectory: request.runtimeDirectory, directoryIdentityHash: digest,
-      materializationId: executionPlacement && 'kind' in executionPlacement ? null : executionPlacement?.workingTree.materializationId ?? 'fixture-materialization',
-      materializationDigest: executionPlacement && 'kind' in executionPlacement ? null : executionPlacement?.workingTree.materializationDigest ?? digest,
+      materializationId: executionPlacement?.workingTree.materializationId ?? 'fixture-materialization',
+      materializationDigest: executionPlacement?.workingTree.materializationDigest ?? digest,
     }),
     nativeEvidence: async (intent, session, context) => {
       if (!context) throw new Error('Expected the original native manager')

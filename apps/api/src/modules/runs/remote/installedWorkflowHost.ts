@@ -1,4 +1,3 @@
-import { attestWorkspaceRoot } from '../../sources/index.js'
 import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { RemoteOwnerControl } from '@foreman-code/contracts/remote-execution'
 import { burstRead } from './burstRead.js'
@@ -166,36 +165,12 @@ function installedWorkflowArtifactSettlement(result: NonNullable<RemoteTerminalE
   return { artifactDigests: workflowArtifactDigestsByOutputKey(digests) }
 }
 
-function physicalSource(native: NativeExecutionPlacement) {
-  return 'kind' in native ? { kind: 'plain' as const, policy: native.policy, workingTree: native.workingTree }
-    : { record: native.materialization, workingTree: native.workingTree }
-}
-
 /** Source verification uses W09's actual Main-authorized worker service. The runtime leaf is a separate anchored directory with an immutable operation receipt. */
 export async function attestInstalledWorkflowRuntimeLeaf(input:{sources:SourceOperationWorkerService;context:SourceOperationWorkerContext;
   approvedRoots:ApprovedRootAllowlist;nativePlacement:NativeExecutionPlacement;intent:DispatchIntent;placement:AcceptedNodePlacement;
   request:HarnessExecutionRequest}):Promise<RuntimeLeafAttestation> {
   const {intent,placement,request}=input,executionPlacement=readNativeExecutionBinding(placement,intent,input.nativePlacement)
-  const roots=ApprovedRootAllowlistSchema.parse(input.approvedRoots)
-  let materializationId: string | null = null
-  let materializationDigest: string | null = null
-  if ('kind' in executionPlacement) {
-    const policy = executionPlacement.policy
-    if (!isDeepStrictEqual(roots.hostRef, placement.hostRef)
-      || roots.applicationInstallationId !== placement.registration?.workerInstallationId
-      || roots.managedRuntimeRoot !== placement.destination.managedRuntimeRoot
-      || request.executionId !== intent.executionId || request.runId !== intent.runId || request.workflowNodeId !== intent.nodeId
-      || placement.payload.kind !== 'agent' || request.configuration.id !== placement.payload.agentConfigurationVersionId
-      || request.configuration.agentId !== placement.payload.agentId || request.workingDirectory !== policy.canonicalProjectRoot) unavailable('runtime_folder_binding_conflict')
-    const observed = await attestWorkspaceRoot(roots, { workspaceId: policy.workspaceId, hostRef: policy.hostRef,
-      allowedBaseId: policy.allowedBaseId, configurationRevision: policy.configurationRevision,
-      relativePath: policy.relativePath, accessMode: policy.accessMode,
-      expectedLocationRevision: Number(policy.locationRevision), expectedRootPolicyRevision: Number(policy.rootPolicyRevision) })
-    if (!isDeepStrictEqual(observed.filesystem, policy.filesystem)
-      || observed.directoryIdentityHash !== policy.directoryIdentityHash) unavailable('runtime_folder_changed')
-    assertRuntimeLeafPath(request.runtimeDirectory, placement)
-  } else {
-  const record=SourceMaterializationRecordSchema.parse(executionPlacement.materialization)
+  const record=SourceMaterializationRecordSchema.parse(executionPlacement.materialization),roots=ApprovedRootAllowlistSchema.parse(input.approvedRoots)
   const binding=record.receipt.binding
   if(placement.payload.kind!=='agent'||placement.hostRef.kind!=='device'||roots.hostRef.kind!=='device'
     ||!isDeepStrictEqual(roots.hostRef,placement.hostRef)||roots.applicationInstallationId!==placement.registration?.workerInstallationId
@@ -214,9 +189,6 @@ export async function attestInstalledWorkflowRuntimeLeaf(input:{sources:SourceOp
     relativeCwd:executionPlacement.workingTree.cwdAttestation?.relativeCwd??''},input.context))
   if(verified.operation!=='sources.verify'||verified.workTree!==executionPlacement.workingTree.canonicalProjectRoot
     ||verified.canonicalCwd!==request.workingDirectory||verified.directoryIdentityHash!==executionPlacement.workingTree.directoryIdentityHash)unavailable('runtime_source_path_conflict')
-    materializationId = record.receipt.materializationId
-    materializationDigest = executionPlacement.workingTree.materializationDigest
-  }
   const base=await openPrivateRoot(roots.managedRuntimeRoot)
   let directory=base
   try {
@@ -231,7 +203,7 @@ export async function attestInstalledWorkflowRuntimeLeaf(input:{sources:SourceOp
     const filesystem=await identity(directory)
     const proof=RuntimeLeafAttestationSchema.parse({executionId:intent.executionId,attemptId:intent.attemptId,
       operationId:intent.operationId,bindingHash:executionPlacement.bindingHash,canonicalRuntimeDirectory:request.runtimeDirectory,
-      directoryIdentityHash:digest(filesystem),materializationId,materializationDigest})
+      directoryIdentityHash:digest(filesystem),materializationId:record.receipt.materializationId,materializationDigest:executionPlacement.workingTree.materializationDigest})
     const marker=anchored(directory,INSTALLATION_NAMES.paths.workflowRuntime)
     let created:Awaited<ReturnType<typeof open>>|undefined
     try {created=await open(marker,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600)}
@@ -658,9 +630,7 @@ class InstalledWorkflowHostRuntime {
       get intent() { return structuredClone(actual.intent) },
       placement: structuredClone(actual.placement),
       get binding() { return Object.freeze(structuredClone(actual.context.binding)) },
-      ...('kind' in actual.capture.facts.executionPlacement
-        ? { folder: structuredClone(actual.capture.facts.executionPlacement.policy) }
-        : { materialization: structuredClone(actual.capture.facts.executionPlacement.materialization) }),
+      materialization: structuredClone(actual.capture.facts.executionPlacement.materialization),
       applicationAccess: () => {
         if (!actual.applicationAccess || actual.launchDisabled || this.closing) unavailable('original_main_lease_required')
         return structuredClone(actual.applicationAccess!)
@@ -712,8 +682,8 @@ class InstalledWorkflowHostRuntime {
         qualification: { qualify: dependencies.qualify, command: dependencies.runCommand } })) : undefined
     if (outputPorts && (!isDeepStrictEqual(outputPorts.artifacts.binding.intent, actual.intent)
       || !isDeepStrictEqual(outputPorts.artifacts.binding.placement, actual.placement)
-      || outputPorts.artifacts.binding.root.rootId !== (outputContext.materialization?.receipt.binding.rootId ?? outputContext.folder?.rootPolicyId)
-      || outputPorts.artifacts.binding.root.rootBindingRevision !== (outputContext.materialization?.receipt.binding.bindingRevision ?? Number(outputContext.folder?.rootPolicyRevision)))) unavailable('original_native_output_binding_conflict')
+      || outputPorts.artifacts.binding.root.rootId !== outputContext.materialization.receipt.binding.rootId
+      || outputPorts.artifacts.binding.root.rootBindingRevision !== outputContext.materialization.receipt.binding.bindingRevision)) unavailable('original_native_output_binding_conflict')
     const nativeOutputs = outputPorts && createInstalledNativeOutputs({ ...outputPorts,
       assertCurrent: async effectSignal => { await Promise.all([outputContext.assertCurrent(undefined, effectSignal), outputPorts.assertCurrent(effectSignal)]) },
       storage: (prepared, pin) => {
@@ -871,7 +841,8 @@ class InstalledWorkflowHostRuntime {
           session: resident.session, launch: RemoteWorkflowPhysicalReadoutSchema.shape.launch.parse(resident.native.launch),
           runtimeLeaf: resident.runtimeLeaf!, approvedRoots: ApprovedRootAllowlistSchema.parse(resident.runtimeRoots),
           source: RemoteWorkflowPhysicalReadoutSchema.shape.source.parse({
-            ...physicalSource(resident.capture.facts.executionPlacement) }) })
+            record: resident.capture.facts.executionPlacement.materialization,
+            workingTree: resident.capture.facts.executionPlacement.workingTree }) })
         return resident.native.native
       },
       settle:async(intent,history,owner)=>{
@@ -1094,13 +1065,11 @@ class InstalledWorkflowHostRuntime {
 
   private readonly nativeOwnerFor = async(record:SourceMaterializationRecord):Promise<SourceInstalledNativeOwner|null>=>{
     const owned=this.operations.get(record.receipt.executionId)
-    const sourcePlacement = owned?.capture.facts.executionPlacement
-    if (!sourcePlacement || 'kind' in sourcePlacement) return null
     if(!owned?.native||!owned.session||!owned.nativeSignal||!owned.applicationAccess||owned.launchDisabled||owned.nativeSignal.aborted
       ||record.receipt.attemptId!==owned.intent.attemptId||record.operationId!==owned.intent.operationId
-      ||record.receipt.materializationId!==sourcePlacement.materialization.receipt.materializationId
+      ||record.receipt.materializationId!==owned.capture.facts.executionPlacement.materialization.receipt.materializationId
       ||record.finalDispatchBindingHash!==owned.capture.facts.executionPlacement.bindingHash
-      ||sourceMaterializationDigest(record)!==sourceMaterializationDigest(sourcePlacement.materialization))return null
+      ||sourceMaterializationDigest(record)!==sourceMaterializationDigest(owned.capture.facts.executionPlacement.materialization))return null
     const native=owned.native,session=owned.session,nativeSignal=AbortSignal.any([this.signal,owned.nativeSignal])
     const request: ReturnType<InstalledWorkflowHostRuntime['forBinding']> = (namespace,payload,options)=>
       this.forBinding(owned.context.binding)(namespace,payload,options)
@@ -1406,7 +1375,7 @@ class InstalledWorkflowHostRuntime {
               launchIntent: this.recovery.read(receipt)?.intent ?? resident.intent,
               receipt,session:resident.session,launch:resident.native.launch,
               observation:matchingOriginalRegistryLaunch(this.registry,resident.native.launch),runtimeLeaf:resident.runtimeLeaf,
-              source:physicalSource(resident.capture.facts.executionPlacement),
+              source:{record:resident.capture.facts.executionPlacement.materialization,workingTree:resident.capture.facts.executionPlacement.workingTree},
               ...(history?{history}:{}),...(resident.physicalClosure?{closure:{ownerClosed:true,launch:resident.physicalClosure}}:{}),
               ...(receipt.terminal?.result ? { output: remoteWorkflowPhysicalOutput(receipt.terminal.result,
                 resident.placement.payload.kind === 'agent' ? resident.placement.payload.artifactOutputs : undefined,

@@ -13,10 +13,6 @@ import { authorizeSource } from './authority.js'
 export class RegisteredWorkspaceSourceRoots implements RegisteredSourceRootPort {
   private readonly accepted = new WeakMap<AuthorizedSourceRoot, { policy: WorkspaceRootPolicy; principal: ManagementPrincipal }>()
   constructor(private readonly policies: PostgresWorkspaceRootPolicies, private readonly hosts: WorkspaceRootHostPort) {}
-  plainPolicy(sql: Pick<pg.PoolClient, 'query'>, principal: ManagementPrincipal,
-    input: { workspaceId: string; selection: SourceRootSelection }) {
-    return this.policies.resolve(sql, principal, { workspaceId: input.workspaceId, ...input.selection })
-  }
   async authorize(sql: Pick<pg.PoolClient, 'query'>, principal: ManagementPrincipal,
     input: { workspaceId: string; selection: SourceRootSelection; accessMode: 'read-only' | 'exclusive-write' }): Promise<AuthorizedSourceRoot> {
     const policy = await this.policies.resolve(sql, principal, { workspaceId: input.workspaceId, ...input.selection })
