@@ -149,7 +149,6 @@ export const internalImports = new Set([
   'devices>computers/workerBundleReadiness.ts',
   'devices>conversations/installedWorkerConversations.ts',
   'devices>files/jobInputs/protocol.ts',
-  'devices>files/jobInputs/workerFactory.ts',
   'devices>files/jobs/workerProtocol.ts',
   'devices>harnesses/installedClaudeInspection.ts',
   'devices>harnesses/installedCodexInspection.ts',

@@ -1,4 +1,4 @@
-import { supportsExpectedTurnSteer } from '../harnesses/capabilities.js'
+import { supportsExpectedTurnSteer } from '../harnesses/index.js'
 import { DomainError } from '../errors.js'
 import type { WorkflowChatTarget, WorkflowChatOwnerPort } from '../collaboration/index.js'
 import { createWorkflowChatOwner, type WorkflowChatNativeCapture } from './workflowChatOwner.js'
