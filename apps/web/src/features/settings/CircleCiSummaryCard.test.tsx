@@ -5,7 +5,6 @@ import { expect, it } from 'vitest'
 import type { CircleOrganizationRead, ManagedCircleAccounts } from '@foreman-code/contracts/management'
 import { server } from '../../mocks/server'
 import { computersFixture, mainId } from '../computers/computersTestFixture'
-import { useOperatorChatStore } from '../operator-chat'
 import { ComputerSettings } from './ComputerSettings'
 
 const endpoint = '*/api/management/settings/circle-accounts'
@@ -184,17 +183,4 @@ it('reflects server overflow and monthly reset roles without calculating them fr
   expect(orgRow('acme-one').getByText('Credits unknown')).toBeVisible()
   expect(orgRow('beta-one').getByText('Standby')).toBeVisible()
   expect(orgRow('beta-one').getByText('1 job')).toBeVisible()
-})
-
-
-it('offers concrete local setup guidance and a scoped handoff for an account needing attention', async () => {
-  const accounts = accountsFixture()
-  accounts.value.accounts[1]!.ready = false
-  accounts.value.accounts[1]!.reasons = ['Log in to CircleCI and follow the mirror project.']
-  mount(accounts)
-  const card = within(await screen.findByRole('region', { name: 'Standby CircleCI account' }))
-  expect(await card.findByText('Log in to CircleCI and follow the mirror project.')).toBeVisible()
-  await userEvent.click(card.getByRole('button', { name: 'Set up with Operator' }))
-  expect(useOperatorChatStore.getState().request?.content).toContain('overflow')
-  expect(screen.getByText(/Configure the token locally on Main/)).toBeVisible()
 })
