@@ -39,7 +39,7 @@ export async function readWorkspaceRepository(raw: WorkspaceRepositoryGetInput, 
 
 export async function addWorkspaceRepository(raw: WorkspaceRepositoryAddInput, options?: RequestOptions) {
   const input = WorkspaceRepositoryAddInputSchema.parse(raw)
-  const result = await apiClient.request(path(input.workspaceId), WorkspaceRepositoryAddResultSchema,
+  const result = await apiClient.request(`${path(input.workspaceId)}/add`, WorkspaceRepositoryAddResultSchema,
     { ...options, method: 'POST', body: input })
   if (result.value.workspaceId !== input.workspaceId || result.value.operation?.commandId !== input.commandId) {
     throw new ApiError({ code: 'INVALID_RESPONSE', message: 'Project preparation belongs to another workspace or import.' })

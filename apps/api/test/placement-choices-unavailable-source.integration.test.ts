@@ -10,7 +10,7 @@ import { ProductionPlacementChoiceDiscovery } from '../src/modules/placement/cho
 import { NodePlacementChoicesService } from '../src/modules/placement/choicesService.js'
 import { fixture, toolError } from './helpers/nodePlacementStartFixture.js'
 
-it('reports released source choices through authenticated HTTP and MCP with persisted readback and denied callers',
+it('repairs released source choices through authenticated HTTP and MCP with persisted readback and denied callers',
   async () => {
     const f = await fixture()
     const clients: Client[] = []
@@ -21,7 +21,7 @@ it('reports released source choices through authenticated HTTP and MCP with pers
         nodeId: saved.version.definition.nodes[0]!.id,
         agentConfigurationVersionId: f.base.f.configurations[0]!.id }
       const pool = f.base.db.pool
-      const profileEvidence = vi.fn(async () => null)
+      const profileEvidence = vi.fn(async () => ({ qualified: true }))
       const discovery = new ProductionPlacementChoiceDiscovery(pool, () => ({
         roots: f.placement.policies, sources: f.placement.sources,
         profiles: new HarnessInstanceSettingsRepository(pool),
@@ -55,13 +55,13 @@ it('reports released source choices through authenticated HTTP and MCP with pers
       const result = NodePlacementChoicesResultSchema.parse(decodeMcpToolResult(response))
       expect(result.choices).toHaveLength(2)
       for (const placement of [f.placement.local, f.placement.remote]) {
-        expect(result.choices).toContainEqual(expect.objectContaining({ availability: 'unavailable',
-          reason: 'The approved source was released. Approve and bind the source again.',
-          placement: expect.objectContaining({ hostRef: placement.hostRef, source: f.placement.source,
-            rootBinding: placement.rootBinding }),
-        }))
+        const choice = result.choices.find(value => value.placement.hostRef.kind === placement.hostRef.kind)!
+        expect(choice).toMatchObject({ availability: 'ready', reason: null,
+          placement: { hostRef: placement.hostRef, rootBinding: { rootId: placement.rootBinding!.rootId,
+            bindingRevision: placement.rootBinding!.bindingRevision + 1 } } })
+        expect(choice.placement.source!.snapshotId).not.toBe(f.placement.source.snapshotId)
       }
-      expect(profileEvidence).not.toHaveBeenCalled()
+      expect(profileEvidence).toHaveBeenCalled()
       const path = `/api/management/workspaces/${input.workspaceId}/workflows/${input.workflowId}`
         + `/nodes/${input.nodeId}/placement-choices?agentConfigurationVersionId=${input.agentConfigurationVersionId}`
       const http = await app.inject({ method: 'GET', url: path, headers: f.headers })
@@ -70,18 +70,42 @@ it('reports released source choices through authenticated HTTP and MCP with pers
       const sourceRead = await owner.callTool({ name: 'source_list',
         arguments: { workspaceId: input.workspaceId, detail: 'full' } })
       expect(sourceRead.isError).not.toBe(true)
-      expect(SourceListResultSchema.parse(decodeMcpToolResult(sourceRead)).items).toEqual([
+      expect(SourceListResultSchema.parse(decodeMcpToolResult(sourceRead)).items).toEqual(expect.arrayContaining([
         expect.objectContaining({ availability: 'unavailable', manifest: expect.objectContaining({
           snapshotId: f.placement.source.snapshotId,
         }) }),
-      ])
+        expect.objectContaining({ availability: 'retained', manifest: expect.objectContaining({
+          snapshotId: result.choices[0]!.placement.source!.snapshotId,
+        }) }),
+      ]))
       const boundAfter = await owner.callTool({ name: 'source_root_list',
         arguments: { workspaceId: input.workspaceId } })
       expect(boundAfter.isError).not.toBe(true)
-      expect(SourceRootListResultSchema.parse(decodeMcpToolResult(boundAfter)).items).toEqual(roots)
+      const refreshed = SourceRootListResultSchema.parse(decodeMcpToolResult(boundAfter)).items
+      expect(refreshed).toHaveLength(roots.length)
+      for (const root of roots) {
+        expect(refreshed).toContainEqual(expect.objectContaining({ binding: expect.objectContaining({
+          rootId: root.binding.rootId, bindingRevision: root.binding.bindingRevision + 1,
+        }) }))
+        const historical = (await pool.query('select record from source_root_bindings where root_id=$1 and binding_revision=$2',
+          [root.binding.rootId, root.binding.bindingRevision])).rows[0]!
+        expect(historical.record).toEqual(root)
+      }
       const readback = await owner.callTool({ name: 'workflow_node_placement_choices', arguments: input })
       expect(readback.isError).not.toBe(true)
       expect(NodePlacementChoicesResultSchema.parse(decodeMcpToolResult(readback))).toEqual(result)
+
+      // A later release must capture again rather than replay the first setup receipt.
+      await pool.query("update source_snapshots set availability='unavailable' where snapshot_id=$1",
+        [result.choices[0]!.placement.source!.snapshotId])
+      const recoveredAgain = await app.inject({ method: 'GET', url: path, headers: f.headers })
+      expect(recoveredAgain.statusCode).toBe(200)
+      const again = NodePlacementChoicesResultSchema.parse(recoveredAgain.json())
+      expect(again.choices).toHaveLength(2)
+      for (const choice of again.choices) {
+        expect(choice.availability).toBe('ready')
+        expect(choice.placement.source!.snapshotId).not.toBe(result.choices[0]!.placement.source!.snapshotId)
+      }
 
       const denied = await f.base.access.issue({ name: 'Other workflow reader', audience: 'operator',
         expiresAt: new Date(Date.now() + 120_000), grants: [

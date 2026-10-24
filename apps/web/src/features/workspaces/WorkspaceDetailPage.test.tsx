@@ -108,7 +108,7 @@ describe('workspace settings actions', () => {
       http.get('/api/management/workspaces/workspace-1/root-policies', () => HttpResponse.json({
         workspaceId: 'workspace-1', readiness: 'metadata-only', policies: [], allowlists: [mainRoot],
       })),
-      http.post('/api/management/workspaces/workspace-1/repository', async ({ request }) => {
+      http.post('/api/management/workspaces/workspace-1/repository/add', async ({ request }) => {
         const input = WorkspaceRepositoryAddInputSchema.parse(await request.json())
         bodies.push(input)
         status = { ...project.ready, operation: { ...project.ready.operation!, commandId: input.commandId } }

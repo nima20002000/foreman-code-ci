@@ -24,7 +24,7 @@ describe('workspace project client boundaries', () => {
       http.get('/api/management/workspaces/workspace-1/repository', () => HttpResponse.json({
         workspaceId: 'workspace-1', state: 'metadata-only', repository: project.repository, revision: 1,
       })),
-      http.post('/api/management/workspaces/workspace-1/repository', () => HttpResponse.json({
+      http.post('/api/management/workspaces/workspace-1/repository/add', () => HttpResponse.json({
         value: { workspaceId: 'workspace-1', state: 'preparing', repository: project.repository, revision: 1 },
         replayed: false,
       })),
@@ -39,7 +39,7 @@ describe('workspace project client boundaries', () => {
 
   it('rejects an Add acknowledgement for another workspace instead of claiming preparation succeeded', async () => {
     const project = worktreeFixture('other-workspace')
-    server.use(http.post('/api/management/workspaces/workspace-1/repository', () => HttpResponse.json({
+    server.use(http.post('/api/management/workspaces/workspace-1/repository/add', () => HttpResponse.json({
       value: project.ready, replayed: false,
     })))
     await expect(addWorkspaceRepository({ workspaceId: 'workspace-1', commandId: 'original-command',
