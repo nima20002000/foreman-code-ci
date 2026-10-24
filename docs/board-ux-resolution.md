@@ -19,7 +19,7 @@ were added or changed. Graph and Overview retain the same Board and edit owner.
 
 - **BOARD-07: Rejected: combining live inspection and explicit history needs a product decision.** RunNodeInspector deliberately polls bounded node/CI reads; ExecutionInspector deliberately retains explicitly refreshed, bounded historical pages. Their refresh policies and evidence scopes are stated in the existing UI. One-board already restores live node inspection (395b74a35f); this task preserves both contracts rather than silently choosing one.
 
-- **BOARD-08: Fixed in f9097f9c4b.** Saved connections retain their immutable handoff-limit button and open relationship-filtered execution/binding evidence with existing Run handoff usage.
+- **BOARD-08: Fixed in 94a85146f7.** Saved connections retain their immutable handoff-limit button and open relationship-filtered execution/binding evidence with existing Run handoff usage.
 
 - **BOARD-09: Fixed in 6cbc8a0568.** The primary Runs menu continues beyond 250 records through a ten-page sliding window, with a Newest runs action; its history cache cannot evict the separate latest-Run overlay read.
 
@@ -65,3 +65,11 @@ explicitly enables pointer interaction on that inspection target.
 At `b3e4dd5748`, the focused structural/schedule/approval/save group
 `748841ff-53b6-46b4-ad92-e0aa8a047c9d` passed all 42 tests and live-lock ticket
 `75133972-747e-4397-87b6-4e8519eeb2c4` passed all nine tests.
+
+At `e5dd373ccf`, tickets `0469e918-4b8e-4be3-a647-45d593115457` and
+`cb725c79-4629-470e-b087-2a6861178be8` passed all 148 fast tests.
+Heavy ticket `26fdc080-3ecc-448b-b1a9-5fa7c5a569b5` passed 112 tests and
+exposed the remaining connection visibility defect: the correct relationship
+was selected inside a collapsed Run-details disclosure. `94a85146f7` reveals
+that existing disclosure on relationship selection without controlling later
+manual disclosure state. The unchanged route regression asserts visibility.

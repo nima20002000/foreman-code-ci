@@ -22,6 +22,8 @@ it('navigates node, repetition, attempt and clear filters from the normal Runs s
   measureBoardWire(fixture.mock)
   const { router } = await mountMeasuredBoard(`${currentHref()}&selectedRunId=${owner.run.id}`)
   const inspector = await openRunDetails()
+  await user.click(screen.getByText('Run details and other runs', { selector: 'summary' }))
+  expect(inspector).toBeVisible()
   await user.selectOptions(within(inspector).getByRole('combobox', { name: 'Run node' }), fixture.second.id)
   await waitFor(() => expect(router.state.location.search.runNodeId).toBe(fixture.second.id))
   const detail = fixture.repeatedExecutions[2]!.detail
