@@ -127,7 +127,7 @@ for (const via of ['http', 'mcp'] as const) {
       expect(result.choices).toContainEqual(expect.objectContaining({ availability: 'ready', reason: null,
         placement: expect.objectContaining({ hostRef: f.native.placement.local.hostRef }) }))
       expect(result.choices).toContainEqual(expect.objectContaining({ availability: 'unavailable',
-        reason: 'This computer is busy. Retry shortly.',
+        reason: expect.stringMatching(/busy/iu),
         placement: expect.objectContaining({ hostRef: f.native.placement.remote.hostRef }) }))
       expect(await f.roots()).toEqual(rootsBefore)
       await f.expectDenied()

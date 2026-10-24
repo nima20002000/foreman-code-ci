@@ -228,6 +228,7 @@ describe('WorkspaceRouteEntry integration', () => {
     await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
     expect(rail).toBeVisible()
+    await user.click(within(rail).getByText('More settings'))
     expect(within(rail).getByRole('textbox', { name: 'Name' })).toHaveValue(agent.name)
     expect(await within(rail).findByText('Computers can’t be checked right now. Try again shortly.', {}, { timeout: 8000 })).toBeVisible()
   }, 15_000)
