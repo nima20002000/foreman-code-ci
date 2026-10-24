@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_AGENT_DEFAULTS, DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { HarnessConfigurationCheckResultSchema } from '@foreman-code/contracts/management'
 import { CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/current'
-import { currentWorkflowFixture as makeCurrentFixture } from '../mocks/currentWorkflow'
+import { currentWorkflowFixture as makeWave25Fixture } from '../mocks/currentWorkflow'
 
 import { ApiError, ApiClient, apiClient, isApiRestartError } from './client'
 import { resetMockFixtures, setMockScenario } from '../mocks/scenarios'
@@ -107,7 +107,7 @@ describe('Phase 1 API boundary', () => {
   })
 
   it('parses complete-definition Save and its exact HTTP replay', async () => {
-    const fixture = makeCurrentFixture('web-save')
+    const fixture = makeWave25Fixture('web-save')
     const value = { workspaceId: fixture.scope.workspaceId, workflowId: fixture.scope.workflowId,
       revision: 9, currentVersionId: fixture.version.id, version: fixture.version }
     const response = (replayed: boolean) => new Response(JSON.stringify({ value, replayed }),

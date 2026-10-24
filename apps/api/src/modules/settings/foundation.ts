@@ -3,12 +3,12 @@ import { workspaceStorageRoot } from '../workspaces/storage.js'
 import { randomUUID } from 'node:crypto'
 
 import {
-  AgentDefaultsSchema,
+  RecordedAgentDefaultsSchema,
   DEFAULT_AGENT_DEFAULTS,
   DEFAULT_WORKFLOW_APPROVAL_HANDLER,
   WorkflowDefaultsSchema,
   withAdvancedDefaults,
-  type AgentDefaults,
+  type RecordedAgentDefaults,
   type WorkflowDefaults,
 } from '@foreman-code/contracts'
 import type pg from 'pg'
@@ -49,8 +49,8 @@ export function readSystemPromptSetting(sql: SqlQuery): Promise<PromptSettingSna
 }
 
 /** The same saved templates apply to direct and staged creation in their save transaction. */
-export function readAgentDefaultsSetting(sql: SqlQuery): Promise<VersionedSetting<AgentDefaults>> {
-  return readSetting(sql, KEYS.agents, AgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS).then((snapshot) => ({
+export function readAgentDefaultsSetting(sql: SqlQuery): Promise<VersionedSetting<RecordedAgentDefaults>> {
+  return readSetting(sql, KEYS.agents, RecordedAgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS).then((snapshot) => ({
     ...snapshot,
     value: {
       ...(snapshot.value.master ? { master: { ...snapshot.value.master, harness: withAdvancedDefaults(snapshot.value.master.harness) } } : {}),
@@ -113,7 +113,7 @@ export class PostgresFoundationSettingsRepository {
     return this.write('circle-credit-allowance', CircleCreditAllowanceSchema.parse(value), expectedRevision, client)
   }
 
-  getAgentDefaults(client?: pg.ClientBase): Promise<VersionedSetting<AgentDefaults>> {
+  getAgentDefaults(client?: pg.ClientBase): Promise<VersionedSetting<RecordedAgentDefaults>> {
     return readAgentDefaultsSetting(client ?? this.pool)
   }
 
@@ -153,7 +153,7 @@ export class PostgresFoundationSettingsRepository {
       { approvalHandler: DEFAULT_WORKFLOW_APPROVAL_HANDLER }, client)
   }
 
-  updateAgentDefaults(value: AgentDefaults, expectedRevision: number | undefined, client?: pg.ClientBase) {
+  updateAgentDefaults(value: RecordedAgentDefaults, expectedRevision: number | undefined, client?: pg.ClientBase) {
     const accepted = AgentDefaultsUpdateInputSchema.shape.value.parse(value)
     return this.write(KEYS.agents, accepted, expectedRevision, client)
   }
@@ -162,7 +162,7 @@ export class PostgresFoundationSettingsRepository {
     return this.write(KEYS.workflows, WorkflowDefaultsSchema.parse(value), expectedRevision, client)
   }
 
-  updateManagedAgentDefaults(client: pg.PoolClient, value: AgentDefaults, expectedRevision: number | undefined) {
+  updateManagedAgentDefaults(client: pg.PoolClient, value: RecordedAgentDefaults, expectedRevision: number | undefined) {
     return this.updateAgentDefaults(value, expectedRevision, client)
   }
 

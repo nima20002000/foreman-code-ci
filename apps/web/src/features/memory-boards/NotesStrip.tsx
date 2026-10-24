@@ -5,10 +5,9 @@ import { mergedMemoryItems, useMemoryNotes } from './queries'
 import type { MemoryBoardClient, MemoryBoardView } from './ports'
 import { errorMessage } from './presentation'
 
-export function NotesStrip({ client, board, canWrite, onAdd, onEdit, onArchive, onSourcePost }: {
+export function NotesStrip({ client, board, canWrite, onAdd, onEdit, onArchive }: {
   client: MemoryBoardClient; board: MemoryBoardView; canWrite: boolean
   onAdd(): void; onEdit(note: MemoryNote): void; onArchive(note: MemoryNote, archived: boolean): void
-  onSourcePost?(postId: string): void
 }) {
   const [archived, setArchived] = useState(false)
   const query = useMemoryNotes(client, board, archived)
@@ -25,7 +24,6 @@ export function NotesStrip({ client, board, canWrite, onAdd, onEdit, onArchive, 
       <NoteText text={note.text} />
       <div className="n-actions"><Button size="sm" disabled={!canWrite} onClick={() => onEdit(note)}>Edit note</Button>
         <Button size="sm" disabled={!canWrite} onClick={() => onArchive(note, !archived)}>{archived ? 'Restore' : 'Archive note'}</Button>
-        {note.sourcePostId && <Button size="sm" disabled={!onSourcePost} onClick={() => onSourcePost?.(note.sourcePostId!)}>Source message</Button>}
       </div>
     </article>)}</div>
     {query.hasNextPage && <Button loading={query.isFetchingNextPage} loadingLabel="Loading notes…" onClick={() => void query.fetchNextPage()}>Load more notes</Button>}

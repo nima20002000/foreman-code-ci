@@ -1,6 +1,6 @@
 import type pg from 'pg'
-import type { PostgresJobDispatch } from '../../jobs/index.js'
-import type { DeviceEndpoint } from '../../devices/index.js'
+import type { PostgresJobDispatch } from '../../jobs/dispatch.js'
+import type { DeviceEndpoint } from '../../devices/deviceEndpoint.js'
 import { FileByteStorage } from '../storage.js'
 import { MAX_FILE_BYTES } from '@foreman-code/contracts/files'
 import { JobInputAuthority } from './authority.js'

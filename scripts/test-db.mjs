@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -12,12 +11,12 @@ function reusePrivateDatabase(action) {
     throw new Error('The verification runtime must start its private PostgreSQL before database startup')
   }
   const result = spawnSync('/usr/lib/postgresql/17/bin/psql', [
-    '-h', '127.0.0.1', '-p', '55439', '-U', INSTALLATION_NAMES.database.testAdmin, '-d', 'postgres',
+    '-h', '127.0.0.1', '-p', '55439', '-U', 'graphql_test_admin', '-d', 'postgres',
     '-v', 'ON_ERROR_STOP=1', '-Atqc',
     "select current_setting('data_directory'), shobj_description(oid, 'pg_database')"
       + " from pg_database where datname in ('postgres', 'graphql_test_control') order by datname",
   ], { encoding: 'utf8', timeout: 10_000, maxBuffer: 65536,
-    env: { PATH: '/usr/bin:/bin', LC_ALL: 'C.UTF-8', PGPASSWORD: INSTALLATION_NAMES.database.testPassword } })
+    env: { PATH: '/usr/bin:/bin', LC_ALL: 'C.UTF-8', PGPASSWORD: 'graphql_test_disposable_only' } })
   if (result.error) throw result.error
   const expected = '/job-scratch/postgres/data|graphql-disposable-test-server'
   if (result.status !== 0 || result.stdout.trim() !== `${expected}\n${expected}`) {
@@ -168,7 +167,7 @@ export function composeDatabase(action, {
   const cacheKey = persistentCache && createHash('sha256').update(persistentCache).digest('hex').slice(0, 16)
   const fixtureProject = sourceEnvironment.COMPOSE_PROJECT_NAME?.startsWith('fx-')
     ? sourceEnvironment.COMPOSE_PROJECT_NAME : undefined
-  let project = INSTALLATION_NAMES.compose.test
+  let project = 'graphql-tests'
   if (runId) project = `foreman-ci-${runId}`
   if (cacheKey) project = `foreman-ci-pg-${cacheKey}`
   if (fixtureProject) project = fixtureProject
@@ -199,7 +198,7 @@ export function composeDatabase(action, {
     if (action === 'up') {
       // Private checkouts are unreadable to the container user, so the idempotent init SQL goes through stdin.
       docker(['compose', '--project-name', project, '--file', file, 'exec', '-T', '-e', 'PGPASSWORD=graphql_test_disposable_only',
-        'postgres', 'psql', '-h', '127.0.0.1', '-U', INSTALLATION_NAMES.database.testAdmin, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-q'],
+        'postgres', 'psql', '-h', '127.0.0.1', '-U', 'graphql_test_admin', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-q'],
       readFileSync(fileURLToPath(new URL('./test-postgres-init.sql', import.meta.url)), 'utf8'))
     }
     if (runId && action === 'up') {

@@ -1,10 +1,9 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { memoryExecution } from './memoryExecution.js'
 import { memoryWorkSettlement } from '../runs/memoryBoardHandoffs.js'
 import { repeatTickIndex } from '../runs/repeatResolution.js'
 import {
   isReadOnlyHarnessConfiguration,
-  effectiveForemanTools, memoryBoardTools, sameAgentNode, sameExecution,
+  effectiveGraphqlTools, memoryBoardTools, sameAgentNode, sameExecution,
   type AgentSubject, type LogicalWorkRef, type MemoryBoardScope,
 } from '@foreman-code/contracts'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
@@ -29,8 +28,8 @@ async function subjectAccess(tx: SqlTransaction, supplied: AgentSubject): Promis
     throw new DomainError('ACCESS_DENIED', 'The memory subject does not match its saved execution.', 403)
   }
   const readOnly = isReadOnlyHarnessConfiguration(saved.configuration.harness)
-  const tools = effectiveForemanTools(saved.subject.agent.productRole, saved.configuration[INSTALLATION_NAMES.fields.agentTools],
-    saved.node[INSTALLATION_NAMES.fields.agentTools], Boolean(saved.node.interval), memoryBoardTools('write'))
+  const tools = effectiveGraphqlTools(saved.subject.agent.productRole, saved.configuration.graphqlTools,
+    saved.node.graphqlTools, Boolean(saved.node.interval), memoryBoardTools('write'))
     .filter(tool => !readOnly || !memoryBoardTools('write').some(name => name === tool) || memoryBoardTools('read').some(name => name === tool))
   return { principalId: `execution:${saved.execution.id}`, subject: saved.subject, tools, readOnly,
     branchNodeIds: [saved.node.id] }
@@ -116,9 +115,6 @@ export const memoryBoardAuthority: MemoryBoardAuthority = {
     if (subject.kind !== 'execution') return null
     const saved = await memoryExecution(tx, subject.execution.executionId)
     return resolveMemoryWork(tx, saved.work)
-  },
-  async sourcePost() {
-    throw new DomainError('SOURCE_POST_UNAVAILABLE', 'Group chat sources are not available.', 409)
   },
   async lifecycle(tx, agent, work, executionId) {
     const resolved = await resolveMemoryWork(tx, work)

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import type { HostCiPorts } from './runner.js'
 
 const PeerSchema = z.object({

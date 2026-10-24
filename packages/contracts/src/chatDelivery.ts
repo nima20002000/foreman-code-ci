@@ -20,7 +20,7 @@ export const DeliveryTargetSchema = z.discriminatedUnion('kind', [
     conversationId: IdSchema }).strict(),
 ]);
 export const ChatDeliveryReceiptSchema = z.object({
-  id: IdSchema, commandId: IdSchema, postId: IdSchema.optional(),
+  id: IdSchema, commandId: IdSchema,
   target: DeliveryTargetSchema,
   requestedIntent: ChatDeliveryIntentSchema,
   appliedIntent: z.enum(['steer','next_turn','interrupt_and_send']),
@@ -28,7 +28,7 @@ export const ChatDeliveryReceiptSchema = z.object({
   nativeTurnId: IdSchema.optional(),
   continuationId: IdSchema.optional(), continuationExecution: ExecutionRefSchema.optional(),
   consultationId: IdSchema.optional(),
-  replyPostId: IdSchema.optional(), errorCode: z.string().optional(),
+  errorCode: z.string().optional(),
   createdAt: TimestampSchema, updatedAt: TimestampSchema,
 }).strict().superRefine((receipt, context) => {
   refineReceiptLineage(receipt, context);
@@ -44,7 +44,7 @@ export const ChatSendRequestSchema = z.object({
   intent: ChatDeliveryIntentSchema,
   content: z.string(), ...MessageAttachmentFields,
   sessionMode: z.enum(['regular','plan']).optional(),
-  expectedNativeTurnId: IdSchema.optional(), sourcePostId: IdSchema.optional(),
+  expectedNativeTurnId: IdSchema.optional(),
 }).strict().superRefine((request, context) => {
   refineChatPrompt(request, context, { size: false });
   if (new TextEncoder().encode(canonicalJson(request)).byteLength > CHAT_SEND_MAX_BYTES) {
@@ -147,7 +147,7 @@ export const ChatDeliveryInputReadSchema = z.object({
 export const ChatDeliveryInputPageSchema = z.object({
   items: z.array(z.object({
     commandId: IdSchema, receiptId: IdSchema, target: DeliveryTargetSchema,
-    origin: z.enum(['direct', 'group']), sourcePostId: IdSchema.optional(),
+    origin: z.literal('direct'),
     content: z.string(), truncated: z.boolean(), bodyCursor: z.string().nullable(),
     ...MessageAttachmentFields, intent: ChatDeliveryIntentSchema, createdAt: TimestampSchema,
   }).strict()).max(100),

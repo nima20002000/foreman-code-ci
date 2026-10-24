@@ -8,7 +8,7 @@ import { ChatSendRequestSchema, ChatStopRequestSchema, type ChatDeliveryReceipt,
 import { server } from '../../../mocks/server'
 import { ApiError } from '../../../shared/api/client'
 import type { ConversationAttachments } from '../../attachments'
-import { useConversationDraftStore } from '../../chat-core'
+import { useConversationDraftStore } from '../conversationDraftStore'
 import { ExecutionChatPanel } from './ExecutionChatPanel'
 import type { ExecutionChatNotice, ExecutionChatSource, ExecutionChatTarget } from './executionChatSource'
 
@@ -66,12 +66,12 @@ function endpoints(value: EngineChatReadback = structuredClone(initial)) {
   return state
 }
 function mount(source: NativeSource, options: { visible?: boolean; nativeTurnId?: string; attachments?: ConversationAttachments;
-  onOpenContinuation?: (receipt: ChatDeliveryReceipt) => void; followUp?: ReactNode } = {}) {
+  followUp?: ReactNode } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   clients.push(client)
   const tree = (visible = true) => <QueryClientProvider client={client}><ExecutionChatPanel visible={visible}
     target={target} name="Ava" source={source} nativeTurnId={options.nativeTurnId} attachments={options.attachments}
-    onOpenContinuation={options.onOpenContinuation} followUp={options.followUp} /></QueryClientProvider>
+    followUp={options.followUp} /></QueryClientProvider>
   const view = render(tree(options.visible ?? true))
   return { ...view, visible: (value: boolean) => view.rerender(tree(value)) }
 }
@@ -147,14 +147,14 @@ describe('exact Execution chat public surface', () => {
     expect(source.subscriptions[0]!.options.signal.aborted).toBe(true)
   })
 
-  it('pins the original execution and qualified turn, selects interruption without sending, and follows successors only explicitly', async () => {
-    const state = endpoints(), source = new NativeSource(), open = vi.fn()
+  it('pins the original execution and qualified turn and selects interruption without sending', async () => {
+    const state = endpoints(), source = new NativeSource()
     state.value.receipts = [{ id: 'previous-delivery', commandId: 'previous-command', target, requestedIntent: 'interrupt_and_send',
       appliedIntent: 'interrupt_and_send', state: 'completed', continuationId: 'continuation-a',
       continuationExecution: { ...target.execution, executionId: 'successor', attempt: 3 }, createdAt: date, updatedAt: date }]
     state.inputs = [{ commandId: 'previous-command', receiptId: 'previous-delivery', target, origin: 'direct', content: 'Change direction',
       truncated: false, bodyCursor: null, attachments: [], intent: 'interrupt_and_send', createdAt: date }]
-    mount(source, { nativeTurnId: 'native-turn-a', onOpenContinuation: open })
+    mount(source, { nativeTurnId: 'native-turn-a' })
     const input = await screen.findByRole('textbox', { name: 'Message' })
     fireEvent.change(input, { target: { value: '  change direction  ' } })
     await screen.findByRole('button', { name: 'Steer now' })
@@ -165,9 +165,7 @@ describe('exact Execution chat public surface', () => {
     expect(state.commands[0]).toMatchObject({ target, intent: 'interrupt_and_send', content: '  change direction  ', expectedNativeTurnId: 'native-turn-a' })
     expect(source.subscriptions.every(subscription => subscription.target.kind === 'workflow_execution'
       && subscription.target.execution.executionId === 'execution-a')).toBe(true)
-    expect(open).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Open continuation' }))
-    expect(open).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Open continuation' })).not.toBeInTheDocument()
   })
 
   it('never treats a historical native turn as current and keeps unsupported session commands as draft text', async () => {

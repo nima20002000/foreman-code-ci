@@ -7,9 +7,9 @@ import { CiManagedSetupSchema } from '@foreman-code/contracts'
 import { JobVerificationInstalledRuntimeDescriptorSchema } from '@foreman-code/contracts/job-verification-runtime'
 import type { SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import { anchored, type CiContext } from './environment.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES,
-  readProtectedRuntimeConfiguration, type InstalledVerificationRuntimeConfiguration } from '@foreman-code/contracts-node/installed-runtime-node'
+  readProtectedRuntimeConfiguration, type InstalledVerificationRuntimeConfiguration } from '@foreman-code/contracts/installed-runtime-node'
 
 /** Installation inputs retained during pairing adoption, never executable runtime or qualification records. */
 export const CiRuntimeInstallationSchema = z.object({
