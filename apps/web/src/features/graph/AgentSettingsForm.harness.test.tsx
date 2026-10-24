@@ -8,6 +8,8 @@ import { server } from '../../mocks/server'
 import { queryKeys } from '../../shared/api/query'
 import { defaultAgentForHarness } from '../agents'
 import { savedClaudeConfiguration } from '../settings/claudeSettings.fixtures'
+import { accountTargetInfo, workerAccountTarget, observedAt } from '../provider-accounts/providerAccounts.fixtures'
+import { savedPlacementFixture } from '../node-placement/fixtures'
 import { AgentSettingsForm } from './AgentSettingsForm'
 
 const clients: QueryClient[] = []
@@ -128,4 +130,30 @@ it('restores the saved Claude draft after switching away even without a global C
   await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
   expect(onSave.mock.calls[0]![0].agent).toMatchObject({ harness: 'claude',
     harnessConfiguration: { ...savedClaudeConfiguration, configDirectory: '/edited/profile' } })
+})
+
+it('loads the Worker native Codex models when its account channel is unavailable', async () => {
+  const nativeRead = vi.fn(({ request }: { request: Request }) => {
+    expect(JSON.parse(new URL(request.url).searchParams.get('hostRef')!)).toEqual(workerAccountTarget.hostRef)
+    return HttpResponse.json({ harness: 'codex', providerVersion: 'worker-cli', authenticated: true,
+      models: [{ id: 'worker-codex', name: 'Worker Codex', reasoningEfforts: ['medium', 'high'],
+        variants: [], serviceTiers: ['standard', 'priority'] }],
+      nativeAgents: [], settings: [], restrictions: [], checkedAt: observedAt })
+  })
+  server.use(
+    http.get('/api/provider-accounts/targets', () => HttpResponse.json({ targets: [accountTargetInfo(),
+      { ...accountTargetInfo(workerAccountTarget), connected: false, providers: [] }] })),
+    http.get('/api/management/harnesses/codex/options', nativeRead),
+  )
+  const { client, agent, onSave, user, view } = setup(DEFAULT_HARNESS_DEFAULTS, null, 'codex')
+  view.rerender(<QueryClientProvider client={client}>
+    <AgentSettingsForm agent={agent} node={{ placement: { ...savedPlacementFixture, hostRef: workerAccountTarget.hostRef } }}
+      onClose={() => undefined} onSave={onSave} />
+  </QueryClientProvider>)
+  await waitFor(() => expect(nativeRead).toHaveBeenCalledOnce())
+  await user.click(screen.getByRole('combobox', { name: 'Model' }))
+  await user.click(await screen.findByRole('option', { name: 'Worker Codex' }))
+  expect(screen.queryByText(/Model list unavailable/)).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
+  expect(onSave.mock.calls[0]![0].agent.harnessConfiguration.model).toBe('worker-codex')
 })

@@ -563,31 +563,15 @@ export class PostgresSourceService implements SourceAdmissionPort {
     const current = roots.find(root => root.selection.rootPolicyId === input.selection.rootPolicyId
       && isDeepStrictEqual(root.selection.hostRef, input.selection.hostRef))
     if (current && isDeepStrictEqual(current.selection, input.selection) && current.binding.accessMode === input.accessMode) {
-      try {
-        return { value: await this.rootGet(principal, source, { workspaceId: input.workspaceId,
-          rootId: current.binding.rootId, bindingRevision: current.binding.bindingRevision }), replayed: true }
-      } catch (error) {
-        if (!(error instanceof DomainError) || !['SOURCE_UNAVAILABLE', 'SOURCE_NOT_FOUND',
-          'SOURCE_ROOT_NOT_FOUND', 'SOURCE_ROOT_CONFLICT'].includes(error.code)) throw error
-        // A released snapshot needs a fresh capture and binding, rather than its old command receipt.
-      }
+      return { value: await this.rootGet(principal, source, { workspaceId: input.workspaceId,
+        rootId: current.binding.rootId, bindingRevision: current.binding.bindingRevision }), replayed: true }
     }
-    const setupKey = commandInputHash({ ...input, bindingRevision: current?.binding.bindingRevision ?? 0 })
-    const captureCommandId = `setup-project-${setupKey}`
-    // Terminal captures need a new command; active attempts keep the same identity across callers.
-    const failedCaptures = template ? 0 : await this.transaction(async sql => {
-      const row = (await sql.query<{ count: string }>(`select count(*) from source_approvals
-        where workspace_id=$1 and requested_by=$2 and state='failed'
-          and (command_id=$3 or command_id like $4)`,
-      [input.workspaceId, principal.id, captureCommandId, `${captureCommandId}-retry-%`])).rows[0]!
-      return Number(row.count)
-    })
     const approved = template ? await this.get(principal, source, { workspaceId: input.workspaceId, ...template.source })
       : await this.approveProject(principal, { workspaceId: input.workspaceId,
-        commandId: failedCaptures ? `${captureCommandId}-retry-${failedCaptures}` : captureCommandId }, { source })
+        commandId: `setup-project-${commandInputHash(input)}` }, { source })
     const manifest = approved.manifest
     return this.bindRoot(principal, source, { ...input,
-      commandId: `setup-root-${setupKey}`, expectedBindingRevision: current?.binding.bindingRevision ?? 0,
+      commandId: `setup-root-${commandInputHash(input)}`, expectedBindingRevision: current?.binding.bindingRevision ?? 0,
       source: { approvedSourceId: manifest.approvedSourceId, snapshotId: manifest.snapshotId, manifestDigest: manifest.manifestDigest } })
   }
   async bindRoot(principal: ManagementPrincipal, source: Transport, raw: unknown) {
