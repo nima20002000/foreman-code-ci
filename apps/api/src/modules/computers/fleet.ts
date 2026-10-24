@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import type { ReadObservation } from '@foreman-code/contracts'
 import { componentLogger } from '../diagnostics/index.js'
@@ -61,7 +62,7 @@ const CACHE_MS = 20_000
 const RUNNING_CACHE_MS = 3_000
 const SYNC_RETRY_MS = 5 * 60_000
 const MAX_SYNC_RETRY_MS = 60 * 60_000
-const RETIRED_APP_SERVERS = ['graphql-app', 'graphql-operator', 'graphql-worker']
+const RETIRED_APP_SERVERS = [INSTALLATION_NAMES.mcp.app, INSTALLATION_NAMES.mcp.operator, INSTALLATION_NAMES.protocol.workerAudience]
 
 /** Server definitions safe to copy: no inline secret values. Servers needing a login are set up per computer later. */
 export function syncableServers(

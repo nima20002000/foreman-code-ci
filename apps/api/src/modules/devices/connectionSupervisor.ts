@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { DEVICE_APPLICATION_MAX_EXTENSIONS, negotiateDeviceExtensions, parseExtensionDescriptors } from '@foreman-code/contracts/device-application'
 import { DeviceApplicationChannel, DeviceApplicationError, deviceNegotiationHash, extensionDescriptors, type DeviceApplicationRequestOptions, type DeviceExtensionRegistration } from './deviceApplicationChannel.js'
 import { verifyMainIdentityProof } from '@foreman-code/contracts-node/device-identity-node'
@@ -124,7 +125,7 @@ export class DeviceConnectionSupervisor {
         const dispatch = extensions.some((item) => ['execution-v1', 'job-v1'].includes(item.namespace) && item.mainCanRequest)
         const transfer = extensions.some((item) => item.namespace === 'byte-transfer-v1' && (item.mainCanRequest || item.workerCanRequest))
         if (capabilities.dispatch !== dispatch || capabilities.transfer !== transfer) throw new DeviceConnectionError('malformed-frame')
-        const expectedProof: MainIdentityProofRequest = { audience: 'graphql-worker-main-v1', ...registration.identity, nonce: hello.nonce, connectionGeneration: hello.connectionGeneration, connectionEpoch: hello.connectionEpoch, mainConnectionEpoch: frame.connectionEpoch, protocolVersion: DEVICE_PROTOCOL_VERSION, workerApplicationVersion: hello.appVersion, negotiationHash: deviceNegotiationHash(extensions) }
+        const expectedProof: MainIdentityProofRequest = { audience: INSTALLATION_NAMES.protocol.mainAudience, ...registration.identity, nonce: hello.nonce, connectionGeneration: hello.connectionGeneration, connectionEpoch: hello.connectionEpoch, mainConnectionEpoch: frame.connectionEpoch, protocolVersion: DEVICE_PROTOCOL_VERSION, workerApplicationVersion: hello.appVersion, negotiationHash: deviceNegotiationHash(extensions) }
         if (!await withDeviceDeadline(verifyMainIdentityProof(frame.mainIdentityProof, expectedProof, registration.mainPublicKeyFingerprint), attempt.signal, this.options.handshakeMs ?? 10_000)) throw new DeviceConnectionError('wrong-main')
         if ((frame.mainIdentityProof as { mainApplicationVersion: string }).mainApplicationVersion !== frame.appVersion) throw new DeviceConnectionError('wrong-main')
         if (attempt.signal.aborted) break

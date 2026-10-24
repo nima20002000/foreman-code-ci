@@ -28,7 +28,7 @@ import { FileByteStorage } from '../src/modules/files/storage.js'
 import { PostgresFileReferenceAuthorization } from '../src/modules/files/references/authorization.js'
 import { FileReferenceService } from '../src/modules/files/references/service.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
-import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
+import { registerForemanMcp } from '../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { FILE_REFERENCE_TOOL_NAMES } from '../src/mcp/operator/tools/fileReferences.js'
 import { FileReferenceReadResultSchema } from '@foreman-code/contracts/files'
@@ -88,7 +88,7 @@ describe.skipIf(!postgresEnabled)('FIL-36 permanent reference HTTP + Operator MC
       .send({ error: { code: error instanceof DomainError ? error.code : 'INVALID_REQUEST' } }))
     // Only commands/workflows are needed by this fixture. Other product tools are never called.
     const services = { commands, workflows } as OperatorServices
-    registerGraphqlMcp(app, { access, operator: services })
+    registerForemanMcp(app, { access, operator: services })
     registerProductionFileStorage(app, database.pool, { fileStorageRoot: root, workspaceStorageRoot: join(database.directory, 'projects'),
       harnesses: { workspaceRoot: join(database.directory, 'harnesses') } } as ApiConfig)
     references = app.getDecorator<FileReferenceService>('fileReferenceService')

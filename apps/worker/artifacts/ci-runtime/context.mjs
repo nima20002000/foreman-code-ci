@@ -1,4 +1,5 @@
 import { verificationRuntimeFiles, verificationArtifactPath } from '../../../../packages/verification-runner/runtime-files.mjs';
+import { INSTALLATION_NAMES, standaloneInstallationSource } from '@foreman-code/contracts/installation-names'
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile, open } from 'node:fs/promises';
@@ -28,7 +29,7 @@ async function installedRuntimeFiles(offlineSeed) {
       destination: verificationArtifactPath(path) });
   }
   return Promise.all(entries.map(async entry => ({ ...entry,
-    bytes: await readSeedFile(entry.root, entry.name, 1024 * 1024) })));
+    bytes: Buffer.from(standaloneInstallationSource((await readSeedFile(entry.root, entry.name, 1024 * 1024)).toString('utf8'))) })));
 }
 
 async function committedDependencies(repository, commit) {
@@ -135,7 +136,7 @@ export async function buildCiRuntimeContext({ repository, commit = 'HEAD', outpu
       releaseAge: { minimumMinutes: 2880, strict: true, rejectMissingTime: true, packages: seed.packages.length } };
   }
   if (unitCodex) receipt.unitCodex = { version: unitCodex.tool.version, binarySha256: unitCodex.tool.binarySha256,
-    executable: '/opt/graphql-ci/tools/codex', review: unitCodex.tool.review };
+    executable: INSTALLATION_NAMES.paths.ciCodex, review: unitCodex.tool.review };
   await writeFile(join(output, 'context-receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   return receipt;
 }

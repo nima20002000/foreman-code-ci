@@ -5,7 +5,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { localHumanPrincipal } from '../../access/localHuman.js'
 import { CurrentInteractionRepository } from '../../interactions/current/repository.js'
 import { OperatorInteractionService } from '../../interactions/operator.js'
-import { registerGraphqlMcp } from '../../../mcp/unified/transport.js'
+import { registerForemanMcp } from '../../../mcp/unified/transport.js'
 import type { OperatorServices } from '../../../mcp/operator/types.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -177,7 +177,7 @@ it('reports a live remote approval as answerable through human and authenticated
     })
   registerOperatorHttpSecurity(app, access)
   registerUserInteractions(app, interactions)
-  registerGraphqlMcp(app, { access, operator: { interactions: new OperatorInteractionService(interactions),
+  registerForemanMcp(app, { access, operator: { interactions: new OperatorInteractionService(interactions),
     commands: { recordDenied: async () => undefined } } as unknown as OperatorServices })
   const clients: Client[] = []
   const address = await app.listen({ host: '127.0.0.1', port: 0 })

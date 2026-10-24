@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { logIgnoredError, settleObserved } from '../diagnostics/index.js'
 import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import { assertClaudeFullAccess } from './nativeWorkflowConfiguration.js'
@@ -74,7 +75,7 @@ export class HarnessCatalogService {
 
   claudeSetupOptions(principal: ManagementPrincipal) {
     requireAuthorization(principal, 'harnesses:read')
-    return ClaudeSetupOptionsSchema.parse({ graphqlMcp: this.appMcpEndpoint ? { type: 'http', url: this.appMcpEndpoint } : null })
+    return ClaudeSetupOptionsSchema.parse({ [INSTALLATION_NAMES.fields.claudeMcp]: this.appMcpEndpoint ? { type: 'http', url: this.appMcpEndpoint } : null })
   }
 
   async list(principal: ManagementPrincipal) {

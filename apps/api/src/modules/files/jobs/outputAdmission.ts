@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { withTransaction } from '../../../infrastructure/transaction.js'
 import { randomUUID } from 'node:crypto'
@@ -59,7 +60,7 @@ export class PostgresJobOutputAdmission {
     const device=(await sql.query<{record:unknown;credential_expires_at:Date|null}>(`select record,credential_expires_at from device_registrations
       where id=$1 and main_id=$2 for share`,[binding.deviceId,binding.mainId])).rows[0]
     const registration=device && DeviceRegistrationSchema.parse(device.record)
-    if (!device?.credential_expires_at || !registration || !authorizeDevice(registration,{audience:'graphql-worker',mainId:binding.mainId,deviceId:binding.deviceId,
+    if (!device?.credential_expires_at || !registration || !authorizeDevice(registration,{audience:INSTALLATION_NAMES.protocol.workerAudience,mainId:binding.mainId,deviceId:binding.deviceId,
       workerInstallationId:binding.workerInstallationId,keyRevision:binding.keyRevision,authorizationRevision:binding.authorizationRevision,
       expiresAt:device.credential_expires_at.toISOString()},'heartbeat',this.clock().getTime())) throw new DomainError('JOB_OUTPUT_DEVICE_REVOKED','Output device authority expired or was revoked.',403)
     const dispatch=(await sql.query<{intent:unknown;last_receipt:unknown;receipt_sequence:string}>(`select intent,last_receipt,receipt_sequence::text

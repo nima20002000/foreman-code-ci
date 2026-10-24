@@ -4,7 +4,7 @@ import {
   AppInteractionListOutputSchema,
   AppInteractionRespondOutputSchema,
   AgentProductRoleSchema,
-  GraphqlAgentToolSchema,
+  ForemanAgentToolSchema,
   RespondToInteractionRequestSchema,
   IdSchema,
 } from '@foreman-code/contracts'
@@ -20,7 +20,7 @@ export const AppContextSchema = z.object({
   }).strict(),
   role: AgentProductRoleSchema,
   /** Foreman Code MCP tools enabled for this Agent's configuration and workflow node. */
-  tools: z.array(GraphqlAgentToolSchema),
+  tools: z.array(ForemanAgentToolSchema),
   scope: z.object({
     workspaceIds: z.array(IdSchema).optional(),
     workflowIds: z.array(IdSchema).optional(),

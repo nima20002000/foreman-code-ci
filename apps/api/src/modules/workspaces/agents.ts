@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { AgentSchema, AgentConfigurationVersionSchema, projectHarnessEffort } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type pg from 'pg'
@@ -18,7 +19,7 @@ function managedAgent(row: AgentRow) {
       harness: harness.harness, harnessConfiguration: harness, model: harness.model,
       effort: projectHarnessEffort(harness),
       fastMode: harness.harness === 'codex' ? harness.serviceTier === 'priority' : undefined,
-      prompt: configuration.prompt, assignedSkills: configuration.assignedSkills, graphqlTools: configuration.graphqlTools,
+      prompt: configuration.prompt, assignedSkills: configuration.assignedSkills, [INSTALLATION_NAMES.fields.agentTools]: configuration[INSTALLATION_NAMES.fields.agentTools],
       nativeTools: configuration.nativeTools })
   }
   return { agent, metadataRevision: Number(row.metadata_revision), archivedAt: row.archived_at?.toISOString() ?? null }

@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type pg from 'pg'
 import { DomainError } from '../errors.js'
 import type { PostgresAccessService } from '../access/index.js'
@@ -69,7 +70,7 @@ export function createExecutionCredentialProvider(dependencies: ExecutionCredent
       if (principal.id !== retained.principalId || principal.agentId !== execution.agentId)
         throw new DomainError('REVIEWER_CREDENTIAL_LOST', 'The original process credential changed.', 409)
       return { principalId: principal.id, expiresAt: principal.expiresAt,
-        environment: { agentId: execution.agentId, variables: { GRAPHQL_MCP_TOKEN: applicationAccess.token } } }
+        environment: { agentId: execution.agentId, variables: { [INSTALLATION_NAMES.environment.MCP_TOKEN]: applicationAccess.token } } }
     },
     async bindReviewerJob(executionId, credential, job, lane) {
       await credentials.bindReviewerJob(executionId, credential, job, lane)

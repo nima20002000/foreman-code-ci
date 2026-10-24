@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../installationNames.mjs'
 import { optionalCommandId } from './commands.js'
 import { z } from 'zod'
 import { WORKER_EXECUTION_STARTUP_VARIABLE } from './workerExecution.js'
@@ -51,7 +52,7 @@ const RemoteExecutionSettingSnapshotSchema = z.object({
 }).strict()
 
 export const RemoteExecutionEnvironmentVariableSchema = z.enum([
-  WORKER_EXECUTION_STARTUP_VARIABLE, 'FOREMAN_CODE_DEVICE_LISTENER_ENABLED',
+  WORKER_EXECUTION_STARTUP_VARIABLE, INSTALLATION_NAMES.environment.DEVICE_LISTENER_ENABLED,
   'DEVICE_LISTENER_HOST', 'DEVICE_LISTENER_PORT', 'DEVICE_LISTENER_TLS_CERT_FILE',
   'DEVICE_LISTENER_TLS_KEY_FILE', 'DEVICE_LISTENER_ADVERTISED_ENDPOINT', 'DEVICE_LISTENER_TLS_TRUST_CERT_FILE',
 ])

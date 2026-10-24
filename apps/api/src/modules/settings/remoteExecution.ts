@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import {
   RemoteExecutionSettingsUpdateInputSchema,
   type ManagementPrincipal, type RemoteExecutionSettings, type RemoteExecutionSettingsUpdateInput,
@@ -83,7 +84,7 @@ export class RemoteExecutionSettingsService {
       const { effective, environmentOverrides } = resolveRemoteExecutionSettings(saved.value, this.environment)
       this.workerExecution.apply({
         enabled: effective.enabled,
-        managedBy: environmentOverrides.includes('FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED') ? 'startup' : 'settings',
+        managedBy: environmentOverrides.includes(INSTALLATION_NAMES.environment.LAPTOP_EXECUTION_ENABLED) ? 'startup' : 'settings',
       })
       try {
         const applied = await this.runtime.configureListener(remoteExecutionListenerConfig(effective, this.apiPort))
