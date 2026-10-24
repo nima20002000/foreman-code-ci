@@ -7,7 +7,7 @@ import { expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { createForemanMcpServer } from '../src/mcp/unified/server.js'
+import { createGraphqlMcpServer } from '../src/mcp/unified/server.js'
 import { operatorCatalog } from './support/operatorCatalog.js'
 
 type RunStopInput = z.infer<typeof RunStopInputSchema>
@@ -25,7 +25,7 @@ it('advertises optional command IDs across the Operator tool catalog', async () 
     'extensions', 'workspaces', 'locations', 'workflows', 'agents', 'harnesses', 'harnessCompatibility',
     'harnessQualifications', 'settings', 'runs', 'commands', 'interactions',
   ].map(name => [name, stub])) as unknown as OperatorServices
-  const server = await createForemanMcpServer({ role: 'operator', operator: services, principal: {
+  const server = await createGraphqlMcpServer({ role: 'operator', operator: services, principal: {
     id: 'catalog-owner', name: 'Catalog owner', audience: 'operator', revokedAt: null,
     expiresAt: '2099-01-01T00:00:00Z', grants: [{ actions: [...ManagementActionSchema.options], scope: {} }],
   } })

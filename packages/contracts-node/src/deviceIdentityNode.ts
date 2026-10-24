@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomUUID } from 'node:crypto'
 import { link, lstat, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -165,6 +164,6 @@ export async function verifyMainEnrollmentProof(proof: unknown, expected: import
 }
 
 export function pairingProof(input: Omit<import('@foreman-code/contracts/device-identity').DevicePairingRequest, 'signature'>): string {
-  return JSON.stringify([INSTALLATION_NAMES.protocol.pairSignature, input.mainId, input.workerInstallationId, publicKeyFingerprint(input.publicKey),
+  return JSON.stringify(['graphql-worker-pair-v1', input.mainId, input.workerInstallationId, publicKeyFingerprint(input.publicKey),
     input.requestId, createHash('sha256').update(input.grant).digest('hex')])
 }

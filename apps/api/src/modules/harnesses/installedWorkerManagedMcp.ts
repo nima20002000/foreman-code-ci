@@ -58,7 +58,7 @@ export function createInstalledWorkerManagedMcp(input: {
     return snapshot
   }
   const installLauncher = (signal: AbortSignal) => installManagedLauncher(
-    input.launcherSource ?? new URL('../../../../../scripts/foreman-mcp.mjs', import.meta.url), appLauncherPath(), signal)
+    input.launcherSource ?? new URL('../../../../../scripts/graphql-mcp.mjs', import.meta.url), appLauncherPath(), signal)
   const codex: NativeMcpAdapter = {
     async read(signal) {
       return inspect(() => controlCodex(adapter => adapter.read(signal)))

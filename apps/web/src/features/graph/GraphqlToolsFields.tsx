@@ -1,8 +1,8 @@
 import { MemoryBoardAccessField } from '../memory-boards'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import {
-  COLLABORATION_AGENT_TOOLS, FOREMAN_AGENT_TOOLS, ForemanAgentToolSchema, foremanRoleTools, effectiveForemanTools, memoryBoardTools,
-  type ForemanAgentTool, type ForemanToolOverride, type WorkflowAgentProductRole,
+  COLLABORATION_AGENT_TOOLS, GRAPHQL_AGENT_TOOLS, GraphqlAgentToolSchema, graphqlRoleTools, effectiveGraphqlTools, memoryBoardTools,
+  type GraphqlAgentTool, type GraphqlToolOverride, type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 
 import { Checkbox, SegmentedControl } from '../../shared/ui/nocturne'
@@ -12,43 +12,43 @@ import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
 type NodeChoice = 'default' | 'on' | 'off'
 
 /** An empty override is stored as none, so the node follows the Agent default. */
-function normalizeToolOverride(override: ForemanToolOverride | undefined): ForemanToolOverride | undefined {
+function normalizeToolOverride(override: GraphqlToolOverride | undefined): GraphqlToolOverride | undefined {
   return override && (override.add.length || override.remove.length) ? override : undefined
 }
 
 /** The Agent's default Foreman Code MCP tools, and this workflow node's change to them. */
-export function ForemanToolsFields({ role, defaults, override, onChange, executionReadOnly = false, readOnly = false, hideMemory = false }: {
+export function GraphqlToolsFields({ role, defaults, override, onChange, executionReadOnly = false, readOnly = false, hideMemory = false }: {
   /** Workflow Agent roles only; Operator tools are never enabled per Agent. */
   role: WorkflowAgentProductRole
-  defaults: readonly ForemanAgentTool[] | undefined
-  override: ForemanToolOverride | undefined
+  defaults: readonly GraphqlAgentTool[] | undefined
+  override: GraphqlToolOverride | undefined
   executionReadOnly?: boolean
   readOnly?: boolean
   /** Memory access is edited elsewhere in the same form. */
   hideMemory?: boolean
   /** Missing defaults retain the legacy enabled set until explicitly edited. */
-  onChange(defaults: ForemanAgentTool[] | undefined, override: ForemanToolOverride | undefined): void
+  onChange(defaults: GraphqlAgentTool[] | undefined, override: GraphqlToolOverride | undefined): void
 }) {
   const sharedFields = useCollaborationUISlots()
   const fields = useBoardAuthoring()?.collaborationFields ?? sharedFields
-  const memoryTools: ForemanAgentTool[] = memoryBoardTools('write')
-  const browserTools = fields?.nodeBrowser ? Object.keys(COLLABORATION_AGENT_TOOLS).filter(name => name.startsWith('browser_')) as ForemanAgentTool[] : []
-  const implemented: ForemanAgentTool[] = [...memoryTools, ...browserTools]
-  const tools = foremanRoleTools(role, implemented)
-  const agentDefault = effectiveForemanTools(role, defaults, undefined, false, implemented)
-  const choice = (tool: ForemanAgentTool): NodeChoice => override?.add.includes(tool) ? 'on' : override?.remove.includes(tool) ? 'off' : 'default'
-  const setDefault = (tool: ForemanAgentTool, enabled: boolean) => {
+  const memoryTools: GraphqlAgentTool[] = memoryBoardTools('write')
+  const browserTools = fields?.nodeBrowser ? Object.keys(COLLABORATION_AGENT_TOOLS).filter(name => name.startsWith('browser_')) as GraphqlAgentTool[] : []
+  const implemented: GraphqlAgentTool[] = [...memoryTools, ...browserTools]
+  const tools = graphqlRoleTools(role, implemented)
+  const agentDefault = effectiveGraphqlTools(role, defaults, undefined, false, implemented)
+  const choice = (tool: GraphqlAgentTool): NodeChoice => override?.add.includes(tool) ? 'on' : override?.remove.includes(tool) ? 'off' : 'default'
+  const setDefault = (tool: GraphqlAgentTool, enabled: boolean) => {
     // Editing one visible legacy tool must retain configured collaboration tools
     // even while their feature-owned field/handler is not mounted.
     const selected = new Set(defaults ?? agentDefault)
     if (enabled) selected.add(tool); else selected.delete(tool)
-    const next = ForemanAgentToolSchema.options.filter(item => selected.has(item))
+    const next = GraphqlAgentToolSchema.options.filter(item => selected.has(item))
     // A node change that now matches the default is no longer a change.
     const add = (override?.add ?? []).filter((item) => !next.includes(item))
     const remove = (override?.remove ?? []).filter((item) => next.includes(item) || item.startsWith('browser_'))
     onChange(next, normalizeToolOverride({ add, remove }))
   }
-  const setChoice = (tool: ForemanAgentTool, value: NodeChoice) => {
+  const setChoice = (tool: GraphqlAgentTool, value: NodeChoice) => {
     const add = (override?.add ?? []).filter((item) => item !== tool)
     const remove = (override?.remove ?? []).filter((item) => item !== tool)
     if (value === 'on' && !agentDefault.includes(tool)) add.push(tool)
@@ -60,9 +60,9 @@ export function ForemanToolsFields({ role, defaults, override, onChange, executi
     <legend>Tools<InfoHint label="Tools">Bug reporting is always available. For other tools, the Agent default applies in every workflow. This workflow can turn a tool on or off for this node only.</InfoHint></legend>
     {hideMemory ? null : fields?.memoryAccess ? fields.memoryAccess({ role, defaults, override, executionReadOnly: readOnly || executionReadOnly, onChange }) : <MemoryBoardAccessField agentDefaultTools={agentDefault} readOnly={readOnly || executionReadOnly}
       value={override?.add.some(tool => memoryTools.includes(tool)) || override?.remove.some(tool => memoryTools.includes(tool))
-        ? effectiveForemanTools(role, defaults, override, false, memoryTools) : undefined}
+        ? effectiveGraphqlTools(role, defaults, override, false, memoryTools) : undefined}
       onChange={selected => {
-        const next = (selected ?? agentDefault).map(tool => ForemanAgentToolSchema.parse(tool))
+        const next = (selected ?? agentDefault).map(tool => GraphqlAgentToolSchema.parse(tool))
         const add = (override?.add ?? []).filter(tool => !memoryTools.includes(tool))
         const remove = (override?.remove ?? []).filter(tool => !memoryTools.includes(tool))
         for (const tool of memoryTools) {
@@ -73,7 +73,7 @@ export function ForemanToolsFields({ role, defaults, override, onChange, executi
       }} />}
     <div className="agent-graphql-tools-list">
       {tools.filter(tool => !memoryTools.includes(tool)).map((tool) => {
-        const definition = FOREMAN_AGENT_TOOLS[tool]
+        const definition = GRAPHQL_AGENT_TOOLS[tool]
         if (tool === 'bug_report') {
           return <div key={tool} className="agent-graphql-tool">
             <div className="agent-graphql-tool-name">

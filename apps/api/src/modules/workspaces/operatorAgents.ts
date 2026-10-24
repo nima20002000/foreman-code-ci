@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type pg from 'pg'
 import {
   AgentSchema, AgentConfigurationVersionSchema, agentTemplateForRole, projectHarnessEffort,
@@ -54,7 +53,7 @@ export async function readAgentForReuse(client: pg.ClientBase, principal: Manage
   }
   const agent = agentWithConfiguration(AgentSchema.parse({...AgentSchema.parse(row.record), productRole: configuration.productRole,
     configurationVersionId: configuration.id, prompt: configuration.prompt, assignedSkills: configuration.assignedSkills,
-    [INSTALLATION_NAMES.fields.agentTools]: configuration[INSTALLATION_NAMES.fields.agentTools], nativeTools: configuration.nativeTools,
+    graphqlTools: configuration.graphqlTools, nativeTools: configuration.nativeTools,
     harnessProfileSelection: configuration.harnessProfileSelection}), configuration.harness)
   return {agent, baseRevision: Number(row.metadata_revision), workflowIds: references.rows.map((item) => item.id)}
 }
@@ -148,7 +147,7 @@ export class OperatorAgentMutationService {
           id:input.agentId,name:input.name,productRole:input.productRole,description:input.description,role:input.role,
           prompt:input.prompt ?? {},assignedSkills:input.assignedSkills ?? [], harnessProfileSelection,
           nativeTools: input.nativeTools ?? agentTemplateForRole(defaults.value, input.productRole).nativeTools,
-          [INSTALLATION_NAMES.fields.agentTools]: input[INSTALLATION_NAMES.fields.agentTools] ?? agentTemplateForRole(defaults.value, input.productRole)[INSTALLATION_NAMES.fields.agentTools],
+          graphqlTools: input.graphqlTools ?? agentTemplateForRole(defaults.value, input.productRole).graphqlTools,
         }),configuration), false, this.validateProfile(livePrincipal))
         const revision = await client.query<{metadata_revision:string}>('select metadata_revision from agents where id=$1',[agent.id])
         return {agent,metadataRevision:Number(revision.rows[0]!.metadata_revision)}
@@ -194,7 +193,7 @@ export class OperatorAgentMutationService {
           ...(input.role !== undefined ? {role:input.role ?? undefined} : {}),
           ...(input.prompt !== undefined ? {prompt:input.prompt} : {}),
           ...(input.assignedSkills !== undefined ? {assignedSkills:input.assignedSkills} : {}),
-          ...(input[INSTALLATION_NAMES.fields.agentTools] !== undefined ? {[INSTALLATION_NAMES.fields.agentTools]:input[INSTALLATION_NAMES.fields.agentTools]} : {}),
+          ...(input.graphqlTools !== undefined ? {graphqlTools:input.graphqlTools} : {}),
           ...(input.nativeTools !== undefined ? {nativeTools:input.nativeTools} : {}),
         }),configuration)
         const result = await this.persist(client,input.workspaceId,edited,livePrincipal)
@@ -250,7 +249,7 @@ export class OperatorAgentMutationService {
         const agent = await saveAgentConfiguration(client,input.workspaceId,AgentSchema.parse({
           id:input.agentId,name:input.name,description:source.description,role:source.role,productRole:source.productRole,
           harnessConfiguration:configuration,harnessProfileSelection:selection,prompt:source.prompt,assignedSkills:source.assignedSkills,
-          [INSTALLATION_NAMES.fields.agentTools]:source[INSTALLATION_NAMES.fields.agentTools],
+          graphqlTools:source.graphqlTools,
           nativeTools: source.nativeTools,
         }),false,this.validateProfile(livePrincipal))
         const revision = await client.query<{metadata_revision:string}>('select metadata_revision from agents where id=$1',[agent.id])
@@ -300,7 +299,7 @@ export class OperatorAgentMutationService {
         const { configuration, selection } = preparation.value()
         authorizeAgentConfiguration(livePrincipal,input.workspaceId,configuration,version.assignedSkills)
         return this.persist(client,input.workspaceId,agentWithConfiguration(AgentSchema.parse({...current.agent,
-          prompt:version.prompt,assignedSkills:version.assignedSkills,[INSTALLATION_NAMES.fields.agentTools]:version[INSTALLATION_NAMES.fields.agentTools],
+          prompt:version.prompt,assignedSkills:version.assignedSkills,graphqlTools:version.graphqlTools,
           nativeTools:version.nativeTools,harnessProfileSelection:selection}),configuration),livePrincipal)
       },
     })

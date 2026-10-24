@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { settleObserved } from '../../diagnostics/index.js'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/server'
@@ -37,7 +36,7 @@ export function registerJobOutputMetadataEndpoints(app:FastifyInstance,input:{ac
   })
   app.post('/device/mcp/job-outputs',{bodyLimit:32768,onRequest:async request=>{await authenticate(request)}},async(request,reply)=>{
     const binding=await authenticate(request)
-    const server=new McpServer({name:INSTALLATION_NAMES.mcp.jobOutputs,version:'1.0.0'},{instructions:
+    const server=new McpServer({name:'graphql-worker-job-outputs',version:'1.0.0'},{instructions:
       'Worker-only output metadata for the actual accepted closed job. No job-start, source editing, browser/Operator credential exchange or arbitrary transfer/root IDs. Bulk bytes use the authenticated binary carrier.'})
     const invoke=async(operation:()=>Promise<unknown>)=>{try{return toolResult(await input.admission.onAuthenticatedChannel(binding,operation))}catch(error){return toolFailure(error)}}
     server.registerTool('job_output_admit',{inputSchema:JobOutputPublicationInputSchema,outputSchema:TransferIntentSchema,

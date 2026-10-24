@@ -111,7 +111,7 @@ async function fixture(t, targetVersion = '1.1.0') {
     previousDirectory: (await readInstalledRelease({ root, facts, expected })).directory,
     unitPath: join(base, '.config/systemd/user/graphql-worker.service') };
   await mkdir(join(launch.unitPath, '..'), { recursive: true, mode: 0o700 });
-  const template = await readFile(new URL('../artifacts/foreman-worker.service.in', import.meta.url), 'utf8');
+  const template = await readFile(new URL('../artifacts/graphql-worker.service.in', import.meta.url), 'utf8');
   await writeFile(launch.unitPath, renderUserService(template, { node: process.execPath, app: root,
     state: stateDirectory, home: base, path: '/usr/bin:/bin',
     entrypoint: join(launch.previousDirectory, 'src/cli.mjs') }), { mode: 0o600 });

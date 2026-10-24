@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { AcceptedNodePlacement, DispatchIntent } from '@foreman-code/contracts/node-placement'
 import { RemoteApplicationAccessSchema, type RemoteApplicationAccess } from '@foreman-code/contracts/remote-execution'
 import { WORKER_MCP_EXTENSION, decodeWorkerMcpResult, encodeWorkerMcpRequest, WorkerMcpRelayAuthorizationSchema, WorkerMcpRelayRequestSchema, WorkerMcpRelayResponseSchema } from '@foreman-code/contracts/worker-mcp-relay'
@@ -39,7 +38,7 @@ export async function prepareWorkerApplicationAccess(channel: Pick<DeviceConnect
     return expiresAt
   }
   await refresh()
-  const environment: ChildProcessEnvironment = { agentId: applicationAccess.agentId, variables: { [INSTALLATION_NAMES.environment.MCP_TOKEN]: applicationAccess.token } }
+  const environment: ChildProcessEnvironment = { agentId: applicationAccess.agentId, variables: { GRAPHQL_MCP_TOKEN: applicationAccess.token } }
   return { environment, get expiresAt() { return expiresAt }, refresh,
     async request(body: unknown, protocolVersion?: string, requestSignal?: AbortSignal) {
     requestSignal?.throwIfAborted()
