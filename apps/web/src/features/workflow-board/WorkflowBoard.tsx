@@ -8,7 +8,7 @@ import type { ExecutionRef, WorkflowRunSummary, WorkflowExecutionChatTarget } fr
 import type { BoardSidePanel, RepeatGraphScopeCurrent, WorkspaceBoardInspection } from '@foreman-code/contracts/current'
 import { Alert, Button, Icon, IconButton } from '../../shared/ui/nocturne'
 import { WorkspaceExecutionLocationSettings } from '../settings'
-import { BoardRunOverlay, RunBoardSlot, useRunBoardShown, useBoardRunSnapshot } from '../run-board'
+import { BoardRunOverlay, useBoardRunSnapshot, RunBoardSlot, useRunBoardShown } from '../run-board'
 import { useRunSummaries, useSelectedRun, useSelectedRunSnapshot, isRunAccessError } from '../runs-selector'
 import { BoardNavigationControls } from './BoardNavigationControls'
 import {
@@ -82,8 +82,13 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     selectRun(scope)
   }, [selectRun, requestedRun?.runId, releaseBrowser])
   const selectedRun = useSelectedRun({ workspaceId, workflowId })
+  // The Run painted on the draft's nodes is the Board itself: choosing it (Runs, Running) shows the Board, not a page.
+  const [paintedRunId, setPaintedRunId] = useState<string>()
+  const paintedRef = useRef(paintedRunId)
+  paintedRef.current = paintedRunId
   const navigationSelection = useMemo(() => ({ ...selectedRun,
-    selectRun: (runId: string | null) => {
+    selectRun: (chosen: string | null) => {
+      const runId = chosen !== null && chosen === paintedRef.current ? null : chosen
       if (runId !== selectedRun.identity.runId) releaseBrowser()
       selection.current.generation++
       return selectedRun.selectRun(runId)
@@ -133,6 +138,9 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const boardRun = useMemo(() => boardRunId ? { workspaceId, workflowId, runId: boardRunId, live: boardRunLive } : undefined,
     [workspaceId, workflowId, boardRunId, boardRunLive])
   const displayedRun = useBoardRunSnapshot(boardRun, current && !side.memoryOpen)
+  const boardSnapshot = !displayedRun.isError && displayedRun.data?.snapshot
+  const boardVersionId = boardSnapshot && boardSnapshot.kind === 'available' && boardSnapshot.runId === boardRunId
+    ? boardSnapshot.workflowVersionId : undefined
   const previousBoardRunId = useRef(boardRunId)
   useEffect(() => {
     const previous = previousBoardRunId.current
@@ -144,22 +152,22 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   }, [boardRunId, side.agentSelection, selectPanel])
   const selectChatTarget = useCallback((target: WorkflowExecutionChatTarget, versionId: string) => {
     const targetRunId = target.kind === 'workflow_execution' ? target.execution.runId : target.runId
-    if (current && boardRunId === targetRunId && (!displayedRun.scope || displayedRun.scope.workflowVersionId === versionId)
+    if (current && displayedRun.scope?.runId === targetRunId && displayedRun.scope.workflowVersionId === versionId
       && target.agent.workspaceId === workspaceId && target.agent.workflowId === workflowId) {
       selectPanel({ kind: 'agent', nodeId: target.agent.workflowNodeId, runId: targetRunId, tab: 'chat',
         ...(target.kind === 'workflow_execution' ? { executionId: target.execution.executionId }
           : { waitingActivationId: target.waitingActivationId }) })
     } else selectHistoricalChatTarget(target, versionId)
-  }, [current, boardRunId, displayedRun.scope, workspaceId, workflowId, selectPanel, selectHistoricalChatTarget])
+  }, [current, displayedRun.scope, workspaceId, workflowId, selectPanel, selectHistoricalChatTarget])
   const chatNodeId = side.agentSelection?.nodeId
   const selectChatRun = useCallback((target: { runId: string; workflowVersionId?: string } | undefined) => {
-    if (current && target && target.runId === boardRunId && chatNodeId) {
+    if (current && target && target.runId === displayedRun.scope?.runId && chatNodeId) {
       selectPanel({ kind: 'agent', nodeId: chatNodeId, tab: 'chat' })
     } else selectHistoricalChatRun(target)
-  }, [current, boardRunId, chatNodeId, selectPanel, selectHistoricalChatRun])
+  }, [current, displayedRun.scope?.runId, chatNodeId, selectPanel, selectHistoricalChatRun])
   const boardRunControls = useMemo(() => boardRunId ? <SelectedRunControls key={boardRunId} visible={!side.memoryOpen}
-    scope={{ workspaceId, workflowId, runId: boardRunId }} runActionRef={setRunActionHost} /> : undefined,
-  [boardRunId, side.memoryOpen, workspaceId, workflowId])
+    scope={{ workspaceId, workflowId, runId: boardRunId, ...(boardVersionId ? { workflowVersionId: boardVersionId } : {}) }} runActionRef={setRunActionHost} /> : undefined,
+  [boardRunId, boardVersionId, side.memoryOpen, workspaceId, workflowId])
   const runControlsScope = boardSelection.active && !boardSelection.invalid && boardSelection.identity.runId && !runUnreadable
     ? { workspaceId, workflowId, runId: boardSelection.identity.runId,
       ...(picked?.kind === 'available' ? { workflowVersionId: picked.workflowVersionId } : {}) } : undefined
@@ -196,11 +204,11 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     openMemoryCard: (cardId?: string) => setMemoryOpen(true, cardId),
     canvasVisible: side.view === 'graph', teamNodeId: side.teamNodeId, selectTeam: side.selectTeam,
     openLocation: () => setLocationOpen(true), openRuns: () => setRunsOpen(true), activeRuns, liveRunId, authoringActive: current,
-    boardRunLive, boardRunControls,
+    boardRunLive, boardRunControls: side.view === 'graph' ? boardRunControls : undefined, paintedRunId,
     // Starting from an older Run's view returns to the Board, where the new Run shows.
     showRunOnBoard: (runId: string) => { setStartedRunId(runId); if (!current) void navigationSelection.selectRun(null) },
     navigationControls: current && side.view === 'graph' ? <>{directionNotice}<BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /></> : undefined,
-  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, boardRunLive, boardRunControls, directionNotice, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam])
+  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, boardRunLive, boardRunControls, paintedRunId, directionNotice, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam])
   const hosts = useMemo(() => ({ sidePanelHost, runCaptionHost, runActionHost }), [sidePanelHost, runCaptionHost, runActionHost])
   const authoring = useMemo<WorkflowBoardAuthoring>(() => ({ registerAuthoringActions,
     // A shown Run moves agents exactly as the draft Board does (owner rule: one Board, the same rules).
@@ -231,7 +239,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         {(current || detailsScope && !runUnreadable) ? <IconButton label="Activities" onClick={() => setRunsOpen(true)}><Icon name="history" size={16} /></IconButton> : null}
         {runControlsScope ?
           <SelectedRunControls key={boardSelection.identity.runId} visible={!side.memoryOpen}
-            scope={runControlsScope} runActionRef={setRunActionHost} /> : null}
+            scope={runControlsScope} runActionRef={setRunActionHost} /> : current && side.view === 'overview' ? boardRunControls : null}
       </header> : null
   return <BoardSelectionContext.Provider value={value}><BoardHostsContext.Provider value={hosts}><BoardAuthoringContext.Provider value={authoring}>
     <PanelHeaderSlotContext.Provider value={panelHeaderSlot}><PanelFooterSlotContext.Provider value={panelFooterSlot}>
@@ -251,7 +259,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
       {boardToolbar}
       <div className="workflow-collaboration-canvas" hidden={side.view !== 'graph'} inert={side.view !== 'graph'}>
       <RunBoardSlot selection={boardSelection} shown={shownBoard}>
-        <BoardRunOverlay displayed={displayedRun} visible={current && side.view === 'graph' && !side.memoryOpen}>
+        <BoardRunOverlay run={boardRun} read={displayedRun} visible={current && side.view === 'graph' && !side.memoryOpen} onPainted={setPaintedRunId}>
         <div className="workflow-board-authoring" onClickCapture={authoringEvent} onKeyDownCapture={authoringEvent} onSubmitCapture={authoringEvent}>
           {children}
           {current && locationOpen ? <WorkspaceExecutionLocationSettings workspaceId={workspaceId} presentation="dialog"
@@ -283,7 +291,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
       </BoardSelectionContext.Provider>
       <WorkflowSidePanel scope={side.scope} workspaceId={workspaceId} workflowId={workflowId}
         workflowVersionId={displayedRun.scope?.workflowVersionId ?? legacyRun?.workflowVersionId ?? (picked?.kind === 'available' ? picked.workflowVersionId : undefined)}
-        opener={side.opener} runId={boardRunId ?? legacyRun?.runId ?? pickedRunId} selection={side.panel} agentSelection={side.agentSelection} onSelect={selectPanel} bodyRef={setSidePanelHost} headerSlotRef={setPanelHeaderSlot} footerSlotRef={setPanelFooterSlot}
+        opener={side.opener} runId={displayedRun.scope?.runId ?? legacyRun?.runId ?? pickedRunId} selection={side.panel} agentSelection={side.agentSelection} onSelect={selectPanel} bodyRef={setSidePanelHost} headerSlotRef={setPanelHeaderSlot} footerSlotRef={setPanelFooterSlot}
         onSelectTarget={selectChatTarget} onSelectRun={selectChatRun}
         modalOpen={side.memoryOpen} slots={collaborationSlots} />
       {browsersOpen && !side.memoryOpen ? collaborationSlots?.browserSidebar?.({ workspaceId, workflowId, runId: legacyRun?.runId ?? pickedRunId,

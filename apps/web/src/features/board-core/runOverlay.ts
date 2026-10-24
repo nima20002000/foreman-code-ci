@@ -1,5 +1,7 @@
 import { createContext } from 'react'
 import type { RunBoardSnapshot } from '@foreman-code/contracts/run-snapshots'
+import type { CiRunJob } from '@foreman-code/contracts'
+import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import type { AgentNodeState, AgentNodeTransition } from '../../shared/ui/nocturne'
 import type { EdgeSignal } from './signalEdge'
 
@@ -9,6 +11,12 @@ export type RunLivePulse = { key: string; signal: EdgeSignal; reversed: boolean;
 export const RunLiveNodes = createContext<ReadonlyMap<string, RunLiveNodeView> | undefined>(undefined)
 /** Pulses crossing each drawn line while Agents hand work to each other. */
 export const RunLivePulses = createContext<ReadonlyMap<string, readonly RunLivePulse[]>>(new Map())
+
+/** The displayed Run's CI read, shared with the retained draft's server and transfer lights. */
+export const RunLiveCi = createContext<{
+  scope: RepeatGraphScopeCurrent; names: ReadonlyMap<string, string>; jobs?: readonly CiRunJob[] | undefined
+  truncated: boolean; error: boolean; loading: boolean; readError: unknown; onRefresh(): void
+} | undefined>(undefined)
 
 /** The validated snapshot displayed on the draft Board, for its existing Run readers. */
 export const RunDisplayedSnapshot = createContext<Extract<RunBoardSnapshot, { kind: 'available' }> | undefined>(undefined)
