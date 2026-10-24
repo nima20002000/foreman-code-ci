@@ -97,6 +97,7 @@ async function fixture(overrides: Partial<CiCommits>, runner?: { commits: CiComm
       await Promise.all(clients.map(client => client.close()))
       await ci.close()
       await app.close()
+      await pool.query('delete from ci_runs where workspace_id=$1', [workspaceId])
       await pool.end()
     } }
 }
