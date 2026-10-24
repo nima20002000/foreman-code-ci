@@ -1,4 +1,5 @@
 import { messageTextPartKey } from '../chatTimeline'
+import { replaceEqualDeep } from '@tanstack/react-query'
 import { activityScopeKey, reconcileActivitySnapshot, sourceVectorIsStale, sourceVectorHasAdvance } from './activityMerge'
 import { isSessionNativeInteraction, type Message } from '@foreman-code/contracts'
 import { committedAfterSnapshot, inheritCommittedRevision } from '../delivery/committedMessageRevision'
@@ -43,10 +44,13 @@ export function mergeChatMessages(...sources: readonly (readonly Message[])[]): 
       if (previous?.revision !== undefined) {
         if (message.revision === undefined || BigInt(message.revision) < BigInt(previous.revision)) continue
         if (message.revision === previous.revision) {
-          if (message.content === previous.content && message.nativeMessageComplete === previous.nativeMessageComplete && (message.attachments !== undefined || message.originalInput !== undefined || message.acceptedModel !== undefined)) messages.set(message.id, inheritCommittedRevision({ ...previous,
-            ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
-            ...(message.acceptedModel !== undefined ? { acceptedModel: message.acceptedModel } : {}),
-            ...(message.originalInput !== undefined ? { originalInput: message.originalInput } : {}) }, previous))
+          if (message.content === previous.content && message.nativeMessageComplete === previous.nativeMessageComplete && (message.attachments !== undefined || message.originalInput !== undefined || message.acceptedModel !== undefined)) {
+            const merged = replaceEqualDeep(previous, { ...previous,
+              ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
+              ...(message.acceptedModel !== undefined ? { acceptedModel: message.acceptedModel } : {}),
+              ...(message.originalInput !== undefined ? { originalInput: message.originalInput } : {}) })
+            messages.set(message.id, inheritCommittedRevision(inheritCommittedRevision(replaceEqualDeep(message, merged), previous), message))
+          }
           continue
         }
       }

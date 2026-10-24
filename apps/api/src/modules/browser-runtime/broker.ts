@@ -117,6 +117,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
         this.options.log?.('Agent browser session closed: its browser process ended', { sessionId: record.session.id,
           profileId: record.session.profileId, generation: record.session.browserGeneration, lostTabs: record.leases.length })
         record.leases = []; record.session.state = 'closed'; record.session.selectedTabId = null
+        record.closing = true
         record.control.controllingViewerId = null; record.control.reason = 'The previous browser process ended. Open a new browser session.'
         live.gate.close(); return
       }
@@ -132,7 +133,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
       if (!restored.some(value => value.lease.tabId === record.session.selectedTabId)) record.session.selectedTabId = restored[0]?.lease.tabId ?? null
       record.session.state = restored.length ? 'paused' : 'closed'
       if (!restored.length) record.control.controllingViewerId = null
-      if (!restored.length) live.gate.close()
+      if (!restored.length) { record.closing = true; live.gate.close() }
     } catch {
       record.session.state = 'recovering'; record.control.state = 'paused'
       record.control.reason = 'The owned browser process is unavailable. Reconnect or close this session to reconcile it.'
@@ -296,6 +297,12 @@ export class BrowserBroker implements BrowserLifecyclePort {
       await this.options.authority.assertCurrent(input.subject)
       if (!this.admission) return { kind: 'unavailable', reason: 'runtime_missing', retryable: true }
       if (completed?.record.session.state === 'closed') return { kind: 'unavailable', reason: 'profile_busy', retryable: false }
+      if (existing?.record.session.state === 'closed' && existing.record.closing) {
+        if ((await this.closeOwned(existing)).state === 'pending') {
+          return { kind: 'unavailable', reason: 'profile_busy', retryable: true }
+        }
+        existing = undefined
+      }
       if (existing) {
         if (existing.record.closing || !['ready', 'paused'].includes(existing.record.session.state)) {
           return { kind: 'unavailable', reason: 'profile_busy', retryable: true }
@@ -845,6 +852,8 @@ export class BrowserBroker implements BrowserLifecyclePort {
 
   private async closeOwned(live: LiveSession): Promise<BrowserReleaseResult> {
     const sessionId = live.record.session.id
+    // Completed cleanup is durable. Replaying every historical session made an idle host take minutes to stop.
+    if (live.record.session.state === 'closed' && !live.record.closing) return { sessionId, state: 'already_closed', reason: null }
     if (live.record.session.state === 'recovering') { await this.restoreOwnedSession(live); await this.persist(live) }
     if (live.record.session.state === 'closed') {
       try {
@@ -854,7 +863,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
         return { sessionId, state: 'pending', reason: 'Browser media or file cleanup is not yet confirmed.' }
       }
       live.record.closing = false
-      await this.persist(live)
+      await this.persist(live).catch(error => { live.record.closing = true; throw error })
       return { sessionId, state: 'already_closed', reason: null }
     }
     live.record.closing = true; live.gate.fence(); live.record.control.epoch++
@@ -883,7 +892,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
     try { await this.retireIdleProfile(live.record.session.profileId) }
     catch { return { sessionId, state: 'pending', reason: 'Idle browser process closure is not yet confirmed.' } }
     live.record.closing = false
-    await this.persist(live)
+    await this.persist(live).catch(error => { live.record.closing = true; throw error })
     return { sessionId, state: 'closed', reason: null }
   }
 }

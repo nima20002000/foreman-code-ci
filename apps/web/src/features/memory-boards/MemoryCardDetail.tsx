@@ -3,7 +3,7 @@ import type { MemoryCard as Card, MemoryCardWorkBinding } from '@foreman-code/co
 import { Button } from '../../shared/ui/nocturne/Button'
 import { useMemoryCardDetail, useMemoryHistory, useMemoryBindings, useMemoryClaims } from './queries'
 import type { MemoryBoardClient, MemoryCardDetail as Detail, MemoryChange, MemoryNodeOption, MemoryWorkHealth } from './ports'
-import { bindingLabel, errorMessage, nodeLabel, statusLabels, visibleTime } from './presentation'
+import { bindingLabel, errorMessage, nodeLabel, statusLabels, visibleTime, shortWorkId } from './presentation'
 
 export type MemoryCardAction = 'edit' | 'drop' | 'reopen' | 'resolve_reopen' | 'resolve_drop'
 interface Props {
@@ -54,7 +54,9 @@ function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpe
         const currentHealth = health.find((item) => item.bindingId === binding.id)
         return <li key={binding.id}>
           <strong>{nodeLabel(binding.node, nodes)}</strong>
-          <p>Run {binding.work.runId.slice(0, 8)} · {bindingLabel(binding)}{currentHealth?.continuing ? ' · Continuing task' : ''}</p>
+          <p><span title={binding.work.runId}>Run {shortWorkId(binding.work.runId)}</span>
+            {binding.currentExecutionId ? <> · <span title={binding.currentExecutionId}>Execution {shortWorkId(binding.currentExecutionId)}</span></> : null}
+            {' · '}{bindingLabel(binding)}{currentHealth?.continuing ? ' · Continuing task' : ''}</p>
           {currentHealth?.stopping && <p>Waiting for turn to stop</p>}
           {binding.reason && <p>{binding.reason}</p>}
           {currentHealth && currentHealth.state !== 'online' && <p>{currentHealth.state === 'offline' ? 'Computer offline' : 'Computer status unconfirmed'}
@@ -94,8 +96,8 @@ function HistoryEntry({ entry, onOpenWork }: { entry: MemoryChange; onOpenWork?:
       <details><summary>{field} changed</summary><p className="memory-preserve-lines">Previously: {text(change.before)}</p>
         <p className="memory-preserve-lines">Saved: {text(change.after)}</p></details>
     </li>)}</ul>}
-    {work && <p>Run {work.runId.slice(0, 8)}
-      {execution ? ` · Execution ${execution.executionId.slice(0, 8)}` : ''}
+    {work && <p><span title={work.runId}>Run {shortWorkId(work.runId)}</span>
+      {execution ? <> · <span title={execution.executionId}>Execution {shortWorkId(execution.executionId)} · attempt {execution.attempt}</span></> : null}
       {onOpenWork && <Button size="sm" onClick={() => onOpenWork(entry)}>Open recorded work</Button>}</p>}
     {entry.provenance?.subject?.kind === 'coordinator_consultation' && <p>Consultation · {entry.provenance.subject.agent.displayName}</p>}
   </li>

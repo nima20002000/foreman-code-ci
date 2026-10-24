@@ -79,8 +79,8 @@ describe.skipIf(!postgresEnabled)('current native activity with retained executi
           values('work',$1,1),('tick-work',$1,2)`, [fixture.scope.runId])
         await sql.query(`insert into harness_executions(id,run_id,record)
           select 'work',run_id,record from harness_executions where id='history-1'`)
-        await sql.query(`insert into harness_executions(id,run_id,record)
-          select 'tick',run_id,jsonb_set(record,'{input}','{"tick":1}'::jsonb)
+        await sql.query(`insert into harness_executions(id,run_id,record,tick_index)
+          select 'tick',run_id,jsonb_set(record,'{input}','{"tick":{"index":1}}'::jsonb),1
           from harness_executions where id='history-1'`)
         await sql.query(`insert into run_repeat_executions(execution_id,run_id,workflow_node_id,
           work_activation_id,technical_attempt) values('work',$1,$2,'work',1),('tick',$1,$2,'tick-work',1)`,

@@ -58,10 +58,6 @@ async function renderWorkspace(initialEntry: string) {
     defaultOptions: { queries: { retry: false, staleTime: 0 } },
   })
   clients.push(queryClient)
-  const born = performance.now()
-  queryClient.getQueryCache().subscribe((event) => {
-    if (event.type === 'updated' && event.action.type === 'success') console.log(`QCACHE ${Math.round(performance.now() - born)} ${JSON.stringify(event.query.queryKey).slice(0, 90)} ${event.query.state.data === event.action.data ? 'changed' : 'same'} ${event.action.manual ? 'manual' : ''}`)
-  })
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: [initialEntry] }),
@@ -193,10 +189,6 @@ describe('WorkspaceRouteEntry integration', () => {
   })
 
   it('opens an unselected reloaded Claude Agent settings panel while cross-computer choices are unavailable', async () => {
-    let t0 = performance.now(); let hits = new Map<string, number>(); const mark = (l: string) => { console.log(`TIMING ${l} ${Math.round(performance.now() - t0)}ms REQ ${JSON.stringify([...hits].sort((x, y) => y[1] - x[1]))}`); t0 = performance.now(); hits = new Map() }
-    const onReq = ({ request }: { request: Request }) => { const k = `${request.method} ${new URL(request.url).pathname.replace('/api/management/workspaces/workspace-1', '~')}`; hits.set(k, (hits.get(k) ?? 0) + 1) }
-    server.events.on('request:start', onReq)
-    try {
     // Apply the canvas CSS so userEvent checks the same pointer access as the browser.
     render(<style>{canvasStyles}</style>)
     const fixture = getMockFixture('workspace-1')!
@@ -216,43 +208,30 @@ describe('WorkspaceRouteEntry integration', () => {
     const first = await renderWorkspace(entry)
     const user = userEvent.setup()
     await workflowBoard('Research to review')
-    mark('first-board')
     await user.click(within(screen.getByRole('banner', { name: 'Board toolbar' })).getByRole('button', { name: 'Research to review' }))
     const name = screen.getByRole('textbox', { name: 'Workflow name' })
     await user.clear(name)
     await user.paste('Activities persisted workflow')
     await user.keyboard('{Enter}')
-    mark('renamed')
     await user.click(screen.getByRole('button', { name: 'Save workflow' }))
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Save workflow' })).not.toBeInTheDocument())
-    mark('saved')
     first.unmount()
     first.queryClient.clear()
     act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
     await renderWorkspace(entry)
-    mark('second-render')
     const board = await workflowBoard('Activities persisted workflow')
-    mark('second-board')
     const node = await within(board).findByRole('button', { name: /^Main coordinator,/ })
     const title = 'Main coordinator'
     expect(node).toHaveAccessibleName(/Claude/)
     expect(node).toHaveAttribute('aria-pressed', 'false')
-    { const walk = (el: Element | null) => { let n = 0; const t = performance.now(); for (; el; el = el.parentElement) { getComputedStyle(el).pointerEvents; n++ } return `${n} ancestors ${Math.round(performance.now() - t)}ms` }
-      console.log(`WALK node ${walk(node)} rules ${[...document.styleSheets].reduce((sum, sheet) => sum + sheet.cssRules.length, 0)} elements ${document.querySelectorAll('*').length}`); t0 = performance.now() }
     await user.hover(node)
-    mark('hover')
     const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
     await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
-    mark('click-open')
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
-    mark('rail')
     expect(rail).toBeVisible()
     await user.click(within(rail).getByText('More settings'))
-    mark('more-settings')
     expect(within(rail).getByRole('textbox', { name: 'Name' })).toHaveValue(agent.name)
     expect(await within(rail).findByText('Computers can’t be checked right now. Try again shortly.', {}, { timeout: 8000 })).toBeVisible()
-    mark('unavailable-note')
-    } finally { server.events.removeListener('request:start', onReq) }
   }, 15_000)
 
   it('opens the accepted new workflow while workspace details still serve the old list', async () => {
