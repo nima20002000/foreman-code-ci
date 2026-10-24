@@ -29,6 +29,7 @@ export function useOperatorCreateConversation({ historyTriggerRef, setAskSend, s
   },
     onSuccess: async ({ conversation }, input) => {
       if (!currentSession(input.generation)) return
+      useOperatorChatStore.getState().rememberDraft(conversation.id)
       if (input.request) {
         const store = useOperatorChatStore.getState()
         if (store.request?.id !== input.request.id) return

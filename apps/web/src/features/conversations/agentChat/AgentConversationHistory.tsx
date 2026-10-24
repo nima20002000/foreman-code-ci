@@ -3,6 +3,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { agentChatApi } from '../../../shared/api/agentChat'
 import { sessionGeneration } from '../../../shared/api/sessionBoundary'
 import { Alert, Button } from '../../../shared/ui/nocturne'
+import { ChatMessageFiles } from '../ChatMessageFiles'
 import { AgentChatMessage } from './AgentChatMessage'
 
 export function AgentConversationHistory({ workspaceId, conversationId, name }: {
@@ -29,6 +30,8 @@ export function AgentConversationHistory({ workspaceId, conversationId, name }: 
       onClick={() => void history.fetchNextPage()}>Load earlier messages</Button> : null}
     {[...(history.data?.pages ?? [])].reverse().flatMap(page => page.messages)
       .filter(message => message.activityChannel !== 'reasoning')
-      .map(message => <AgentChatMessage key={message.id} message={message} name={name} />)}
+      .map(message => <AgentChatMessage key={message.id} message={message} name={name}>
+        {message.attachments?.length ? <ChatMessageFiles message={message} workspaceId={workspaceId} /> : null}
+      </AgentChatMessage>)}
   </details>
 }

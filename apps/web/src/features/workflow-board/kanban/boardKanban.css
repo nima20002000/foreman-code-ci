@@ -20,9 +20,7 @@
   cursor: grab;
 }
 .board-kanban-bar:active { cursor: grabbing; }
-.board-kanban-bar h2 { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: 0; font-size: 0.9rem; flex: 1 1 auto; }
-.board-kanban-bar h2 span { display: flex; align-items: center; gap: 6px; }
-.board-kanban-bar h2 small { font-size: 0.7rem; font-weight: 400; color: var(--text-muted); }
+.board-kanban-bar h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 0.9rem; flex: 1 1 auto; }
 .board-kanban-error { color: var(--danger); font-size: 0.8rem; }
 .board-kanban-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px; cursor: default; }
 .board-kanban-columns { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; height: 100%; }
@@ -48,3 +46,15 @@
 .board-kanban-column.is-placeholder h3 { color: var(--text-muted); }
 .board-kanban-error { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
 .board-kanban-toggle[aria-pressed='true'] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--surface-raised)); color: var(--accent); }
+/* One card in its own window: status, notes, then its updates newest first. */
+.kanban-card-window { display: flex; flex-direction: column; gap: 16px; }
+.kanban-card-window h3 { margin: 0 0 6px; font-size: 0.8rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.kanban-card-window-status { display: flex; align-items: center; gap: 8px; margin: 0; }
+.kanban-card-window-reason { margin: 0; padding: 8px 10px; border-radius: var(--radius-md); background: var(--surface-hover); }
+.kanban-card-window section > p { margin: 0; }
+.kanban-card-updates { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.kanban-card-update { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.kanban-card-update-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 4px; }
+.kanban-card-update-head small { color: var(--text-muted); white-space: nowrap; }
+.kanban-card-update ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }
+.kanban-card-update > p { margin: 0; }
