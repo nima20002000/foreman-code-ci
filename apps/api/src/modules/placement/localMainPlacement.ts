@@ -120,7 +120,7 @@ export async function resolveBoundRootPlacement(input: {
   qualificationSuites: Readonly<Record<CompatibilityHarness, string>>
   assertProfileReady?: (profile: HostHarnessOverride) => void | Promise<void>
 }): Promise<SavedNodePlacement> {
-  const { sql, principal, mainId, workspaceId, configuration, root } = input
+  const { sql, principal, mainId, workspaceId, root } = input
   const hostRef = root.selection.hostRef
   if (hostRef.mainId !== mainId || root.binding.workspaceId !== workspaceId) return unavailable('workflow_source_binding')
   const policy = await input.roots.resolve(sql, principal, { workspaceId, ...root.selection })

@@ -240,7 +240,7 @@ describe('original accepted artifact authority', () => {
   })
   it('requires the exact original source, transfer operation and native materialization, and denies a stopped Run', async () => {
     const t = fixture()
-    if (!('kind' in t.placement.source)) throw new Error('fixture')
+    if (!('kind' in t.placement.source) || t.placement.source.kind !== 'pending') throw new Error('fixture')
     const transferId = randomUUID()
     const receipt: VerifiedTransferReceipt = { version: 1, receiptId: randomUUID(), transferId, sha256: 'a'.repeat(64), byteSize: 123,
       verifiedAt: new Date().toISOString(), intent: { version: 1, ...t.accepted.transferContext, transferId, operationId: t.intent.operationId,

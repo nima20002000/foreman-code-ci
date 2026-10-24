@@ -170,10 +170,6 @@ function physicalSource(native: NativeExecutionPlacement) {
   return 'kind' in native ? { kind: 'plain' as const, policy: native.policy, workingTree: native.workingTree }
     : { record: native.materialization, workingTree: native.workingTree }
 }
-function sourceMaterialization(native: NativeExecutionPlacement): SourceMaterializationRecord {
-  if ('kind' in native) return unavailable('plain_folder_has_no_source_materialization')
-  return native.materialization
-}
 
 /** Source verification uses W09's actual Main-authorized worker service. The runtime leaf is a separate anchored directory with an immutable operation receipt. */
 export async function attestInstalledWorkflowRuntimeLeaf(input:{sources:SourceOperationWorkerService;context:SourceOperationWorkerContext;
@@ -183,7 +179,7 @@ export async function attestInstalledWorkflowRuntimeLeaf(input:{sources:SourceOp
   const roots=ApprovedRootAllowlistSchema.parse(input.approvedRoots)
   let materializationId: string | null = null
   let materializationDigest: string | null = null
-  if ('kind' in executionPlacement && executionPlacement.kind === 'plain') {
+  if ('kind' in executionPlacement) {
     const policy = executionPlacement.policy
     if (!isDeepStrictEqual(roots.hostRef, placement.hostRef)
       || roots.applicationInstallationId !== placement.registration?.workerInstallationId
@@ -1098,12 +1094,13 @@ class InstalledWorkflowHostRuntime {
 
   private readonly nativeOwnerFor = async(record:SourceMaterializationRecord):Promise<SourceInstalledNativeOwner|null>=>{
     const owned=this.operations.get(record.receipt.executionId)
-    if(owned && 'kind' in owned.capture.facts.executionPlacement) return null
+    const sourcePlacement = owned?.capture.facts.executionPlacement
+    if (!sourcePlacement || 'kind' in sourcePlacement) return null
     if(!owned?.native||!owned.session||!owned.nativeSignal||!owned.applicationAccess||owned.launchDisabled||owned.nativeSignal.aborted
       ||record.receipt.attemptId!==owned.intent.attemptId||record.operationId!==owned.intent.operationId
-      ||record.receipt.materializationId!==owned.capture.facts.executionPlacement.materialization.receipt.materializationId
+      ||record.receipt.materializationId!==sourcePlacement.materialization.receipt.materializationId
       ||record.finalDispatchBindingHash!==owned.capture.facts.executionPlacement.bindingHash
-      ||sourceMaterializationDigest(record)!==sourceMaterializationDigest(owned.capture.facts.executionPlacement.materialization))return null
+      ||sourceMaterializationDigest(record)!==sourceMaterializationDigest(sourcePlacement.materialization))return null
     const native=owned.native,session=owned.session,nativeSignal=AbortSignal.any([this.signal,owned.nativeSignal])
     const request: ReturnType<InstalledWorkflowHostRuntime['forBinding']> = (namespace,payload,options)=>
       this.forBinding(owned.context.binding)(namespace,payload,options)

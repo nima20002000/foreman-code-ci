@@ -56,7 +56,7 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
   })
   const locationRevision = located.value.locationRevision
   const allowlists = new Map<string, ReturnType<typeof ApprovedRootAllowlistSchema.parse>>()
-  const hosts = { configuration: async (_sql, host) => {
+  const hosts = { configurations: async () => [...allowlists.values()], configuration: async (_sql, host) => {
     const configuration = allowlists.get(JSON.stringify(host))
     if (!configuration) throw new Error('Missing fixture host configuration')
     return configuration
@@ -69,7 +69,7 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
   sourceNamespace: async (policy, rootPolicyId) => {
     const canonicalPath = join(policy.managedRuntimeRoot, 'source-materializations', rootPolicyId)
     return { canonicalPath, filesystem, attestationId: randomUUID(), attestationDigest: 'a'.repeat(64) }
-  } } satisfies Pick<WorkspaceRootHostPort, 'configuration' | 'prepareManaged' | 'authorize' | 'attest' | 'sourceNamespace'>
+  } } satisfies Pick<WorkspaceRootHostPort, 'configurations' | 'configuration' | 'prepareManaged' | 'authorize' | 'attest' | 'sourceNamespace'>
   const policies = new PostgresWorkspaceRootPolicies(mainId, hosts as WorkspaceRootHostPort)
   const bytes = Buffer.from('export const approved = true\n')
   const manifest = createSourceManifest({ version: 1, snapshotId: randomUUID(), approvedSourceId: randomUUID(),

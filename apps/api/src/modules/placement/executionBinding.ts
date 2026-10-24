@@ -13,7 +13,7 @@ function sourceMaterializationDigest(record: SourceMaterializationRecord): strin
 }
 
 export function nativePlacementDigest(input: Omit<SourceNativeExecutionPlacement, 'bindingHash'> | Omit<Extract<NativeExecutionPlacement, { kind: 'plain' }>, 'bindingHash'>): string {
-  if ('kind' in input && input.kind === 'plain') return placementDigest(input)
+  if ('kind' in input) return placementDigest(input)
   const record = input.materialization
   return placementDigest({ ...input, materialization: { receipt: record.receipt, sourceBindingHash: record.sourceBindingHash,
     rootPolicyId: record.rootPolicyId, rootPolicyRevision: record.rootPolicyRevision, operationId: record.operationId, reservationId: record.reservationId } })
@@ -28,7 +28,7 @@ export function bindNativeExecution(placement: AcceptedNodePlacement, intent: Di
 }
 export function readNativeExecutionBinding(parent: AcceptedNodePlacement, intent: DispatchIntent, raw: unknown): NativeExecutionPlacement {
   const placement = readPlacement(parent), binding = NativeExecutionPlacementSchema.parse(raw), { bindingHash, ...input } = binding
-  if ('kind' in binding && binding.kind === 'plain') {
+  if ('kind' in binding) {
     const source = placement.source
     const policy = binding.policy
     if (!('kind' in source) || source.kind !== 'plain' || placement.payload.kind !== 'agent' || placement.payload.worktree

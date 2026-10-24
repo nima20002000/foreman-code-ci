@@ -127,7 +127,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
       const choices: NodePlacementChoice[] = []
       let pending = [...preparation.values()].some(value => value.pending)
       for (const selected of policies) {
-        const policy = await services.roots.resolve(sql, principal, { workspaceId: input.workspaceId, ...selected })
+        const policy = await services.roots.resolve(sql, principal, selected)
         for (const profile of (await services.profiles.list(policy.hostRef, policy.applicationInstallationId, sql))
           .filter(profile => matchesConfiguration(profile, configuration))) {
           const found = await this.choice(sql, services, policy, undefined, profile, null, readiness)

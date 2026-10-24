@@ -108,7 +108,7 @@ export async function assertOriginalPhysicalDirectories(input:{source:RemoteWork
   const authorize=async()=>{check();await input.authorize();check()}
   const {source,runtimeLeaf,approvedRoots,placement}=input
   const inspectSource = (() => {
-    if ('kind' in source && source.kind === 'plain') return async () => {
+    if ('kind' in source) return async () => {
       check()
       const policy = source.policy
       if (!isDeepStrictEqual(policy.hostRef, placement.hostRef)

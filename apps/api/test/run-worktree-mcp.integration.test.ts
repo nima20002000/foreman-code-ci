@@ -63,6 +63,7 @@ describe.runIf(postgresEnabled)('Run isolation and authenticated MCP readback', 
           if (readback.evidence !== 'accepted') throw new Error('Expected accepted Agent placement')
           expect(readback.nativePlacements).toHaveLength(1)
           const native = readback.nativePlacements![0]!
+          if ('kind' in native) throw new Error('Expected a Git worktree')
           const receipt = native.materialization.receipt
           expect(native.executionId).toBe(execution.id)
           expect(native.workingTree.canonicalCwd).toBe(execution.workingDirectory)

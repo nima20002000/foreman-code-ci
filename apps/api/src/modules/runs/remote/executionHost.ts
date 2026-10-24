@@ -277,7 +277,7 @@ export class RemoteExecutionHost {
       || intent.bindingHash !== placement.bindingHash || placement.payload.kind !== 'agent' || placement.payload.agentId !== configuration.agentId
       || placement.payload.agentConfigurationVersionId !== configuration.id) throw new Error('Remote discovery binding mismatch')
     await this.ports.authorize(intent, placement, 'read')
-    const executionPlacement = 'kind' in placement.source && placement.source.kind === 'pending'
+    const executionPlacement = 'kind' in placement.source && ['pending', 'plain'].includes(placement.source.kind)
       ? readNativeExecutionBinding(placement, intent, raw.executionPlacement) : undefined
     this.bindings.set(intent.operationId, { intent, placement })
     await this.ports.journal.accept(intent, this.ports.connection, this.ports.incarnationId)
@@ -327,7 +327,7 @@ export class RemoteExecutionHost {
   private async prepareOwned(raw: WorkflowPreparation, controller: AbortController) {
     const intent = DispatchIntentSchema.parse(raw.intent), placement = readPlacement(raw.placement), request = HarnessExecutionRequestSchema.parse(raw.request)
     const harness = executableHarness(request.configuration.harness.harness)
-    const executionPlacement = 'kind' in placement.source && placement.source.kind === 'pending'
+    const executionPlacement = 'kind' in placement.source && ['pending', 'plain'].includes(placement.source.kind)
       ? readNativeExecutionBinding(placement, intent, raw.executionPlacement) : undefined
     if (placement.hostRef.kind !== 'device' || placement.hostRef.deviceId !== this.ports.connection.deviceId
       || placement.mainId !== this.ports.connection.mainId || placement.bindingHash !== intent.bindingHash
@@ -438,7 +438,7 @@ export class RemoteExecutionHost {
       || status.receipt.native.sessionId !== raw.session.nativeSessionId) throw new Error('Original native recovery evidence required')
     const placement = readPlacement(raw.placement), request = HarnessExecutionRequestSchema.parse(raw.request)
     const harness = executableHarness(request.configuration.harness.harness)
-    const executionPlacement = 'kind' in placement.source && placement.source.kind === 'pending'
+    const executionPlacement = 'kind' in placement.source && ['pending', 'plain'].includes(placement.source.kind)
       ? readNativeExecutionBinding(placement, raw.intent, raw.executionPlacement) : undefined
     if (placement.hostRef.kind !== 'device' || placement.hostRef.deviceId !== this.ports.connection.deviceId
       || placement.mainId !== this.ports.connection.mainId || placement.runId !== raw.intent.runId || placement.nodeId !== raw.intent.nodeId

@@ -529,7 +529,7 @@ export class PostgresSourceService implements SourceAdmissionPort {
         if (!installation || input.hostRef.mainId !== this.mainId) throw new DomainError('ROOT_POLICY_UNAVAILABLE', 'Paired computer is unavailable.', 409)
         const registration = await assertDeviceHostInstallation(sql, input.hostRef, installation)
         return { hostRef: input.hostRef, applicationInstallationId: installation,
-          ...(registration ? { keyRevision: registration.keyRevision, authorizationRevision: registration.authorizationRevision } : {}) }
+          keyRevision: registration?.keyRevision ?? null, authorizationRevision: registration?.authorizationRevision ?? null }
       })
       if (!this.setupFolder) throw new DomainError('ROOT_POLICY_UNAVAILABLE', 'Workspace folder setup is unavailable.', 409)
       const policy = await this.setupFolder(principal, source, input.workspaceId, target)

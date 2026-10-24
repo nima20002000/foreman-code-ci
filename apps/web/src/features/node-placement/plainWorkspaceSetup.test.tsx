@@ -9,12 +9,11 @@ import type { WorkspaceRootSelection } from '@foreman-code/contracts/workspace-r
 import { server } from '../../mocks/server'
 import { queryKeys } from '../../shared/api/query'
 import { workerRoot, rootSetReadback } from '../settings/workspaceBoundLocation.fixtures'
-import { useBoundLocationDraftStore } from '../settings/workspaceBoundLocationDraftStore'
 import { usePlacementChoices } from './usePlacementChoices'
 import { NodePlacementField } from './NodePlacementField'
 
 it.each([true, false])('sets up a plain folder and refreshes the Computer picker (managed: %s)', async automatic => {
-  const workspaceId = 'empty-workspace'
+  const workspaceId = automatic ? 'managed-empty-workspace' : 'empty-workspace'
   const scope = { workspaceId, workflowId: 'workflow', nodeId: 'node', agentConfigurationVersionId: 'configuration' }
   let policy: ReturnType<typeof rootSetReadback> | undefined
   let ready = false
@@ -63,7 +62,6 @@ it.each([true, false])('sets up a plain folder and refreshes the Computer picker
     return <NodePlacementField workspaceId={workspaceId} value={value} options={choices.options}
       unavailableComputers={choices.unavailableComputers} onChange={next => { selected = next; setValue(next) }} />
   }
-  useBoundLocationDraftStore.getState().reset()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   client.setQueryData(queryKeys.managedWorkspace(workspaceId), managed)
   const view = render(<QueryClientProvider client={client}><Picker /></QueryClientProvider>)
@@ -82,5 +80,5 @@ it.each([true, false])('sets up a plain folder and refreshes the Computer picker
     expect(selected).toEqual(placement)
     expect(selected).not.toHaveProperty('source')
     expect(writes).toHaveLength(automatic ? 1 : 3)
-  } finally { view.unmount(); client.clear(); useBoundLocationDraftStore.getState().reset() }
+  } finally { view.unmount(); client.clear() }
 })

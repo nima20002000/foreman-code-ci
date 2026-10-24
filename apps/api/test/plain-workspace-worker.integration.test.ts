@@ -1,3 +1,5 @@
+import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
+import { CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/current'
 import { readdir, stat } from 'node:fs/promises'
 import { ManagedWorkspaceRootService } from '../src/modules/workspace-roots/managedRoot.js'
 import { WorkspaceBoundLocationService } from '../src/modules/workspace-roots/service.js'
@@ -58,7 +60,7 @@ describe.skipIf(!postgresEnabled)('plain workspace Worker placement', () => {
         })
         expect(repeated.value).toEqual(setup.json().value)
       }
-      const saved = await f.save('http')
+      const saved = await f.save('mcp')
       const node = agentWorkflowNode(saved.version.definition.nodes[1])
       const result = await app.inject({ method: 'GET', headers: f.headers,
         url: `${f.path}/nodes/${node.id}/placement-choices?agentConfigurationVersionId=${saved.version.agentConfigurationVersionIds[node.agentId]}` })
@@ -70,10 +72,13 @@ describe.skipIf(!postgresEnabled)('plain workspace Worker placement', () => {
       expect(choice.placement).not.toHaveProperty('rootBinding')
       for (const item of f.saveInput.graph.nodes) agentWorkflowNode(item).placement = choice.placement
       f.saveInput.expectedRevision = saved.revision
-      f.saveInput.expectedWorkflowVersionId = saved.currentVersionId
       f.saveInput.commandId = randomUUID()
-      const selected = await f.save('http')
-      const accepted = await f.start('http', startInput(f, selected))
+      const selectedResult = await f.client.callTool({ name: 'workflow_save_v3', arguments: {
+        ...f.saveInput, expectedWorkflowVersionId: saved.currentVersionId,
+      } })
+      expect(selectedResult.isError, JSON.stringify(selectedResult)).not.toBe(true)
+      const selected = CurrentWorkflowSaveResultSchema.parse(decodeMcpToolResult(selectedResult)).value
+      const accepted = await f.start('mcp', startInput(f, selected))
       expect(accepted.run.workflowVersionId).toBe(selected.currentVersionId)
       for (const item of selected.version.definition.nodes) {
         const placement = await f.placement.reads.get(f.base.writer.principal, {

@@ -268,7 +268,8 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
       if (!sameWorkflowValue(current, version)
         || !sameWorkflowValue(version.agentConfigurationVersionIds, input.expectedAgentConfigurationVersionIds)) this.conflict()
       const policies = await this.roots.read(sql, principal, input.workspaceId)
-      const prepared = []
+      const prepared: { pins: Omit<AcceptedNodePlacement, 'runId' | 'bindingHash'>; saved: SavedNodePlacement;
+        configuration: AgentConfigurationVersion; implicit: boolean; selection: RegistryHarnessSelection }[] = []
       for (const node of version.definition.nodes) {
         if (node.kind === 'job') continue
         const selected = node.placement
@@ -276,7 +277,7 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
           ? policy.rootPolicyId === selected.rootPolicyId && sameWorkflowValue(policy.hostRef, selected.hostRef)
           : policy.hostRef.kind === 'main' && policy.bindingPurpose !== 'ci-enrollment')
         if (!policy) this.conflict()
-        const resolved = await this.roots.resolve(sql, principal, { workspaceId: input.workspaceId, ...policy })
+        const resolved = await this.roots.resolve(sql, principal, policy)
         const row = (await sql.query<{ record: unknown }>(
           'select record from agent_configuration_versions where id=$1 and workspace_id=$2',
           [version.agentConfigurationVersionIds[node.agentId], input.workspaceId])).rows[0]
