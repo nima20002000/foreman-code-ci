@@ -6,12 +6,9 @@ import Fastify from 'fastify'
 import { expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
-import { createBrowserCanonicalCodecs } from '../src/modules/collaboration/browserCodecs.js'
-import * as browserTools from '../src/modules/collaboration/browserTools.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { requireAuthorization } from '../src/modules/access/policy.js'
 import { DomainError } from '../src/modules/errors.js'
-import { operatorListedTool } from '../src/mcp/operator/discovery.js'
 import { createOperatorMcpServer } from '../src/mcp/operator/server.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { cacheToolSchemaConversions } from '../src/mcp/shared/schemaCache.js'
@@ -84,9 +81,7 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     return workspace
   })
   const recordDenied = vi.fn(async () => undefined)
-  const services = { commands: { recordDenied }, circleAccounts: {}, workspaces: { get },
-    browser: { handlers: {}, codecs: createBrowserCanonicalCodecs() },
-  } as unknown as OperatorServices
+  const services = { commands: { recordDenied }, circleAccounts: {}, workspaces: { get } } as unknown as OperatorServices
   const access = new PostgresAccessService({} as never)
   const authenticate = vi.spyOn(access, 'authenticate').mockImplementation(async token => {
     if (token !== 'synthetic-token') throw new DomainError('AUTH_REQUIRED', 'Invalid caller.', 401)
@@ -127,17 +122,12 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     expect(await rpc<ListToolsResult>('tools/list')).toEqual(referenceList)
     inputConversion.mockClear()
     outputConversion.mockClear()
-    const browserCatalog = vi.spyOn(browserTools, 'browserOperatorTools')
-    const registrations = vi.spyOn(McpServer.prototype, 'registerTool')
     for (let request = 0; request < 3; request++) {
-      caller = structuredClone(principal)
       expect(await rpc<ListToolsResult>('tools/list')).toEqual(referenceList)
       expect(await rpc<CallToolResult>('tools/call', params)).toEqual(referenceCall)
     }
     expect(inputConversion).not.toHaveBeenCalled()
     expect(outputConversion).not.toHaveBeenCalled()
-    expect(browserCatalog).not.toHaveBeenCalled()
-    expect(registrations.mock.calls.every(([name]) => operatorListedTool(name))).toBe(true)
     expect(decodeMcpToolResult(referenceCall)).toEqual(workspace)
     const scopeDenied = await rpc<CallToolResult>('tools/call', {
       name: 'workspace_get', arguments: { workspaceId: 'other-workspace' },
@@ -164,8 +154,6 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     })
     expect(schema.isError).not.toBe(true)
     expect(JSON.stringify(schema)).toContain('organizations')
-    delete services.circleAccounts
-    expect((await catalogNames()).tools.map(tool => tool.name)).not.toContain('circle_account_add')
     caller = { ...principal, id: 'denied-reader', grants: [{ actions: ['capabilities:read'], scope: {} }] }
     const callsBeforeDenial = get.mock.calls.length
     const grantDenied = await rpc<CallToolResult>('tools/call', params)

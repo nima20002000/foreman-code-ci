@@ -1,8 +1,7 @@
 import type { DeliveryTarget } from '@foreman-code/contracts'
 import type { AgentChatState } from '@foreman-code/contracts/agent-chat'
-import { replaceEqualDeep } from '@tanstack/react-query'
 import type { agentChatApi } from '../../../shared/api/agentChat'
-import { acceptAgentChatState, inheritCommittedRevision } from '../../chat-core'
+import { acceptAgentChatState } from '../../chat-core'
 
 type AgentReadback = Awaited<ReturnType<typeof agentChatApi.read>>
 
@@ -25,7 +24,7 @@ export function acceptAgentReadback(previous: AgentReadback | undefined, incomin
   const metadata = fresh ? incoming : previous
   const target = deliveryTargetMatches(accepted, metadata?.deliveryTarget) ? metadata?.deliveryTarget : undefined
   const sameConversation = metadata?.conversation?.id === accepted.conversation?.id
-  const result: AgentReadback = { ...accepted,
+  return { ...accepted,
     history: sameConversation ? metadata?.history : undefined,
     receipts: sameConversation ? metadata?.receipts : undefined,
     executionActivity: sameConversation ? metadata?.executionActivity : undefined,
@@ -33,14 +32,5 @@ export function acceptAgentReadback(previous: AgentReadback | undefined, incomin
     deliveryTargetState: target?.kind === 'agent_conversation' && accepted.conversation?.id === target.conversationId
       ? 'existing' : target ? metadata?.deliveryTargetState : undefined,
     deliveryInputs: target && sameConversation ? metadata?.deliveryInputs : undefined,
-  }
-  const shared = replaceEqualDeep(previous, result)
-  const messages = new Map(previous?.messages.map(message => [message.id, message]))
-  const turns = new Map(previous?.turns.map(turn => [turn.requestId, turn]))
-  // Match rows by ID rather than array offset when bounded windows advance.
-  return { ...shared,
-    messages: result.messages.map(message =>
-      inheritCommittedRevision(replaceEqualDeep(messages.get(message.id), message), message)),
-    turns: result.turns.map(turn => replaceEqualDeep(turns.get(turn.requestId), turn)),
   }
 }
