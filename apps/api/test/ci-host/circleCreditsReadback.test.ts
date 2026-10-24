@@ -5,7 +5,7 @@ import { CiComputersOutputSchema } from '@foreman-code/contracts'
 import type { CircleCreditAllowance } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { registerGraphqlMcp } from '../../src/mcp/unified/transport.js'
+import { registerForemanMcp } from '../../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
@@ -67,7 +67,7 @@ it('reads the estimated CircleCI credits per org through authenticated ci_comput
   vi.spyOn(access, 'authenticate').mockImplementation(async token =>
     token === 'reader' ? caller : { ...caller, id: 'fixture-denied', grants: [] })
   const app = Fastify()
-  registerGraphqlMcp(app, { access, operator: { ci,
+  registerForemanMcp(app, { access, operator: { ci,
     commands: { recordDenied: async () => undefined } } as unknown as OperatorServices })
   const call = async (token: string) => {
     const response = await app.inject({ method: 'POST', url: '/mcp',

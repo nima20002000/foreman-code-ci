@@ -2,32 +2,26 @@ import type { AgentChatState, AgentChatTurn, SendAgentChatMessageRequest } from 
 import type { MessageAttachmentRef } from '@foreman-code/contracts/files'
 import { parseSessionCommand, type ChatDeliveryReceipt, type InteractionResponseValue, type Message, type SessionMode } from '@foreman-code/contracts'
 import { X } from 'lucide-react'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef } from 'react'
 import { Button, IconButton, Tooltip } from '../../../shared/ui/nocturne'
-import { ChatMessageFiles } from '../ChatMessageFiles'
-import { ChatDecisionReceipts } from '../ChatDecisionReceipts'
+import { ChatMessageFiles, ChatDecisionReceipts, HistoryWindowNotice, useChatTurnCompleted, agentChatContextKey, approvalReplyAvailable, mergeChatMessages, applyCanonicalActivityItems } from '../../chat-core'
 import { OperatorApprovalCard } from '../../operator-chat/OperatorApprovalCard'
 import { ConversationViewport } from '../ConversationViewport'
-import { HistoryWindowNotice } from '../HistoryWindowNotice'
-import { useChatTurnCompleted } from '../chatTurnCompletion'
 import { RunTranscript } from './RunTranscript'
 import { useExecutionActivity } from './executionActivity'
 import { AgentChatMessage } from './AgentChatMessage'
 import { AgentChatActivity } from './AgentChatActivity'
 import { ChatDeliveryState } from './ChatDeliveryState'
 import { RetainedAgentCommand } from './RetainedAgentCommand'
-import { agentChatContextKey, approvalReplyAvailable, mergeChatMessages } from './model'
 import { confirmedCommandReceipt } from './commandRecords'
-import { applyCanonicalActivityItems } from './activityMerge'
 import { placeChatActivities } from './activityPlacement'
 import { commandMayHaveBeenAccepted, type AgentChatCommandRecord, type useAgentChat } from './useAgentChat'
 
 export function AgentChatTranscript({
   state, name, commands, history, readOnly = false, cancelReason, responseReason, resendReason, controlResendReason,
-  onRefresh, refreshing, onCancel, onRespond, onSendAgain, onDenied, onReceipt, children,
+  onRefresh, refreshing, onCancel, onRespond, onSendAgain, onDenied, onReceipt,
 }: {
   state: AgentChatState; name: string; commands: AgentChatCommandRecord[]; history: ReturnType<typeof useAgentChat>['history']
-  children?: ReactNode
   readOnly?: boolean; cancelReason?: string; responseReason?: string; resendReason?: string; controlResendReason?: string
   onRefresh?(): void; refreshing?: boolean
   onDenied?(error: Error): void
@@ -106,7 +100,6 @@ export function AgentChatTranscript({
     </>
   }
   return <ConversationViewport revision={revision} storageKey={`${agentChatContextKey(state.context)}:${id ?? 'native'}`}>{onBrowse => <>
-    {children}
     {history.hasGap ? <HistoryWindowNotice pending={history.isFetching && !history.isRefetching}
       onReload={() => { onBrowse(); void history.reloadNearer() }} /> : null}
     {id && (state.hasEarlierMessages && !history.data || history.hasNextPage) ? <Button size="sm" variant="ghost"

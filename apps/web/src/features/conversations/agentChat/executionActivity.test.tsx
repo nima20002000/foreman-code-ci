@@ -6,7 +6,7 @@ import {
   agentChatFixtures, type AgentChatExecutionActivityPage, type AgentChatExecutionItem, type AgentChatState,
 } from '@foreman-code/contracts/agent-chat'
 import { server } from '../../../mocks/server'
-import { useConversationDraftStore } from '../conversationDraftStore'
+import { useConversationDraftStore } from '../../chat-core'
 import { mergeExecutionActivity, type ExecutionActivityFeed } from './executionActivity'
 import { installChatSource, mountChat } from './testSupport'
 import { deferred, rejectableDeferred } from '../../../test/deferred'

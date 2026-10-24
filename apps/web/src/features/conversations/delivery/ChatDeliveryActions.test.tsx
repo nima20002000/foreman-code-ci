@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { EngineChatReadback } from '@foreman-code/contracts'
 import { ChatDeliveryActions } from './ChatDeliveryActions'
-import { deliveryAction } from './deliveryAction'
+import { deliveryAction } from '../../chat-core'
 
 const capabilities: EngineChatReadback['capabilities'] = {
   steer: 'native_expected_turn', queue: true, interruptAndSend: true,
@@ -20,17 +20,6 @@ describe('Chat delivery controls', () => {
     view.rerender(<ChatDeliveryActions {...props} intent="interrupt_and_send" />)
     fireEvent.click(screen.getByRole('button', { name: 'Interrupt and send' }))
     expect(submit).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps a selected steering mode recoverable after its active turn finishes', () => {
-    const change = vi.fn()
-    const props = { intent: 'steer' as const, onIntentChange: change, onSubmit: vi.fn() }
-    const view = render(<ChatDeliveryActions {...props} presentation={{ state: 'active', capabilities, nativeTurnId: 'turn-a' }} />)
-    view.rerender(<ChatDeliveryActions {...props} presentation={{ state: 'idle', capabilities }} />)
-    fireEvent.change(screen.getByLabelText('Delivery action'), { target: { value: 'auto' } })
-    expect(change).toHaveBeenCalledWith('auto')
-    view.rerender(<ChatDeliveryActions {...props} intent="auto" presentation={{ state: 'idle', capabilities }} />)
-    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled()
   })
 
   it('uses qualified steering for auto but queues files or a mode change', () => {

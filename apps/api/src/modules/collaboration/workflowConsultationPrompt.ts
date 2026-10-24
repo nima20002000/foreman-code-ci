@@ -1,4 +1,5 @@
-import { canonicalJson, effectiveGraphqlTools, type AgentConfigurationVersion,
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
+import { canonicalJson, effectiveForemanTools, type AgentConfigurationVersion,
   type ChatSendRequest } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import { workflowChatInputPrompt } from '../interactions/index.js'
@@ -45,7 +46,7 @@ export async function workflowConsultationPromptLocked(context: WorkflowChatLock
   }
   const node = context.version.definition.nodes.find(item => item.id === context.agent.workflowNodeId)
   const permitted = node && node.kind !== 'job' && configuration.productRole
-    && effectiveGraphqlTools(configuration.productRole, configuration.graphqlTools, node.graphqlTools,
+    && effectiveForemanTools(configuration.productRole, configuration[INSTALLATION_NAMES.fields.agentTools], node[INSTALLATION_NAMES.fields.agentTools],
       false, ['memory_board_get']).includes('memory_board_get')
   const digest = permitted
     ? await readWorkflowCollaborationPromptLocked(context.sql, waiting.sourceExecution.executionId) : undefined

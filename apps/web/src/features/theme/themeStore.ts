@@ -1,7 +1,8 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { useSyncExternalStore } from 'react'
 import type { Theme } from '@foreman-code/contracts/management'
 
-export const THEME_STORAGE_KEY = 'graphql-theme'
+export const THEME_STORAGE_KEY = INSTALLATION_NAMES.browserStorage.theme
 
 export type { Theme } from '@foreman-code/contracts/management'
 
@@ -19,7 +20,7 @@ function readStoredTheme(): Theme | null {
     const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
     return isTheme(storedTheme) ? storedTheme : null
   } catch {
-    // Storage can be unavailable in privacy-restricted browser contexts.
+    // ignore: Storage can be unavailable in privacy-restricted browser contexts.
     return null
   }
 }
@@ -58,7 +59,7 @@ export function applyTheme(theme: Theme, persist = false) {
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, theme)
     } catch {
-      // A theme still works for this session when persistence is unavailable.
+      // ignore: A theme still works for this session when persistence is unavailable.
     }
   }
 }

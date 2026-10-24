@@ -184,7 +184,7 @@ it('prepares a commit in a persistent slot without reserving CI capacity and reu
   expect(fixture.units[0]).toEqual(expect.arrayContaining([
     '--property=Nice=19', '--property=CPUWeight=1', '--property=IOWeight=1',
   ]))
-  expect(await fixture.contracts()).toHaveLength(1)
+  expect(await fixture.contracts()).toHaveLength(2)
   const first = await fixture.run()
   expect(first.run.state).toBe('passed')
   expect(first.checkout).toBe(warm.checkout)

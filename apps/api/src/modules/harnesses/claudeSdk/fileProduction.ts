@@ -6,7 +6,7 @@ import { PostgresFileConversationAuthorization } from '../../files/authorization
 import type { ClaudeFileAdmission } from './files.js'
 import type { ClaudeDomainBinding } from './domainAuthority.js'
 import type { ClaudeNativeSessionManager } from './sessionManager.js'
-import type { FileToolOperation } from '../../files/tools/types.js'
+import type { FileToolOperation } from '../../files/index.js'
 
 /** Existing accepted message, actual sender and root callback map only. No file
  * scope, native UUID, principal or message is accepted from MCP arguments. */

@@ -1,4 +1,4 @@
-import { RetryBackoff, DomainError, errorMessage } from '@foreman-code/contracts/server-kit'
+import { RetryBackoff, DomainError, errorMessage } from '@foreman-code/contracts-node/server-kit'
 import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import type { MainCiContext, PostgresCommandCoordinator, SqlQuery } from './environment.js'

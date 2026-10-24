@@ -76,7 +76,7 @@ async function artifactInputs() {
     }
   }
   for (const path of ['scripts', 'patches', 'apps/api/src', 'apps/ci/src', 'apps/worker/src',
-    'apps/worker/artifacts/ci-runtime', 'packages/contracts']) {
+    'apps/worker/artifacts/ci-runtime', 'packages/contracts', 'packages/contracts-node']) {
     await append(path)
   }
   return inputs
@@ -100,9 +100,11 @@ async function buildArtifact(directory: string) {
     await mkdir(join(deployment, 'apps', name), { recursive: true })
     await copyFile(join(repository, 'apps', name, 'package.json'), join(deployment, 'apps', name, 'package.json'))
   }
-  await cp(join(repository, 'packages/contracts'), join(deployment, 'packages/contracts'), {
-    recursive: true, filter: path => path !== join(repository, 'packages/contracts/node_modules'),
-  })
+  for (const name of ['contracts', 'contracts-node']) {
+    await cp(join(repository, 'packages', name), join(deployment, 'packages', name), {
+      recursive: true, filter: path => path !== join(repository, 'packages', name, 'node_modules'),
+    })
+  }
   // The installer's shared dependency tree is deployed once per lockfile, not copied again for every fixture.
   // The installed API's own modules are transformed below.
   await mkdir(join(deployment, 'apps/api/dist'), { recursive: true })
