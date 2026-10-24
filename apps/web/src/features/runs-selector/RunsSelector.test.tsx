@@ -284,7 +284,7 @@ describe('Runs window and URL selection (real HTTP boundary + MSW)', () => {
     expect(within(menu).getByRole('menuitem', { name: 'No more' })).toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('stops at the page cap without evicting the newest Run or looping cursors', async () => {
+  it('continues to older Runs while retaining a bounded history window', async () => {
     let calls = 0
     server.use(http.get(listRoute, ({ request }) => {
       calls++
@@ -292,16 +292,16 @@ describe('Runs window and URL selection (real HTTP boundary + MSW)', () => {
       return HttpResponse.json(page([{ ...runA, runId: `page-${index}`, shortId: `p${index}` }], String(index + 1)))
     }))
     await mount(); const menu = await openMenu()
-    for (let index = 1; index < RUNS_MAX_PAGES; index++) {
+    for (let index = 1; index <= RUNS_MAX_PAGES + 1; index++) {
       const more = await within(menu).findByRole('menuitem', { name: /^More$/ })
       await waitFor(() => expect(more).toHaveAttribute('aria-disabled', 'false'))
       await userEvent.click(more)
     }
-    await within(menu).findByRole('menuitem', { name: 'Limit reached' })
-    expect(calls).toBe(RUNS_MAX_PAGES)
-    expect(menu.querySelector('[data-run-id="page-0"]')).toBeInTheDocument()
-    await userEvent.click(within(menu).getByRole('menuitem', { name: 'Limit reached' }))
-    expect(calls).toBe(RUNS_MAX_PAGES)
+    await waitFor(() => expect(menu.querySelector(`[data-run-id="page-${RUNS_MAX_PAGES + 1}"]`)).toBeInTheDocument())
+    expect(calls).toBe(RUNS_MAX_PAGES + 2)
+    expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(RUNS_MAX_PAGES + 1)
+    expect(menu.querySelector('[data-run-id="page-0"]')).not.toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'More' })).toHaveAttribute('aria-disabled', 'false')
   })
 
   it('supports keyboard navigation and explicit dismissal, leaving the board usable at 320px', async () => {

@@ -43,9 +43,10 @@ const recordUnhandled = ({ request }: { request: Request }) => {
 // Scope role queries to small control surfaces instead of repeatedly scanning
 // every Agent action and hidden panel in the real React Flow canvas.
 const authoring = () => screen.getByRole('region', { name: 'Workflow authoring' })
-const controls = () => within(authoring()).getByRole('group', { name: 'Workflow controls' })
+const toolbar = () => screen.getByRole('banner', { name: 'Board toolbar' })
+const controls = () => within(toolbar()).getByRole('group', { name: 'Workflow controls' })
 const control = (name: string) => within(controls()).getByRole('button', { name })
-const saveButton = () => within(screen.getByRole('region', { name: 'Workflow authoring' }))
+const saveButton = () => within(toolbar())
   .getByRole('button', { name: /^Save workflow$/ })
 let fixtureNumber = 0
 function newBoardMock(options: Parameters<typeof createCurrentBoardMock>[0] = {}) {
@@ -153,7 +154,7 @@ async function save(mock: Mock, user: ReturnType<typeof userEvent.setup>, expect
   if (dialog) await user.click(within(dialog).getByRole('button', { name: 'Stop runs and save' }))
   await waitFor(() => expect(mock.versions.size).toBe(expectedVersions))
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Save workflow' })).not.toBeInTheDocument())
-  expect(within(authoring()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
+  expect(within(toolbar()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
   const version = [...mock.versions.values()].at(-1)!
   expect(WorkflowVersionCurrentSchema.parse(version).executionSemanticsVersion).toBe(3)
   return version
@@ -332,10 +333,10 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     }
     await user.keyboard('{Control>}z{/Control}')
     assertClean()
-    await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
+    await user.click(within(toolbar()).getByRole('button', { name: 'S3 mounted workflow' }))
     await user.keyboard('Canceled title{Escape}')
     assertClean()
-    await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
+    await user.click(within(toolbar()).getByRole('button', { name: 'S3 mounted workflow' }))
     await user.keyboard('{Enter}')
     assertClean()
     await user.click(control('Workflow actions'))
@@ -350,7 +351,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     assertClean()
     act(() => useGraphDraftStore.getState().changeNextDraft(key, (graph) => ({ ...structuredClone(graph), updatedAt: '2026-10-02T00:00:00Z' })))
     assertClean()
-    await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
+    await user.click(within(toolbar()).getByRole('button', { name: 'S3 mounted workflow' }))
     await user.keyboard('Meaningful name{Enter}')
     expect(screen.getByRole('group', { name: 'Draft actions' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Undo' }))
@@ -359,7 +360,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(within(screen.getByRole('group', { name: 'Draft actions' })).getAllByRole('button').map((button) => button.getAttribute('aria-label')))
       .toEqual(['Redo'])
     expect(await screen.findByText('Undid workflow name “S3 mounted workflow” → “Meaningful name”', { selector: '.board-undo-notice span' })).toBeVisible()
-    expect(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' })).toBeVisible()
+    expect(within(toolbar()).getByRole('button', { name: 'S3 mounted workflow' })).toBeVisible()
     expect(mock.versions.size).toBe(1)
   }, 30_000)
 
@@ -388,15 +389,15 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     stageShape(key, 'single', mock)
     const editor = authoring(), canvas = screen.getByLabelText('Editable workflow graph'), href = window.location.href
     const title = screen.getByRole('heading', { name: 'S3 mounted workflow' })
-    await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
+    await user.click(within(toolbar()).getByRole('button', { name: 'S3 mounted workflow' }))
     expect(screen.getByRole('textbox', { name: 'Workflow name' })).toHaveFocus()
     expect(screen.getByRole('heading', { name: 'S3 mounted workflow' })).toBe(title)
     expect(authoring() === editor, 'History returns to the retained draft editor').toBe(true); expect(screen.getByLabelText('Editable workflow graph')).toBe(canvas)
     expect(window.location.href).toBe(href)
     await user.keyboard('Canceled name{Escape}')
-    expect(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' })).toBeVisible()
-    expect(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' })).toHaveFocus()
-    await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
+    expect(within(toolbar()).getByRole('button', { name: 'S3 mounted workflow' })).toBeVisible()
+    expect(within(toolbar()).getByRole('button', { name: 'S3 mounted workflow' })).toHaveFocus()
+    await user.click(within(toolbar()).getByRole('button', { name: 'S3 mounted workflow' }))
     await user.keyboard('Renamed board{Enter}')
     expect(screen.getByRole('button', { name: 'Renamed board' })).toBeVisible()
     const actions = within(screen.getByRole('group', { name: 'Draft actions' }))
@@ -416,7 +417,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     const removal = screen.getByRole('alertdialog', { name: 'Remove Menu renamed board?' })
     expect(removal).toHaveTextContent('A workflow with active runs can’t be removed.')
     await user.click(within(removal).getByRole('button', { name: 'Keep it' }))
-    expect(within(authoring()).getByRole('button', { name: 'Menu renamed board' })).toBeVisible()
+    expect(within(toolbar()).getByRole('button', { name: 'Menu renamed board' })).toBeVisible()
     server.use(http.delete(`/api/management/workspaces/${mock.workspaceId}/workflows/:workflowId`, () =>
       HttpResponse.json({ error: { code: 'ACTIVE_RUN', message: 'Stop active runs before removing this workflow.' } }, { status: 409 })))
     await user.click(screen.getByRole('button', { name: 'Workflow actions' }))
@@ -424,14 +425,14 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await user.click(within(screen.getByRole('alertdialog', { name: 'Remove Menu renamed board?' })).getByRole('button', { name: 'Remove workflow' }))
     expect(await screen.findByText('Stop active runs before removing this workflow.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Keep it' }))
-    expect(within(authoring()).getByRole('button', { name: 'Menu renamed board' })).toBeVisible()
+    expect(within(toolbar()).getByRole('button', { name: 'Menu renamed board' })).toBeVisible()
   }, 30_000)
   it('saves before starting the exact newly published version from Save and run', async () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup()
     await mount(mock)
     const { key } = await create(mock, user)
-    expect(within(authoring()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
-    expect(within(authoring()).queryByRole('button', { name: 'New workflow' })).not.toBeInTheDocument()
+    expect(within(toolbar()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
+    expect(within(toolbar()).queryByRole('button', { name: 'New workflow' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Zoom In|Zoom Out|Fit View/ })).not.toBeInTheDocument()
     expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument()
     expect(control('Save and run')).toBeDisabled()
@@ -450,7 +451,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(await screen.findByRole('region', { name: 'Workflow authoring' })).toBeVisible()
     expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
     expect(nextDraftDirty(useGraphDraftStore.getState().nextDrafts[key]!)).toBe(false)
-    expect(within(authoring()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
+    expect(within(toolbar()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
   })
 
   it('adds Agents from the role menu and connects handles with undo and redo', async () => {
@@ -476,7 +477,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(within(controls()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
     await user.keyboard('{Control>}z{/Control}{Control>}z{/Control}')
     await waitFor(() => expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes).toHaveLength(0))
-    expect(within(authoring()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
+    expect(within(toolbar()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
     await user.keyboard('{Control>}y{/Control}{Control>}y{/Control}')
     await waitFor(() => expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes).toHaveLength(2))
     stageShape(key, 'sequential', mock)
@@ -721,7 +722,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(nativeNode(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0])).not.toHaveProperty('initialPrompt')
     expect(nextDraftDirty(useGraphDraftStore.getState().nextDrafts[key]!)).toBe(false)
     expect(mock.versions.size).toBe(1); expect(mock.controls.stopCalls).toBe(1)
-    expect(within(authoring()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
+    expect(within(toolbar()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
   }, 30_000)
   it('stages before Stop confirmation even when the Board summary misses an active Run', async () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup()
@@ -908,8 +909,8 @@ describe('latest Run on the draft Board', () => {
     const slot = control('Stop').closest('section')!, parent = slot.parentElement!, index = [...parent.children].indexOf(slot)
     expect(mounted.router.state.location.href).toBe(href)
     expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
-    expect(within(authoring()).getByTitle('Rename workflow')).toBeDisabled()
-    expect(within(authoring()).getByRole('button', { name: /^Worktree:/ })).toBeDisabled()
+    expect(within(toolbar()).getByTitle('Rename workflow')).toBeDisabled()
+    expect(within(toolbar()).getByRole('button', { name: /^Worktree:/ })).toBeDisabled()
     expect(control('Add agent')).toBeDisabled()
     expect(control('Workflow actions')).toBeDisabled()
     const remove = within(authoring()).getByRole('button', { name: /^Remove Handoff ·/ })
@@ -945,7 +946,7 @@ describe('latest Run on the draft Board', () => {
       state: { ...mock.currents.get(run.id)!.state,
         executions: current.state.executions.map(execution => ({ ...execution, state: 'completed', resultOutcome: 'succeeded' })) } }))
     await mounted.query.invalidateQueries()
-    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeEnabled())
+    await waitFor(() => expect(within(toolbar()).getByTitle('Rename workflow')).toBeEnabled())
     await waitFor(() => expect(control('Start saved version')).toBeEnabled())
     expect(control('Start saved version').closest('section')).toBe(slot)
     expect([...parent.children].indexOf(slot)).toBe(index)
@@ -953,7 +954,7 @@ describe('latest Run on the draft Board', () => {
     expect(control('Add agent')).toBeEnabled()
     expect(control('Workflow actions')).toBeEnabled()
     expect(remove).toBeEnabled()
-    expect(within(authoring()).getByRole('button', { name: /^Worktree:/ })).toBeEnabled()
+    expect(within(toolbar()).getByRole('button', { name: /^Worktree:/ })).toBeEnabled()
     await waitFor(() => expect(first).toHaveTextContent('Completed'))
     expect(first.querySelector('.n-agent')).toHaveAttribute('data-state', 'completed')
     expect(canvasNode(graph.nodes[0]!.id)).toBe(first)
@@ -1002,18 +1003,18 @@ describe('latest Run on the draft Board', () => {
     const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
     const previous = await start(mock, user)
     mock.settle(previous.id); await mounted.query.invalidateQueries()
-    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeEnabled())
+    await waitFor(() => expect(within(toolbar()).getByTitle('Rename workflow')).toBeEnabled())
     for (const name of ['First local edit', 'Second local edit']) {
-      await user.click(within(authoring()).getByTitle('Rename workflow'))
+      await user.click(within(toolbar()).getByTitle('Rename workflow'))
       const field = screen.getByRole('textbox', { name: 'Workflow name' })
       await user.clear(field); await user.type(field, `${name}{Enter}`)
     }
     await user.click(screen.getByRole('button', { name: 'Undo' }))
-    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toHaveTextContent('First local edit'))
+    await waitFor(() => expect(within(toolbar()).getByTitle('Rename workflow')).toHaveTextContent('First local edit'))
     const request = RunStartCurrentInputSchema.parse(mock.calls.find(call => call.method === 'POST' && call.path.endsWith('/runs'))!.body)
     const external = await boardStartClient.start({ ...request, commandId: `external-${action}` })
     runningNodes(mock, external.run.id); await mounted.query.invalidateQueries()
-    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeDisabled())
+    await waitFor(() => expect(within(toolbar()).getByTitle('Rename workflow')).toBeDisabled())
     if (action === 'Agent settings') {
       const node = useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!
       await user.click(within(canvasNode(node.id)).getByRole('button', { name: `Open ${node.name} settings` }))
@@ -1166,7 +1167,7 @@ describe('retained Board Run polling and presentation', () => {
     // Only the independently polled summary observes completion initially.
     await mounted.query.invalidateQueries({ queryKey: ['runs-selector', 'list'] })
     await mounted.query.invalidateQueries({ queryKey: queryKeys.workspaceDetails(mock.workspaceId) })
-    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeEnabled())
+    await waitFor(() => expect(within(toolbar()).getByTitle('Rename workflow')).toBeEnabled())
     await act(async () => { await vi.advanceTimersByTimeAsync(3100) })
     job = { ...job, ci: { ...job.ci, state: 'passed', exitCode: 0, finishedAt: '2026-10-01T00:00:02.000Z' } }
     await act(async () => { await vi.advanceTimersByTimeAsync(3100) })

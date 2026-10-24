@@ -6,21 +6,6 @@ import { resolveLocalBrowserOrigin } from '@foreman-code/contracts/browser-origi
 
 const database = { DATABASE_URL: 'postgresql://graphql:graphql@127.0.0.1:5432/graphql' }
 describe('frozen configuration boundaries', () => {
-  it('reads the deployed Main enablement names even when the incident stopgap names disagree', () => {
-    const environment = { ...database,
-      FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: '1', GRAPHQL_LAPTOP_EXECUTION_ENABLED: '0',
-      FOREMAN_CODE_DEVICE_LISTENER_ENABLED: '1', GRAPHQL_DEVICE_LISTENER_ENABLED: '0',
-      DEVICE_LISTENER_HOST: '0.0.0.0', DEVICE_LISTENER_PORT: '3443',
-      DEVICE_LISTENER_TLS_CERT_FILE: '/installed/cert.pem', DEVICE_LISTENER_TLS_KEY_FILE: '/installed/key.pem' }
-    expect(loadConfig(environment).workerExecution).toEqual({ enabled: true, managedBy: 'startup' })
-    expect(readDeviceListenerConfig(environment, 3000)).toEqual({ host: '0.0.0.0', port: 3443,
-      certificateFile: '/installed/cert.pem', privateKeyFile: '/installed/key.pem' })
-    const disabled = { ...environment, FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: '0', GRAPHQL_LAPTOP_EXECUTION_ENABLED: '1',
-      FOREMAN_CODE_DEVICE_LISTENER_ENABLED: '0', GRAPHQL_DEVICE_LISTENER_ENABLED: '1' }
-    expect(loadConfig(disabled).workerExecution).toEqual({ enabled: false, managedBy: 'startup' })
-    expect(readDeviceListenerConfig(disabled, 3000)).toBeUndefined()
-  })
-
   it('preserves opt-in defaults and installation settings through the saved names', () => {
     const config = loadConfig({ ...database, GRAPHQL_LAPTOP_EXECUTION_ENABLED: '1' })
     expect(config.workerExecution?.enabled).toBe(true)

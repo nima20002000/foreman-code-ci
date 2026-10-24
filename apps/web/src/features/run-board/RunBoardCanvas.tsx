@@ -52,6 +52,7 @@ const SavedAgent = memo(function SavedAgent({ id, data }: NodeProps<SavedBoardNo
   </>
 })
 const SavedConnection = memo(function SavedConnection(props: EdgeProps<SavedBoardEdge>) {
+  const board = useWorkflowBoard()
   const edge = props.data?.snapshot
   const bend = props.data?.bend ?? 0, loop = props.source === props.target
   const floating = useFloatingCurve(props.source, props.target, bend)
@@ -59,10 +60,19 @@ const SavedConnection = memo(function SavedConnection(props: EdgeProps<SavedBoar
   if (!edge) return null
   // Same lines as the Board: straight when aligned, leaning toward the target otherwise; only a self-loop keeps its own loop.
   const curve = !loop && floating ? floating : savedEdgeCurve({ ...props, lane: bend / 44, loop })
+  const work = edge.maxWorkHandoffsPerRun !== undefined || edge.workRequestDirection !== undefined
   return <g>
     <title>{[edge.label || (props.data!.members.length > 1 ? 'Handoff · approval' : edge.kind === 'approval' ? 'Approval' : 'Handoff'),
       ...props.data!.members.filter(member => member.id !== edge.id).map(member => member.label)].filter(Boolean).join(' · ')}</title>
     <SignalEdgeShape id={props.id} curve={curve} kind={edge.kind} pulses={pulses} />
+    {board ? <foreignObject x={curve.mid.x - 54} y={curve.mid.y + 12} width={108} height={42}>
+      <button type="button" className="work-connection-limit-pill nodrag nopan" style={{ pointerEvents: 'all' }}
+        aria-label={work ? `Maximum work handoffs per Run: ${edge.maxWorkHandoffsPerRun ?? 'unlimited'}. Inspect saved connection.` : 'Inspect saved connection.'}
+        onClick={event => {
+          event.stopPropagation()
+          board.selectInspection({ runRelationshipId: edge.id }); board.openRuns()
+        }}>{work ? edge.maxWorkHandoffsPerRun ?? '∞' : 'Details'}</button>
+    </foreignObject> : null}
   </g>
 })
 const nodeTypes = { savedBoardNode: SavedAgent, ciServer: CiServerNode, boardKanban: BoardKanbanNode }

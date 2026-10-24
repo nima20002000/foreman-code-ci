@@ -57,10 +57,13 @@ export type WorkflowBoardHosts = {
   runCaptionHost?: HTMLDivElement | null
   /** A finished Run shows the retained draft's Run action in the same toolbar slot as Stop. */
   runActionHost?: HTMLElement | null
+  authoringToolbarHost?: HTMLElement | null
+  authoringPanelHost?: HTMLElement | null
 }
 
 /** The editable draft's actions and the collaboration slots its fields render. */
 export type WorkflowBoardAuthoring = {
+  openWorkflowSettings?(): void
   registerAuthoringActions?(actions?: WorkflowAuthoringActions): void
   /** Present while the editable draft is mounted, so a draft-only Agent's chat can save that Agent first. */
   saveChatAgent?(nodeId: string): Promise<string | undefined>
@@ -92,11 +95,11 @@ export function useWorkflowBoard(): WorkflowBoardValue | null {
 
 /** Provides each part of an already assembled Board value (tests and small embeddings). */
 export function WorkflowBoardProvider({ value, children }: { value: WorkflowBoardValue; children?: ReactNode }) {
-  const { sidePanelHost, runCaptionHost, runActionHost, registerAuthoringActions, saveChatAgent, draftNodeAgentId, draftNodeBrowser,
+  const { sidePanelHost, runCaptionHost, runActionHost, authoringToolbarHost, authoringPanelHost, openWorkflowSettings, registerAuthoringActions, saveChatAgent, draftNodeAgentId, draftNodeBrowser,
     moveDraftNodes, executionChatMounted, collaborationFields, ...selection } = value
-  const hosts = useMemo(() => ({ sidePanelHost, runCaptionHost, runActionHost }), [sidePanelHost, runCaptionHost, runActionHost])
-  const authoring = useMemo(() => ({ registerAuthoringActions, saveChatAgent, draftNodeAgentId, draftNodeBrowser,
-    moveDraftNodes, executionChatMounted, collaborationFields }), [registerAuthoringActions, saveChatAgent,
+  const hosts = useMemo(() => ({ sidePanelHost, runCaptionHost, runActionHost, authoringToolbarHost, authoringPanelHost }), [sidePanelHost, runCaptionHost, runActionHost, authoringToolbarHost, authoringPanelHost])
+  const authoring = useMemo(() => ({ openWorkflowSettings, registerAuthoringActions, saveChatAgent, draftNodeAgentId, draftNodeBrowser,
+    moveDraftNodes, executionChatMounted, collaborationFields }), [openWorkflowSettings, registerAuthoringActions, saveChatAgent,
     draftNodeAgentId, draftNodeBrowser, moveDraftNodes, executionChatMounted, collaborationFields])
   return createElement(BoardSelectionContext.Provider, { value: selection },
     createElement(BoardHostsContext.Provider, { value: hosts },
