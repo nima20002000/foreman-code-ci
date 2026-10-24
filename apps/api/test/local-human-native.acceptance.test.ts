@@ -117,7 +117,7 @@ async function installProbe(input: NativeHttpIsolationInput) {
   const report = join(input.directory, 'native-mcp-results.json')
   const marker = randomUUID()
   await writeFile(join(input.directory, 'native-probe-marker'), marker, { mode: 0o600 })
-  const probe = input.script.replace('process.env.FOREMAN_CODE_MCP_TOKEN', JSON.stringify(input.token))
+  const probe = input.script.replace('process.env.GRAPHQL_MCP_TOKEN', JSON.stringify(input.token))
   await writeFile(script, `
     const fs = require('node:fs');
     const readline = require('node:readline');

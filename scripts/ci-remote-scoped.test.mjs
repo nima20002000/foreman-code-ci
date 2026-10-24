@@ -107,7 +107,7 @@ function runCli(cwd, env) {
   })
 }
 
-for (const tokenName of ['FOREMAN_CODE_MCP_TOKEN']) {
+for (const tokenName of ['GRAPHQL_MCP_TOKEN']) {
   for (const workspaceId of [undefined, 'unrelated-workspace']) {
     test(`scoped CLI with ${tokenName} infers workspace for admission, waits and diagnostics (${workspaceId ?? 'no override'})`, async t => {
       const fixture = repository(t)
@@ -120,10 +120,10 @@ for (const tokenName of ['FOREMAN_CODE_MCP_TOKEN']) {
         JSON.stringify({ endpoint: `${server.url}/mcp`, pid: process.pid,
           expiresAt: new Date(Date.now() + 60_000).toISOString(), toolTimeoutMs: 300_000 }))
       const env = { ...fixture.env, CI: '', FOREMAN_CODE_CI_LOCAL: '',
-        FOREMAN_CODE_APP_MCP_DIRECTORY: bridge, FOREMAN_CODE_CI_WAIT_MS: '10000',
-        FOREMAN_CODE_MAIN_URL: 'http://127.0.0.1:9', FOREMAN_CODE_OPERATOR_TOKEN: 'unrelated-operator' }
+        GRAPHQL_APP_MCP_DIRECTORY: bridge, FOREMAN_CODE_CI_WAIT_MS: '10000',
+        FOREMAN_CODE_MAIN_URL: 'http://127.0.0.1:9', GRAPHQL_OPERATOR_TOKEN: 'unrelated-operator' }
       delete env.GRAPHQL_MCP_TOKEN
-      delete env.GRAPHQL_APP_MCP_DIRECTORY
+      delete env.FOREMAN_CODE_APP_MCP_DIRECTORY
       delete env.FOREMAN_CODE_WORKSPACE_ID
       if (workspaceId) env.FOREMAN_CODE_WORKSPACE_ID = workspaceId
       env[tokenName] = token
@@ -150,7 +150,7 @@ test('Operator CLI keeps its explicit workspace for admission, waits and diagnos
   const fixture = repository(t)
   const server = await endpoint(t, 'operator', 'chosen-workspace')
   const env = { ...fixture.env, CI: '', FOREMAN_CODE_CI_LOCAL: '', FOREMAN_CODE_MAIN_URL: server.url,
-    FOREMAN_CODE_OPERATOR_TOKEN: 'operator-fixture', FOREMAN_CODE_WORKSPACE_ID: 'chosen-workspace' }
+    GRAPHQL_OPERATOR_TOKEN: 'operator-fixture', FOREMAN_CODE_WORKSPACE_ID: 'chosen-workspace' }
   delete env.GRAPHQL_MCP_TOKEN
   const result = await runCli(fixture.cwd, env)
   assert.equal(result.code, 1, result.stderr)
@@ -161,7 +161,7 @@ test('Operator CLI keeps its explicit workspace for admission, waits and diagnos
   assert.ok(server.calls.every(call => call.authorization === 'Bearer operator-fixture'))
 })
 
-for (const tokenName of ['FOREMAN_CODE_MCP_TOKEN']) {
+for (const tokenName of ['GRAPHQL_MCP_TOKEN']) {
   for (const explicitWorkspace of [true, false]) {
     test(`Operator chat CLI with ${tokenName} uses its advertised workspace schema (${explicitWorkspace ? 'explicit' : 'discovered'})`, async t => {
       const fixture = repository(t)
@@ -172,9 +172,9 @@ for (const tokenName of ['FOREMAN_CODE_MCP_TOKEN']) {
       const server = await endpoint(t, 'operator', 'chosen-workspace')
       const token = 'operator-chat-fixture'
       const bridge = installBridge(fixture.root, server.url, token)
-      const env = { ...fixture.env, CI: '', FOREMAN_CODE_CI_LOCAL: '', FOREMAN_CODE_APP_MCP_DIRECTORY: bridge,
-        FOREMAN_CODE_MAIN_URL: 'http://127.0.0.1:9', FOREMAN_CODE_OPERATOR_TOKEN: 'unrelated-operator' }
-      for (const key of ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_APP_MCP_DIRECTORY', 'FOREMAN_CODE_WORKSPACE_ID']) delete env[key]
+      const env = { ...fixture.env, CI: '', FOREMAN_CODE_CI_LOCAL: '', GRAPHQL_APP_MCP_DIRECTORY: bridge,
+        FOREMAN_CODE_MAIN_URL: 'http://127.0.0.1:9', GRAPHQL_OPERATOR_TOKEN: 'unrelated-operator' }
+      for (const key of ['GRAPHQL_MCP_TOKEN', 'FOREMAN_CODE_APP_MCP_DIRECTORY', 'FOREMAN_CODE_WORKSPACE_ID']) delete env[key]
       env[tokenName] = token
       if (explicitWorkspace) env.FOREMAN_CODE_WORKSPACE_ID = 'chosen-workspace'
       const result = await runCli(fixture.cwd, env)
@@ -192,7 +192,7 @@ for (const tokenName of ['FOREMAN_CODE_MCP_TOKEN']) {
   }
 }
 
-for (const directoryName of ['FOREMAN_CODE_APP_MCP_DIRECTORY']) {
+for (const directoryName of ['GRAPHQL_APP_MCP_DIRECTORY']) {
   test(`Agent CLI retains the configured bridge from ${directoryName} across environment stripping and account HOME changes`, async t => {
     const fixture = repository(t)
     const server = await endpoint(t, 'agent')
@@ -200,17 +200,17 @@ for (const directoryName of ['FOREMAN_CODE_APP_MCP_DIRECTORY']) {
     const bridge = installBridge(fixture.root, server.url, token)
     const source = { ...fixture.env, CI: '', FOREMAN_CODE_CI_LOCAL: '',
       HOME: join(fixture.root, 'provider-account'), FOREMAN_CODE_MAIN_URL: 'http://127.0.0.1:9',
-      FOREMAN_CODE_OPERATOR_TOKEN: 'controller-secret', DATABASE_URL: 'controller-database',
+      GRAPHQL_OPERATOR_TOKEN: 'controller-secret', DATABASE_URL: 'controller-database',
       FOREMAN_CODE_APP_PRIVATE_KEY: 'controller-private-key' }
-    for (const key of ['GRAPHQL_MCP_TOKEN', 'FOREMAN_CODE_APP_MCP_DIRECTORY']) delete source[key]
+    for (const key of ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_APP_MCP_DIRECTORY']) delete source[key]
     source[directoryName] = bridge
     const stripped = inheritedAgentEnvironment(source)
-    assert.equal(stripped.GRAPHQL_APP_MCP_DIRECTORY, undefined)
     assert.equal(stripped.FOREMAN_CODE_APP_MCP_DIRECTORY, undefined)
+    assert.equal(stripped.GRAPHQL_APP_MCP_DIRECTORY, undefined)
     const env = appMcpTokenEnvironment({ ...stripped, GRAPHQL_MCP_TOKEN: token }, source)
-    assert.equal(env.FOREMAN_CODE_APP_MCP_DIRECTORY, bridge)
-    assert.equal(env.GRAPHQL_APP_MCP_DIRECTORY, undefined)
-    for (const key of ['FOREMAN_CODE_OPERATOR_TOKEN', 'DATABASE_URL', 'FOREMAN_CODE_APP_PRIVATE_KEY']) assert.equal(env[key], undefined)
+    assert.equal(env.GRAPHQL_APP_MCP_DIRECTORY, bridge)
+    assert.equal(env.FOREMAN_CODE_APP_MCP_DIRECTORY, undefined)
+    for (const key of ['GRAPHQL_OPERATOR_TOKEN', 'DATABASE_URL', 'FOREMAN_CODE_APP_PRIVATE_KEY']) assert.equal(env[key], undefined)
     const result = await runCli(fixture.cwd, env)
     assert.equal(result.code, 1, result.stderr)
     assert.match(result.stderr, /unit FAILED/, result.stderr)

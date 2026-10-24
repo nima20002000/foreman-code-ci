@@ -1,7 +1,7 @@
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IssuedWorkerCredential } from '../src/modules/access/workerCredentials.js'
-import { APP_MCP_TOKEN } from '../src/modules/harnesses/appMcpLauncher.js'
+import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../src/modules/access/workerCredentials.js'
 import type { NativeMcpInspector } from '../src/modules/harnesses/mcpDetection.js'
 import { DomainError } from '../src/modules/errors.js'
 import { providerAppEndpoint, providerLaunchCredentials } from './helpers/checkpointRuntime.js'
@@ -40,7 +40,7 @@ function fixture(runnerId = LOCAL_RUNNER_ID) {
   const inspect = vi.fn<NativeMcpInspector['inspect']>(async (context) => ({ harness: context.harness,
     providerVersion: '0.154.0', runnerId: context.runnerId, workingDirectory: context.workingDirectory,
     inspectedAt: new Date().toISOString(), entry: { name: context.serverName, transport: 'streamable-http',
-      endpoint: providerAppEndpoint, enabled: true, credentialEnvironmentVariable: APP_MCP_TOKEN,
+      endpoint: providerAppEndpoint, enabled: true, credentialEnvironmentVariable: APP_MCP_TOKEN_ENVIRONMENT_VARIABLE,
       status: 'connected' } }))
   const inspector = vi.fn(() => ({ inspect }))
   const provider = providerLaunchCredentials(runs as unknown as Ports[0], { runnerId: LOCAL_RUNNER_ID } as Ports[1],

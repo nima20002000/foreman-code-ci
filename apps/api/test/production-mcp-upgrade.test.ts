@@ -28,8 +28,8 @@ async function fixture() {
   directories.push(home)
   const previous = join(home, '.local/state/graphql-production/mcp/launcher.mjs')
   const shared = join(home, '.local/share/graphql/mcp/launcher.mjs')
-  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', undefined)
-  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', dirname(shared))
+  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
+  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', dirname(shared))
   await installManagedLauncher(source, previous)
   return { home, previous, shared }
 }
@@ -89,7 +89,7 @@ it.each(['codex'] as const)(
 )
 
 it.each([
-  ['codex', 'graphql', 'FOREMAN_CODE_MCP_TOKEN'],
+  ['codex', 'graphql', 'GRAPHQL_MCP_TOKEN'],
   ['codex', 'foreman-code', APP_MCP_TOKEN],
 ] as const)(
   '%s keeps existing %s credentials, disabled flags and policies through the upgrade and managed edits',

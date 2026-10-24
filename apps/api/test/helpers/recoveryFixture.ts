@@ -14,7 +14,7 @@ import { buildApp } from '../../src/app.js'
 import { ApprovalPostgresSaver } from '../../src/modules/runs/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
-import { APP_MCP_TOKEN } from '../../src/modules/harnesses/appMcpLauncher.js'
+import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../../src/modules/access/workerCredentials.js'
 import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
@@ -70,7 +70,7 @@ function composeRuntime(base: Base, provider: RecoveryProvider, errors: unknown[
     async inspect(input) { return { harness: input.harness, providerVersion: '0.154.0',
       runnerId: input.runnerId, workingDirectory: input.workingDirectory, inspectedAt: new Date().toISOString(),
       entry: { name: input.serverName, transport: 'streamable-http', endpoint: providerAppEndpoint,
-        enabled: true, credentialEnvironmentVariable: APP_MCP_TOKEN, status: 'connected' } } },
+        enabled: true, credentialEnvironmentVariable: APP_MCP_TOKEN_ENVIRONMENT_VARIABLE, status: 'connected' } } },
   }), pool)
   const native = new ApprovalExecutionCoordinator({ runs, interactions: repository, budgets, managers, activeTimeoutMs: 600000,
     credentials: launchCredentials, validateContinuation: continuationValidator(pool, locations),

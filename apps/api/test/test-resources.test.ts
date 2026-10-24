@@ -134,25 +134,25 @@ describe('disposable test resources', () => {
       const source = { HOME: '/real/home', CODEX_HOME: '/real/codex', PGHOST: 'app',
         OPENAI_API_KEY: 'real-key',
         GRAPHQL_MCP_TOKEN: 'real-token', LOG_FILE: '/real/log', WORKSPACE_STORAGE_ROOT: '/real/projects',
-        FOREMAN_CODE_APP_MCP_DIRECTORY: '/real/mcp', FOREMAN_CODE_WEB_DIST: '/real/web',
+        GRAPHQL_APP_MCP_DIRECTORY: '/real/mcp', GRAPHQL_WEB_DIST: '/real/web',
         GRAPHQL_PRODUCTION_DB_PASSWORD: 'real-production-password',
-        FOREMAN_CODE_API_ENV_FILE: '/real/api.env',
+        GRAPHQL_API_ENV_FILE: '/real/api.env',
         FOREMAN_CODE_TEST_CODEX_AUTH_FILE: auth, FOREMAN_CODE_TEST_OPENAI_API_KEY: 'test-key',
           }
       const environment = testEnvironment(source,
       { ...resource, name: 'graphql_test_unit', databaseUrl: new URL('/graphql_test_unit', testAdminUrl).toString() })
       for (const key of ['HOME', 'CODEX_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME',
         'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'FILE_STORAGE_ROOT', 'HARNESS_WORKSPACE_ROOT', 'LOG_DIR',
-        'WORKSPACE_STORAGE_ROOT', 'FOREMAN_CODE_APP_MCP_DIRECTORY']) {
+        'WORKSPACE_STORAGE_ROOT', 'GRAPHQL_APP_MCP_DIRECTORY']) {
         expect(environment[key]).toMatch(resource.directory + '/')
       }
       expect((await stat(join(environment.HOME!, '.local/share/graphql/mcp/launcher.mjs'))).size).toBeGreaterThan(0)
       expect(environment.PGHOST).toBeUndefined()
       expect(environment.GRAPHQL_MCP_TOKEN).toBeUndefined()
       expect(environment.LOG_FILE).toBeUndefined()
-      expect(environment.FOREMAN_CODE_WEB_DIST).toBeUndefined()
+      expect(environment.GRAPHQL_WEB_DIST).toBeUndefined()
       expect(environment.GRAPHQL_PRODUCTION_DB_PASSWORD).toBeUndefined()
-      expect(await readFile(environment.FOREMAN_CODE_API_ENV_FILE!, 'utf8')).toBe('')
+      expect(await readFile(environment.GRAPHQL_API_ENV_FILE!, 'utf8')).toBe('')
       expect(environment.TMPDIR).toBe(join(resource.directory, 'tmp'))
       expect(environment.FILE_STORAGE_ROOT!.startsWith(environment.TMPDIR! + '/')).toBe(false)
       expect(environment.OPENAI_API_KEY).toBe('test-key')
@@ -168,10 +168,10 @@ describe('disposable test resources', () => {
   it('ignores installation aliases and always configures owned test paths', () => {
     const resource = createTestRoot()
     try {
-      const environment = testEnvironment({ FOREMAN_CODE_APP_MCP_DIRECTORY: '/installed', GRAPHQL_APP_MCP_DIRECTORY: '/alias' },
+      const environment = testEnvironment({ GRAPHQL_APP_MCP_DIRECTORY: '/installed', FOREMAN_CODE_APP_MCP_DIRECTORY: '/alias' },
         { ...resource, name: 'graphql_test_unit', databaseUrl: new URL('/graphql_test_unit', testAdminUrl).toString() })
-      expect(environment.FOREMAN_CODE_APP_MCP_DIRECTORY).toMatch(resource.directory + '/')
-      expect(environment.GRAPHQL_APP_MCP_DIRECTORY).toBeUndefined()
+      expect(environment.GRAPHQL_APP_MCP_DIRECTORY).toMatch(resource.directory + '/')
+      expect(environment.FOREMAN_CODE_APP_MCP_DIRECTORY).toBeUndefined()
     } finally { removeTestRoot(resource) }
   })
 

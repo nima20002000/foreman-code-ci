@@ -62,7 +62,7 @@ it('routes the frozen credential for simultaneous instances and changed ports th
   const connect = async (token: string) => {
     const client = new Client({ name: 'launcher-integration', version: '1' })
     cleanup.push(() => client.close())
-    const environment = { FOREMAN_CODE_MCP_TOKEN: token }
+    const environment = { GRAPHQL_MCP_TOKEN: token }
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [launcher],
       env: environment, stderr: 'pipe' }))
     return client
@@ -146,7 +146,7 @@ it('routes the frozen credential for simultaneous instances and changed ports th
   for (const token of [owner.token, reader.token]) expect(remaining).not.toContain(`${createHash('sha256').update(token).digest('hex')}.json`)
 }, 30_000)
 
-it('does not read the Worker wire token at the native launcher or expose the credential', async () => {
+it('refuses a product-name token alias without exposing the credential', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'launcher-conflict-'))
   cleanup.push(() => removeFixtureDirectory(directory))
   const launcher = join(directory, 'launcher.mjs')
@@ -154,7 +154,7 @@ it('does not read the Worker wire token at the native launcher or expose the cre
   const client = new Client({ name: 'launcher-conflict', version: '1' })
   cleanup.push(() => client.close())
   const transport = new StdioClientTransport({ command: process.execPath, args: [launcher],
-    env: { GRAPHQL_MCP_TOKEN: 'new-private-token' }, stderr: 'pipe' })
+    env: { FOREMAN_CODE_MCP_TOKEN: 'new-private-token' }, stderr: 'pipe' })
   let failure: unknown
   try { await client.connect(transport) } catch (error) { failure = error }
   expect(String(failure)).toContain('MCP credential is missing')

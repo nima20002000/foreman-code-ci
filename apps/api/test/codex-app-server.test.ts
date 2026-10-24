@@ -419,7 +419,7 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
     assert.equal((await wire('thread/resume')).length, 0)
   })
 
-  it.each(['FOREMAN_CODE_MCP_TOKEN'])(
+  it.each(['GRAPHQL_MCP_TOKEN'])(
     'recognizes a managed worker launcher using %s and permits only its scoped execution credential', async tokenName => {
     const entry = nativeConnection({ ...appLauncherConnection(), environmentVariables: [tokenName] })
     await json('mcp.json', { enabled: true, transport: { ...entry, type: 'stdio' } })
@@ -440,7 +440,7 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
       PGPASSWORD: 'test-only-password',
       GRAPHQL_PRODUCTION_DB_PASSWORD: 'test-only-production-password',
       OPERATOR_TOKEN: 'test-only-operator-token',
-      FOREMAN_CODE_OPERATOR_TOKEN: 'test-only-operator-token',
+      GRAPHQL_OPERATOR_TOKEN: 'test-only-operator-token',
       GRAPHQL_APP_TOKEN: 'test-only-app-token',
       GRAPHQL_MCP_TOKEN: 'test-only-ambient-token',
       TEST_VISIBLE_SETTING: 'retained-setting',
@@ -448,7 +448,7 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
     }
     const expected: Record<string, string | null> = {
       ...Object.fromEntries(Object.keys(inherited).map((key) => [key, null])),
-      FOREMAN_CODE_MCP_TOKEN: environment.variables.GRAPHQL_MCP_TOKEN!,
+      GRAPHQL_MCP_TOKEN: environment.variables.GRAPHQL_MCP_TOKEN!,
       TEST_VISIBLE_SETTING: inherited.TEST_VISIBLE_SETTING,
       TEST_AGENT_ID: 'agent-a',
       NO_COLOR: '1',
@@ -463,7 +463,7 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
         agentId: environment.agentId,
         variables: { ...environment.variables, GRAPHQL_MCP_TOKEN: 'replacement-scoped-token' },
       }
-      expected.FOREMAN_CODE_MCP_TOKEN = 'replacement-scoped-token'
+      expected.GRAPHQL_MCP_TOKEN = 'replacement-scoped-token'
       await json('expected-environment.json', expected)
       await manager.refreshProcessEnvironment(session, source.environment!)
       await assertSpawnedEnvironment(expected, 2)
@@ -637,7 +637,7 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
     } }
     await json('mcp.json', { enabled: true, required: true, enabled_tools: ['b', 'a'], disabled_tools: ['d', 'c'],
       default_tools_approval_mode: 'prompt', tools: { a: { approval_mode: 'prompt', enabled: true }, b: { enabled: false, approval_mode: 'writes' } },
-      transport: { type: 'streamable_http', bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } })
+      transport: { type: 'streamable_http', bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } })
     await manager.createSession(source)
     const changed = input(f.directory, 'agent-b'); codex(changed).advanced = structuredClone(codex().advanced!)
     codex(changed).advanced!.mcpServers['graphql']!.tools!.a!.approvalMode = 'auto'

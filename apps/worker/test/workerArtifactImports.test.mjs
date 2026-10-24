@@ -41,7 +41,7 @@ async function fixture(t) {
     return spawnSync(process.execPath, [join(root, 'scripts/build-worker-artifact.mjs'),
       targetFile, join(directory, 'release')], {
       cwd: root, encoding: 'utf8', timeout: 120_000,
-      env: { ...environment, FOREMAN_CODE_WORKER_BUILD_COMMIT: commit, },
+      env: { ...environment, GRAPHQL_WORKER_BUILD_COMMIT: commit, },
     });
   };
   return { root, directory, write, build };

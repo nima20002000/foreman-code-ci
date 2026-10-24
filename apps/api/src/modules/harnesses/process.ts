@@ -7,7 +7,7 @@ import { NativeProcessRegistry, nativeProcessExit, spawnNativeProcess, prepareNa
 
 import type { ChildProcessEnvironment, NativeEventInput } from './port.js'
 import { appMcpTokenEnvironment, inheritedAgentEnvironment, redactKnownSecrets, redactSecretText } from './secrets.js'
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
+import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import { ignoreError, logIgnoredError } from '../diagnostics/index.js'
 
 const MAX_STDERR_LENGTH = 1_000_000
@@ -121,7 +121,7 @@ async function runOwnedProcess<T>(
       }
       const entries = Object.entries(scopedEnvironment.variables)
       const entry = entries[0]
-      if (entries.length !== 1 || !entry || entry[0] !== INSTALLATION_NAMES.environment.MCP_TOKEN || !entry[1]) {
+      if (entries.length !== 1 || !entry || !(APP_MCP_TOKEN_NAMES as readonly string[]).includes(entry[0]) || !entry[1]) {
         throw new Error('Only the scoped Foreman Code MCP credential may be injected into an Agent process.')
       }
       childEnvironment[entry[0]] = entry[1]

@@ -44,7 +44,7 @@ describe.skipIf(!postgresEnabled)('Operator chat persistence and native binding 
       () => ({ inspect: async request => ({ harness: request.harness, providerVersion: 'recorded-codex',
         runnerId: request.runnerId, workingDirectory: request.workingDirectory, inspectedAt: new Date().toISOString(),
         entry: { name: 'graphql', enabled: true, transport: 'stdio', automaticEndpoint: true,
-          credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN', status: 'connected' } }) }))
+          credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN', status: 'connected' } }) }))
     try {
       const environment = await nativeAuthority.prepare(manager, configuration, conversation.id, parent.principal.id,
         AbortSignal.timeout(2_000))
@@ -148,7 +148,7 @@ describe.skipIf(!postgresEnabled)('Operator chat persistence and native binding 
         runtimeDirectory, endpoint, () => ({ inspect: async (request) => ({ harness: request.harness,
           providerVersion: 'synthetic-codex-cli', runnerId: request.runnerId, workingDirectory: request.workingDirectory, inspectedAt: new Date().toISOString(),
           entry: { name: 'graphql', enabled: true, transport: 'stdio', automaticEndpoint: true,
-            credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN', status: 'connected' } }) }), async () => {},
+            credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN', status: 'connected' } }) }), async () => {},
         async (principal, configuration) => {
           inspected.push(principal.id)
           return { harness: 'claude', status: 'configured', endpoint: configuration.harness.harness === 'claude' ? configuration.harness.mcpServers.graphql!.url : '', checkedAt: new Date().toISOString() }

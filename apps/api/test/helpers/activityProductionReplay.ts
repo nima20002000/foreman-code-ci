@@ -52,7 +52,7 @@ export class ActivityProductionReplay {
           const thread: Thread = { id: `${this.threadIdPrefix}-${++this.counter}`, turns: original ? structuredClone(original.turns) : [],
             settings: this.settings(params), ephemeral: params.ephemeral === true }
           this.threads.set(thread.id, thread); bind(thread)
-          const token = _environment?.FOREMAN_CODE_MCP_TOKEN
+          const token = _environment?.GRAPHQL_MCP_TOKEN ?? _environment?.GRAPHQL_MCP_TOKEN
           if (token) this.appTokens.set(thread.id, token)
           return threadResponse(thread, params)
         }
@@ -208,10 +208,10 @@ export class ActivityProductionReplay {
         if (args[2] !== 'graphql') return { ...outcome('', 1),
           stderr: `Error: No MCP server named '${args[2]}' found.` }
         return outcome(JSON.stringify({ name: 'graphql', enabled: true, required: true,
-          transport: { type: 'stdio', command: process.execPath, args: [appLauncherPath()], env_vars: ['FOREMAN_CODE_MCP_TOKEN'] } }))
+          transport: { type: 'stdio', command: process.execPath, args: [appLauncherPath()], env_vars: ['GRAPHQL_MCP_TOKEN'] } }))
       }
       if (args[0] === 'mcp' && args[1] === 'list') return outcome(JSON.stringify([{ name: 'graphql',
-        transport: { type: 'stdio', command: process.execPath, args: [appLauncherPath()], env_vars: ['FOREMAN_CODE_MCP_TOKEN'] } }]))
+        transport: { type: 'stdio', command: process.execPath, args: [appLauncherPath()], env_vars: ['GRAPHQL_MCP_TOKEN'] } }]))
       if (args[0] === 'debug' && args[1] === 'models') return outcome(JSON.stringify({ models: this.qualifiedModels.map(slug => ({
         slug, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }], additional_speed_tiers: ['fast'],
       })) }))

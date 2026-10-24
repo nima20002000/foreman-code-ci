@@ -1,5 +1,4 @@
 /** Provider capabilities and pre-input MCP inspection. */
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { sessionStartOwner } from '../sessionStart.js'
 import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import type { McpDetection, NativeHarnessCapabilities, NativeSessionReference } from '@foreman-code/contracts'
@@ -60,7 +59,7 @@ async function refreshCredentials(ctx: ClaudeManagerContext, runtime: Runtime, o
   delete runtime.credentialServers
   const withoutCredentials = (value: NativeSessionStart): string => {
     const variables = { ...value.environment?.variables }
-    for (const key of [INSTALLATION_NAMES.environment.MCP_TOKEN, ...APP_MCP_TOKEN_NAMES, ...(ctx.options.credentialEnvironmentVariables ?? [])]) delete variables[key]
+    for (const key of [...APP_MCP_TOKEN_NAMES, ...(ctx.options.credentialEnvironmentVariables ?? [])]) delete variables[key]
     const agentId = value.environment?.agentId ?? sessionStartOwner(value)
     return JSON.stringify({ ...value, environment: { agentId, variables } })
   }

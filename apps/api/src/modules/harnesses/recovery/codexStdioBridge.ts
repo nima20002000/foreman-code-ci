@@ -14,7 +14,7 @@ function codexStdioBridge(native, environment, released, observerLost) {
   const variables={}
   process.stdin.setEncoding('utf8')
   native.stdout.setEncoding('utf8')
-  for(const name of ${JSON.stringify([INSTALLATION_NAMES.environment.PRODUCT_MCP_TOKEN])}) {
+  for(const name of ${JSON.stringify([INSTALLATION_NAMES.environment.MCP_TOKEN])}) {
     if(environment[name])variables[name]=environment[name]
   }
   function forgetRequest(id) {

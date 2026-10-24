@@ -14,7 +14,7 @@ export function isDatabaseCredentialVariable(key: string): boolean {
 export function isControllerEnvironmentVariable(key: string): boolean {
   return key === 'NODE_OPTIONS' || key.startsWith('OPERATOR_')
     || /^(?:GRAPHQL|FOREMAN_CODE)_(?:OPERATOR|APP|TEST)_/.test(key)
-    || (APP_MCP_TOKEN_NAMES as readonly string[]).includes(key) || key === INSTALLATION_NAMES.environment.MCP_TOKEN
+    || (APP_MCP_TOKEN_NAMES as readonly string[]).includes(key) || key === INSTALLATION_NAMES.privateEnvironment.productMcpToken
     || key.endsWith('DATABASE_URL') || isDatabaseCredentialVariable(key)
 }
 
@@ -27,13 +27,11 @@ export function inheritedAgentEnvironment(source: NodeJS.ProcessEnv = hostEnviro
   return environment
 }
 
-/** Deliver the scoped wire credential under the native launcher's deployed name. */
+/** Deliver the admitted token with its frozen installation name and bridge location. */
 export function appMcpTokenEnvironment(source: NodeJS.ProcessEnv, runtimeEnvironment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const token = readProductEnvironment(source, 'MCP_TOKEN')
   if (token === undefined) return source
-  const environment = { ...source }
-  delete environment[INSTALLATION_NAMES.environment.MCP_TOKEN]
-  return { ...environment, [INSTALLATION_NAMES.environment.PRODUCT_MCP_TOKEN]: token,
+  return { ...source, [INSTALLATION_NAMES.environment.MCP_TOKEN]: token,
     [INSTALLATION_NAMES.environment.APP_MCP_DIRECTORY]: appMcpDirectory(runtimeEnvironment) }
 }
 
