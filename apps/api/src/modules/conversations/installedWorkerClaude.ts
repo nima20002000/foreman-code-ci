@@ -1,4 +1,4 @@
-import type { ProviderAccountResolver } from '../provider-accounts/service.js'
+import type { ProviderAccountResolver } from '../provider-accounts/index.js'
 import { assertWorkerProviderAccountBinding } from '../provider-accounts/index.js'
 import { managedProviderEnvironment, resolveRuntimeProviderAccount } from '../harnesses/providerAccountRuntime.js'
 import { randomUUID } from 'node:crypto'

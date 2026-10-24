@@ -20,7 +20,7 @@ function fixture() {
   const query=vi.fn(async(_text:string,args:unknown[]=[])=>{
     // Statements are told apart by their bound values: the receipt insert binds six, the coordinator's receipt read an
     // array of principals first, and the delivery ACK read only the principal and the command id.
-    if(args.length===6&&String(args[4]).startsWith('sha256:'))commands.set(String(args[2]),{principal_id:String(args[0]),input_hash:String(args[4]),target_key:String(args[3]),result:JSON.parse(String(args[5]))})
+    if(args.length===6)commands.set(String(args[2]),{principal_id:String(args[0]),input_hash:String(args[4]),target_key:String(args[3]),result:JSON.parse(String(args[5]))})
     if(args.length===3&&Array.isArray(args[0]))return {rows:commands.has(String(args[2]))?[commands.get(String(args[2]))!]:[]}
     if(args.length===2)return {rows:commands.has(String(args[1]))?[{result:commands.get(String(args[1]))!.result}]:[]}
     return {rows:[]}

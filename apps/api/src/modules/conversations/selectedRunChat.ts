@@ -11,7 +11,7 @@ import type {
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { DomainError } from '../errors.js'
-import type { PostgresRunRepository } from '../runs/postgres.js'
+import type { PostgresRunRepository } from '../runs/index.js'
 import { agentChatKey, type AgentConversationRow } from './agentChatRepository.js'
 
 type Queryable = Pick<pg.PoolClient, 'query'>

@@ -5,6 +5,7 @@ import {
   HarnessConfigurationSchema,
   OperatorAgentSchema,
   OperatorConfigurationVersionSchema,
+  type RecordedHarnessConfiguration,
   type HarnessConfiguration,
   type OperatorAgent,
   type OperatorConfigurationVersion,
@@ -24,7 +25,7 @@ import type { ProviderAccountConfigurationService } from '../harnesses/index.js'
 import { resolveWorkspaceSkills } from '../skills/catalog.js'
 import { composeInstructionText, instructionsTooLarge } from '../skills/instructions.js'
 import { sha256Hex } from '../../shared/hash.js'
-import { retiredHarnessError } from '../harnesses/index.js'
+import { retiredHarnessError } from '../harnesses/retiredHarness.js'
 
 const OPERATOR_ID = 'application-operator'
 
@@ -32,7 +33,7 @@ const OPERATOR_ID = 'application-operator'
 // Persisted configuration hashes depend on the frozen numeric-keys-first legacy form.
 function hash(value: unknown) { return `sha256:${sha256Hex(canonicalJsonNumericKeysFirstLegacy(value))}` }
 
-function acceptedConfiguration(value: HarnessConfiguration): HarnessConfiguration {
+function acceptedConfiguration(value: RecordedHarnessConfiguration): HarnessConfiguration {
   if (value.harness === 'opencode') throw retiredHarnessError()
   // Persisted settings do not grant execution; admission validates the selected native profile.
   return HarnessConfigurationSchema.parse(value)
@@ -125,12 +126,12 @@ export class PostgresOperatorRepository {
     return { operator, configuration }
   }
 
-  async update(input: HarnessConfiguration, expectedConfigurationVersionId: string, supplied?: pg.ClientBase) {
+  async update(input: RecordedHarnessConfiguration, expectedConfigurationVersionId: string, supplied?: pg.ClientBase) {
     const harness = acceptedConfiguration(input)
     return withTransaction(this.pool, (client) => this.updateWithClient(client, harness, expectedConfigurationVersionId), { join: supplied })
   }
 
-  async updateWithClient(client: pg.ClientBase, harness: HarnessConfiguration, expectedConfigurationVersionId: string, showThinking = false,
+  async updateWithClient(client: pg.ClientBase, harness: RecordedHarnessConfiguration, expectedConfigurationVersionId: string, showThinking = false,
     assignedSkills?: readonly WorkspaceSkillReference[], harnessProfileSelection?: HarnessProfileSelection | null,
     nativeTools?: NativeTools | null) {
       harness = acceptedConfiguration(harness)

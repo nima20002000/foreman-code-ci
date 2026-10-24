@@ -6,12 +6,7 @@ import { createServer } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { createRequire } from 'node:module'
-
-const require = createRequire(new URL('../apps/api/package.json', import.meta.url))
-const { tsImport } = await import(require.resolve('tsx/esm/api'))
-const { appMcpTokenEnvironment, inheritedAgentEnvironment } = await tsImport(
-  '../apps/api/src/modules/harnesses/secrets.ts', import.meta.url)
+import { appMcpTokenEnvironment, inheritedAgentEnvironment } from '../apps/api/src/modules/harnesses/secrets.ts'
 
 const script = new URL('./ci-remote.mjs', import.meta.url).pathname
 

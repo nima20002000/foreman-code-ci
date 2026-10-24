@@ -24,7 +24,7 @@ function fixture() {
     else if (values.length === 2 && values[1] === mainId) rows = [{ record: registration }]
     else if (values.length === 3 && Array.isArray(values[0])) rows = receipts.has(String(values[2])) ? [receipts.get(String(values[2]))] : []
     else if (values.length === 2) rows = [...receipts.values()].sort((a, b) => (b.result as { revision: number }).revision - (a.result as { revision: number }).revision).slice(0, 1)
-    else if (values.length === 6 && String(values[4]).startsWith('sha256:')) receipts.set(String(values[2]), { input_hash: values[4], target_key: values[3], result: JSON.parse(values[5] as string) })
+    else if (values.length === 6) receipts.set(String(values[2]), { input_hash: values[4], target_key: values[3], result: JSON.parse(values[5] as string) })
     return { rows, rowCount: rows.length, fields: [], oid: 0, command: 'SELECT' }
   })
   const pool = { connect: async () => ({ query, release: vi.fn() }), query } as unknown as pg.Pool

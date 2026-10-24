@@ -141,15 +141,15 @@ it.skipIf(!postgresEnabled)('provides authenticated Operator MCP parity for crea
     expect(second.value.name).toBe('New folder (2)')
     const renameInput = { creationCommandId: automaticInput.commandId, name: 'Named folder', commandId: randomUUID() }
     // Rename and undo belong to the folder picker, so they run through its service rather than an Operator tool.
-    const renameFolder = (input: Parameters<typeof folders.renameCreated>[2]) => folders.renameCreated(delegated.principal, 'http', input)
+    const rename = (input: Parameters<typeof folders.renameCreated>[2]) => folders.renameCreated(delegated.principal, 'http', input)
     const undo = (input: Parameters<typeof folders.undoCreated>[2], principal = delegated.principal) =>
       folders.undoCreated(principal, 'http', input)
-    const renamed = await renameFolder(renameInput)
+    const renamed = await rename(renameInput)
     expect(renamed.value.path).toBe(join(parentPath, 'Named folder'))
-    expect((await renameFolder(renameInput)).replayed).toBe(true)
-    await expect(renameFolder({ creationCommandId: folderInput.commandId, name: 'MCP Project', commandId: randomUUID() })).rejects.toThrow()
+    expect((await rename(renameInput)).replayed).toBe(true)
+    await expect(rename({ creationCommandId: folderInput.commandId, name: 'MCP Project', commandId: randomUUID() })).rejects.toThrow()
     expect(await readdir(parentPath)).toContain('Picker folder')
-    await expect(renameFolder({ creationCommandId: randomUUID(), name: 'Not owned', commandId: randomUUID() })).rejects.toThrow()
+    await expect(rename({ creationCommandId: randomUUID(), name: 'Not owned', commandId: randomUUID() })).rejects.toThrow()
 
     const undoInput = { creationCommandId: automaticInput.commandId, commandId: randomUUID() }
     const undone = await undo(undoInput)
@@ -193,7 +193,7 @@ it.skipIf(!postgresEnabled)('provides authenticated Operator MCP parity for crea
     const menuFolder = (await call('workspace_folder_create', c.WorkspaceFolderCreateResultSchema, {
       parentPath, name: 'Menu folder', commandId: randomUUID(),
     })).value
-    const menuRenamed = await renameFolder({ path: menuFolder.path, name: 'Menu renamed', commandId: randomUUID() })
+    const menuRenamed = await rename({ path: menuFolder.path, name: 'Menu renamed', commandId: randomUUID() })
     expect(await readdir(parentPath)).toContain('Menu renamed')
     const deleteInput = { paths: [menuRenamed.value.path, second.value.path, folder.value.path], commandId: randomUUID() }
     const deleted = await call('workspace_folders_delete', c.WorkspaceFolderDeleteResultSchema, deleteInput)
@@ -203,7 +203,7 @@ it.skipIf(!postgresEnabled)('provides authenticated Operator MCP parity for crea
     expect(await readdir(second.value.path)).toContain('keep')
     expect((await call('workspace_folders_delete', c.WorkspaceFolderDeleteResultSchema, deleteInput)).replayed).toBe(true)
     expect((await client.callTool({ name: 'workspace_folders_delete', arguments: { paths: [parentPath], commandId: randomUUID() } })).isError).toBe(true)
-    await expect(renameFolder({ path: parentPath, name: 'Root rename', commandId: randomUUID() })).rejects.toThrow()
+    await expect(rename({ path: parentPath, name: 'Root rename', commandId: randomUUID() })).rejects.toThrow()
 
     await call('workspace_update', c.ManagedWorkspaceCommandResultSchema, { workspaceId, commandId: randomUUID(), expectedRevision: workspace.revision, name: 'Renamed project' })
     expect((await call('workspace_get', c.ManagedWorkspaceSchema, { workspaceId })).workspace.name).toBe('Renamed project')

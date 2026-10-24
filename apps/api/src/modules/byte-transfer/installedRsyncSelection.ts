@@ -8,7 +8,7 @@ import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identit
 import { DeviceSessionBindingSchema, type DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { TransferIntentSchema, type TransferIntent } from '@foreman-code/contracts/byte-transfer'
 import { TrustedConnectionCheckSchema } from '@foreman-code/contracts/trusted-device-connection'
-import type { PostgresTrustedConnectionSetup } from '../devices/trustedConnectionSetup.js'
+import type { PostgresTrustedConnectionSetup } from '../devices/index.js'
 import { DomainError } from '../errors.js'
 import { authenticatedTransferAuthority, transferContextForBinding, type AcceptedTransferAuthority } from './carrier.js'
 import { assertRsyncBackendSelection, type RsyncBackendSelection } from './rsyncProduction.js'

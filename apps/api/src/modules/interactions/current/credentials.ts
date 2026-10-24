@@ -2,9 +2,9 @@ import type pg from 'pg'
 import { databaseCredentialDeadline } from '../../access/credentialLifetime.js'
 import { rollbackAfterFailure, withTransaction } from '../../../infrastructure/transaction.js'
 import { WorkerCredentialService, type IssuedWorkerCredential, APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../../access/workerCredentials.js'
-import type { PostgresAccessService } from '../../access/postgres.js'
+import type { PostgresAccessService } from '../../access/index.js'
 import { fail, isCurrentApprovalRun, runFor } from './context.js'
-import { credentialAuthority, assertWave25WorkerBinding } from './credentialAuthority.js'
+import { credentialAuthority, assertCurrentWorkerBinding } from './credentialAuthority.js'
 import { ReviewJobSchema, type ReviewJob } from '@foreman-code/contracts'
 import type { SessionWriteLease } from '../sessionWriter.js'
 import { requireReviewerCredential } from '../reviewerCredential.js'
@@ -13,7 +13,7 @@ import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import { retainedReviewerSettlementPending } from '../../access/workerEligibility.js'
 type Purpose = 'workflow' | 'reviewer'
 
-export class Wave25WorkerCredentialService extends WorkerCredentialService {
+export class CurrentWorkerCredentialService extends WorkerCredentialService {
   private sweepAfter: string | null = null
   constructor(private readonly approvalPool: pg.Pool, private readonly approvalAccess: PostgresAccessService, ttlMs?: number) {
     super(approvalPool, approvalAccess, ttlMs)
@@ -96,7 +96,7 @@ export class Wave25WorkerCredentialService extends WorkerCredentialService {
       const binding = await client.query<{ purpose: Purpose | 'consultation' }>(
         'select principal_id,purpose from worker_credential_bindings where principal_id=$1 for update', [credential.principalId])
       if (!binding.rows[0] || binding.rows[0].purpose === 'consultation') return fail('WORKER_CREDENTIAL_NOT_RENEWABLE')
-      try { await assertWave25WorkerBinding(client, credential.principalId) }
+      try { await assertCurrentWorkerBinding(client, credential.principalId) }
       catch (error) {
         if (!(error instanceof Error) || !('code' in error) || error.code !== 'REVIEWER_BINDING_REBIND_REQUIRED') throw error
         const row = (await client.query<{ record: unknown }>('select record from harness_executions where id=$1', [id])).rows[0]
@@ -136,7 +136,7 @@ export class Wave25WorkerCredentialService extends WorkerCredentialService {
         await this.locked(row.execution_id, async (client) => {
           await client.query('select id from management_principals where id=$1 for update nowait', [row.principal_id])
           await client.query('select principal_id from worker_credential_bindings where principal_id=$1 for update nowait', [row.principal_id])
-          try { await assertWave25WorkerBinding(client, row.principal_id) }
+          try { await assertCurrentWorkerBinding(client, row.principal_id) }
           catch (error) {
             if (error instanceof Error && 'code' in error && error.code === 'REVIEWER_BINDING_REBIND_REQUIRED') return
             if (!(error instanceof Error) || !('code' in error) || ![

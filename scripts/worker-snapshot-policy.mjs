@@ -1,21 +1,12 @@
+import { verificationScripts } from '../packages/verification-runner/runtime-files.mjs'
+export { verificationScripts }
+
 export const workerEntryPoints = {
   cli: 'apps/worker/src/cli.mjs',
   worker: 'apps/worker/src/workerFactory.mjs',
 }
 export const rsyncWriterEntrypoint = 'apps/api/src/modules/byte-transfer/rsyncWriterCli.ts'
 export const schemaWorkerEntrypoint = 'apps/api/src/modules/harnesses/compatibility/schemaWorker.ts'
-
-export const verificationScripts = [
-  'scripts/ci-watchdog.mjs',
-  'scripts/ci-progress-reporter.mjs',
-  'scripts/ci-test-results.mjs',
-  'scripts/dense-resources.mjs',
-  'scripts/verification-runner.mjs',
-  'scripts/verify-repository.mjs',
-  'scripts/verification-reports.mjs',
-  'scripts/integration-process.mjs',
-  'scripts/integration-capabilities.mjs',
-]
 
 export const workerSnapshotFiles = [
   'apps/web/public/graphql.svg',
@@ -39,7 +30,7 @@ export const workerSnapshotFiles = [
 
 export function assertWorkerSnapshotSource(path) {
   const forbiddenApiModule = /^apps\/api\/src\/(?:server|app|production)\.ts$/.test(path)
-    || /^apps\/api\/src\/(?:infrastructure\/(?:db|database)(?:\.|\/)|(?:db|migrations|bootstrap)\/)/.test(path)
+    || /^apps\/api\/src\/(?:infrastructure\/(?:db|database)|(?:db|migrations|bootstrap)\/)/.test(path)
   const invalidPath = path.startsWith('/') || path.split('/').some(part => !part || part === '.' || part === '..')
   const testSource = /\.(?:test|spec)\.[cm]?[jt]s$/.test(path)
   const secretSource = /(?:^|\/)\.env(?:\.|$)|\.(?:pem|key)$|(?:^|\/)(?:credentials|secrets)\.json$/.test(path)

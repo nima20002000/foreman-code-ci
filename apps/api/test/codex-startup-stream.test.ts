@@ -7,7 +7,7 @@ import type { ActivityTextOperation } from '@foreman-code/contracts/activity-tex
 import { afterEach, beforeEach, describe, it, vi } from 'vitest'
 
 import { createNativeTextStream } from '../src/modules/conversations/nativeTextStream.js'
-import { completedNativeAssistantMessage } from '../src/modules/conversations/operatorText.js'
+import { completedNativeAssistantMessage } from '../src/modules/harnesses/index.js'
 import { normalizeCodexNotification } from '../src/modules/harnesses/codexNormalization.js'
 import { NativeDeliveryError } from '../src/modules/harnesses/errors.js'
 import { isObject, type JsonObject } from '../src/modules/harnesses/codexStdioTransport.js'

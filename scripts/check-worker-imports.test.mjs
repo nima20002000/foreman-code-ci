@@ -37,11 +37,11 @@ for (const entry of entries) {
     f.write('packages/contracts/src/fixture.ts',
       "export * from '../../../apps/api/src/modules/runs/ownerLeases.js'")
     f.write('apps/api/src/modules/runs/ownerLeases.ts',
-      "import '../../infrastructure/database.js'")
-    f.write('apps/api/src/infrastructure/database.ts', 'export const timeout = 1')
+      "import '../../infrastructure/databaseTimeout.js'")
+    f.write('apps/api/src/infrastructure/databaseTimeout.ts', 'export const timeout = 1')
     const result = f.run()
     assert.equal(result.status, 1)
-    assert.match(result.stderr, /Forbidden snapshot source: apps\/api\/src\/infrastructure\/database\.ts/)
+    assert.match(result.stderr, /Forbidden snapshot source: apps\/api\/src\/infrastructure\/databaseTimeout\.ts/)
     assert.match(result.stderr, /ownerLeases\.ts/)
   })
 }

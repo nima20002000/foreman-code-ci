@@ -5,7 +5,7 @@ import { agentChatFixtures, type AgentChatState } from '@foreman-code/contracts/
 import { agentChatApi } from '../../../shared/api/agentChat'
 import { ApiError } from '../../../shared/api/client'
 import { agentChatFixtureFor } from '../../../shared/mocks/agentChatHandlers'
-import { useConversationDraftStore } from '../conversationDraftStore'
+import { useConversationDraftStore } from '../../chat-core'
 import { AgentChatTestSource, installChatSource, mountChat } from './testSupport'
 import { agentChatStateKey } from './useAgentChat'
 import { deferred } from '../../../test/deferred'

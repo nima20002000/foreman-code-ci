@@ -2,6 +2,11 @@ import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import type { JobInitiatingAgent } from '@foreman-code/contracts/jobs'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
+import { currentOperatorAuthority } from '../access/index.js'
+import { intersectGrants } from '../access/index.js'
+import { requireAuthorization } from '../access/index.js'
+import { workerScopesForAction } from '../access/index.js'
+import { assertCurrentWorkerBinding } from '../interactions/index.js'
 import { DomainError, retryDatabaseRead } from '../errors.js'
 import type { CiAuthority } from './authority.js'
 
@@ -9,8 +14,6 @@ export class RunCiAuthority implements CiAuthority {
   constructor(private readonly pool: pg.Pool) {}
 
   async resolve(caller: ManagementPrincipal, requestedWorkspace: string | undefined, actions: ManagementAction[]) {
-    const { currentOperatorAuthority, intersectGrants, requireAuthorization, workerScopesForAction } = await import('../access/index.js')
-    const { assertWave25WorkerBinding } = await import('../interactions/index.js')
     // Only reads: the binding is verified from one committed snapshot and no row lock outlives this COMMIT, so
     // CI calls never queue behind the Run owner. A CI ticket is admitted later in its own transaction.
     return retryDatabaseRead(() => withTransaction(this.pool, async (sql) => {
@@ -19,7 +22,7 @@ export class RunCiAuthority implements CiAuthority {
       let executionId: string | undefined
       let initiatingAgent: JobInitiatingAgent | undefined
       if (caller.audience === 'worker') {
-        await assertWave25WorkerBinding(sql, caller.id)
+        await assertCurrentWorkerBinding(sql, caller.id)
         const binding = (await sql.query<{ workspace_id: string; workflow_id: string; run_id: string;
           authorization_principal_id: string; execution_id: string | null }>(`select b.workspace_id,b.workflow_id,b.run_id,b.execution_id,
             r.record->>'authorizationPrincipalId' as authorization_principal_id

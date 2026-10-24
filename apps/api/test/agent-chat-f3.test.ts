@@ -38,9 +38,6 @@ class MemoryConversations {
   cancels = 0
   beforeCancel: (() => Promise<void>) | undefined
   openRead: (() => Promise<AgentConversationRow[]>) | undefined
-  async workflowIsActive() { return true }
-  async activeAgentConfigurationId() { return this.row?.agent_configuration_version_id }
-  runExecutionSessionReference: PostgresAgentChatRepository['runExecutionSessionReference'] = async () => undefined
   async byKey() { return this.row }
   async get() { return this.row }
   async state() { return { row: this.row!, turns: this.turns, messages: [], hasEarlierMessages: false,
@@ -224,11 +221,6 @@ async function setup(options: { ephemeral?: boolean; stored?: boolean; origin?: 
       ? [{ id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
         expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] : [] }
     throw new Error(`Unscripted F3 statement binding ${values.length} values`)
-  }
-  repository.runExecutionSessionReference = async (executionId: string, runId: string) => {
-    const execution = source.find(item => item.id === executionId && item.runId === runId)
-    return execution ? { reference: { harness: native.harness, providerVersion: (await native.capabilities()).providerVersion,
-      nativeSessionId: execution.nativeSessionId } } : undefined
   }
   const pool = { query, connect: async () => ({ query, release() {} }) } as unknown as pg.Pool
   function service() {

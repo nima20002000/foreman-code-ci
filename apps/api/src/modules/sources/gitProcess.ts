@@ -31,8 +31,7 @@ export function runGitProcess(args: string[], options: GitProcessOptions,
     const executable = limited ? '/usr/bin/prlimit' : command.shift()!
     const childArgs = limited
       ? [`--fsize=${options.maximumFileBytes}:${options.maximumFileBytes}`, '--', ...command] : command
-    // Give Git time to unlink its lockfiles; the surviving supervisor still bounds uncooperative descendants.
-    const [supervisor, supervised] = underDeadline(options.timeoutMs ?? 15 * 60_000, executable, childArgs, 1000)
+    const [supervisor, supervised] = underDeadline(options.timeoutMs ?? 15 * 60_000, executable, childArgs)
     const startedAt = Date.now()
     const child = spawnProcess(supervisor, supervised, {
       ...(options.cwd ? { cwd: options.cwd } : {}),
@@ -48,10 +47,9 @@ export function runGitProcess(args: string[], options: GitProcessOptions,
     const sizes = { stdout: 0, stderr: 0 }
     let failed = false
     const stop = () => {
-      if (failed) return
       failed = true
       if (!child.pid) return
-      // The supervisor forwards SIGTERM, then escalates after Git's cleanup grace.
+      // The supervisor kills the command's whole group on SIGTERM.
       try { process.kill(-child.pid, 'SIGTERM') }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error

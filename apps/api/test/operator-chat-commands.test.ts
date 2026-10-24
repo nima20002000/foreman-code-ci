@@ -34,7 +34,7 @@ it('never records authorization loss after dispatch as definite native rejection
   })
   for (const source of ['http', 'mcp'] as const) await expect(commands.execute(principal, source, 'conversation', 'caller-key',
     { kind: 'respond' }, perform, async () => initial)).rejects.toMatchObject({ code: 'OPERATOR_CHAT_CONTROL_UNCONFIRMED' })
-  expect([...memory.records.values()][0]!.result).toMatchObject({ status: 'uncertain' })
+  expect([...memory.records.values()][0]!.result.status).toBe('uncertain')
   expect(perform).toHaveBeenCalledTimes(1)
 })
 it.each(['NATIVE_RESPONSE_DELIVERY_FAILED', 'NATIVE_RESPONSE_INVALID'])('records Codex pre-write %s as rejected and permits a new explicit command', async (code) => {
@@ -46,12 +46,12 @@ it.each(['NATIVE_RESPONSE_DELIVERY_FAILED', 'NATIVE_RESPONSE_INVALID'])('records
   })
   for (const source of ['http', 'mcp'] as const) await expect(new OperatorChatCommands(memory.pool).execute(principal, source,
     'conversation', 'failed-command', input, perform, async () => initial)).rejects.toMatchObject({ code: 'NATIVE_RESPONSE_DELIVERY_FAILED', status: 409 })
-  expect([...memory.records.values()][0]!.result).toMatchObject({ status: 'rejected' })
+  expect([...memory.records.values()][0]!.result.status).toBe('rejected')
   expect(perform).toHaveBeenCalledTimes(1)
   const retry = vi.fn(async (markDispatchAttempt: () => void) => { markDispatchAttempt(); return initial })
   await expect(commands.execute(principal, 'mcp', 'conversation', 'new-explicit-command', input, retry, async () => initial)).resolves.toEqual(initial)
   expect(retry).toHaveBeenCalledTimes(1)
-  expect([...memory.records.values()][1]!.result).toMatchObject({ status: 'completed' })
+  expect([...memory.records.values()][1]!.result.status).toBe('completed')
 })
 it.each([
   new HarnessExecutionError('NATIVE_RESPONSE_DELIVERY_UNCERTAIN', 'The write may have reached the provider.'),
@@ -66,7 +66,7 @@ it.each([
   })
   for (const source of ['http', 'mcp'] as const) await expect(new OperatorChatCommands(memory.pool).execute(principal, source,
     'conversation', 'caller-key', { kind: 'respond' }, perform, async () => initial)).rejects.toMatchObject({ code: 'OPERATOR_CHAT_CONTROL_UNCONFIRMED' })
-  expect([...memory.records.values()][0]!.result).toMatchObject({ status: 'uncertain' })
+  expect([...memory.records.values()][0]!.result.status).toBe('uncertain')
   expect(perform).toHaveBeenCalledTimes(1)
 })
 it('retains the accepted native choice and rechecks current action authority before reading a completed receipt', async () => {
@@ -82,7 +82,7 @@ it('retains the accepted native choice and rechecks current action authority bef
   await commands.execute(principal, 'mcp', 'conversation', 'caller-key', payload, perform, async () => initial,
     { ...control, native: { ...control.native, requestId: 'newer-question' } })
   expect([...memory.records.values()][0]!.result).toEqual(recorded)
-  expect(recorded).toMatchObject({ acceptedControl: control })
+  expect(recorded.acceptedControl).toEqual(control)
   expect(perform).toHaveBeenCalledTimes(1)
   const queries = vi.mocked(memory.pool.query).mock.calls.length
   await expect(commands.execute(principal, 'mcp', 'conversation', 'caller-key', payload, perform, async () => {

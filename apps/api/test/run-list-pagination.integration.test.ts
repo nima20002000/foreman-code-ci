@@ -1,4 +1,3 @@
-import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
@@ -100,7 +99,7 @@ describe('chronological Run list pagination', () => {
     try {
       const run = f.f.run
       const r = await reader(f, [{ actions: ['runs:read'], scope: { workspaceIds: [run.workspaceId] } }])
-      await beginTransaction(blocker)
+      await blocker.query('begin')
       await blocker.query('select id from runs where id=$1 for update', [run.id])
       await blocker.query('select id from workflow_versions where id=$1 for update', [run.workflowVersionId])
       await blocker.query('select id from agent_configuration_versions where id=any($1::text[]) for update',
@@ -118,10 +117,10 @@ describe('chronological Run list pagination', () => {
         .toEqual(run)
     } finally {
       if (deadline) clearTimeout(deadline)
-      await rollbackTransaction(blocker)
+      await blocker.query('rollback')
       blocker.release()
       // Settle both transports after releasing the blocker even if the deadline failed.
-      await pending?.catch(() => { /* ignore: the deadline or transport failure has already failed the test; settle before closing the fixture. */ })
+      await pending?.catch(() => undefined)
       await f.close()
     }
   }, 60000)

@@ -1,5 +1,5 @@
 import type { AgentConfigurationVersion, OperatorConfigurationVersion } from '@foreman-code/contracts'
-import { supportsExpectedTurnSteer } from '../harnesses/index.js'
+import { supportsExpectedTurnSteer } from '../harnesses/capabilities.js'
 
 /**
  * Installed-provider steering qualification for a live Agent or Operator chat owner. Codex app-server

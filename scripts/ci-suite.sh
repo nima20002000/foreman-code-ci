@@ -176,7 +176,6 @@ unit_other() {
     "--outputFile.json=$reports/ci.json" || status=$?
   if [ "$code" = 0 ]; then code="$status"; fi
   status=0
-  pnpm --filter @foreman-code/api build:worker-runtime || return $?
   (cd apps/worker && node_tests "$reports/worker.json" test/*.test.mjs) || status=$?
   if [ "$code" = 0 ]; then code="$status"; fi
   status=0

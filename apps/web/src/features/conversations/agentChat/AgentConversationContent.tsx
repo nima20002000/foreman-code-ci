@@ -1,0 +1,237 @@
+import { errorMessage } from '../../../shared/errorMessage'
+import { useSessionControls, useConversationDraftStore, chatBackgroundWork, chatBusy, intentUnavailable, SessionContext, CompactionActivity } from '../../chat-core'
+import { compactionBlocksSend, DeliveryTargetSchema, parseSessionCommand } from '@foreman-code/contracts'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { AgentChatContext } from '@foreman-code/contracts/agent-chat'
+import type { SelectedRunChatExecution } from '@foreman-code/contracts/selected-run-chat'
+import { ChatAttachmentControl, useConversationAttachments } from '../../attachments'
+import type { NodeBrowserSettings } from '@foreman-code/contracts'
+import { agentChatApi } from '../../../shared/api/agentChat'
+import { CanonicalAgentComposer } from './CanonicalAgentComposer'
+import type { DirectRecovery } from '../delivery/RetainedDeliveryInputs'
+
+import { Button, IconButton, Tooltip } from '../../../shared/ui/nocturne'
+import { createFileCardHttpClient } from '../../file-cards'
+import { SendAgainDialog } from './SendAgainDialog'
+import { ApiError } from '../../../shared/api/client'
+import { identityEpoch } from '../../../shared/api/protectedChatStorage'
+import { useFileDrop } from '../../../shared/ui/useFileDrop'
+import { AgentChatComposer } from './AgentChatComposer'
+import { AgentChatHeader, AgentChatStatus } from './AgentChatHeader'
+import { agentChatStateLabel } from './chatStateLabel'
+import { CornerDownLeft, RotateCcw } from 'lucide-react'
+import { ConversationViewport } from '../ConversationViewport'
+import { AgentChatTranscript } from './AgentChatTranscript'
+import { RetainedAgentCommands } from './RetainedAgentCommand'
+import { AgentChatAccessState } from './AgentChatAccessState'
+import { useAgentChat } from './useAgentChat'
+import { ProviderAccountChip, ProviderAccountProblem } from '../../provider-accounts'
+import { useAgentConversationComposer } from './useAgentConversationComposer'
+import { useFirstAttachment } from './useFirstAttachment'
+import { AgentChatSettings } from './AgentChatSettings'
+import { AgentConversationHistory } from './AgentConversationHistory'
+import { MissingChatFolderActions } from './MissingChatFolder'
+import './agentChat.css'
+import '../chatAttachments.css'
+
+export type AgentConversationContentProps = {
+  context: AgentChatContext; name: string; role?: string; activity?: string; runLabel?: string
+  selection?: SelectedRunChatExecution
+  onClose?: () => void; onNewConversation?: () => void
+  canonical?: boolean
+  browser?: NodeBrowserSettings | null
+  onRecover?(recovery: DirectRecovery): void
+}
+
+/** Both entry points retain their delivery path while sharing the conversation UI and readback. */
+export function AgentConversationContent({ context, name, activity, runLabel, onClose, onNewConversation,
+  selection, canonical = false, browser, onRecover }: AgentConversationContentProps) {
+  const [canonicalDenial, setCanonicalDenial] = useState<ApiError>()
+  const chat = useAgentChat(context, canonical ? { denial: canonicalDenial } : { selection }), state = chat.state
+  const conversation = state?.conversation
+  const retired = conversation?.harness === 'opencode' || state?.capabilities.harness === 'opencode'
+  const conversationId = conversation?.id
+  const sessionControls = useSessionControls(conversationId, {
+    workspaceId: context.workspaceId, context, executionId: state?.sourceTranscript?.executionId,
+    enabled: !!state,
+  })
+  const resendFileClient = useMemo(() => conversationId ? createFileCardHttpClient({
+    download: `/api/workspaces/${encodeURIComponent(context.workspaceId)}/agent-chat/conversations/${encodeURIComponent(conversationId)}/files/{fileId}/revisions/{revisionId}/content`,
+  }) : undefined, [context.workspaceId, conversationId])
+  const attachments = useConversationAttachments(conversation ? { kind: 'temporary', chat: {
+    kind: 'agent', conversationId: conversation.id, agentId: conversation.agentId,
+    workspaceId: conversation.workspaceId, workflowId: conversation.workflowId,
+    ...(conversation.origin.kind === 'run_execution' ? { runId: conversation.origin.runId, executionId: conversation.origin.executionId } : {}),
+  } } : null)
+  const sentBrowser = useRef<string | undefined>(undefined)
+  const refreshChat = chat.refresh
+  useEffect(() => {
+    if (browser === undefined || context.runId || !state) return
+    const value = JSON.stringify(browser)
+    if (sentBrowser.current === value) return
+    // A browser turned on before the first message opens the conversation now, so that message already has it.
+    if (!conversationId && !browser?.enabled) return
+    sentBrowser.current = value
+    void (async () => {
+      const id = conversationId ?? (await agentChatApi.ensureConversation(context)).conversation?.id
+      if (!id) throw new Error('The conversation could not be opened.')
+      await agentChatApi.setBrowser(context.workspaceId, id, browser)
+      if (!conversationId) refreshChat()
+    })().catch((error: unknown) => {
+      sentBrowser.current = undefined
+      console.error('The chat browser setting could not be saved', error)
+    })
+  }, [browser, conversationId, context, state, refreshChat])
+  const writeReason = retired ? 'Retired harness (OpenCode): read-only' : chat.blocked('agent_chat:write')
+  const firstAttachment = useFirstAttachment({ context, executionId: state?.sourceTranscript?.executionId,
+    hasConversation: !!conversation, ready: !!state && !writeReason, attachments, refresh: chat.refresh })
+  const attachmentDraft = firstAttachment.draft
+  const drop = useFileDrop({ disabled: !!writeReason || !attachmentDraft.canAdd, onFiles: attachmentDraft.addFiles })
+  const draft = useConversationDraftStore((store) => store.drafts[chat.draftKey] ?? '')
+  const { composer, sendAgain, setSendAgain, resendCommand, resendControl, resendPending,
+    commandError, commandCompaction, newPending, focus, submit } = useAgentConversationComposer({ chat, state, sessionControls, attachments, draft })
+  const stateLabel = agentChatStateLabel(state, runLabel)
+  const header = <AgentChatHeader name={name} state={stateLabel}
+    detail={[activity, state?.availability.message, state ? chatBackgroundWork(state.activitySnapshot)?.message : undefined]
+      .filter(Boolean).join(' · ')} onClose={onClose}
+    controls={<>
+      <ProviderAccountChip binding={conversation?.providerAccountBinding}
+        label={conversation?.origin.kind === 'run_execution' ? 'Source Run account · saved chat account' : 'Saved chat account'} />
+      <SessionContext controls={sessionControls} />
+    </>} />
+  if (chat.access.isPending || chat.access.isError && !chat.access.data || chat.denial || !state && !chat.canRead) return <AgentChatAccessState
+    header={header} pending={chat.access.isPending} error={chat.access.error} denial={chat.denial}
+    refresh={() => { if (canonical) setCanonicalDenial(undefined); void chat.access.refetch(); chat.refresh() }} />
+
+  const candidate = chat.query.data && 'deliveryTarget' in chat.query.data ? DeliveryTargetSchema.safeParse(chat.query.data.deliveryTarget) : undefined
+  const target = candidate?.success ? candidate.data : conversation ? { kind: 'agent_conversation' as const,
+    conversationId: conversation.id, agent: { workspaceId: context.workspaceId, workflowId: context.workflowId,
+      workflowNodeId: context.workflowNodeId, agentId: context.agentId } } : undefined
+  const command = parseSessionCommand(draft)
+  const commandOnly = command.kind === 'compact' || command.kind === 'mode'
+  const compactReason = compactionBlocksSend(sessionControls.state?.compaction ?? null)
+    ? sessionControls.state?.compaction?.message : undefined
+  const planSteerReason = !commandOnly && (command.kind === 'plan-task' || sessionControls.state?.desiredMode === 'plan')
+    ? 'Plan messages need a new turn. Use Queue message or Interrupt and send.' : undefined
+  const nextReason = writeReason ?? compactReason ?? (state ? intentUnavailable(state, 'next_turn') : 'Loading this conversation…')
+  const controlReason = writeReason ?? (sessionControls.mutation.isPending ? 'A session control is still pending.' : undefined)
+  const resendReason = resendControl ? controlReason : nextReason
+  const steerReason = commandOnly ? controlReason : writeReason ?? compactReason ?? planSteerReason
+    ?? (state ? intentUnavailable(state, 'steer') : 'Loading this conversation…')
+  const interruptReason = commandOnly ? controlReason : writeReason ?? compactReason
+    ?? (state ? intentUnavailable(state, 'interrupt_and_send') : 'Loading this conversation…')
+  const cancelReason = retired ? 'Retired harness (OpenCode): read-only' : chat.blocked('agent_chat:cancel')
+  const responseReason = (retired ? 'Retired harness (OpenCode): read-only' : chat.blocked('agent_chat:respond'))
+    ?? (state?.pendingInteraction && (!state.pendingInteraction.turn.nativeRequestId || state.pendingInteraction.session.nativeSessionId !== state.conversation?.nativeSession?.nativeSessionId || state.activeTurn?.nativeTurnId && state.pendingInteraction.turn.nativeTurnId !== state.activeTurn.nativeTurnId) ? 'The original native request is not available.' : undefined)
+    ?? (state?.pendingInteraction && !state.responseAvailability?.available ? state.responseAvailability?.message ?? 'Refresh this conversation to check reply availability.' : undefined)
+    ?? (state?.responseAvailability && (state.responseAvailability.nativeRequestId !== state.pendingInteraction?.turn.nativeRequestId || state.responseAvailability.nativeSessionId !== state.pendingInteraction?.session.nativeSessionId || state.responseAvailability.nativeRequestType !== state.pendingInteraction?.nativeRequestType) ? 'Refresh this conversation before replying.' : undefined)
+  const stopReason = cancelReason ?? (state?.capabilities.interruptAndSend ? undefined
+    : state?.capabilities.unavailable.interruptAndSend ?? 'Interrupting is unavailable.')
+  const busy = !!state && chatBusy(state)
+  const hasQueue = !!state?.turns.some(turn => turn.delivery === 'queued')
+  const background = state && !busy ? chatBackgroundWork(state.activitySnapshot) : undefined
+  const empty = (!draft.trim() && !attachments.hasAttachments) || attachments.hasBlockingAttachments || draft.length > 32_000
+  const latest = chat.latestCommand
+  const receipt = chat.currentReceipt ?? chat.confirmedReceipt ?? chat.latestReceipt
+  const error = !receipt && latest?.status === 'error' ? latest.error : undefined
+  const notActive = latest?.command?.kind === 'send' && ApiError.is(error) && error.code === 'AGENT_CHAT_TURN_NOT_ACTIVE'
+  const stale = ApiError.is(error) && error.code === 'AGENT_CHAT_CONTEXT_STALE'
+  const sessionMissing = state?.availability.reason === 'native_session_missing' || state?.sessionState === 'unavailable'
+  const canStop = !retired && !!state && (busy || hasQueue) && state.availability.reason !== 'run_active' && !sessionMissing
+    && state.capabilities.interruptAndSend
+  const latestReply = state?.messages.filter((message) => message.role === 'assistant' && message.activityChannel !== 'reasoning' && message.nativeMessageComplete !== false).at(-1)
+  const resendFiles = sendAgain && state ? [...state.messages, ...(chat.history.data?.pages.flatMap((batch) => batch.pages.flatMap((page) => page.messages)) ?? [])]
+    .flatMap((message) => message.attachments ?? []) : []
+  const controlError = commandError?.draftKey === chat.draftKey
+    && (!commandCompaction || commandCompaction.status === 'failed')
+    ? commandCompaction?.message ?? commandError.message : undefined
+  let attention = controlError ?? chat.localError ?? firstAttachment.error
+  let attentionAction: ReactNode
+  if (!attention && error) {
+    attention = errorMessage(error, 'Delivery failed')
+    if (!retired && notActive) attentionAction = <Button size="sm" variant="ghost" disabled={!!nextReason || empty}
+      title={nextReason} onClick={() => submit('next_turn')}>Send as next turn</Button>
+    else if (stale) attentionAction = <Button size="sm" variant="ghost" onClick={chat.refresh}>Refresh</Button>
+  }
+  if (!attention && (state?.pendingInteraction || state?.sessionState === 'waiting_approval')) attention = responseReason ?? 'Approval pending'
+  if (!attention && state?.sessionState === 'interrupting') attention = 'Stopping chat'
+  if (!attention && state?.sessionState === 'uncertain') attention = 'Delivery unconfirmed'
+  if (!attention && !chat.online) attention = 'You are offline'
+  if (sessionMissing) {
+    attention = 'Original session unavailable'
+    if (!conversation?.providerAccountBinding && onNewConversation) attentionAction = <Button size="sm" variant="ghost"
+      onClick={onNewConversation}>{context.runId ? 'Start separate chat without this Run' : 'Choose another Agent for a new conversation'}</Button>
+  }
+  const missingFolder = state?.availability.missingFolder
+  if (missingFolder) {
+    attention = state?.availability.message ?? 'This chat’s workspace folder is missing.'
+    attentionAction = <MissingChatFolderActions workspaceId={context.workspaceId} path={missingFolder.path} onRecreated={chat.refresh} />
+  }
+  if (!attention && compactReason) attention = compactReason
+  if (!attention && background) attention = background.label
+  if (!attention && (chat.connection === 'reconnecting' || chat.connection === 'unavailable')) attention = 'Reconnecting to live updates'
+  if (!attention && chat.query.isError) {
+    attention = 'Chat could not be refreshed'
+    attentionAction = <Button size="sm" variant="ghost" onClick={() => void chat.query.refetch()}>Retry</Button>
+  }
+  const composerDisabled = retired || !!state && !state.conversation && !state.availability.canSend
+  let composerReason = nextReason
+  if (commandOnly) composerReason = controlReason
+  if (command.kind === 'new') composerReason = writeReason
+  // One compact line while the Run Agent works: "Working — you can message it when it finishes".
+  if (state?.availability.reason === 'run_active') composerReason = state.availability.message
+    ?? (stateLabel === 'Starting' ? 'Read-only while starting' : 'Read-only while working')
+  else if (state?.sessionState === 'creating') composerReason = 'Read-only while starting'
+  else if (retired) composerReason = 'Retired harness: read-only'
+  if (!composerReason && attachments.hasBlockingAttachments) composerReason = 'Wait for attachments'
+  return <div className="agent-conversation" data-testid="agent-conversation" data-chat-key={chat.draftKey}>
+    {header}
+    {conversation?.previousConversationId ? <AgentConversationHistory workspaceId={context.workspaceId}
+      conversationId={conversation.previousConversationId} name={name} /> : null}
+    <ProviderAccountProblem binding={conversation?.providerAccountBinding} />
+    <AgentChatStatus>{attention ? <><Tooltip content={attention}><span tabIndex={0}>{attention}</span></Tooltip><Tooltip content="Read the latest conversation status">
+      <IconButton size="sm" variant="ghost" label="Refresh chat" disabled={chat.query.isFetching && !chat.query.isRefetching} onClick={chat.refresh}>
+        <RotateCcw size={12} aria-hidden="true" />
+      </IconButton>
+    </Tooltip>{attentionAction}</> : null}</AgentChatStatus>
+    {state ? <AgentChatTranscript key={state.conversation?.id ?? 'none'} state={state} name={name} readOnly={retired}
+      commands={chat.commands} history={chat.history} cancelReason={cancelReason} responseReason={responseReason}
+      resendReason={nextReason} controlResendReason={controlReason}
+      onRefresh={chat.refresh} refreshing={chat.query.isFetching} onCancel={chat.cancelQueued} onRespond={chat.respond} onDenied={chat.revoke} onReceipt={chat.confirmDelivery}
+      onSendAgain={(content, pins, mode) => setSendAgain({ content, attachments: pins, draftKey: chat.draftKey,
+        sessionMode: parseSessionCommand(content).kind === 'plan-task' ? 'plan' : mode })} />
+      : <ConversationViewport revision="loading">{() => <RetainedAgentCommands commands={chat.commands} onDenied={chat.revoke} onReceipt={chat.confirmDelivery}
+        draftKey={chat.draftKey} refresh={chat.refresh} pending={chat.query.isPending} />}</ConversationViewport>}
+    {state && !canonical ? <CompactionActivity controls={sessionControls} latest /> : null}
+    {state ? <div className="agent-chat-composer-controls" role="group" aria-label="Chat actions" {...drop.dropTargetProps}>
+      {canonical ? <CanonicalAgentComposer key={`${identityEpoch()}:${JSON.stringify(target)}`} state={state} name={name} draftKey={chat.draftKey} inputRef={composer}
+        target={target} onRecover={onRecover} onDenied={error => { if (ApiError.is(error)) setCanonicalDenial(error) }}
+        attachments={attachments} sessionControls={sessionControls} writeReason={writeReason} refresh={chat.refresh}
+        onSessionCommand={(content, mode) => { void submit('next_turn', content, mode) }}
+        attachmentControl={<ChatAttachmentControl draft={attachmentDraft} disabled={!!writeReason} composerDrop={drop} />}
+        actions={!retired ? <AgentChatSettings context={context} disabled={!!writeReason} /> : undefined} />
+        : <AgentChatComposer name={name} draftKey={chat.draftKey} inputRef={composer}
+        disabled={composerDisabled} reason={composerReason} controlReason={controlReason}
+        pending={chat.pending || newPending} controlPending={sessionControls.mutation.isPending}
+        hasAttachments={attachments.hasAttachments} canStop={canStop} stopReason={stopReason}
+        onStop={() => { chat.stop(); focus() }} onSubmit={(content, mode) => { void submit('next_turn', content, mode) }}
+        attachmentControl={!composerDisabled ? <ChatAttachmentControl draft={attachmentDraft} disabled={!!writeReason} composerDrop={drop} /> : undefined}
+        actions={!retired ? <>
+          <AgentChatSettings context={context} disabled={!!writeReason} />
+          {state.activeTurn && (state.capabilities.steer !== 'unavailable' || state.capabilities.unavailable.steer)
+            ? <Tooltip content={steerReason ?? 'Steer the active turn'}>
+              <IconButton size="sm" variant="ghost" label="Steer" title={steerReason ?? 'Steer the active turn'} disabled={!!steerReason || empty}
+                onClick={() => void submit('steer')}><CornerDownLeft size={15} aria-hidden="true" /></IconButton>
+            </Tooltip> : null}
+          {state.activeTurn && (state.capabilities.interruptAndSend || state.capabilities.unavailable.interruptAndSend)
+            ? <Tooltip content={interruptReason ?? 'Interrupt and send'}>
+              <IconButton size="sm" variant="ghost" label="Interrupt and send" title={interruptReason ?? 'Interrupt and send'} disabled={!!interruptReason || empty}
+                onClick={() => void submit('interrupt_and_send')}><RotateCcw size={15} aria-hidden="true" /></IconButton>
+            </Tooltip> : null}
+        </> : undefined} />}
+    </div> : null}
+    <div className="n-sr-only" aria-live="polite" aria-atomic="true">{latestReply ? `New reply from ${name}: ${latestReply.content}` : ''}</div>
+    <SendAgainDialog composer={{ sendAgain, setSendAgain, resendCommand, resendControl, resendPending, submit }}
+      reason={resendReason} fileClient={resendFileClient} files={resendFiles} />
+  </div>
+}
