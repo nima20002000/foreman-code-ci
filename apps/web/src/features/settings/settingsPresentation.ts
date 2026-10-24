@@ -1,4 +1,4 @@
-import type { RecordedHarnessConfiguration } from '@foreman-code/contracts'
+import type { HarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessSettingsSection, SettingsAgentRole } from '@foreman-code/contracts/management'
 
 export const agentRoleOrder: readonly SettingsAgentRole[] = ['operator', 'master', 'orchestrator', 'coder']
@@ -26,7 +26,7 @@ export function sectionForHarnessIssue(path: readonly (string | number)[]): Harn
 }
 export const retiredHarnessLabel = 'Retired harness (OpenCode): read-only'
 
-export function harnessSummary(value: RecordedHarnessConfiguration): { label: string; value: string }[] {
+export function harnessSummary(value: HarnessConfiguration): { label: string; value: string }[] {
   if (value.harness === 'opencode') return [{ label: 'Harness', value: retiredHarnessLabel }, { label: 'Model', value: value.model }]
   if (value.harness === 'claude') return [{ label: 'Harness', value: 'Claude' }, { label: 'Model', value: value.model },
     // The default profile directory reads as "Default"; a custom one shows its folder name (full path in the tooltip).
@@ -40,4 +40,4 @@ export function harnessSummary(value: RecordedHarnessConfiguration): { label: st
 
 }
 
-export const harnessNames: Record<RecordedHarnessConfiguration['harness'], string> = { codex: 'Codex', opencode: retiredHarnessLabel, claude: 'Claude' }
+export const harnessNames: Record<HarnessConfiguration['harness'], string> = { codex: 'Codex', opencode: retiredHarnessLabel, claude: 'Claude' }

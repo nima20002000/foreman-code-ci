@@ -4,7 +4,7 @@ import type { CallToolResult, ListToolsResult } from '@modelcontextprotocol/serv
 import { ManagedWorkspaceSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { afterEach, expect, it, vi } from 'vitest'
-import { registerForemanMcp } from './transport.js'
+import { registerGraphqlMcp } from './transport.js'
 import { requireAuthorization } from '../../modules/access/policy.js'
 import { DomainError } from '../../modules/errors.js'
 import type { OperatorServices } from '../operator/types.js'
@@ -42,7 +42,7 @@ function fixture() {
   const app = Fastify()
   app.setErrorHandler((error, _request, reply) => reply.code(error instanceof DomainError ? error.status : 500)
     .send({ error: { code: error instanceof DomainError ? error.code : 'INTERNAL_ERROR' } }))
-  registerForemanMcp(app, { operator: services, interactions, access: { authenticate: async (token: string) => {
+  registerGraphqlMcp(app, { operator: services, interactions, access: { authenticate: async (token: string) => {
     const caller = callers.get(token)
     if (!caller) throw new DomainError('AUTH_REQUIRED', 'Invalid bearer.', 401)
     return structuredClone(caller)

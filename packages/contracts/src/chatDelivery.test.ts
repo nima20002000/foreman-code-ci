@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ChatSendRequestSchema, ChatSendModeContextSchema, ChatDeliveryReceiptSchema, ChatControlReceiptSchema,
   WorkflowControlContinuationSchema, legacyAgentChatIntent, legacyAgentChatStopScope, operatorChatDeliveryMode } from './chatDelivery.js';
-import { WorkflowChatPostRequestSchema, EngineChatReadbackSchema, validateEngineChatReadback, validateWorkflowChatPostForAuthor } from './workflowChat.js';
+import { EngineChatReadbackSchema, validateEngineChatReadback } from './engineChat.js';
 import { collaborationContractFixtures as fixture } from './collaborationFixtures.js';
 
 describe('shared live delivery contracts', () => {
@@ -55,29 +55,6 @@ describe('shared live delivery contracts', () => {
     expect(WorkflowControlContinuationSchema.safeParse({ ...continuation, state: 'failed' }).success).toBe(false);
     expect(ChatControlReceiptSchema.safeParse({ commandId: 'command', target: fixture.consultationReadback.target,
       operation: 'stop_active', state: 'settling', affectedReceiptIds: [], replayed: false, consultationId: 'consultation', continuationId: 'forged' }).success).toBe(false);
-  });
-});
-
-describe('group post recipient contracts', () => {
-  const body = '  @Master hello @Master  ';
-  const post = { workspaceId: 'workspace', workflowId: 'workflow', body,
-    mentions: [{ workflowNodeId: 'master', start: 2, end: 9 }, { workflowNodeId: 'master', start: 16, end: 23 }],
-    deliveries: [{ workflowNodeId: 'master', target: fixture.executionReadback.target, intent: 'auto' }], cardIds: [] };
-
-  it('preserves original text and resolves repeated mentions to one recipient', () => {
-    expect(WorkflowChatPostRequestSchema.parse(post).body).toBe(body);
-    expect(WorkflowChatPostRequestSchema.safeParse({ ...post, deliveries: [] }).success).toBe(false);
-    expect(WorkflowChatPostRequestSchema.safeParse({ ...post, deliveries: [...post.deliveries, ...post.deliveries] }).success).toBe(false);
-    expect(() => validateWorkflowChatPostForAuthor(post, 'agent')).toThrow();
-    expect(validateWorkflowChatPostForAuthor({ ...post, mentions: [], deliveries: [] }, 'agent').body).toBe(body);
-  });
-
-  it('rejects out-of-range, overlapping, split-surrogate and cross-scope mentions', () => {
-    expect(WorkflowChatPostRequestSchema.safeParse({ ...post, mentions: [{ workflowNodeId: 'master', start: 0, end: 100 }] }).success).toBe(false);
-    expect(WorkflowChatPostRequestSchema.safeParse({ ...post, mentions: [...post.mentions, post.mentions[0]] }).success).toBe(false);
-    expect(WorkflowChatPostRequestSchema.safeParse({ ...post, body: '😀@Master', mentions: [{ workflowNodeId: 'master', start: 1, end: 5 }] }).success).toBe(false);
-    expect(WorkflowChatPostRequestSchema.safeParse({ ...post, deliveries: [{ ...post.deliveries[0], target: { kind: 'operator_conversation', conversationId: 'operator' } }] }).success).toBe(false);
-    expect(WorkflowChatPostRequestSchema.safeParse({ ...post, deliveries: [{ ...post.deliveries[0], target: { kind: 'agent_conversation', conversationId: 'chat', agent: { ...fixture.node, workflowId: 'other' } } }] }).success).toBe(false);
   });
 });
 

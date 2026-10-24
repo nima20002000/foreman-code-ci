@@ -1,7 +1,6 @@
 import { AgentChatStateSchema, AgentChatStreamEventSchema, type AgentChatState, type AgentChatStreamEvent } from '@foreman-code/contracts/agent-chat'
 import { agentChatConversationPath } from './agentChat'
 import { eventStreamsAvailable, openEventStreamScope, type EventStreamConnection } from './eventStream'
-import { createChatStreamSequence, parseChatStreamEvent } from './chatStreamEvents'
 import { whileVisible } from './whileVisible'
 
 export type AgentChatConnection = 'connecting' | 'connected' | 'reconnecting' | 'offline' | 'unavailable'
@@ -37,29 +36,30 @@ function subscribeAgentChatNow(workspaceId: string, conversationId: string, list
     if (!valid()) return
     // The frozen seam doesn't promise resumable SSE cursors. Every connection must start with
     // a full snapshot. Dedup is local to that connection; GET/snapshot revisions fence refreshes.
-    let ready = false
-    const sequence = createChatStreamSequence()
+    let ready = false, highWater = -1
+    const seen = new Set<number>()
     const receive = (wire: Event) => {
       if (!('data' in wire) || typeof wire.data !== 'string') { retry(); return }
       let event: AgentChatStreamEvent
-      try { event = parseChatStreamEvent(AgentChatStreamEventSchema, wire) } catch { retry(); return }
+      try { event = AgentChatStreamEventSchema.parse(JSON.parse(wire.data)) } catch { retry(); return }
       if (event.conversationId !== conversationId) { retry(); return }
       if (event.type === 'snapshot') {
         const parsed = AgentChatStateSchema.safeParse(event.data.state ?? event.data)
         if (!parsed.success || parsed.data.conversation?.id !== conversationId) { retry(); return }
-        ready = true; failures = 0; sequence.reset()
+        ready = true; failures = 0; highWater = -1; seen.clear()
         listeners.snapshot(parsed.data)
         if (valid() && current.active) listeners.connection('connected')
         return
       }
-      const order = sequence.remember(event.id)
-      if (order === 'duplicate') return
-      if (order === 'stale') { listeners.refetch(); return }
-      if (ready && order === 'gap') { listeners.refetch(); if (!valid() || !current.active) return }
-      sequence.advance(event.id)
+      if (seen.has(event.id)) return
+      seen.add(event.id)
+      if (seen.size > 256) seen.delete(seen.values().next().value!)
+      if (event.id <= highWater) { listeners.refetch(); return }
+      if (ready && highWater >= 0 && event.id > highWater + 1) { listeners.refetch(); if (!valid() || !current.active) return }
+      highWater = event.id
       if (!ready && event.type === 'state' && event.data.snapshotRequired === true) {
         // The server's snapshot exceeded its byte budget: the stream is live, read state over HTTP.
-        ready = true; failures = 0; sequence.reset()
+        ready = true; failures = 0; highWater = -1; seen.clear()
         listeners.refetch()
         if (valid() && current.active) listeners.connection('connected')
       } else {

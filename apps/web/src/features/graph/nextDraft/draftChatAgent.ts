@@ -1,5 +1,4 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
-import { SupportedHarnessConfigurationSchema } from '@foreman-code/contracts'
+import { activeGraphqlTools, SupportedHarnessConfigurationSchema } from '@foreman-code/contracts'
 import { updateManagedAgent } from '../../../shared/api/client'
 import { useGraphDraftStore } from '../store'
 import { configureAgentOperations } from '../../board-core'
@@ -48,7 +47,7 @@ async function saveChatAgentEdits(draftKey: string, agentId: string): Promise<st
     ...(edit.productRole ? { productRole: edit.productRole } : {}), description: edit.description ?? null, role: edit.role ?? null,
     ...(edit.harnessProfileSelection ? { harnessProfileSelection: edit.harnessProfileSelection } : {}),
     prompt: edit.prompt ?? {}, assignedSkills: edit.assignedSkills ?? [],
-    ...(edit[INSTALLATION_NAMES.fields.agentTools] ? { [INSTALLATION_NAMES.fields.agentTools]: edit[INSTALLATION_NAMES.fields.agentTools] } : {}), ...(edit.nativeTools ? { nativeTools: edit.nativeTools } : {}) })
+    ...(edit.graphqlTools ? { graphqlTools: activeGraphqlTools(edit.graphqlTools) } : {}), ...(edit.nativeTools ? { nativeTools: edit.nativeTools } : {}) })
   const saved = { agent: result.value.agent, metadataRevision: result.value.metadataRevision }
   useGraphDraftStore.getState().updateNextDraft(draftKey, state => {
     const agentEdits = { ...state.agentEdits }

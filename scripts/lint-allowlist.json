@@ -87,6 +87,7 @@
     "df2ff0eacf700ca04b051ac322c53eff0964dd22f90bd21182fd87e0d577efca": "apps/web/src/app/pr17-visibility.test.tsx",
     "6a19e5dce6f05bf59ad416abab2ff7947a7d81a27daf0922af2c54911294f89c": "apps/web/src/features/conversations/agentChat/G5.regressions.test.tsx",
     "a4ac31064da298ba4fad487564beaefd1c203ecd8a04b35d92f2bd24d6669812": "apps/web/src/features/conversations/agentChat/SCH10.selectedRunChatClient.test.ts",
+    "05f035cd3def29c1776285c1b4379781cefc7cec8dcaf38c539dd0ab80960561": "apps/web/src/features/conversations/agentChat/SCH10.selectedRunChatModel.test.ts",
     "1cf32cc79065c92485e77953480aca97d139f26cd2a8d495d3c26bfaeda0978e": "apps/web/src/features/file-cards/fileCardClient.ts",
     "eee54539f6faf95bf9a075181abecf3725c833b248d8e2e7cff18bf3da85b26d": "apps/web/src/features/graph/nextDraft/nim2642MeaningfulEdits.test.ts",
     "13f60dffbcc983a8a261d4acb8bbf237a65507c2559d77c21d3e2a5fa1b7a62f": "apps/web/src/features/graph/nextDraft/nim2644Followup.test.ts",

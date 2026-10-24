@@ -1,7 +1,7 @@
 import { Check, CircleAlert, LoaderCircle, Minus } from 'lucide-react'
 import type { AgentChatTurn } from '@foreman-code/contracts/agent-chat'
 import { Tooltip } from '../../../shared/ui/nocturne'
-import { deliveryLabels, intentLabels } from '../../chat-core'
+import { deliveryLabels, intentLabels } from './model'
 
 export function ChatDeliveryState({ delivery, turn, initialDelivery }: {
   delivery: AgentChatTurn['delivery']; turn?: AgentChatTurn; initialDelivery?: AgentChatTurn['delivery']

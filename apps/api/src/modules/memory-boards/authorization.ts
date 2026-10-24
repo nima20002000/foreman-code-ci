@@ -19,7 +19,7 @@ export async function authorizeCaller(tx: SqlTransaction, authority: MemoryBoard
   if (access) {
     requireSubjectTool(access,scope,tool)
     return { actor: { kind: 'agent', id: access.subject.agent.agentId, displayName: access.subject.agent.displayName },
-      principalId: access.principalId, subject: access.subject, caller: principal, tool }
+      principalId: access.principalId, subject: access.subject, tool }
   }
   if (principal.audience !== 'operator') throw new DomainError('ACCESS_DENIED','A valid scoped agent identity is required.',403)
   const write = memoryWriteTools.some(name => name === tool)
@@ -28,7 +28,7 @@ export async function authorizeCaller(tx: SqlTransaction, authority: MemoryBoard
     : write ? 'workflows:update' : 'workflows:read'
   requireAuthorization(principal,action,scope)
   return { actor: { kind: 'operator', id: principal.id, displayName: principal.name },
-    principalId: principal.id, caller: principal, tool }
+    principalId: principal.id, tool }
 }
 export async function authorizeSubject(tx: SqlTransaction, authority: MemoryBoardAuthority,
   subject: AgentSubject, scope: MemoryBoardScope, tool: MemoryTool): Promise<MutationContext> {
@@ -36,5 +36,5 @@ export async function authorizeSubject(tx: SqlTransaction, authority: MemoryBoar
   if (!same(access.subject,subject)) throw new DomainError('ACCESS_DENIED','The saved agent identity has changed.',403)
   requireSubjectTool(access,scope,tool)
   return { actor: { kind: 'agent', id: subject.agent.agentId, displayName: subject.agent.displayName },
-    principalId: access.principalId, subject, caller: subject, tool }
+    principalId: access.principalId, subject, tool }
 }

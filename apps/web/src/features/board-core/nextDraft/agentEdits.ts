@@ -1,5 +1,4 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
-import { SupportedHarnessConfigurationSchema } from '@foreman-code/contracts'
+import { activeGraphqlTools, SupportedHarnessConfigurationSchema } from '@foreman-code/contracts'
 import type { Agent } from '@foreman-code/contracts'
 import { StagedAgentSchema } from '@foreman-code/contracts/management'
 import type { GraphDraftOperationCurrent, WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
@@ -21,7 +20,7 @@ export function editorAgents(edit: NextDraftEdit): Agent[] {
 function content(agent: Agent) {
   return { prompt: agent.prompt ?? {}, assignedSkills: agent.assignedSkills ?? [], description: agent.description ?? null, role: agent.role ?? null,
     ...(agent.productRole ? { productRole: agent.productRole } : {}),
-    ...(agent[INSTALLATION_NAMES.fields.agentTools] ? { [INSTALLATION_NAMES.fields.agentTools]: agent[INSTALLATION_NAMES.fields.agentTools] } : {}),
+    ...(agent.graphqlTools ? { graphqlTools: activeGraphqlTools(agent.graphqlTools) } : {}),
     ...(agent.nativeTools ? { nativeTools: agent.nativeTools } : {}) }
 }
 /** Compare the fields the existing Agent writer persists, including its defaults. */
@@ -168,6 +167,6 @@ export function stageAgentEdits(edit: NextDraftEdit) {
       throw new Error('The Agent form no longer matches its displayed configuration. Reload before staging.')
     }
     if (!source && agent.configurationVersionId) throw new Error('Reload the Agent revision before staging its settings.')
-    return StagedAgentSchema.parse({ agent, baseRevision: source?.metadataRevision ?? null })
+    return StagedAgentSchema.parse({ agent: { ...agent, ...(agent.graphqlTools ? { graphqlTools: activeGraphqlTools(agent.graphqlTools) } : {}) }, baseRevision: source?.metadataRevision ?? null })
   })
 }

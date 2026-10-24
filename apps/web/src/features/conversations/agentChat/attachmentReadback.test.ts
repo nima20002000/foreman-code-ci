@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { agentChatFixtures, type AgentChatState } from '@foreman-code/contracts/agent-chat'
 import { ActivitySnapshotV1Schema, type ActivityScope } from '@foreman-code/contracts/activity'
 import { FileWithRevisionSchema } from '@foreman-code/contracts/files'
-import { acceptAgentChatState } from '../../chat-core'
+import { acceptAgentChatState } from './model'
 import { newerOperatorConversationState as newer } from '../../operator-chat'
 import { operatorState } from '../../operator-chat/pr17-test-fixtures'
 

@@ -67,12 +67,6 @@ export const OperatorCiRunInputSchema = CiRunInputObjectSchema.extend({ workspac
   .refine(selectedSuite, selectionIssue)
   .refine(validGate, gateIssue)
   .refine(validSmoke, smokeIssue)
-/** The CI service route's run input: an Agent MCP caller may leave workspaceId for the service to infer. */
-export const CiServiceRunInputSchema = CiRunInputObjectSchema.extend({ workspaceId: IdSchema.optional() }).strict()
-  .refine(partitionedSuite, partitionIssue)
-  .refine(selectedSuite, selectionIssue)
-  .refine(validGate, gateIssue)
-  .refine(validSmoke, smokeIssue)
 const CiRunTicketSchema = z.object({ ticketId: IdSchema }).strict()
 /** `partitions` lists every part or integration partition; the first is also `ticketId`. Poll each with ci_get. */
 /** `cachedFiles` lists selected files skipped because an earlier passed ticket ran them with identical inputs. */
