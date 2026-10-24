@@ -1,6 +1,9 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { server } from '../../mocks/server'
+import { schedulePath } from '../schedules'
 import { readRunInspectionKey } from '@foreman-code/contracts/current'
 import { useGraphDraftStore } from '../graph'
 import { nextDraftKey } from '../board-core'
@@ -96,4 +99,32 @@ it('uses the saved node name for historical panel headings after a current renam
   await mountMeasuredBoard(`${boardHref(fixture.runs.before.scope)}&boardPanel=agent&boardNodeId=${fixture.first.id}&boardAgentTab=settings`)
   const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
   expect(await within(rail).findByRole('heading', { level: 2, name: fixture.first.name! })).toBeVisible()
+}, 15_000)
+
+it('honors unsaved Schedule edits before selecting a Run on this Board', async () => {
+  measureBoardWire(fixture.mock)
+  const scope = { workspaceId: fixture.mock.workspaceId, workflowId: fixture.after.workflowId }
+  const path = schedulePath(scope), dueAt = '2099-08-24T09:00:00.000Z'
+  server.use(
+    http.get(path, () => HttpResponse.json({ schedule: { ...scope, mode: 'weekly', weekdays: [1], time: '09:00',
+      timezone: 'UTC', enabled: true, policy: 'latest_saved', revision: 3, nextOccurrenceAt: dueAt } })),
+    http.get(`${path}/occurrences`, () => HttpResponse.json({ items: [{ ...scope, id: 'scheduled-attempt', dueAt,
+      scheduleRevision: 3, status: 'accepted', reason: null, runId: fixture.runs.before.run.id,
+      workflowVersionId: fixture.before.id }], pageInfo: { nextCursor: null } })),
+  )
+  const { router } = await mountMeasuredBoard(currentHref()), user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Schedule workflow' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Schedule' })
+  const time = await within(dialog).findByLabelText('Time')
+  await user.clear(time); await user.type(time, '10:15')
+  await user.click(await within(dialog).findByRole('link', { name: 'View Run' }))
+  const guard = await screen.findByRole('alertdialog', { name: 'Save changes before leaving?' })
+  await user.click(within(guard).getByRole('button', { name: 'Keep editing' }))
+  expect(time).toHaveValue('10:15')
+  expect(router.state.location.search.selectedRunId).toBeUndefined()
+  await user.click(within(dialog).getByRole('link', { name: 'View Run' }))
+  await user.click(within(await screen.findByRole('alertdialog', { name: 'Save changes before leaving?' })).getByRole('button', { name: 'Discard' }))
+  await waitFor(() => expect(router.state.location.search.selectedRunId).toBe(fixture.runs.before.run.id))
+  expect(screen.queryByRole('dialog', { name: 'Schedule' })).not.toBeInTheDocument()
+  expect(screen.getAllByTestId('unified-workflow-board')).toHaveLength(1)
 }, 15_000)

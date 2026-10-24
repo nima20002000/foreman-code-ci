@@ -98,11 +98,12 @@ function WorkspaceBoardRoute({ selection }: { selection: WorkflowBoardLocation }
         runExchangeKey: previous.runExchangeKey,
       }) })
   }, [run, location.pathname, navigate, workspaceId])
-  const selectInspection = useCallback((inspection: WorkspaceBoardInspection) => {
-    if (!workflowId || !run) return
+  const selectInspection = useCallback((inspection: WorkspaceBoardInspection, verifiedRun?: RepeatGraphScopeCurrent) => {
+    const scope = verifiedRun ?? run
+    if (!workflowId || !scope || scope.workspaceId !== workspaceId || scope.workflowId !== workflowId) return
     void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true, search: (previous) => {
-      if (previous.selectedRunId && previous.selectedRunId !== run.runId) return previous
-      return { ...boardSearchForInspection(withoutRunsSelectorSearch(previous), workflowId, run, inspection),
+      if (previous.selectedRunId && previous.selectedRunId !== scope.runId) return previous
+      return { ...boardSearchForInspection(withoutRunsSelectorSearch(previous), workflowId, scope, inspection),
         selectedRunId: previous.selectedRunId }
     } })
   }, [workflowId, run, workspaceId, navigate])

@@ -14,6 +14,7 @@ import { assertExecutionVersion } from '../runDetailsClient'
 import { useBindingPages, useExecutionPages, useExecutionQuery, executionPagesKey, bindingsPagesKey, refreshFirstInspectionPage } from './queries'
 import { useInspectionPresentation } from './presentation'
 import { JsonValue, JsonDisclosure } from './JsonValue'
+import { useRunHandoffsQuery } from '../runHandoffsQuery'
 import './inspection.css'
 
 export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScopeCurrent; version: WorkflowVersionCurrent }) {
@@ -61,6 +62,7 @@ export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScope
       A node or repetition in the current draft is not historical evidence. Clear the filter to inspect this exact version.
     </Alert> : <>
       {relationship ? <p>Relationship <code>{relationship.id}</code>: inspecting recipient <code>{relationship.target}</code>.</p> : null}
+      {relationship ? <ConnectionEvidence scope={scope} relationshipId={relationship.id} /> : null}
       {node ? <JsonDisclosure disclosureKey={JSON.stringify([scope, node.id, 'saved-node'])}
         summary="Saved node configuration (this Run)" label={`Saved Run node ${node.id}`}
         value={node.kind==='job'?{node,jobDefinitionVersionId:node.jobDefinitionVersionId}:{node,agentConfigurationVersionId:version.agentConfigurationVersionIds[node.agentId]}} /> : null}
@@ -98,6 +100,18 @@ export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScope
         scope={scope} version={version} executionId={selection.executionId} nodeId={nodeId}
         occurrenceId={selection.occurrenceId} relationshipId={inspection.runRelationshipId} /> : null}
     </>}
+  </section>
+}
+
+function ConnectionEvidence({ scope, relationshipId }: { scope: RepeatGraphScopeCurrent; relationshipId: string }) {
+  const query = useRunHandoffsQuery(scope, true)
+  const denied = useProtectedAccessError(query)
+  const connection = !denied && !query.isError ? query.data?.connections.find(item => item.relationshipId === relationshipId) : undefined
+  return <section aria-label="Saved connection handoffs">
+    {connection ? <p>Work handoffs: {connection.used} used · {connection.limit ?? 'unlimited'} maximum per Run · {connection.remaining ?? 'unlimited'} remaining.</p>
+      : <p>{query.isPending ? 'Loading handoff usage…' : query.isError || denied ? 'Handoff usage unavailable.'
+        : query.data?.policy === 'not_configured' ? 'This saved Run has no work handoff policy.' : 'No handoff usage recorded for this connection.'}</p>}
+    {query.isError && !denied ? <Button size="sm" onClick={() => void query.refetch()}>Retry handoff usage</Button> : null}
   </section>
 }
 

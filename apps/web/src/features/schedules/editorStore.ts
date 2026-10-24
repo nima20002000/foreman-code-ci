@@ -87,6 +87,8 @@ export function draftIdentity(draft: ScheduleDraft, includeEnabled = true): stri
 
 interface EditorState {
   open: boolean
+  historyOpen: boolean
+  toggleHistory(): void
   draft: ScheduleDraft | null
   // These are draft comparison/optimistic-concurrency tokens, not another server cache.
   initialIdentity: string
@@ -102,9 +104,10 @@ interface EditorState {
 }
 export function createScheduleEditorStore() {
   return createStore<EditorState>((set) => ({
-    open: false, draft: null, initialIdentity: '', initialSettings: '', expectedRevision: 0, errors: {},
-    show: () => set({ open: true, draft: null, errors: {} }),
-    hide: () => set({ open: false, draft: null, errors: {} }),
+    open: false, historyOpen: false, toggleHistory: () => set(state => ({ historyOpen: !state.historyOpen })),
+    draft: null, initialIdentity: '', initialSettings: '', expectedRevision: 0, errors: {},
+    show: () => set({ open: true, historyOpen: false, draft: null, errors: {} }),
+    hide: () => set({ open: false, historyOpen: false, draft: null, errors: {} }),
     initialize: (value, revision) => {
       const draft = createDraft(value)
       set({ draft, expectedRevision: revision, initialIdentity: draftIdentity(draft), initialSettings: draftIdentity(draft, false), errors: {} })

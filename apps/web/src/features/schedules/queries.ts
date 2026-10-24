@@ -1,4 +1,4 @@
-import { useMutationState, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutationState, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import {
   ScheduleDisableInputSchema, ScheduleSaveInputSchema,
   type ScheduleDisableInput, type ScheduleGetInput, type ScheduleGetResult, type ScheduleSaveInput,
@@ -44,6 +44,22 @@ export function useLatestScheduleOccurrence(scope: ScheduleGetInput, open: boole
     enabled: open, staleTime: 0,
     refetchOnMount: 'always', refetchOnWindowFocus: true, refetchOnReconnect: true,
     refetchInterval: open ? 5_000 : false,
+  })
+}
+
+export function useScheduleOccurrenceHistory(scope: ScheduleGetInput, open: boolean) {
+  const generation = sessionGeneration()
+  return useInfiniteQuery({
+    queryKey: [...scheduleKeys.latestOccurrence(scope, generation), 'history'],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ signal, pageParam }) => {
+      assertSession(generation)
+      return scheduleApi.occurrences({ ...scope, limit: 25, ...(pageParam ? { cursor: pageParam } : {}) }, { signal })
+    },
+    getNextPageParam: (page, _pages, _param, params) => page.pageInfo.nextCursor && !params.includes(page.pageInfo.nextCursor)
+      ? page.pageInfo.nextCursor : undefined,
+    enabled: open, maxPages: 5, staleTime: Infinity,
+    refetchOnWindowFocus: false, refetchOnReconnect: false,
   })
 }
 

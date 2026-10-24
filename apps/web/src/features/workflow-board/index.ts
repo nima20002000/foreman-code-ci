@@ -15,6 +15,7 @@ export { CiJobsTable, CiServerDialog, CiServerNode, CiTransferEdge } from './ins
 export type { CiServerFlowNode, CiTransferFlowEdge } from './inspect/CiServer'
 export { ExecutionBranch } from './inspect/ExecutionBranch'
 export { JsonValue } from './inspect/JsonValue'
+export { readPinnedAgentVersion } from './runDetailsClient'
 export { runningIntervalChecks } from './inspect/pinnedTopology'
 export { refreshFirstInspectionPage, runInspectionQueryKey, useRunVersionQuery } from './inspect/queries'
 export { useRunChoreography } from './inspect/runChoreography'
