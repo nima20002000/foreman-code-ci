@@ -1,5 +1,5 @@
 import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
-import { agentTemplateForRole, DEFAULT_HARNESS_DEFAULTS, newAgentForemanTools, type Agent, type RecordedAgentDefaults,
+import { agentTemplateForRole, newAgentForemanTools, type Agent, type RecordedAgentDefaults,
   type WorkflowAgentProductRole } from '@foreman-code/contracts'
 import { ActionMenu } from '../../shared/ui/nocturne'
 import { useAgentDefaultsQuery, useManagedHarnessCatalogQuery } from '../../shared/api/query'
@@ -29,11 +29,8 @@ function newBoardAgent(edit: NextDraftEdit, defaults: RecordedAgentDefaults, rol
   }
   const agents = new Map(editorAgents(edit).map(agent => [agent.id, agent]))
   const same = edit.graph.nodes.filter(node => node.kind !== 'job' && agents.get(node.agentId)?.productRole === role).length
-  // New Codex Agents use the app model; existing saved Agents keep their selections.
-  const configuration = template.harness.harness === 'codex'
-    ? { ...template.harness, model: DEFAULT_HARNESS_DEFAULTS.codex.model } : template.harness
   return { ...defaultAgentForHarness(template.harness.harness, `agent-${crypto.randomUUID()}`,
-    same ? `${label} ${same + 1}` : label, configuration, role),
+    same ? `${label} ${same + 1}` : label, template.harness, role),
   ...(template.nativeTools && !switched ? { nativeTools: structuredClone(template.nativeTools) } : {}),
   ...(template.harnessProfileSelection && !switched ? { harnessProfileSelection: structuredClone(template.harnessProfileSelection) } : {}),
   [INSTALLATION_NAMES.fields.agentTools]: [...(template[INSTALLATION_NAMES.fields.agentTools] ?? newAgentForemanTools(role))] }
