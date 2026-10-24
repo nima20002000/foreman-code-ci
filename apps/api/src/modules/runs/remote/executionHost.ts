@@ -12,7 +12,7 @@ import { RemoteOwnerControlSchema, RemoteReviewerAssignmentSchema, remoteActiveN
 import { RemoteExecutionRpcRequestSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import type { DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
 import type { NativeSessionManagerResolver, NativeManagerResolutionContext } from '../../interactions/runtimePorts.js'
-import type { NativeHarnessSessionManager, NativeHistory, NativeTurnInput, ChildProcessEnvironment } from '../../harnesses/port.js'
+import type { NativeHarnessSessionManager, NativeHistory, NativeTurnInput, ChildProcessEnvironment } from '../../harnesses/index.js'
 import { assertRuntimeLeafPath, assertRuntimeLeafBinding, type RuntimeLeafAttestation } from './runtimeLeaf.js'
 import { readPlacement } from '../../placement/binding.js'
 import type { RemoteOperationJournal } from './operationJournal.js'

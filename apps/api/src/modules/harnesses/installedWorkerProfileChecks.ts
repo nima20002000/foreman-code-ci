@@ -1,5 +1,5 @@
 import { type ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
-import type { ProviderAccountResolver } from '../provider-accounts/service.js'
+import type { ProviderAccountResolver } from '../provider-accounts/index.js'
 import { readInstalledWorkerAccountBinding } from './installedWorkerAccountBinding.js'
 import { pinnedCodexAccountEnvironment } from './providerAccountRuntime.js'
 import { isDeepStrictEqual } from 'node:util'

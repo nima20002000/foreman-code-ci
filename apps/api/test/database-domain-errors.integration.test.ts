@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { acceptResult, acceptedResult, decision, execution, insertDecision, insertExecution,

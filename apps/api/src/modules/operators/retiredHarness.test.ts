@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type pg from 'pg'
-import { HarnessConfigurationSchema, DEFAULT_AGENT_DEFAULTS } from '@foreman-code/contracts'
+import { RecordedHarnessConfigurationSchema, DEFAULT_AGENT_DEFAULTS } from '@foreman-code/contracts'
 import { PostgresOperatorRepository } from './postgres.js'
 import { PostgresFoundationSettingsRepository } from '../settings/foundation.js'
 
-const retired = HarnessConfigurationSchema.parse({
+const retired = RecordedHarnessConfigurationSchema.parse({
   harness: 'opencode', model: 'saved/model', variant: 'max', nativeAgent: 'build',
   thinking: false, autoApprove: false,
 })

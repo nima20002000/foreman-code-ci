@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { PreparedCiRuntimeSchema, type PreparedCiRuntime } from '@foreman-code/contracts'
 import { anchored, type CiContext } from './environment.js'
-import { readProtectedRuntimeFile } from '@foreman-code/contracts-node/installed-runtime-node'
-import { sha256Hex } from '@foreman-code/contracts-node/server-kit'
+import { readProtectedRuntimeFile } from '@foreman-code/contracts/installed-runtime-node'
+import { sha256Hex } from '@foreman-code/contracts/server-kit'
 
 const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/u)
 const ImageSchema = PreparedCiRuntimeSchema.omit({ commit: true, qualificationSource: true, reusedImage: true, cache: true })

@@ -4,7 +4,7 @@ import {
   type RepeatGraphFactCurrent, type RepeatGraphScopeCurrent, type RepeatGraphStateCurrent, type RepeatGraphBatchCurrent,
   sameCanonicalGraphScope,
 } from '@foreman-code/contracts/current'
-import type { RepeatEffect } from '../runs/repeatPostgres.js'
+import type { RepeatEffect } from '../runs/index.js'
 import { repeatId, repeatSlotId } from '../runs/repeatResolution.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { graphSourceDigest, readRepeatRunSourceLocked, repeatGraphBatchReceipt } from './publication.js'

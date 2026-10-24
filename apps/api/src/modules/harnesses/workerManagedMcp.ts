@@ -15,8 +15,8 @@ import { appMcpNeedsMigration, assertManagedChange, expectedMcpUserFingerprint, 
 import { APP_MCP_SERVER_NAME, appLauncherTokenName } from './appMcpLauncher.js'
 import { DomainError } from '../errors.js'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import type { DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
-import { errorMessage } from '@foreman-code/contracts-node/server-kit'
+import type { DeviceExtensionRegistration } from '../devices/index.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 
 type Harness = 'codex' | 'claude'
 const RecordSchema = z.object({ hash: z.string(), plan: HarnessMcpPlanSchema, expectedHash: z.string() }).strict()

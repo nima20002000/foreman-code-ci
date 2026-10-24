@@ -3,8 +3,7 @@ import { parseSessionCommand, type SessionMode } from '@foreman-code/contracts'
 import { Icon, IconButton } from '../../shared/ui/nocturne'
 import { useComposerDraft, useSessionCommandSubmit } from '../conversations'
 import type { useFileDrop } from '../../shared/ui/useFileDrop'
-import type { ComposerSessionControls } from '../conversations/sessionControls/useSessionControls'
-import { ChatPrimaryActions } from '../conversations/ChatPrimaryActions'
+import { ChatPrimaryActions, type ComposerSessionControls } from '../chat-core'
 import '../conversations/chatAttachments.css'
 
 export function OperatorComposer({ conversationId, context, attachmentControl, fileDropProps, hasAttachments = false,

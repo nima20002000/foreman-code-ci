@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { DomainError, writeDurableFile } from '@foreman-code/contracts-node/server-kit'
+import { DomainError, writeDurableFile } from '@foreman-code/contracts/server-kit'
 import type { CloudRun } from './cloudProviders.js'
 
 export async function readCloudRun(path: string): Promise<CloudRun> {

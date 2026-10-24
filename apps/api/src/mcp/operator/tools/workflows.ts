@@ -16,7 +16,7 @@ export const workflowTools = [
     requires: [['workflows:read', 'resource']],
     enabled: s => !!s.workflows,
     description: 'List workflow summaries in saved workspace order, including empty workflows (10 by default); pass pageInfo.nextCursor as cursor until null. detail: "full" or workflow_get returns the saved definition.',
-    detail: 'Each page includes the workspace's orderRevision; it is 0 when no read grant applies to this workspace. Restart pagination after order or membership changes.',
+    detail: 'Each page includes the workspace’s orderRevision; it is 0 when no read grant applies to this workspace. Restart pagination after order or membership changes.',
     inputSchema: OperatorWorkflowListInputSchema,
     outputSchema: WorkflowSummaryPageSchema.or(ManagedWorkflowPageSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },

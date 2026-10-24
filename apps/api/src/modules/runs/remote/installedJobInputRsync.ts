@@ -11,7 +11,7 @@ import {
 } from '@foreman-code/contracts/byte-transfer'
 import type { JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import type { JobSourcePort } from '../../jobs/executor.js'
-import type { JobInputWorkerChannel } from '../../files/jobInputs/channel.js'
+import type { JobInputWorkerChannel } from '../../files/index.js'
 import { ReadonlyJobInputDelivery, type JobInputDeliverySource, type JobSystemInput } from '../../files/jobInputs/delivery.js'
 import { recipient, inputHash, snapshotDigest, manifestBytes, verificationContextPin } from '../../files/jobInputs/manifest.js'
 import { JOB_INPUT_NAMESPACE } from '../../files/jobInputs/protocol.js'

@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { CiHostRequest, CiDurations, CiExecutionSuite, CiHostRun, CiPart, CiScope, CiSuite, CiTestResults, CiUserSystemd } from '@foreman-code/contracts'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import type { HostCiPorts } from './runner.js'
 import type { CiContext, MainCiContext } from './environment.js'
 import { providerCommand } from './providerPoll.js'

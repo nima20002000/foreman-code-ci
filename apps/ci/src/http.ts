@@ -1,8 +1,8 @@
 // CI's HTTP routes. The host app registers them where it registered its own and supplies the request principal.
 import { CiComputersOutputSchema, CiCancelOutputSchema, CiGetInputSchema, CiCancelInputSchema, CiGetOutputSchema, CiListOutputSchema, CiLogsInputSchema, CiLogsOutputSchema, CiRunInputSchema, CiRunOutputSchema,
-  CiTestStatusFilterSchema, CiTestsOutputSchema, OperatorCiListInputSchema } from '@foreman-code/contracts'
+  CiTestStatusFilterSchema, CiTestsOutputSchema, OperatorCiListInputSchema, CiServiceRunInputSchema } from '@foreman-code/contracts'
 import { CircleAccountAddInputSchema, CircleAccountRemoveInputSchema, ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { z } from 'zod'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { CiServiceClient, CiTicketClient } from './client.js'
@@ -24,7 +24,7 @@ export function registerCiServiceRoutes(app: FastifyInstance, { service, authent
   const root = '/internal/ci'
   app.addHook('onRequest', async request => { authenticate(request) })
   app.post(root + '/run', async request => {
-    const body = z.object({ caller, input: CiRunInputSchema.safeExtend({ workspaceId }), source }).strict().parse(request.body)
+    const body = z.object({ caller, input: CiServiceRunInputSchema, source }).strict().parse(request.body)
     return CiRunOutputSchema.parse(await service.run(body.caller, body.input, body.source))
   })
   app.post(root + '/get', async (request, reply) => {
