@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { OperatorChatSetupSchema } from '@foreman-code/contracts'
 import { HARNESS_PROFILE_CHECK_NAMESPACE, HostHarnessConfigurationInspectionRequestSchema } from '@foreman-code/contracts/harness-registry'
 import { DomainError } from '../errors.js'
-import type { DeviceEndpoint } from '../devices/index.js'
+import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
 import { matchesHarnessConnectionGeneration } from './hostConnectionGeneration.js'
 import type { AcceptedClaudeProfile } from './instanceSettings/acceptedProfile.js'
 

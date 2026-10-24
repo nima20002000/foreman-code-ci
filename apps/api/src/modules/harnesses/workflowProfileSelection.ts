@@ -1,4 +1,4 @@
-import type { NativeManagerResolutionContext } from '../interactions/index.js'
+import type { NativeManagerResolutionContext } from '../interactions/runtimePorts.js'
 import type { AcceptedProfileSelector } from './instanceSettings/acceptedProfile.js'
 import { DomainError } from '../errors.js'
 

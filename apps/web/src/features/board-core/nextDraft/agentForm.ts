@@ -1,11 +1,11 @@
 import { z } from 'zod'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
-import { AssignedSkillSchema, GraphqlToolDefaultsSchema, GraphqlToolOverrideSchema, RecordedHarnessConfigurationSchema, withBrowserToolDefaults } from '@foreman-code/contracts'
+import { AssignedSkillSchema, GraphqlToolDefaultsSchema, GraphqlToolOverrideSchema, HarnessConfigurationSchema, withBrowserToolDefaults } from '@foreman-code/contracts'
 import { sameWorkflowValue, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 
 // Raw form state is browser-only, including unfinished JSON. Publication still
 // uses the shared Agent and harness validation through Save agent settings.
-const HarnessFormSchema = z.object({ configuration: RecordedHarnessConfigurationSchema,
+const HarnessFormSchema = z.object({ configuration: HarnessConfigurationSchema,
   shellEnvironmentText: z.string(), mcpText: z.string() }).strict()
 export const AgentFormSchema = z.object({ base: z.string().refine((value) => { try { JSON.parse(value); return true } catch { return false } }), name: z.string(), prompt: z.string(),
   /** Persistent Agent instructions and ordered skill references; absent in forms saved before Skills v1. */

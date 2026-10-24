@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { isLiveRunState } from '@foreman-code/contracts'
 import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { useLocalHumanAccessQuery } from '../../../shared/api/settingsExperience'
 import { useProtectedAccessError } from '../../../shared/api/useProtectedAccessError'
@@ -12,11 +13,11 @@ import { needsRunRefresh, type ActionRun } from './policy'
 import { useRunStop } from './useRunStop'
 import './actions.css'
 
-/** One plain Stop button in the Board toolbar while the selected Run runs. It sends the Board's exact Stop
- * command (journal, receipt, resend of the same stop); a finished Run with nothing to clean up shows nothing. */
-export function SelectedRunControls({ scope, visible }: {
+/** One toolbar slot: Stop while the selected Run runs or cleans up, then the retained draft's Run action. */
+export function SelectedRunControls({ scope, visible, runActionRef }: {
   scope: RunActionSelection & Partial<Pick<RepeatGraphScopeCurrent, 'workflowVersionId'>>
   visible: boolean
+  runActionRef(host: HTMLElement | null): void
 }) {
   const access = useLocalHumanAccessQuery(), cache = useQueryClient()
   const principal = access.isError ? undefined : access.data?.principal
@@ -39,17 +40,17 @@ export function SelectedRunControls({ scope, visible }: {
       workflowId: scope.workflowId, runId: scope.runId }), exact: true })
   }
   const run = status.data
-  if (run?.executionState === 'completed' && !run.cleanupPending) return null
+  const finished = !!run && !isLiveRunState(run.executionState) && !run.cleanupPending
   const reason = access.isError ? 'Couldn’t read your access. Try again in a moment.'
     : !access.isPending && (!read || denied) ? 'You can’t stop this run.'
       : status.isError || capability.isError ? 'Run status couldn’t be refreshed.'
         : !access.isPending && !permitted ? 'You can’t stop this run.'
           : capability.data && !capability.data.stopAvailable ? 'Stop isn’t available right now.' : undefined
-  return <section className="selected-run-controls" aria-label="Selected Run controls" hidden={!visible} inert={!visible}>
-    {run ? <StopButton scope={{ workspaceId: scope.workspaceId, workflowId: scope.workflowId, runId: scope.runId,
+  return <section ref={finished ? runActionRef : undefined} className="selected-run-controls" aria-label="Selected Run controls" hidden={!visible} inert={!visible}>
+    {!finished && (run ? <StopButton scope={{ workspaceId: scope.workspaceId, workflowId: scope.workflowId, runId: scope.runId,
       workflowVersionId: run.workflowVersionId, executionSemanticsVersion: 3 }} run={run}
     reason={reason} ready={!!capability.data} refresh={refresh} />
-      : <Button size="sm" variant="danger" disabled title={reason}>Stop</Button>}
+      : <Button size="sm" variant="danger" disabled title={reason}>Stop</Button>)}
     {status.isError || capability.isError ? <Button size="sm" variant="ghost" title={reason}
       onClick={() => { void status.refetch(); void capability.refetch() }}>Retry</Button> : null}
   </section>

@@ -1,4 +1,3 @@
-import { harnessMaintenanceCapabilities } from '../harnesses/index.js'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
@@ -18,27 +17,26 @@ export async function verifyPluginRelease(ports: MaintenancePorts, input: {
   harness: MaintainedHarness; binary: string; pluginId: string; version: string; marketplace: SyncedMarketplace | undefined
 }, signal: AbortSignal): Promise<AcquiredPluginRelease> {
   const { harness, binary, pluginId, version, marketplace } = input
-  const capabilities = harnessMaintenanceCapabilities(harness)
   if (!marketplace) throw new Error(`Cannot acquire ${pluginId} ${version}: its Git marketplace source is unavailable.`)
   const cache = ports.environment.XDG_CACHE_HOME ?? join(homedir(), '.cache')
   const root = join(cache, 'foreman-code', 'plugin-acquisition')
   await mkdir(root, { recursive: true, mode: 0o700 })
   const directory = await mkdtemp(join(root, `${harness}-`))
-  const environment = { [capabilities.homeEnvironmentVariable]: directory }
+  const environment = harness === 'codex' ? { CODEX_HOME: directory } : { CLAUDE_CONFIG_DIR: directory }
   const staged: MaintenancePorts = { ...ports, run: (command, args, options) =>
     ports.run(command, args, { ...options, environment: { ...options.environment, ...environment } }) }
   const run = async (args: string[]) => {
     const result = await staged.run(binary, args, { signal, timeoutMs: 120_000 })
-    if (result.code !== 0 || (capabilities.plugins.cliResult === 'json_outcome' && claudeCliResult(result.stdout)?.outcome !== 'ok')) {
+    if (result.code !== 0 || (harness === 'claude' && claudeCliResult(result.stdout)?.outcome !== 'ok')) {
       throw new Error(`Could not acquire ${pluginId} ${version}: ${result.stderr.slice(-1200) || result.stdout.slice(-1200)}`)
     }
   }
   try {
     await run(['plugin', 'marketplace', 'add', marketplace.source, '--json'])
-    await run(['plugin', capabilities.plugins.installCommand, pluginId,
-      ...capabilities.plugins.scopeArguments, '--json'])
+    await run(['plugin', harness === 'codex' ? 'add' : 'install', pluginId,
+      ...(harness === 'claude' ? ['--scope', 'user'] : []), '--json'])
     let acquired: string | null | undefined
-    if (capabilities.plugins.records === 'user') {
+    if (harness === 'claude') {
       acquired = (await readClaudePlugins(staged, signal)).plugins.find(plugin => plugin.pluginId === pluginId && plugin.installed)?.version
     } else {
       const result = await staged.run(binary, ['plugin', 'list', '--json'], { signal, timeoutMs: 120_000 })
@@ -53,7 +51,7 @@ export async function verifyPluginRelease(ports: MaintenancePorts, input: {
     }
     const installArguments: string[] = []
     let marketplaceRoot: string | undefined
-    if (capabilities.plugins.marketplace === 'local_override') {
+    if (harness === 'codex') {
       const result = await staged.run(binary, ['plugin', 'marketplace', 'list', '--json'], { signal, timeoutMs: 120_000 })
       if (result.code !== 0) throw new Error(`Could not read the acquired marketplace for ${pluginId}.`)
       const catalog = z.object({ marketplaces: z.array(z.object({ name: z.string(), root: z.string() })) })

@@ -1,74 +1,16 @@
 // CI's HTTP routes. The host app registers them where it registered its own and supplies the request principal.
 import { CiComputersOutputSchema, CiCancelOutputSchema, CiGetInputSchema, CiCancelInputSchema, CiGetOutputSchema, CiListOutputSchema, CiLogsInputSchema, CiLogsOutputSchema, CiRunInputSchema, CiRunOutputSchema,
-  CiTestStatusFilterSchema, CiTestsOutputSchema, OperatorCiListInputSchema, CiServiceRunInputSchema } from '@foreman-code/contracts'
-import { CircleAccountAddInputSchema, CircleAccountRemoveInputSchema, ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
+  CiTestStatusFilterSchema, CiTestsOutputSchema, OperatorCiListInputSchema } from '@foreman-code/contracts'
+import { CircleAccountAddInputSchema, CircleAccountRemoveInputSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { DomainError } from '@foreman-code/contracts/server-kit'
 import { z } from 'zod'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import type { CiServiceClient, CiTicketClient } from './client.js'
+import type { CiTicketClient } from './client.js'
 import type { CircleAccountsManagementService } from './circleAccountsManagement.js'
 import type { CiRuntimeProvisioner } from './ciRuntimeProvisioner.js'
 
 /** The authenticated management principal of one request; throws when there is none. */
 export type RequestPrincipal = (request: FastifyRequest) => ManagementPrincipal
-
-/** Private service transport. The host authenticates its service credential before any caller data is read;
- * ticket authorization remains in the service, including workspace inference for Agent MCP requests. */
-export function registerCiServiceRoutes(app: FastifyInstance, { service, authenticate }: {
-  service: CiServiceClient
-  authenticate(request: FastifyRequest): void
-}): void {
-  const workspaceId = z.string().min(1).optional()
-  const source = z.enum(['mcp', 'http'])
-  const caller = ManagementPrincipalSchema
-  const root = '/internal/ci'
-  app.addHook('onRequest', async request => { authenticate(request) })
-  app.post(root + '/run', async request => {
-    const body = z.object({ caller, input: CiServiceRunInputSchema, source }).strict().parse(request.body)
-    return CiRunOutputSchema.parse(await service.run(body.caller, body.input, body.source))
-  })
-  app.post(root + '/get', async (request, reply) => {
-    const body = z.object({ caller, input: CiGetInputSchema.extend({ workspaceId }) }).strict().parse(request.body)
-    const abort = new AbortController()
-    reply.raw.once('close', () => { if (!reply.raw.writableFinished) abort.abort() })
-    return CiGetOutputSchema.parse(await service.get(body.caller, body.input, abort.signal))
-  })
-  app.post(root + '/tests', async request => {
-    const body = z.object({ caller, input: z.object({ workspaceId, ticketId: z.string().min(1),
-      status: CiTestStatusFilterSchema.optional() }).strict() }).strict().parse(request.body)
-    return CiTestsOutputSchema.parse(await service.tests(body.caller, body.input))
-  })
-  app.post(root + '/list', async request => {
-    const body = z.object({ caller, input: OperatorCiListInputSchema.extend({ workspaceId }) }).strict().parse(request.body)
-    return CiListOutputSchema.parse(await service.list(body.caller, body.input))
-  })
-  app.post(root + '/logs', async request => {
-    const body = z.object({ caller, input: CiLogsInputSchema.extend({ workspaceId }) }).strict().parse(request.body)
-    return CiLogsOutputSchema.parse(await service.logs(body.caller, body.input))
-  })
-  app.post(root + '/cancel', async request => {
-    const body = z.object({ caller, input: CiCancelInputSchema.extend({ workspaceId }), source }).strict().parse(request.body)
-    return CiCancelOutputSchema.parse(await service.cancel(body.caller, body.input, body.source))
-  })
-  app.post(root + '/computers', async request => {
-    const body = z.object({ caller, input: z.object({ workspaceId }).strict() }).strict().parse(request.body)
-    return CiComputersOutputSchema.parse(await service.computers(body.caller, body.input))
-  })
-  app.post(root + '/dispatch', async request => {
-    z.object({}).strict().parse(request.body)
-    await service.dispatch()
-    return {}
-  })
-  app.post(root + '/cancel-stopped-run', async request => {
-    const body = z.object({ runId: z.string().min(1) }).strict().parse(request.body)
-    await service.cancelStoppedRun(body.runId)
-    return {}
-  })
-  app.post(root + '/expire-overdue-runs', async request => {
-    const body = z.object({ now: z.iso.datetime() }).strict().parse(request.body)
-    return service.expireOverdueRuns(new Date(body.now))
-  })
-}
 
 export function registerHostCiRoutes(app: FastifyInstance,
   { services, principal: requirePrincipal }: { services: { ci?: CiTicketClient | undefined }; principal: RequestPrincipal }): void {

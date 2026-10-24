@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { ActivityNativeIdentitySchema, OperatorActivitySchema, type ActivityNativeIdentity, type OperatorActivity } from '@foreman-code/contracts'
-import type { OperatorActivityChange } from '../harnesses/index.js'
+import type { OperatorActivityChange } from './operatorActivity.js'
 import { nativePersistenceRedactor, type NativePersistenceRedactor } from '../interactions/index.js'
 import { DomainError } from '../errors.js'
 

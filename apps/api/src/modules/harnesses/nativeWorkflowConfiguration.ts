@@ -3,7 +3,7 @@ import {
   CodexSessionCompatibilitySchema,
   validateHarnessWorkflowCompatibility,
   withAdvancedDefaults,
-  type RecordedHarnessConfiguration,
+  type HarnessConfiguration,
   type WorkflowApprovalConfiguration,
 } from '@foreman-code/contracts'
 
@@ -12,7 +12,7 @@ import { retiredHarnessError } from './retiredHarness.js'
 import { CLAUDE_FULL_ACCESS_REQUIRED, CLAUDE_EXTERNAL_MCP_UNSUPPORTED,
   ClaudeSupportedMcpServersSchema } from '@foreman-code/contracts/claude'
 
-export function assertClaudeFullAccess(configuration: RecordedHarnessConfiguration): void {
+export function assertClaudeFullAccess(configuration: HarnessConfiguration): void {
   if (configuration.harness !== 'claude') return
   if (configuration.sandbox !== 'danger-full-access') {
     throw new DomainError('CLAUDE_FULL_ACCESS_REQUIRED', CLAUDE_FULL_ACCESS_REQUIRED, 400)
@@ -24,7 +24,7 @@ export function assertClaudeFullAccess(configuration: RecordedHarnessConfigurati
 
 /** Resolve omitted Codex settings without changing the saved configuration. */
 export function assertNativeWorkflowConfiguration(
-  savedConfiguration: RecordedHarnessConfiguration,
+  savedConfiguration: HarnessConfiguration,
   approval?: WorkflowApprovalConfiguration,
   designatedOrchestrator = false,
 ): void {

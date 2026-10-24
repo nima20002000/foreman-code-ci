@@ -48,7 +48,7 @@ function fixture(options: Parameters<typeof recoveryDatabase>[0] = {}) {
       assert.equal(id, db.state.execution.id); assert.equal(db.state.active, false); calls.push('close-processes'); return true
     } })
   // The SQL double cannot run real attempt settlement; record the per-attempt decision instead.
-  vi.spyOn(coordinator, 'abandonAttempt').mockImplementation(async (_owner, execution, failure) => {
+  vi.spyOn(coordinator.cancellation, 'abandonAttempt').mockImplementation(async (_owner, execution, failure) => {
     calls.push(`abandon:${execution.id}:${failure.outcome === 'failed' ? failure.error?.code : failure.outcome}`)
   })
   return { ...db, calls, runs, snapshot, coordinator, recovery }

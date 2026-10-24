@@ -1,7 +1,7 @@
 import type { OperatorConversationState } from '@foreman-code/contracts'
 import { Alert, Button } from '../../shared/ui/nocturne'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
-import { ChatDecisionReceipts } from '../chat-core'
+import { ChatDecisionReceipts } from '../conversations/ChatDecisionReceipts'
 import { ProviderAccountProblem } from '../provider-accounts'
 import { OperatorTranscript } from './OperatorTranscript'
 import { OperatorApprovalCard } from './OperatorApprovalCard'

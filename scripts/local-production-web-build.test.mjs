@@ -51,7 +51,7 @@ fs.appendFileSync(${JSON.stringify(join(directory, 'builds'))}, 'built\\n');
   environment.PATH = `${bin}:${environment.PATH}`
   const builds = async () => (await readFile(join(directory, 'builds'), 'utf8')).trim().split('\n').length
   const build = () => withProductionSourceSnapshot(repository, join(directory, 'build'), async ({ source }) => {
-    for (const tool of ['typescript', 'vite', '@vitejs/plugin-react']) {
+    for (const tool of ['typescript', 'vite', '@vitejs/plugin-react', '@tailwindcss/vite']) {
       const module = join(source, 'apps/web/node_modules', tool)
       await mkdir(module, { recursive: true })
       await writeFile(join(module, 'index.js'), 'module.exports = {}')

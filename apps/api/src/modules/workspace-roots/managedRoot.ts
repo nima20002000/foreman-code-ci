@@ -10,7 +10,7 @@ import { jobDigest } from '../jobs/index.js'
 import { sourceSha256 } from '../sources/manifest.js'
 import { authorizeSource } from '../sources/authority.js'
 import { assertBuildComputerTarget } from '../settings/index.js'
-import type { WorkspaceRootPolicyPort } from '../sources/index.js'
+import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
 import { WORKSPACE_FOLDER_LIFECYCLE_LOCK } from '../workspaces/index.js'
 import type { WorkspaceBoundLocationService } from './service.js'
 

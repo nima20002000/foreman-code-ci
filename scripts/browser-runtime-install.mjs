@@ -12,15 +12,15 @@ import { promisify } from 'node:util';
 import { BROWSER_RUNTIME_MAGIC, BROWSER_RUNTIME_CHUNK_BYTES, hashBrowserRuntimeFile,
   validateBrowserRuntimeManifest, checkBrowserRuntimeReadiness, createBrowserRuntimeDirectory,
   removeBrowserRuntimeDirectory } from '../apps/worker/src/browserRuntimeInstall.mjs';
-import { validateWorkerTarget } from './worker-artifact-files.mjs';
-import { assertWorkerSnapshotSource, workerPackageAliases } from './worker-snapshot-policy.mjs';
+import { cfworkerLicense, validateWorkerTarget } from './worker-artifact-files.mjs';
+import { assertWorkerSnapshotSource, workerContractAliases } from './worker-snapshot-policy.mjs';
 
 const execute = promisify(execFile);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const digest = /^[a-f0-9]{64}$/;
 const controls = new Set(['runtime/browser/manifest.json', 'runtime/browser/runtime-lock.json', 'runtime/browser/LICENSES.txt',
   'scripts/browser-runtime-install.mjs', 'apps/worker/src/browserRuntimeInstall.mjs', 'scripts/worker-artifact-files.mjs',
-  'scripts/worker-snapshot-policy.mjs', 'runtime/browser/licenses/MIT.txt', 'runtime/browser/credits.py', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/contracts/package.json', 'apps/ci/package.json']);
+  'scripts/worker-snapshot-policy.mjs', 'runtime/browser/licenses/MIT.txt', 'runtime/browser/credits.py', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/contracts/package.json']);
 const safePath = path => typeof path === 'string' && /^[a-zA-Z0-9_@.+/[\]-]+$/.test(path)
   && path.split('/').every(part => part && part !== '.' && part !== '..');
 const invariant = (condition, message) => { if (!condition) throw new Error(`Browser runtime assembly: ${message}`); };
@@ -220,7 +220,7 @@ for info in sorted((root/'python').glob('lib/python*/site-packages/*.dist-info')
   await run(python, ['-I', '-B', '-c', script, unit], { timeout: 60000, maxBuffer: 65536 });
 }
 
-export async function copyNativeLicenses(inputs, repository, unit) {
+export async function copyNativeLicenses(inputs, repository, unit, readSource = path => readFile(join(repository, path))) {
   const seen = new Set();
   for (const input of inputs.filter(path => path.includes('node_modules/'))) {
     let directory = dirname(resolve(repository, input)), manifest;
@@ -239,7 +239,11 @@ export async function copyNativeLicenses(inputs, repository, unit) {
     const name = `${manifest.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}-${manifest.version}`;
     const destination = join(unit, 'licenses/native-packages', name); await mkdir(destination, { recursive: true, mode: 0o700 });
     const licenses = (await readdir(directory)).filter(name => /^(?:licen[cs]e|copying|notice)(?:\.|$)/i.test(name));
-    invariant(licenses.length > 0, `native dependency notice missing: ${manifest.name}`);
+    if (`${manifest.name}@${manifest.version}` === cfworkerLicense.package && manifest.license === 'MIT') {
+      const terms = await readSource(cfworkerLicense.path);
+      invariant(sha256(terms) === cfworkerLicense.sha256, `native dependency notice checksum mismatch: ${manifest.name}`);
+      await writeFile(join(destination, 'LICENSE'), terms);
+    } else invariant(licenses.length > 0, `native dependency notice missing: ${manifest.name}`);
     for (const path of licenses) if ((await lstat(join(directory, path))).isFile()) await copyFile(join(directory, path), join(destination, path));
     await writeFile(join(destination, 'package.json'), `${JSON.stringify({ name: manifest.name, version: manifest.version, license: manifest.license }, null, 2)}\n`);
   }
@@ -247,11 +251,10 @@ export async function copyNativeLicenses(inputs, repository, unit) {
 
 async function bundleNativeHost({ repository, unit, snapshot }) {
   const require = createRequire(join(repository, 'apps/worker/package.json')), { build } = require('esbuild');
-  const contracts = JSON.parse(await snapshot.read('packages/contracts/package.json')).exports;
-  const ci = JSON.parse(await snapshot.read('apps/ci/package.json')).exports;
+  const exports = JSON.parse(await snapshot.read('packages/contracts/package.json')).exports;
   const result = await build({ absWorkingDir: repository, entryPoints: ['apps/api/src/modules/browser-runtime/hostFactory.ts'],
     outfile: join(unit, 'native-host.mjs'), bundle: true, platform: 'node', format: 'esm', target: 'node22', metafile: true,
-    legalComments: 'linked', sourcemap: false, alias: workerPackageAliases({ contracts, ci }),
+    legalComments: 'linked', sourcemap: false, alias: workerContractAliases(exports),
     define: { 'process.env.WS_NO_BUFFER_UTIL': '"1"', 'process.env.WS_NO_UTF_8_VALIDATE': '"1"' },
     banner: { js: "import { createRequire as runtimeRequire } from 'node:module'; const require = runtimeRequire(import.meta.url);" },
     plugins: [{ name: 'browser-runtime-exact-source', setup(builder) {
@@ -265,7 +268,7 @@ async function bundleNativeHost({ repository, unit, snapshot }) {
   for (const output of Object.values(result.metafile.outputs)) {
     for (const dependency of output.imports) invariant(!dependency.external || isBuiltin(dependency.path), `unbundled native module ${dependency.path}`);
   }
-  await copyNativeLicenses(Object.keys(result.metafile.inputs), repository, unit);
+  await copyNativeLicenses(Object.keys(result.metafile.inputs), repository, unit, snapshot.read);
 }
 
 async function listUnitFiles(directory) {
