@@ -4,16 +4,20 @@ import { createRunSelectionSource } from './selectionGeneration'
 import { readRunSelection, searchForSelectedRun, clearSelectedSubagentHash } from './search'
 import type { RunsSelectorScope } from './types'
 
-/** URL-only identity. No effect selects the newest Run and no local-storage fallback exists. */
-export function useSelectedRun({ workspaceId, workflowId }: RunsSelectorScope) {
+/** URL-owned navigation. A displayed Run may supply the draft Board’s inspection identity without selecting history. */
+export function useSelectedRun({ workspaceId, workflowId }: RunsSelectorScope, displayedRunId?: string) {
   const router = useRouter()
   const source = useMemo(() => createRunSelectionSource(
-    () => readRunSelection({ workspaceId, workflowId }, {
-      pathname: router.history.location.pathname,
-      search: (router.options.parseSearch ?? defaultParseSearch)(router.history.location.search),
-    }),
+    () => {
+      const selection = readRunSelection({ workspaceId, workflowId }, {
+        pathname: router.history.location.pathname,
+        search: (router.options.parseSearch ?? defaultParseSearch)(router.history.location.search),
+      })
+      return displayedRunId && selection.identity.runId === null
+        ? { ...selection, identity: { ...selection.identity, runId: displayedRunId } } : selection
+    },
     (notify) => router.history.subscribe(notify),
-  ), [router, workspaceId, workflowId])
+  ), [router, workspaceId, workflowId, displayedRunId])
   const snapshot = useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot)
   const { generation } = snapshot
   const capture = useCallback(() => generation, [generation])

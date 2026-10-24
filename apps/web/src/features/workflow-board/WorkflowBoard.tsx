@@ -4,11 +4,11 @@ import { MasterOverview, createWorkflowExecutionChatSlot, resolveExecutionChat }
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from 'react'
 import { useLocation, useRouter } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
-import type { ExecutionRef, WorkflowRunSummary } from '@foreman-code/contracts'
+import type { ExecutionRef, WorkflowRunSummary, WorkflowExecutionChatTarget } from '@foreman-code/contracts'
 import type { BoardSidePanel, RepeatGraphScopeCurrent, WorkspaceBoardInspection } from '@foreman-code/contracts/current'
 import { Alert, Button, Icon, IconButton } from '../../shared/ui/nocturne'
 import { WorkspaceExecutionLocationSettings } from '../settings'
-import { BoardRunOverlay, RunBoardSlot, useRunBoardShown } from '../run-board'
+import { BoardRunOverlay, RunBoardSlot, useRunBoardShown, useBoardRunSnapshot } from '../run-board'
 import { useRunSummaries, useSelectedRun, useSelectedRunSnapshot, isRunAccessError } from '../runs-selector'
 import { BoardNavigationControls } from './BoardNavigationControls'
 import {
@@ -132,9 +132,60 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const boardRunLive = !!boardRunId && (boardRunId === liveRunId || (boardRunId === startedRunId && startedLive))
   const boardRun = useMemo(() => boardRunId ? { workspaceId, workflowId, runId: boardRunId, live: boardRunLive } : undefined,
     [workspaceId, workflowId, boardRunId, boardRunLive])
+  const displayedRun = useBoardRunSnapshot(boardRun, current && !side.memoryOpen)
+  const previousBoardRunId = useRef(boardRunId)
+  useEffect(() => {
+    const previous = previousBoardRunId.current
+    previousBoardRunId.current = boardRunId
+    if (previous && boardRunId && previous !== boardRunId && side.agentSelection) {
+      selectPanel({ kind: 'agent', nodeId: side.agentSelection.nodeId, tab: side.agentSelection.tab })
+    }
+  }, [boardRunId, side.agentSelection, selectPanel])
+  const selectChatTarget = useCallback((target: WorkflowExecutionChatTarget, versionId: string) => {
+    const targetRunId = target.kind === 'workflow_execution' ? target.execution.runId : target.runId
+    if (current && boardRunId === targetRunId && (!displayedRun.scope || displayedRun.scope.workflowVersionId === versionId)
+      && target.agent.workspaceId === workspaceId && target.agent.workflowId === workflowId) {
+      selectPanel({ kind: 'agent', nodeId: target.agent.workflowNodeId, tab: 'chat',
+        ...(target.kind === 'workflow_execution' ? { executionId: target.execution.executionId }
+          : { waitingActivationId: target.waitingActivationId }) })
+    } else side.selectChatTarget(target, versionId)
+  }, [current, boardRunId, displayedRun.scope, workspaceId, workflowId, selectPanel, side.selectChatTarget])
+  const selectChatRun = useCallback((target: { runId: string; workflowVersionId?: string } | undefined) => {
+    if (current && target && target.runId === boardRunId && side.agentSelection) {
+      selectPanel({ kind: 'agent', nodeId: side.agentSelection.nodeId, tab: 'chat' })
+    } else side.selectChatRun(target)
+  }, [current, boardRunId, side.agentSelection, selectPanel, side.selectChatRun])
   const boardRunControls = useMemo(() => boardRunId ? <SelectedRunControls key={boardRunId} visible={!side.memoryOpen}
     scope={{ workspaceId, workflowId, runId: boardRunId }} runActionRef={setRunActionHost} /> : undefined,
   [boardRunId, side.memoryOpen, workspaceId, workflowId])
+  const runControlsScope = boardSelection.active && !boardSelection.invalid && boardSelection.identity.runId && !runUnreadable
+    ? { workspaceId, workflowId, runId: boardSelection.identity.runId,
+      ...(picked?.kind === 'available' ? { workflowVersionId: picked.workflowVersionId } : {}) } : undefined
+  const directionScope = runControlsScope ?? displayedRun.scope
+  const direction = useRunDirectionWait(directionScope)
+  const directionChat = useMutation({
+    mutationFn: async ({ scope, waiting }: { scope: NonNullable<typeof directionScope>;
+      waiting: NonNullable<typeof direction>; token: number; text?: string }) => {
+      const selected = await resolveExecutionChat({ workspaceId: scope.workspaceId, workflowId: scope.workflowId,
+        runId: scope.runId, workflowVersionId: scope.workflowVersionId, workflowNodeId: waiting.workflowNodeId, executionId: waiting.executionId })
+      if (selected.kind !== 'selected') throw new Error('The waiting Agent chat is unavailable. Refresh this Run and try again.')
+      return selected
+    },
+    onSuccess: (selected, request) => {
+      if (request.token !== getSelectionToken()) return
+      if (request.text) appendExecutionChatDraft(selected.target, request.text)
+      selectChatTarget(selected.target, selected.workflowVersionId)
+    },
+  })
+  const openDirectionChat = useCallback((text?: string) => {
+    if (direction && directionScope) directionChat.mutate({ scope: directionScope, waiting: direction,
+      token: getSelectionToken(), text })
+  }, [direction, directionScope, directionChat.mutate, getSelectionToken])
+  const directionNotice = useMemo(() => <>
+    {direction && !side.memoryOpen ? <DirectionWaitNotice direction={direction}
+      onAnswer={() => openDirectionChat()} onAccept={() => openDirectionChat(acceptFindingsDirection)} /> : null}
+    {directionChat.isError && directionChat.variables.token === getSelectionToken() ? <p role="alert">{directionChat.error.message}</p> : null}
+  </>, [direction, side.memoryOpen, directionChat.isError, directionChat.variables, directionChat.error, getSelectionToken, openDirectionChat])
   // History is rendered only by RunBoardSlot. Do not feed legacy Run pins to the
   // hidden editor, or fabricate missing version/semantics pins.
   const value = useMemo<WorkflowBoardSelection>(() => ({ workspaceId, workflowId, selectRun: chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent,
@@ -145,8 +196,8 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     boardRunLive, boardRunControls,
     // Starting from an older Run's view returns to the Board, where the new Run shows.
     showRunOnBoard: (runId: string) => { setStartedRunId(runId); if (!current) void navigationSelection.selectRun(null) },
-    navigationControls: current && side.view === 'graph' ? <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /> : undefined,
-  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, boardRunLive, boardRunControls, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam])
+    navigationControls: current && side.view === 'graph' ? <>{directionNotice}<BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /></> : undefined,
+  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, boardRunLive, boardRunControls, directionNotice, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam])
   const hosts = useMemo(() => ({ sidePanelHost, runCaptionHost, runActionHost }), [sidePanelHost, runCaptionHost, runActionHost])
   const authoring = useMemo<WorkflowBoardAuthoring>(() => ({ registerAuthoringActions,
     // A shown Run moves agents exactly as the draft Board does (owner rule: one Board, the same rules).
@@ -163,28 +214,6 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const showExecution = (nodeId: string, execution: ExecutionRef) => {
     side.selectExecution({ ...execution, nodeId })
   }
-  const runControlsScope = boardSelection.active && !boardSelection.invalid && boardSelection.identity.runId && !runUnreadable
-    ? { workspaceId, workflowId, runId: boardSelection.identity.runId,
-      ...(picked?.kind === 'available' ? { workflowVersionId: picked.workflowVersionId } : {}) } : undefined
-  const direction = useRunDirectionWait(runControlsScope)
-  const directionChat = useMutation({
-    mutationFn: async ({ scope, waiting }: { scope: NonNullable<typeof runControlsScope>;
-      waiting: NonNullable<typeof direction>; token: number; text?: string }) => {
-      const selected = await resolveExecutionChat({ ...scope,
-        workflowNodeId: waiting.workflowNodeId, executionId: waiting.executionId })
-      if (selected.kind !== 'selected') throw new Error('The waiting Agent chat is unavailable. Refresh this Run and try again.')
-      return selected
-    },
-    onSuccess: (selected, request) => {
-      if (request.token !== getSelectionToken()) return
-      if (request.text) appendExecutionChatDraft(selected.target, request.text)
-      side.selectChatTarget(selected.target, selected.workflowVersionId)
-    },
-  })
-  const openDirectionChat = (text?: string) => {
-    if (direction && runControlsScope) directionChat.mutate({ scope: runControlsScope, waiting: direction,
-      token: getSelectionToken(), text })
-  }
   const suppliedOverview = collaborationSlots?.overview
   const overviewContent = side.memoryOpen ? null : suppliedOverview?.()
   // Over the Run's canvas it floats like the draft's own toolbar, so the canvas keeps the draft's exact box.
@@ -193,9 +222,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         style={side.view === 'graph' ? { flexWrap: 'wrap', justifyContent: 'flex-end', boxSizing: 'border-box', minWidth: 0 }
           : { position: 'relative', inset: 'auto', zIndex: 10, flex: '0 0 auto', flexWrap: 'wrap', justifyContent: 'flex-end', padding: 'var(--space-2)', boxSizing: 'border-box', minWidth: 0 }}>
         {side.view === 'graph' ? <div className="board-run-caption" ref={setRunCaptionHost} /> : null}
-        {direction && !side.memoryOpen ? <DirectionWaitNotice direction={direction}
-          onAnswer={() => openDirectionChat()} onAccept={() => openDirectionChat(acceptFindingsDirection)} /> : null}
-        {directionChat.isError && directionChat.variables.token === getSelectionToken() ? <p role="alert">{directionChat.error.message}</p> : null}
+        {directionNotice}
         <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection}
           runsLabel={current && side.view === 'overview' ? 'Choose run' : undefined} />
         {(current || detailsScope && !runUnreadable) ? <IconButton label="Activities" onClick={() => setRunsOpen(true)}><Icon name="history" size={16} /></IconButton> : null}
@@ -221,7 +248,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
       {boardToolbar}
       <div className="workflow-collaboration-canvas" hidden={side.view !== 'graph'} inert={side.view !== 'graph'}>
       <RunBoardSlot selection={boardSelection} shown={shownBoard}>
-        <BoardRunOverlay run={boardRun} visible={current && side.view === 'graph' && !side.memoryOpen}>
+        <BoardRunOverlay displayed={displayedRun} visible={current && side.view === 'graph' && !side.memoryOpen}>
         <div className="workflow-board-authoring" onClickCapture={authoringEvent} onKeyDownCapture={authoringEvent} onSubmitCapture={authoringEvent}>
           {children}
           {current && locationOpen ? <WorkspaceExecutionLocationSettings workspaceId={workspaceId} presentation="dialog"
@@ -252,9 +279,9 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         </ActivitiesPopover>
       </BoardSelectionContext.Provider>
       <WorkflowSidePanel scope={side.scope} workspaceId={workspaceId} workflowId={workflowId}
-        workflowVersionId={legacyRun?.workflowVersionId ?? (picked?.kind === 'available' ? picked.workflowVersionId : undefined)}
-        opener={side.opener} runId={legacyRun?.runId ?? pickedRunId} selection={side.panel} agentSelection={side.agentSelection} onSelect={selectPanel} bodyRef={setSidePanelHost} headerSlotRef={setPanelHeaderSlot} footerSlotRef={setPanelFooterSlot}
-        onSelectTarget={side.selectChatTarget} onSelectRun={side.selectChatRun}
+        workflowVersionId={displayedRun.scope?.workflowVersionId ?? legacyRun?.workflowVersionId ?? (picked?.kind === 'available' ? picked.workflowVersionId : undefined)}
+        opener={side.opener} runId={boardRunId ?? legacyRun?.runId ?? pickedRunId} selection={side.panel} agentSelection={side.agentSelection} onSelect={selectPanel} bodyRef={setSidePanelHost} headerSlotRef={setPanelHeaderSlot} footerSlotRef={setPanelFooterSlot}
+        onSelectTarget={selectChatTarget} onSelectRun={selectChatRun}
         modalOpen={side.memoryOpen} slots={collaborationSlots} />
       {browsersOpen && !side.memoryOpen ? collaborationSlots?.browserSidebar?.({ workspaceId, workflowId, runId: legacyRun?.runId ?? pickedRunId,
         workflowVersionId: legacyRun?.workflowVersionId ?? (picked?.kind === 'available' ? picked.workflowVersionId : undefined) }) : null}
