@@ -72,6 +72,12 @@ it('builds Operator schemas once across authenticated requests while retaining c
     for (let request = 0; request < 3; request++) {
       const list = await f.rpc<ListToolsResult>('tools/list')
       expect(list.tools.map(tool => tool.name)).toContain('workspace_get')
+      // Hidden tools are registered only when full catalog discovery needs them.
+      for (const name of ['ci_computers_list', 'job_runtime_profile_list']) {
+        expect(decodeMcpToolResult(await f.rpc<CallToolResult>('tools/call', {
+          name: 'tool_schema', arguments: { name },
+        }))).toMatchObject({ name })
+      }
       const result = await f.rpc<CallToolResult>('tools/call', {
         name: 'workspace_get', arguments: { workspaceId: 'workspace' },
       })

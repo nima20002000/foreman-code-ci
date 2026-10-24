@@ -30,7 +30,7 @@ const AgentMarkdown = memo(function AgentMarkdown({ content }: { content: string
   return <Markdown components={markdownComponents} skipHtml>{content}</Markdown>
 })
 
-export function AgentChatMessage({ message, name, status, actions, children, onExpand }: {
+export const AgentChatMessage = memo(function AgentChatMessage({ message, name, status, actions, children, onExpand }: {
   message: Omit<Message, 'conversationId'>
   name: string
   status?: ReactNode
@@ -59,7 +59,7 @@ export function AgentChatMessage({ message, name, status, actions, children, onE
       {children}
     </MessageBubble>
   </div>
-}
+})
 
 function MessageExpansion({ onExpand }: { onExpand(): Promise<void> }) {
   const expansion = useMutation({ mutationFn: onExpand, retry: false })

@@ -8,6 +8,7 @@
   display: grid; grid-template-columns: 8px 78px minmax(0, 1fr); align-items: baseline; gap: 10px;
   padding: 7px 4px; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
+.board-activities .board-activities-list > li.board-activity-event { grid-template-columns: 8px minmax(0, 1fr); }
 .board-activities-list > li:hover { background: color-mix(in srgb, var(--surface-raised) 60%, transparent); }
 .board-activity-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); align-self: center; }
 .board-activities-list > li[data-status="completed"] .board-activity-dot, .board-activities-list > li[data-status="accepted"] .board-activity-dot { background: var(--success); }
@@ -16,7 +17,7 @@
 .board-activities-list > li[data-severity="error"] .board-activity-dot { background: var(--danger); }
 .board-activities-list time { color: var(--text-muted); font: var(--type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .board-activities-list > li > div { min-width: 0; overflow-wrap: anywhere; }
-.board-activities-list > li > div > strong { display: block; font: var(--type-caption); color: var(--text-muted); }
+.board-activities-list [role="group"] > strong { display: block; font: var(--type-caption); color: var(--text-muted); }
 .board-activity-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .board-activity-line > p { min-width: 0; }
 .board-activity-count { color: var(--text-muted); font-variant-numeric: tabular-nums; }

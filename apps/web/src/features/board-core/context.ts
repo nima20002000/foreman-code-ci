@@ -20,7 +20,7 @@ export type WorkflowBoardSelection = {
   workspaceId: string; workflowId: string; run?: RepeatGraphScopeCurrent
   selectedAgentId?: string; selectDraftAgent?(agentId?: string): void
   inspection: WorkspaceBoardInspection
-  selectInspection(inspection: WorkspaceBoardInspection): void
+  selectInspection(inspection: WorkspaceBoardInspection, scope?: RepeatGraphScopeCurrent): void
   selectRun(scope?: RepeatGraphScopeCurrent): void
   getSelectionToken?(): unknown
   openLocation(): void

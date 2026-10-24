@@ -35,14 +35,22 @@ export function chatBrowserInputSchema<S>(input: S): S {
   return input
 }
 
+const operatorCatalogs = new WeakMap<NonNullable<OperatorRequestContext['services']['browser']>, {
+  handlers: unknown; codecs: unknown; tools: OperatorToolDefinition[]
+}>()
+
 export function browserOperatorTools(context: OperatorRequestContext): OperatorToolDefinition[] {
   const browser = context.services.browser
   if (!browser) return []
-  return [...createBrowserProfileTools(browser.handlers, browser.codecs),
+  const cached = operatorCatalogs.get(browser)
+  if (cached && cached.handlers === browser.handlers && cached.codecs === browser.codecs) return cached.tools
+  const tools: OperatorToolDefinition[] = [...createBrowserProfileTools(browser.handlers, browser.codecs),
     ...createBrowserSessionTools(browser.handlers, browser.codecs), {
       name: 'browser_target_read', description: 'Resolve the selected saved Agent, execution or active coordinator browser subject without creating a session. Ambiguous Runs remain an explicit selection.',
       requires: [['workflows:read', 'workflow']], inputSchema: BrowserTargetSelectionSchema, outputSchema: BrowserTargetResultSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       run: (context, input) => browser.target(context.principal, input),
     }]
+  operatorCatalogs.set(browser, { handlers: browser.handlers, codecs: browser.codecs, tools })
+  return tools
 }
