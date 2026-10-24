@@ -1,4 +1,5 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
+import { withWorkflowChatContext } from '../workflow-chat/index.js'
 import { nativeChatPrompt, preflightChatInput, restoreAcceptedChatInput, type AcceptedChatInput, type AcceptedChatSettings, type PreparedChatInput } from './nativeChatInput.js'
 import type { ReadObservation } from '@foreman-code/contracts'
 import { failedReadObservation, successfulReadObservation } from '../diagnostics/index.js'
@@ -1083,7 +1084,7 @@ export class AgentChatService {
     return { state: await this.state(await this.resolve(context, resolution.executionId, selectedRun), principal), turn: admitted.turn, replayed: false }
   }
 
-  private async preflightInput(principal: ManagementPrincipal, request: SendAgentChatMessageRequest, resolution: Resolution, sql?: TransactionSql): Promise<AcceptedChatInput> {
+  private async preflightInput(principal: ManagementPrincipal, request: SendAgentChatMessageRequest, resolution: Resolution, sql?: TransactionSql, channelContext?: string): Promise<AcceptedChatInput> {
     const configuration = resolution.configuration
     const workingDirectory = resolution.row?.record.workingDirectory ?? resolution.create?.workingDirectory
     if (!configuration || !workingDirectory) throw new DomainError('AGENT_CHAT_UNAVAILABLE', 'The accepted chat configuration is unavailable.', 409)
@@ -1091,7 +1092,7 @@ export class AgentChatService {
     const row = resolution.row
     const settings = await this.sessionControls.acceptedSettings({ conversationId: resolution.row.id, principalId: principal.id,
       defaultSubject: `${resolution.row.workspace_id}:${resolution.row.agent_id}`, profileKey: configuration.id }, request.sessionMode, sql ?? this.pool)
-    const userPrompt = nativeChatPrompt(sessionTaskContent(request.content, settings.sessionMode), Boolean(request.attachments?.length))
+    const userPrompt = withWorkflowChatContext(nativeChatPrompt(sessionTaskContent(request.content, settings.sessionMode), Boolean(request.attachments?.length)), channelContext)
     const prompt = request.intent === 'steer' ? userPrompt
       : agentMessagePrompt(resolution.row.record, configuration, userPrompt).text
     const startup = request.intent !== 'steer' && !resolution.row?.record.startupDelivered
@@ -1112,7 +1113,7 @@ export class AgentChatService {
   }
 
   private async prepareOwnerInput(principal: ManagementPrincipal, request: SendAgentChatMessageRequest,
-    row: AgentConversationRow, pinnedConfigurationId?: string, sql?: TransactionSql) {
+    row: AgentConversationRow, pinnedConfigurationId?: string, sql?: TransactionSql, channelContext?: string) {
     const configuration = pinnedConfigurationId ? await this.workflows.getAgentConfiguration(pinnedConfigurationId)
       : await this.pendingConfiguration(row, sql) ?? await this.conversationConfiguration(row)
     if (!configuration) throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The accepted configuration is unavailable.', 409)
@@ -1120,7 +1121,7 @@ export class AgentChatService {
       workflowNodeId: row.workflow_node_id, agentId: row.agent_id, ...(row.origin_run_id ? { runId: row.origin_run_id } : {}) }
     const input = await this.preflightInput(principal, request, { context, row: { ...row,
       agent_configuration_version_id: configuration.id, record: await this.acceptedRecord(row, configuration, sql) },
-    configuration }, sql)
+    configuration }, sql, channelContext)
     return { input, configurationVersionId: configuration.id }
   }
 
@@ -1182,7 +1183,7 @@ export class AgentChatService {
   }
 
   /** Composition installs the common receipt journal; native dispatch remains owned by this service. */
-  createDeliveryOwner(receipts: PostgresChatDeliveryRepository): ConversationDeliveryOwner {
+  createDeliveryOwner(receipts: PostgresChatDeliveryRepository, changed?: (receiptId: string) => Promise<void>): ConversationDeliveryOwner {
     if (this.canonicalDelivery) return this.canonicalDelivery
     const owner = new ConversationDeliveryOwner(this.pool, receipts, {
       authenticate: (principal, target, action, sql) => this.authorizeDelivery(principal, target, action, sql),
@@ -1210,7 +1211,7 @@ export class AgentChatService {
         const turn = await this.repository.turn(command.request.target.conversationId, command.request.commandId, tx)
         return turn ? { state: turn.delivery, ...(turn.nativeTurnId ? { nativeTurnId: turn.nativeTurnId } : {}),
           ...(turn.error ? { errorCode: turn.error.code } : {}) } : { state: 'unknown', errorCode: 'CHAT_OWNER_JOURNAL_MISSING' }
-      },
+      }, ...(changed ? { changed } : {}),
     })
     this.canonicalDelivery = owner
     followDeliveryReceipts(this.events, owner, { operation: 'synchronize retained Agent delivery',
@@ -1277,7 +1278,15 @@ export class AgentChatService {
         : command.expectedNativeTurnId ? { expectedNativeTurnId: command.expectedNativeTurnId } : {}) }
   }
 
-  private async qualifyDelivery(tx: TransactionSql, principal: ManagementPrincipal, input: ChatSendRequest): Promise<DeliveryQualification> {
+  qualifyGroupDelivery(tx: TransactionSql, principal: ManagementPrincipal, input: ChatSendRequest,
+    channelContext?: string): Promise<DeliveryQualification> {
+    if (!this.canonicalDelivery) throw new DomainError('CHAT_DELIVERY_UNAVAILABLE', 'Common delivery is not installed.', 503)
+    return this.canonicalDelivery.qualifyLocked(tx, principal, input,
+      (sql, caller, request) => this.qualifyDelivery(sql, caller, request, channelContext))
+  }
+
+  private async qualifyDelivery(tx: TransactionSql, principal: ManagementPrincipal, input: ChatSendRequest,
+    channelContext?: string): Promise<DeliveryQualification> {
     if (!input.commandId || input.target.kind !== 'agent_conversation') throw new DomainError('CHAT_TARGET_INVALID', 'An exact Agent command is required.', 422)
     await this.authorizeDelivery(principal, input.target, 'write', tx)
     const row = await this.lockDeliveryTarget(tx, principal, input.target, true)
@@ -1295,7 +1304,7 @@ export class AgentChatService {
     const request = this.legacyDeliveryRequest({ ...input, commandId: input.commandId }, row, appliedIntent)
     validateSessionMessage(request.content, request.sessionMode)
     await validateMessageAttachments(tx, row.id, request.attachments)
-    const prepared = await this.prepareOwnerInput(principal, request, row, configuration.id, tx)
+    const prepared = await this.prepareOwnerInput(principal, request, row, configuration.id, tx, channelContext)
     const featureContext = await conversationFeatureContext(tx, row, configuration)
     return { appliedIntent, ownerBinding: { configurationVersionId: prepared.configurationVersionId,
       agentIdentity: featureContext.subject.agent,

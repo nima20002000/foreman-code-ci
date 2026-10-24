@@ -16,6 +16,7 @@ interface Props {
   onBack(): void
   onEdit(card: Card, action: MemoryCardAction): void
   onOpenWork(binding: MemoryCardWorkBinding): void
+  onSourcePost?(postId: string): void
   onOpenHistoryWork?(change: MemoryChange): void
 }
 export function MemoryCardDetail({ client, boardId, cardId, ...props }: Props) {
@@ -27,7 +28,7 @@ export function MemoryCardDetail({ client, boardId, cardId, ...props }: Props) {
   </section>
   return <CardDetailBody {...props} client={client} detail={query.data} stale={query.isError} retry={() => void query.refetch()} />
 }
-function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpenWork, onOpenHistoryWork, onBack, stale, retry }: Omit<Props, 'boardId' | 'cardId'> & {
+function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpenWork, onSourcePost, onOpenHistoryWork, onBack, stale, retry }: Omit<Props, 'boardId' | 'cardId'> & {
   detail: Detail; stale: boolean; retry(): void
 }) {
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -70,6 +71,7 @@ function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpe
       {claims.hasNextPage && <Button loading={claims.isFetchingNextPage} loadingLabel="Loading activation claims…"
         onClick={() => void claims.fetchNextPage()}>Load more activation claims</Button>}
     </div>
+    {card.sourcePostId && <Button onClick={() => onSourcePost?.(card.sourcePostId!)} disabled={!onSourcePost}>Source message</Button>}
     <div className="n-actions">
       <Button disabled={!canWrite} onClick={() => onEdit(card, 'edit')}>Edit</Button>
       {card.status === 'done' ? <Button disabled={!canWrite} onClick={() => onEdit(card, 'reopen')}>Reopen in Todo</Button>

@@ -1,5 +1,5 @@
 import type { AgentIdentity, ExecutionRef, CoordinatorConsultationBinding, LogicalWorkRef } from './agentIdentity.js';
-import type { EngineChatReadback } from './engineChat.js';
+import type { EngineChatReadback } from './workflowChat.js';
 import type { MemoryBoard, MemoryCard } from './memoryBoards.js';
 
 /** Deterministic public contract examples; these are not persisted/native acceptance evidence. */

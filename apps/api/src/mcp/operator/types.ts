@@ -65,6 +65,7 @@ export interface OperatorServices {
   operatorChat?: Pick<OperatorChatService,
     'readSessionControls' | 'changeSessionControls' | 'setup' | 'create' | 'list' | 'get' | 'history' | 'activityPage'
     | 'send' | 'handoffHistory' | 'cancel' | 'respond' | 'setDeleted'>
+  workflowChat?: import('../../modules/workflow-chat/service.js').WorkflowChatService
   chatDelivery?: import('../../modules/workflow-chat/delivery.js').ChatDeliveryRouter
   agentChat?: AgentChatService
   fileRetention?: FileRetentionService
