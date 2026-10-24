@@ -4,12 +4,12 @@ import { createContext, forwardRef, memo, useCallback, useContext, useEffect, us
 import { Background, ConnectionMode, ReactFlow, type Edge, type EdgeProps, type NodeChange, type NodeProps } from '@xyflow/react'
 import { WorkflowRelationshipSchema, type WorkflowDefinitionCurrent, type WorkflowRelationship } from '@foreman-code/contracts/current'
 import { isHierarchyReportingRoute, type Agent } from '@foreman-code/contracts'
-import { AgentNodeView, IconButton, Icon, type AgentPanel } from '../../../shared/ui/nocturne'
+import { AgentNodeView, IconButton, Icon, useReducedMotion, type AgentPanel } from '../../../shared/ui/nocturne'
 import { createGraphTopologyProjector } from '../topology'
 import {
   GRAPH_NODE_DEFAULT_SIZE, createGraphGeometryAdapter, type GraphGeometryChange, agentNodeFacts, edgeBend,
   relationshipLines, useFloatingCurve, type GraphNode, type AgentGraphNode, type JobGraphNode, nodeTitle,
-  putRelationship, removeRelationship, setWorkConnectionLimit, useBoardSelection, RunLiveNodes, RunLivePulses,
+  putRelationship, removeRelationship, setWorkConnectionLimit, useBoardSelection, RunLiveNodes, RunLivePulses, RunLiveCi,
 } from '../../board-core'
 import { CircularNodeResizer } from '../CircularNodeResizer'
 import { useGraphDraftStore } from '../store'
@@ -23,7 +23,7 @@ import { pinGraphLayout } from './placement'
 import { WorkConnectionLimitEditor } from './WorkConnectionLimitEditor'
 import type { EditGraph } from './AuthoringFields'
 import {
-  WorkflowAgentPanel, CiServerNode, type CiServerFlowNode, CI_SERVER_NODE_ID, useBoardCiServer, BoardKanbanNode,
+  WorkflowAgentPanel, CiServerNode, CiTransferEdge, type CiTransferFlowEdge, useCiTransfers, type CiServerFlowNode, CI_SERVER_NODE_ID, useBoardCiServer, BoardKanbanNode,
   KanbanActivityEdge, KANBAN_NODE_ID, type KanbanActivityFlowEdge, type KanbanFlowNode, useBoardKanban,
   BoardDock,
 } from '../../workflow-board'
@@ -129,7 +129,7 @@ const DraftJob=memo(function DraftJob({id,data,selected}:NodeProps<JobGraphNode>
 ><AgentHandles name={data.label}/></AgentNodeView>
 })
 const nodeTypes = { agent: DraftAgent, job: DraftJob, ciServer: CiServerNode, boardKanban: BoardKanbanNode }
-const edgeTypes = { typed: TypedEdge, kanbanActivity: KanbanActivityEdge }
+const edgeTypes = { typed: TypedEdge, ciTransfer: CiTransferEdge, kanbanActivity: KanbanActivityEdge }
 const noNames: ReadonlyMap<string, string> = new Map()
 const fitViewOptions = RESPONSIVE_FIT_OPTIONS
 const proOptions = { hideAttribution: true }
@@ -147,7 +147,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   change, geometry, pending, report, inspect = (action) => action(), removalDisabled = false,
   open, setOpen = () => undefined, panels = () => ({ chat: null, settings: null, info: null }), children }, ref) {
   const board = useBoardSelection()
-  const responsive = useResponsiveGraphViewport<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | KanbanActivityFlowEdge>({
+  const responsive = useResponsiveGraphViewport<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | CiTransferFlowEdge | KanbanActivityFlowEdge>({
     viewportKey: boardViewportKey(graph.workspaceId, graph.id) })
   const [project] = useState(() => createGraphTopologyProjector())
   const topology = useMemo(() => project(graph, agents), [project, graph, agents])
@@ -155,7 +155,9 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   const [nodes, setNodes] = useState(topology.nodes)
   const [connecting, setConnecting] = useState(false)
   // Every Board shows the CI server automatically; it is never a workflow node and cannot be added by hand.
-  const ci = useBoardCiServer({ nodes, names: noNames, workflow: { workspaceId: graph.workspaceId, workflowId: graph.id }, keepPlace: true })
+  const runCi = useContext(RunLiveCi)
+  const ci = useBoardCiServer({ ...runCi, nodes, names: runCi?.names ?? noNames, workflow: { workspaceId: graph.workspaceId, workflowId: graph.id }, keepPlace: true })
+  const transfers = useCiTransfers(runCi?.jobs, useReducedMotion(), JSON.stringify(runCi?.scope))
   const teamNodeId = board?.teamNodeId
   const shownIds = useMemo(() => new Set(nodes.map(node => node.id)), [nodes])
   const kanban = useBoardKanban({ workspaceId: graph.workspaceId, workflowId: graph.id, nodes, nodeIds: shownIds, enabled: !!board })
@@ -217,7 +219,11 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
           } } }
     })
   }, [graph, agents, baseGraph, semanticLocked, change, report, removalDisabled])
-  const visibleEdges = useMemo<(DraftEdge | KanbanActivityFlowEdge)[]>(() => [...edges, ...kanban.edges], [edges, kanban.edges])
+  const visibleEdges = useMemo<(DraftEdge | CiTransferFlowEdge | KanbanActivityFlowEdge)[]>(() => [...edges, ...kanban.edges,
+    ...(ci.node ? [...transfers].filter(([nodeId]) => nodes.some(node => node.id === nodeId)).map(([nodeId, pulses]) => ({
+      id: `ci-transfer:${nodeId}`, type: 'ciTransfer' as const, source: nodeId, target: CI_SERVER_NODE_ID,
+      sourceHandle: 'right', targetHandle: 'left', selectable: false, focusable: false, deletable: false, data: { pulses } })) : [])],
+  [edges, kanban.edges, ci.node, transfers, nodes])
   const roleOf = (nodeId: string) => {
     const node = graph.nodes.find(item => item.id === nodeId)
     return node && node.kind !== 'job' ? agents.find(agent => agent.id === node.agentId)?.productRole : undefined
@@ -310,7 +316,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   const context = { draftKey, inspect, open: board?.selectSidePanel ? shown : open, setOpen: setPanel, openChat, selectNode, beginResize, resize, finishResize, changedAgentIds }
   return <CanvasContext.Provider value={context}>
     <div ref={responsive.containerRef} {...proximity} className={`next-draft-canvas board-draft-canvas${connecting ? ' is-connecting' : ''}`} aria-label="Editable workflow graph">
-      <ReactFlow<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | KanbanActivityFlowEdge> nodes={flowNodes} nodesConnectable={!semanticLocked}
+      <ReactFlow<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | CiTransferFlowEdge | KanbanActivityFlowEdge> nodes={flowNodes} nodesConnectable={!semanticLocked}
         edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
         onNodesChange={onNodesChange} onNodeDragStop={(_event, node) => {
           if (node.id === KANBAN_NODE_ID) kanban.moved(node.position)

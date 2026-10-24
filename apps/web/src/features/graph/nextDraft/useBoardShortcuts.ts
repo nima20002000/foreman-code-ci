@@ -104,7 +104,7 @@ export function useBoardShortcuts({ draftKey, core, board, disabled }: {
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
       const { core, board, disabled } = latest.current
-      if (event.defaultPrevented || event.altKey || event.isComposing || disabled || board?.run || board?.boardRunLive
+      if (event.defaultPrevented || event.altKey || event.isComposing || disabled || board?.run
         || board?.authoringActive === false || board?.canvasVisible === false || board?.memoryOpen) return
       const target = event.target
       if (target instanceof Element && (target.closest(TYPING) || (target !== document.body && !target.closest('.next-draft-canvas')))) return
