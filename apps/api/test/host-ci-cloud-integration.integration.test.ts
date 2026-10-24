@@ -254,6 +254,9 @@ it('keeps every selected file in a nonempty slice when most files require user s
   ]
   const ordinary = 'apps/api/test/agent-chat.integration.test.ts'
   try {
+    // Provider preference applies after readiness is known; dispatch can use the first ready cloud slot.
+    await f.ci.dispatch()
+    await f.ci.drain()
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
       suite: 'integration', scope: 'affected', files: [...systemd, ordinary], commit: 'a'.repeat(40),
       partitions: 3, commandId: 'mostly-systemd',

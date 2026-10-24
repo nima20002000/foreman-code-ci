@@ -21,7 +21,7 @@ vi.mock('../src/modules/runs/repeatExecutionRead.js', async (importOriginal) => 
 })
 beforeEach(() => vi.resetAllMocks())
 
-function fixture(queued = false, size = 1, form: 'single' | 'repeat' = 'single') {
+function fixture(queued = false, size = 1, form: 'single' | 'repeat' = 'single', cleanupPending = false) {
   const f = makeCurrentWorkflowFixture('history', form)
   const entry = { runInput: {}, external: [], carry: null }
   const occurrence = form === 'repeat' ? RepeatOccurrenceV1Schema.parse({ contractVersion: 1,
@@ -46,7 +46,7 @@ function fixture(queued = false, size = 1, form: 'single' | 'repeat' = 'single')
   let liveGrants: ManagementGrant[] = structuredClone(principal.grants)
   let revoked = false
   vi.mocked(readRecordedRepeatRunSnapshot).mockResolvedValue({ run, version: f.version,
-    configurations: f.configurations, stopRequested: false, cleanupPending: false } as Awaited<ReturnType<typeof readAcceptedRepeatRunLocked>>)
+    configurations: f.configurations, stopRequested: false, cleanupPending } as Awaited<ReturnType<typeof readAcceptedRepeatRunLocked>>)
   const executions = Array.from({ length: size }, (_, index) => index === 0 ? execution
     : { ...execution, id: `history-execution-${index}`, attempt: index + 1 })
   const storedRow = (item: typeof execution) => ({ record: item, accepted: true,
@@ -100,7 +100,6 @@ function fixture(queued = false, size = 1, form: 'single' | 'repeat' = 'single')
     reply(executions.map(storedRow).reverse()),
     reply(receiptRows()),
     reply([]),
-    reply([{ pending: false }]),
     ...activityFacts(),
     reply([], [run.id, '0', '0', '0', 101]),
     reply([], [run.id]),
@@ -182,9 +181,10 @@ describe('saved current Run read', () => {
     }
   })
 
-  it('returns the exact V3 Run and accepted execution without exposing private location or authority', async () => {
-    const f = fixture()
+  it.each([false, true])('returns the exact V3 Run and accepted execution with cleanupPending=%s without exposing private location or authority', async (cleanupPending) => {
+    const f = fixture(false, 1, 'single', cleanupPending)
     const value = await f.read()
+    expect(value.cleanupPending).toBe(cleanupPending)
     expect(value.run).toMatchObject({ executionSemanticsVersion: 3, workflowVersionId: f.version.id,
       agentConfigurationVersionIds: f.version.agentConfigurationVersionIds, result: { output: { text: 'saved-result' } } })
     expect(value.executions[0]).toMatchObject({ id: f.execution.id, agentConfigurationVersionId: f.configurations[0]!.id })
