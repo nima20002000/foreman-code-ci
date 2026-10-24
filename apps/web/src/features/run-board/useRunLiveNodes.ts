@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { CiActivity, ExecutionQueueEntry } from '@foreman-code/contracts'
+import type { CiActivity } from '@foreman-code/contracts'
 import type { RunBoardEdgeSnapshot } from '@foreman-code/contracts/run-snapshots'
 import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { relationshipLines, RunLiveNodes, RunLivePulses, type RunLiveNodeView } from '../board-core'
@@ -18,7 +18,7 @@ export type { RunLiveNodeView }
 /** Each node's turn, queue, CI and pending-decision state from the Run's canonical current cut.
  * Reads only while the Board is shown; a denied or failed read leaves the saved presentation. */
 export function useRunLiveNodes(scope: RepeatGraphScopeCurrent, names: ReadonlyMap<string, string>,
-  cis: ReadonlyMap<string, CiActivity>, visible: boolean, edges: readonly RunBoardEdgeSnapshot[], executionQueue?: readonly ExecutionQueueEntry[]) {
+  cis: ReadonlyMap<string, CiActivity>, visible: boolean, edges: readonly RunBoardEdgeSnapshot[]) {
   const current = useCurrentRunQuery(visible ? scope : undefined, visible)
   const denied = useProtectedAccessError(current)
   const record = denied || current.isError ? undefined : current.data
@@ -59,14 +59,13 @@ export function useRunLiveNodes(scope: RepeatGraphScopeCurrent, names: ReadonlyM
     for (const items of merged.values()) items.sort((a, b) => a.startsAt - b.startsAt)
     return merged
   }, [flightKey])
-  const queued = new Map(executionQueue?.map(entry => [entry.workflowNodeId, entry.reason]))
   const views: [string, RunLiveNodeView][] = []
   for (const nodeId of names.keys()) {
     const ci = cis.get(nodeId)
     const base = shown ? choreography.nodes.get(nodeId) ?? { state: 'idle' as const, label: 'Not started' } : undefined
     // Without the current cut a node still says it waits on its CI, or shows that CI's result.
     if (!base) { if (ci) views.push([nodeId, isActiveCi(ci) ? liveNodeView(ciNodePresentation(ci), undefined, ci) : ciNodePresentation(ci)]); continue }
-    const view = liveNodeView(base, waits.get(nodeId), ci, undefined, checking.get(nodeId), live && base.state === 'queued' ? queued.get(nodeId) : undefined)
+    const view = liveNodeView(base, waits.get(nodeId), ci, undefined, checking.get(nodeId))
     views.push([nodeId, { state: view.state, label: view.label,
       ...(base.transition && view.state === base.state ? { transition: base.transition, transitionKey: base.transitionKey } : {}) }])
   }

@@ -29,11 +29,11 @@ it('reads live queue reasons through authenticated Board MCP and denies an unaut
   // Reads are told apart by their bound values: a principal id is the live authority read, the Run scope (workspace,
   // workflow, Run) is the Run and snapshot read, the Run and workspace are the CI read, and the version id with the
   // workspace and workflow is the saved version read.
-  const query = vi.fn(liveAuthorityQuery(id => id === principal.id ? livePrincipalRow(principal) : undefined, async (text, values) => {
+  const query = vi.fn(liveAuthorityQuery(() => livePrincipalRow(principal), async (text, values) => {
     if (/^(begin|commit|rollback)/i.test(text)) return { rows: [] }
     if (values.length === 3 && values[2] === f.run.id) return { rows: [{ workflow_version_id: f.version.id,
       snapshot_id: f.run.id, snapshot, execution_state: 'running' }] }
-    if (values.length === 2 || values.length === 1 && values[0] === f.run.id) return { rows: [] }
+    if (values.length === 2) return { rows: [] }
     if (values.length === 3 && values[0] === f.version.id) return { rows: [{ record: f.version }] }
     throw new Error('Unexpected database read in queue fixture')
   }))

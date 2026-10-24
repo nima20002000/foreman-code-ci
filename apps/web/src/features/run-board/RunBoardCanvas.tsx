@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, type EdgeProps, type NodeProps } from '@xyflow/react'
 import { AgentNodeView } from '../../shared/ui/nocturne/Canvas'
 import { useReducedMotion } from '../../shared/ui/nocturne'
-import type { ActivitySnapshotV1, ExecutionQueueEntry, Agent, WorkflowHierarchyReadResult } from '@foreman-code/contracts'
+import type { ActivitySnapshotV1, Agent, WorkflowHierarchyReadResult } from '@foreman-code/contracts'
 import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import {
   useGraphDraftStore, SignalEdgeShape, RESPONSIVE_FIT_OPTIONS, RESPONSIVE_MIN_ZOOM, useResponsiveGraphViewport,
@@ -94,8 +94,8 @@ function useDraftBoardAgents(workspaceId: string, workflowId: string) {
 }
 
 /** A private React Flow store, even when mounted beneath an editor's provider. */
-export function RunBoardCanvas({ snapshot, activitySnapshot, executionQueue, onInspectNode, hierarchy, definition, visible = true }: {
-  snapshot: AvailableRunBoardSnapshot; activitySnapshot?: ActivitySnapshotV1 | undefined; executionQueue?: readonly ExecutionQueueEntry[] | undefined
+export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hierarchy, definition, visible = true }: {
+  snapshot: AvailableRunBoardSnapshot; activitySnapshot?: ActivitySnapshotV1 | undefined
   onInspectNode?: (nodeId: string) => void
   hierarchy?: WorkflowHierarchyReadResult; definition?: WorkflowDefinitionCurrent; visible?: boolean
 }) {
@@ -175,7 +175,7 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, executionQueue, onI
   const cis = useMemo(() => new Map([...runBoardCi(snapshot, activitySnapshot), ...ciNodeActivities(ciJobs ?? [])]),
     [snapshot, activitySnapshot, ciJobs])
   // Live node words belong to the mounted Board; a standalone saved Run Board reads only its saved Run.
-  const live = useRunLiveNodes(scope, names, cis, visible && !!board, snapshot.edges, executionQueue)
+  const live = useRunLiveNodes(scope, names, cis, visible && !!board, snapshot.edges)
   // A light per Agent while its CI request or result travels; no lasting line to the server.
   const transfers = useCiTransfers(ciJobs, useReducedMotion(), JSON.stringify(scope))
   const ciEdges = useMemo<(SavedBoardEdge | CiTransferFlowEdge)[]>(() => ci.node && transfers.size ? [...edges,

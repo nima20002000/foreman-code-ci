@@ -96,7 +96,6 @@ function fixture(queued = false, size = 1, form: 'single' | 'repeat' = 'single')
       expires_at: new Date(principal.expiresAt), revoked_at: revoked ? new Date() : null, delegated_from: null }]),
     reply(executions.map(item => ({ id: item.id }))),
     ...recordedBatches(),
-    reply([], [run.id]),
     reply(executions.map(storedRow).reverse()),
     reply(receiptRows()),
     reply([]),

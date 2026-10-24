@@ -14,7 +14,6 @@ import { decodeRunHistoryCursor, encodeRunHistoryCursor } from './historyCursor.
 import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { readRunActivitySnapshot } from './activitySnapshot.js'
 import { readRunIntervalChecks } from './intervalChecks.js'
-import { readBrowserPreparationQueue } from '../collaboration/index.js'
 import { readRunExecutionQueue } from './executionQueue.js'
 import { runRequestedCi } from '../ci/index.js'
 
@@ -152,8 +151,7 @@ export class RunHistoryService {
       const version = WorkflowVersionCurrentSchema.parse(versionRow?.record)
       const intervalChecks = version.definition.nodes.some(node => node.kind !== 'job' && node.interval)
         ? await readRunIntervalChecks(client, input.runId, row.execution_state, version) : undefined
-      const executionQueue = row.execution_state === 'completed' ? []
-        : [...await readBrowserPreparationQueue(client, input.runId), ...readRunExecutionQueue(input.runId)]
+      const executionQueue = row.execution_state === 'completed' ? [] : readRunExecutionQueue(input.runId)
       if (!requestedCi) return RunBoardSnapshotGetResultSchema.parse({ snapshot, executionQueue,
         ...(intervalChecks ? { intervalChecks } : {}) })
       const activitySnapshot = await readRunActivitySnapshot(client,

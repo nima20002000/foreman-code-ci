@@ -45,6 +45,6 @@ export function useBoardRunSnapshot(run: BoardRun | undefined, visible: boolean)
     workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId, runId: snapshot.runId,
     workflowVersionId: snapshot.workflowVersionId, executionSemanticsVersion: 3,
   } : undefined, [snapshot])
-  return { ...read, snapshot, activity, scope, executionQueue: snapshot ? result?.executionQueue : undefined }
+  return { ...read, snapshot, activity, scope }
 }
 

@@ -1,23 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { setTimeout as delay } from 'node:timers/promises'
 import { BrowserProfileSchema, BrowserProfileReplicaSchema, BrowserLoginEvidenceSchema } from '@foreman-code/contracts/browser-profiles'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { DomainError } from '../errors.js'
 import { browserInputHash, browserOrigin, browserPageCursor, browserPageLimit, readBrowserCursor } from './identity.js'
 import type { BrowserProfile, BrowserProfileReplica, BrowserProfileSyncJob, BrowserProfileRepository, BrowserProfileTransaction,
-  BrowserProfileAuthority, BrowserProfileHost, BrowserReplicaFacts, BrowserCommandOptions, BrowserCommandReceipt,
+  BrowserProfileAuthority, BrowserProfileHost, BrowserCommandOptions, BrowserCommandReceipt,
   BrowserPage, ProfileHostIntent } from './types.js'
 
 export function newBrowserReplica(profileId: string, computerId: string): BrowserProfileReplica {
   return { profileId, computerId, desiredSnapshot: null, receivedSnapshot: null, appliedSnapshot: null,
     transfer: 'missing', loginEvidence: [], localOverride: false, lastSeenAt: null, reason: null }
-}
-
-function replicaReady(profile: BrowserProfile, computerId: string, facts: BrowserReplicaFacts,
-  replica: BrowserProfileReplica | undefined): boolean {
-  return facts.present && facts.currentIntent?.operation !== 'remove' && (computerId === profile.sourceComputerId
-    || profile.publishedRevision === 0 || replica?.localOverride === true
-    || replica?.appliedSnapshot?.publishedRevision === profile.publishedRevision)
 }
 
 export async function requireBrowserProfile(tx: BrowserProfileTransaction, id: string): Promise<BrowserProfile> {
@@ -182,94 +174,47 @@ export class BrowserProfileService {
     const target = computers.find(value => value.id === input.computerId)
     if (!target) throw new DomainError('NOT_FOUND', 'The selected computer is unavailable.', 404)
     const installationId = await this.host.installation(input.computerId)
-    const sourceInstallation = before.publishedRevision > 0 ? await this.host.installation(before.sourceComputerId) : undefined
+    const sourceInstallation = await this.host.installation(before.sourceComputerId)
     return this.command(principal, 'browser_profile_create', { ...input, intent: 'add_existing' }, [input.computerId],
       ['catalog', `profile:${input.profileId}`], async tx => {
         const profile = await requireBrowserProfile(tx, input.profileId)
         checkBrowserRevision(profile, input.expectedRevision)
-        if (profile.sourceComputerId !== before.sourceComputerId || profile.publishedRevision !== before.publishedRevision) throw new DomainError('BROWSER_SOURCE_CHANGED', 'The profile source changed during Add admission.', 409)
+        if (profile.sourceComputerId !== before.sourceComputerId) throw new DomainError('BROWSER_SOURCE_CHANGED', 'The profile source changed during Add admission.', 409)
         if (profile.distribution === 'local_only' && input.computerId !== profile.sourceComputerId) {
           throw new DomainError('PROFILE_LOCAL_ONLY', 'This profile is local only. Change its distribution explicitly before adding another computer.', 409)
         }
-        return this.addReplicaLocked(tx, profile, input.computerId, installationId, sourceInstallation, target.online, input.commandId)
+        const facts = await tx.replicaFacts(input.profileId, input.computerId)
+        const previous = await tx.replica(input.profileId, input.computerId)
+        if (facts.present && previous && facts.currentIntent?.operation !== 'remove') return { state: 'ready' as const, replica: previous }
+        const revision = profile.revision + 1
+        const replica = previous ?? newBrowserReplica(input.profileId, input.computerId)
+        if (input.computerId === profile.sourceComputerId) {
+          await tx.putReplica({ ...replica, reason: 'Local source creation is queued.' })
+          await tx.putIntent({ id: this.id(), profileId: profile.id, computerId: input.computerId,
+            operation: 'create', revision, installationId, state: 'queued', reason: null })
+          await tx.putProfile({ profile: { ...profile, revision }, deleted: false })
+          return { state: 'queued' as const, replica }
+        }
+        if (replica.localOverride) throw new DomainError('PROFILE_LOCAL_OVERRIDE', 'This computer keeps its own sign-in. Clear that policy explicitly before adding source state.', 409)
+        const current = await tx.publishedManifest(profile.id)
+        const manifest = current?.sourceComputerId === profile.sourceComputerId ? current : null
+        const jobId = this.id(), timestamp = this.now(), state = target.online ? 'queued' as const : 'offline' as const
+        const job: BrowserProfileSyncJob = { id: jobId, commandId: input.commandId ?? jobId, state: 'queued', revision: 1,
+          createdAt: timestamp, updatedAt: timestamp,
+          profiles: [{ profileId: profile.id, sourceComputerId: profile.sourceComputerId,
+            state: manifest ? 'published' : 'queued', manifest, reason: manifest ? null : 'Waiting for first source snapshot.' }],
+          targets: [{ profileId: profile.id, computerId: input.computerId, snapshot: manifest?.snapshot ?? null,
+            state, exclusion: null, reason: target.online ? manifest ? null : 'Waiting for first source snapshot.' : 'Computer offline.', updatedAt: timestamp }] }
+        await tx.putJob(job)
+        await tx.putJobInstallation(jobId, input.computerId, installationId)
+        await tx.putJobInstallation(jobId, profile.sourceComputerId, sourceInstallation)
+        await tx.putIntent({ id: `${jobId}:target:${profile.id}:${input.computerId}`, profileId: profile.id,
+          computerId: input.computerId, operation: 'sync', revision, installationId, state: 'queued', reason: manifest ? null : 'Waiting for first source snapshot.' })
+        const queued = { ...replica, desiredSnapshot: manifest?.snapshot ?? null, transfer: state,
+          reason: manifest ? target.online ? null : 'Computer offline.' : 'Waiting for first source snapshot.' }
+        await tx.putReplica(queued); await tx.putProfile({ profile: { ...profile, revision }, deleted: false })
+        return { state: manifest ? 'queued' as const : 'first_snapshot_pending' as const, replica: queued, jobId }
       })
-  }
-
-  private async addReplicaLocked(tx: BrowserProfileTransaction, profile: BrowserProfile, computerId: string,
-    installationId: string, sourceInstallation: string | undefined, online: boolean, commandId?: string) {
-    const facts = await tx.replicaFacts(profile.id, computerId)
-    const previous = await tx.replica(profile.id, computerId)
-    if (previous && replicaReady(profile, computerId, facts, previous)) return { state: 'ready' as const, replica: previous }
-    const revision = profile.revision + 1
-    const replica = previous ?? newBrowserReplica(profile.id, computerId)
-    if (computerId !== profile.sourceComputerId && replica.localOverride) throw new DomainError('PROFILE_LOCAL_OVERRIDE',
-      'This computer keeps its own sign-in. Clear that policy explicitly before adding source state.', 409)
-    if (computerId === profile.sourceComputerId || profile.publishedRevision === 0) {
-      await tx.putReplica({ ...replica, reason: 'Empty browser profile creation is queued.' })
-      await tx.putIntent({ id: this.id(), profileId: profile.id, computerId,
-        operation: 'create', revision, installationId, state: 'queued', reason: null })
-      await tx.putProfile({ profile: { ...profile, revision }, deleted: false })
-      return { state: 'queued' as const, replica }
-    }
-    const current = await tx.publishedManifest(profile.id)
-    const manifest = current?.sourceComputerId === profile.sourceComputerId ? current : null
-    const jobId = this.id(), timestamp = this.now(), state = online ? 'queued' as const : 'offline' as const
-    const job: BrowserProfileSyncJob = { id: jobId, commandId: commandId ?? jobId, state: 'queued', revision: 1,
-      createdAt: timestamp, updatedAt: timestamp,
-      profiles: [{ profileId: profile.id, sourceComputerId: profile.sourceComputerId,
-        state: manifest ? 'published' : 'queued', manifest, reason: manifest ? null : 'Waiting for first source snapshot.' }],
-      targets: [{ profileId: profile.id, computerId, snapshot: manifest?.snapshot ?? null,
-        state, exclusion: null, reason: online ? manifest ? null : 'Waiting for first source snapshot.' : 'Computer offline.', updatedAt: timestamp }] }
-    await tx.putJob(job)
-    await tx.putJobInstallation(jobId, computerId, installationId)
-    await tx.putJobInstallation(jobId, profile.sourceComputerId, sourceInstallation!)
-    await tx.putIntent({ id: `${jobId}:target:${profile.id}:${computerId}`, profileId: profile.id,
-      computerId, operation: 'sync', revision, installationId, state: 'queued', reason: manifest ? null : 'Waiting for first source snapshot.' })
-    const queued = { ...replica, desiredSnapshot: manifest?.snapshot ?? null, transfer: state,
-      reason: manifest ? online ? null : 'Computer offline.' : 'Waiting for first source snapshot.' }
-    await tx.putReplica(queued); await tx.putProfile({ profile: { ...profile, revision }, deleted: false })
-    return { state: manifest ? 'queued' as const : 'first_snapshot_pending' as const, replica: queued, jobId }
-  }
-
-  /** Internal preparation uses the same durable Add intents after the caller checks the saved Agent assignment. */
-  async prepareReplica(profileId: string, computerId: string, options: {
-    timeoutMs?: number; assertCurrent?(): Promise<void>
-  } = {}): Promise<void> {
-    const timeoutMs = options.timeoutMs ?? 120_000, deadline = Date.now() + timeoutMs
-    const before = await this.repository.read(tx => requireBrowserProfile(tx, profileId))
-    const installationId = await this.host.installation(computerId)
-    const sourceInstallation = before.publishedRevision > 0 ? await this.host.installation(before.sourceComputerId) : undefined
-    await options.assertCurrent?.()
-    await this.repository.transaction(['catalog', `profile:${profileId}`], async tx => {
-      const profile = await requireBrowserProfile(tx, profileId)
-      if (profile.sourceComputerId !== before.sourceComputerId || profile.publishedRevision !== before.publishedRevision) {
-        throw new DomainError('BROWSER_SOURCE_CHANGED', 'The browser profile changed during preparation. Start again.', 409)
-      }
-      const facts = await tx.replicaFacts(profileId, computerId)
-      if (replicaReady(profile, computerId, facts, await tx.replica(profileId, computerId))) return
-      if (facts.currentIntent && ['queued', 'running'].includes(facts.currentIntent.state)
-        && facts.currentIntent.operation !== 'remove') return
-      if (profile.distribution === 'local_only' && computerId !== profile.sourceComputerId) {
-        throw new DomainError('PROFILE_LOCAL_ONLY', 'The selected browser profile is local to another computer.', 409)
-      }
-      await this.addReplicaLocked(tx, profile, computerId, installationId, sourceInstallation, true)
-    })
-    for (const listener of this.workListeners) listener()
-    for (;;) {
-      await options.assertCurrent?.()
-      const { profile, facts, replica } = await this.repository.read(async tx => ({
-        profile: await requireBrowserProfile(tx, profileId), facts: await tx.replicaFacts(profileId, computerId),
-        replica: await tx.replica(profileId, computerId),
-      }))
-      if (replicaReady(profile, computerId, facts, replica)) return
-      const reason = facts.currentIntent?.reason ?? replica?.reason ?? 'The browser profile transfer has not finished.'
-      if (facts.currentIntent?.state === 'failed' || Date.now() >= deadline) {
-        throw new DomainError('BROWSER_PROFILE_PREPARATION_FAILED',
-          `${reason}${facts.currentIntent?.state === 'failed' ? '' : ` Timed out after ${timeoutMs / 1000} seconds.`}`, 409,
-          { retryable: false })
-      }
-      await delay(Math.min(250, Math.max(1, deadline - Date.now())))
-    }
   }
 
   async checkOrigin(principal: ManagementPrincipal, input: BrowserCommandOptions & {

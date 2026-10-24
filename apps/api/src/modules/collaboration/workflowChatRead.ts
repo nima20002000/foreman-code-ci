@@ -1,4 +1,3 @@
-import { readBrowserPreparationQueue } from './browserPreparationQueue.js'
 import { z } from 'zod'
 import type pg from 'pg'
 import { ChatDeliveryReceiptSchema, CoordinatorConsultationBindingSchema, EngineChatReadbackSchema,
@@ -88,8 +87,6 @@ export async function readWorkflowExecutionChat(pool: pg.Pool, owner: WorkflowCh
   const stored = await withWorkflowChatRead(pool, principal, target, 'agent_chat:read', async sql => ({
     identity: await readWorkflowChatIdentity(sql, target), page: await receiptPage(sql, target, cursor, request.limit),
     bindings: await currentBindings(sql, target),
-    queueReason: target.kind === 'workflow_execution' ? (await readBrowserPreparationQueue(sql, target.execution.runId))
-      .find(entry => entry.executionId === target.execution.executionId)?.reason : undefined,
   }))
   const native = cursor.nativeDone ? { messages: [], nextCursor: null, hasMore: false, revision: 0 }
     : await owner.readNative(target, { ...(cursor.native ? { cursor: cursor.native } : {}), limit: request.limit, bindings: stored.bindings })
@@ -98,7 +95,6 @@ export async function readWorkflowExecutionChat(pool: pg.Pool, owner: WorkflowCh
   const next: PageCursor = { target: cursor.target, native: native.nextCursor, nativeDone: !native.hasMore,
     beforeReceipt: stored.page.before, receiptsDone: !stored.page.hasMore }
   const result = EngineChatReadbackSchema.parse({ target, state: stored.identity.state,
-    ...(stored.queueReason ? { queueReason: stored.queueReason } : {}),
     capabilities: stored.identity.nextTurn ? { steer: 'unavailable', queue: true, interruptAndSend: false }
       : stored.identity.state === 'idle' || stored.identity.state === 'settling'
         ? { steer: 'unavailable', queue: false, interruptAndSend: false } : observation.capabilities,

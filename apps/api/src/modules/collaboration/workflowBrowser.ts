@@ -66,19 +66,11 @@ export class WorkflowBrowserOwnership {
       return exactInput(row.browser_input)
     })
     if (!input) return
-    let result: ReturnType<typeof BrowserPrepareResultSchema.parse>
-    try {
-      result = BrowserPrepareResultSchema.parse(await this.browser.prepare(input))
-    } catch (error) {
-      if (error instanceof DomainError && error.code === 'BROWSER_PROFILE_PREPARATION_FAILED') await this.retainResult(owner, execution, input, {
-        kind: 'unavailable', reason: 'profile_missing', retryable: false, message: error.message.slice(0, 2000),
-      })
-      throw error
-    }
+    const result = BrowserPrepareResultSchema.parse(await this.browser.prepare(input))
     owner.assertOwned()
     await this.retainResult(owner, execution, input, result)
     if (result.kind === 'unavailable') throw new DomainError('BROWSER_PREPARATION_UNAVAILABLE',
-      result.message ?? `The Agent browser is unavailable: ${result.reason.replaceAll('_', ' ')}.`, result.retryable ? 503 : 409,
+      `The Agent browser is unavailable: ${result.reason}.`, result.retryable ? 503 : 409,
       { reason: result.reason, retryable: result.retryable })
     if (result.session.state !== 'ready' || result.control.state !== 'agent') throw new DomainError(
       'BROWSER_CONTROL_PENDING', 'The owning browser is waiting for host-confirmed Agent control.', 503,

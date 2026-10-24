@@ -9,8 +9,8 @@ import { useBrowserSidebar } from './useBrowserSidebar'
 import { KanbanButton } from './kanban/KanbanButton'
 import { ApprovalInboxButton } from '../approvals'
 
-export function BoardNavigationControls({ workspaceId, workflowId, selection, runsLabel }: {
-  workspaceId: string; workflowId: string; selection: ReturnType<typeof useSelectedRun>; runsLabel?: string
+export function BoardNavigationControls({ workspaceId, workflowId, selection, runsLabel, stopping }: {
+  workspaceId: string; workflowId: string; selection: ReturnType<typeof useSelectedRun>; runsLabel?: string; stopping?: boolean
 }) {
   const board = useBoardSelection()
   const authoring = useBoardAuthoring()
@@ -20,10 +20,10 @@ export function BoardNavigationControls({ workspaceId, workflowId, selection, ru
   return <Toolbar label="Board controls">
     {/* A live Run painted on this Board needs no page to show it: Running is only a status here. */}
     {board?.liveRunId && selection.identity.runId === null ? board.liveRunId === board.paintedRunId
-      ? <span role="status" className="board-live-run"><span className="board-live-run-dot" aria-hidden="true" />Running</span>
+      ? <span role="status" className="board-live-run"><span className="board-live-run-dot" aria-hidden="true" />{stopping ? 'Stopping' : 'Running'}</span>
       : <Button size="sm" variant="ghost" className="board-live-run"
         title="A Run of an earlier saved version is running. Show it." onClick={() => void selection.selectRun(board.liveRunId!)}>
-        <span className="board-live-run-dot" aria-hidden="true" />Running</Button> : null}
+        <span className="board-live-run-dot" aria-hidden="true" />{stopping ? 'Stopping' : 'Running'}</Button> : null}
     <RunsSelector selection={selection} triggerLabel={runsLabel} />
     <ScheduleClockButton workspaceId={workspaceId} workflowId={workflowId} isSaved={Boolean(saved.data?.draft.baseWorkflowVersionId)}
       onSelectRun={runId => void selection.selectRun(runId)} onReviewWorkflow={authoring?.openWorkflowSettings} />

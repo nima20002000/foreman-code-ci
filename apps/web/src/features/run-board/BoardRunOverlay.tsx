@@ -43,7 +43,7 @@ export function BoardRunOverlay({ run, read, visible, onPainted, children }: {
   [snapshot, scope, names, jobs, ciDenied, ciList.data?.truncated, ciList.isError, ciList.isPending, ciList.error, refreshCi])
   const cis = useMemo(() => snapshot ? new Map([...activityCis, ...ciNodeActivities(jobs ?? [])]) : noCis,
     [snapshot, activityCis, jobs])
-  const live = useRunLiveNodes(scope, names, cis, visible && !!snapshot, snapshot?.edges ?? noEdges, read.executionQueue)
+  const live = useRunLiveNodes(scope, names, cis, visible && !!snapshot, snapshot?.edges ?? noEdges)
   return <RunDisplayedSnapshot.Provider value={snapshot}><RunLiveNodes.Provider value={snapshot ? live.nodes : undefined}>
     <RunLivePulses.Provider value={snapshot ? live.pulses : noPulses}><RunLiveCi.Provider value={ci}>{children}</RunLiveCi.Provider></RunLivePulses.Provider>
   </RunLiveNodes.Provider></RunDisplayedSnapshot.Provider>
