@@ -39,7 +39,6 @@ import '../chatAttachments.css'
 /** Mounted ONLY through the existing Board AgentChatPanel. Server state stays in Query. */
 type AgentConversationProps = {
   context: AgentChatContext; name: string; role?: string; activity?: string; runLabel?: string
-  retainedInputs?: ReactNode
   selection?: SelectedRunChatExecution
   onClose?: () => void; onNewConversation?: () => void
 }
@@ -47,7 +46,7 @@ export function AgentConversation(props: AgentConversationProps) {
   return <ChatAttachmentBoundary><AgentConversationContent key={`${identityEpoch()}:${agentChatContextKey(props.context)}:${props.selection?.executionId ?? ''}`} {...props} /></ChatAttachmentBoundary>
 }
 
-function AgentConversationContent({ context, name, activity, runLabel, onClose, onNewConversation, selection, retainedInputs }: AgentConversationProps) {
+function AgentConversationContent({ context, name, activity, runLabel, onClose, onNewConversation, selection }: AgentConversationProps) {
   const chat = useAgentChat(context, { selection }), state = chat.state
   const conversation = state?.conversation
   const retired = conversation?.harness === 'opencode' || state?.capabilities.harness === 'opencode'
@@ -139,8 +138,6 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
     attention = 'Original session unavailable'
     if (!conversation?.providerAccountBinding && onNewConversation) attentionAction = <Button size="sm" variant="ghost"
       onClick={onNewConversation}>{context.runId ? 'Start separate chat without this Run' : 'Choose another Agent for a new conversation'}</Button>
-    else attentionAction = <Button size="sm" variant="ghost" disabled={newPending || !!chat.blocked('agent_chat:write', true)}
-      onClick={() => { void submit('next_turn', '/new') }}>Start separate conversation</Button>
   }
   const missingFolder = state?.availability.missingFolder
   if (missingFolder) {
@@ -179,7 +176,7 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
       resendReason={nextReason} controlResendReason={controlReason}
       onRefresh={chat.refresh} refreshing={chat.query.isFetching} onCancel={chat.cancelQueued} onRespond={chat.respond} onDenied={chat.revoke} onReceipt={chat.confirmDelivery}
       onSendAgain={(content, pins, mode) => setSendAgain({ content, attachments: pins, draftKey: chat.draftKey,
-        sessionMode: parseSessionCommand(content).kind === 'plan-task' ? 'plan' : mode })}>{retainedInputs}</AgentChatTranscript>
+        sessionMode: parseSessionCommand(content).kind === 'plan-task' ? 'plan' : mode })} />
       : <ConversationViewport revision="loading">{() => <RetainedAgentCommands commands={chat.commands} onDenied={chat.revoke} onReceipt={chat.confirmDelivery}
         draftKey={chat.draftKey} refresh={chat.refresh} pending={chat.query.isPending} />}</ConversationViewport>}
     {state ? <CompactionActivity controls={sessionControls} latest /> : null}

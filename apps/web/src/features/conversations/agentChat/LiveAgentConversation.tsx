@@ -152,8 +152,6 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
     attention = 'Original session unavailable'
     if (!conversation?.providerAccountBinding && onNewConversation) attentionAction = <Button size="sm" variant="ghost"
       onClick={onNewConversation}>{context.runId ? 'Start separate chat without this Run' : 'Choose another Agent for a new conversation'}</Button>
-    else attentionAction = <Button size="sm" variant="ghost" disabled={newPending || !!chat.blocked('agent_chat:write', true)}
-      onClick={() => { void submit('next_turn', '/new') }}>Start separate conversation</Button>
   }
   const missingFolder = state?.availability.missingFolder
   if (missingFolder) {

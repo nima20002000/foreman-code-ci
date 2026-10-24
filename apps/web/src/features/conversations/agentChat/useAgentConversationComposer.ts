@@ -81,7 +81,7 @@ export function useAgentConversationComposer({ chat, state, sessionControls, att
       }
       if (command.kind === 'new') {
         if (chat.pending || startNew.isPending || newInFlight.current) return false
-        const denied = chat.blocked('agent_chat:write', true)
+        const denied = chat.blocked('agent_chat:write')
         if (denied) throw new Error(denied)
         const expectedConversationId = state?.conversation?.id ?? null
         const retry = startNew.isError && startNew.variables?.expectedConversationId === expectedConversationId
@@ -89,7 +89,7 @@ export function useAgentConversationComposer({ chat, state, sessionControls, att
         newInFlight.current = true
         try {
           await startNew.mutateAsync(retry ?? { requestId: crypto.randomUUID(), expectedConversationId,
-            draftContent: content })
+            draftContent: useConversationDraftStore.getState().drafts[chat.draftKey] ?? '' })
         } finally { newInFlight.current = false }
         return true
       }
