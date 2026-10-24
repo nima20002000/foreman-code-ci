@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
-import { withAdvancedDefaults, type HarnessConfiguration } from '@foreman-code/contracts'
+import { withAdvancedDefaults, type RecordedHarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { withTransaction } from '../../infrastructure/transaction.js'
@@ -10,9 +10,9 @@ import { DomainError } from '../errors.js'
 import { lockActiveWorkspace } from './admission.js'
 
 interface ConfigurationInput {
-  configuration: HarnessConfiguration
+  configuration: RecordedHarnessConfiguration
   selection: HarnessProfileSelection | undefined
-  previousConfiguration?: HarnessConfiguration
+  previousConfiguration?: RecordedHarnessConfiguration
 }
 
 /** Native profile setup may run nested commands and must precede database ownership. */

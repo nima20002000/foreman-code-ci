@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import * as fs from 'node:fs'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, it, vi } from 'vitest'
@@ -130,7 +130,6 @@ it.each(['rename', 'directory-sync'] as const)('removes an undispatched reservat
 
 it('closes sequential native Codex qualification processes under the admitted owner before returning a protocol refusal', async () => {
   const f = await fixture()
-  await writeFile(join(f.directory, 'schema.json'), JSON.stringify({ definitions: {} }))
   const registry = new NativeProcessRegistry(join(f.directory, 'recovery'))
   const owned = factoriesFor(registry, f.binary)
   try {

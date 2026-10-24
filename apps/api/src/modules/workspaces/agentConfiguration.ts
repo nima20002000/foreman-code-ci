@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { randomUUID } from 'node:crypto'
 
 import {
@@ -6,19 +7,19 @@ import {
   projectHarnessEffort,
   type Agent,
   type AgentConfigurationVersion,
-  graphqlToolsOutsideRole,
-  newAgentGraphqlTools,
+  foremanToolsOutsideRole,
+  newAgentForemanTools,
 } from '@foreman-code/contracts'
 import type pg from 'pg'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
-import type { HarnessConfiguration } from '@foreman-code/contracts'
+import type { RecordedHarnessConfiguration } from '@foreman-code/contracts'
 
 import { DomainError } from '../errors.js'
 import { assertClaudeFullAccess } from '../harnesses/index.js'
 import { resolveAssignedSkills } from '../skills/catalog.js'
 import { composeInstructionText, instructionsTooLarge } from '../skills/instructions.js'
 import { sha256Hex } from '../../shared/hash.js'
-import { retiredHarnessError } from '../harnesses/index.js'
+import { retiredHarnessError } from '../harnesses/retiredHarness.js'
 
 export function configurationInput(
   workspaceId: string,
@@ -37,15 +38,15 @@ export function configurationInput(
   const prompt = agent.prompt ?? current?.prompt ?? {}
   const assignedSkills = agent.assignedSkills ?? current?.assignedSkills ?? []
   const productRole = agent.productRole ?? current?.productRole
-  const graphqlTools = agent.graphqlTools ?? current?.graphqlTools
-    ?? (creation && productRole ? newAgentGraphqlTools(productRole) : undefined)
+  const foremanTools = agent[INSTALLATION_NAMES.fields.agentTools] ?? current?.[INSTALLATION_NAMES.fields.agentTools]
+    ?? (creation && productRole ? newAgentForemanTools(productRole) : undefined)
   const nativeTools = Object.hasOwn(agent, 'nativeTools') ? agent.nativeTools : current?.nativeTools
   const nativePolicy = nativeTools ? { nativeTools } : {}
   const harnessProfileSelection = Object.hasOwn(agent, 'harnessProfileSelection') ? agent.harnessProfileSelection : current?.harnessProfileSelection
   const profile = harnessProfileSelection ? { harnessProfileSelection } : {}
-  const outside = graphqlToolsOutsideRole(productRole ?? 'coder', graphqlTools ?? [])
+  const outside = foremanToolsOutsideRole(productRole ?? 'coder', foremanTools ?? [])
   if (outside.length) {
-    throw new DomainError('GRAPHQL_TOOL_NOT_ALLOWED_FOR_ROLE',
+    throw new DomainError(INSTALLATION_NAMES.protocol.toolRoleError,
       `The ${productRole === 'master' ? 'Master' : productRole === 'orchestrator' ? 'Orchestrator' : 'Worker'} role cannot use ${outside.join(', ')}.`, 400, { tools: outside })
   }
   if (harness === 'claude') {
@@ -53,7 +54,7 @@ export function configurationInput(
       : current?.harness.harness === 'claude' ? current.harness : undefined
     if (!configuration) throw new DomainError('AGENT_CONFIGURATION_REQUIRED', 'Claude requires an explicit accepted configuration.', 400)
     return { workspaceId, agentId: agent.id, productRole, prompt, assignedSkills, ...profile, ...nativePolicy,
-      ...(graphqlTools ? { graphqlTools } : {}), harness: configuration } as const
+      ...(foremanTools ? { [INSTALLATION_NAMES.fields.agentTools]: foremanTools } : {}), harness: configuration } as const
   }
   const suppliedHarness = agent.harnessConfiguration?.harness === 'codex'
     ? agent.harnessConfiguration
@@ -68,7 +69,7 @@ export function configurationInput(
     productRole,
     prompt,
     assignedSkills,
-    ...(graphqlTools ? { graphqlTools } : {}),
+    ...(foremanTools ? { [INSTALLATION_NAMES.fields.agentTools]: foremanTools } : {}),
     harness: {
       harness,
       model: agent.model ?? currentHarness?.model ?? 'gpt-5.6-luna',
@@ -107,7 +108,7 @@ export async function saveAgentConfiguration(
   workspaceId: string,
   input: Agent,
   mustExist = false,
-  validateProfileSelection?: (selection: HarnessProfileSelection, configuration: HarnessConfiguration, client: pg.PoolClient) => Promise<void>,
+  validateProfileSelection?: (selection: HarnessProfileSelection, configuration: RecordedHarnessConfiguration, client: pg.PoolClient) => Promise<void>,
 ): Promise<Agent> {
   const parsed = AgentSchema.parse(input)
   await lockAgentConfigurations(client, [parsed.id])
@@ -201,7 +202,7 @@ export async function saveAgentConfiguration(
     configurationVersionId: configuration.id,
     prompt: configuration.prompt,
     assignedSkills: configuration.assignedSkills,
-    graphqlTools: configuration.graphqlTools,
+    [INSTALLATION_NAMES.fields.agentTools]: configuration[INSTALLATION_NAMES.fields.agentTools],
     nativeTools: configuration.nativeTools,
     createdAt: previousAgent?.createdAt ?? parsed.createdAt ?? now,
     updatedAt: now,

@@ -56,6 +56,7 @@ function fixture(checkoutName = 'one') {
   copyFileSync(new URL('./heavy-job-slots.mjs', import.meta.url), join(first, 'scripts/heavy-job-slots.mjs'))
   mkdirSync(join(first, 'packages/contracts/src'), { recursive: true })
   copyFileSync(new URL('../packages/contracts/src/productEnvironment.mjs', import.meta.url), join(first, 'packages/contracts/src/productEnvironment.mjs'))
+  copyFileSync(new URL('../packages/contracts/src/installationNames.mjs', import.meta.url), join(first, 'packages/contracts/src/installationNames.mjs'))
   writeFileSync(join(first, 'package.json'), '{"type":"module"}')
   writeFileSync(join(first, 'source.txt'), 'first')
   writeFileSync(join(first, '.gitignore'), 'count\ndist/\n.logs/\n')
@@ -78,7 +79,7 @@ test('checkout paths with spaces, Unicode and percent characters retain queue ow
   try {
     for (const cwd of [f.first, f.second]) {
       const result = await run(cwd, ['--', process.execPath, '-e',
-        'console.log(JSON.stringify({cwd:process.cwd(),common:process.env.FOREMAN_CODE_HEAVY_JOB_COMMON}))'])
+        'console.log(JSON.stringify({cwd:process.cwd(),common:process.env.GRAPHQL_HEAVY_JOB_COMMON}))'])
       assert.equal(result.code, 0, result.output)
       const receipt = JSON.parse(result.output.split('\n').find(line => line.startsWith('{"cwd":')))
       assert.deepEqual(receipt, { cwd, common: f.common })
@@ -256,7 +257,7 @@ test('a dead running owner is reaped even with a live detached token-bearing wor
   const f = fixture()
   const token = randomUUID()
   const worker = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'],
-    { detached: true, stdio: 'ignore', env: { ...jobEnv(f.first), FOREMAN_CODE_HEAVY_JOB_TOKEN: token } })
+    { detached: true, stdio: 'ignore', env: { ...jobEnv(f.first), GRAPHQL_HEAVY_JOB_TOKEN: token } })
   const exited = new Promise(resolve => worker.once('exit', resolve))
   try {
     mockProc(f, `function readFileSync(path, ...args) { if (path === '/proc/99999998/environ') throw Object.assign(new Error('unrelated fixture denied'), { code: 'EACCES' }); return actualReadFileSync(path, ...args) }\nfunction readdirSync(path, ...args) { return path === '/proc' ? ['99999998', ${JSON.stringify(String(worker.pid))}] : actualReaddirSync(path, ...args) }`)

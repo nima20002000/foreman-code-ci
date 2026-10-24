@@ -1,3 +1,4 @@
+import { capabilityDescriptorsOf } from '../harnesses/index.js'
 import { randomBytes } from 'node:crypto'
 import type { AgentChatManagerFactory } from '../conversations/index.js'
 import type { NativeManagerResolver } from '../conversations/index.js'
@@ -83,7 +84,7 @@ export function prepareAgentChatInput(database: SqlQuery): NonNullable<AgentChat
       ...(request.expectedNativeTurnId ? { expectedNativeTurnId: request.expectedNativeTurnId } : {}),
       ...(row.native_session_id && row.provider_version ? { native: { harness: row.harness,
         nativeSessionId: row.native_session_id, providerVersion: row.provider_version } } : {}),
-      fileInputs: configuration.harness.harness === 'codex' })
+      fileInputs: capabilityDescriptorsOf(configuration.harness).files === 'turn_mcp' })
   }
 }
 
@@ -100,7 +101,7 @@ export function prepareOperatorChatInput(database: SqlQuery,
     const accountBinding = await readProviderAccountBinding(sql, 'operator-command', `${row.id}:session`)
       ?? legacyProviderAccountBinding(configuration.harness, profile)
     const retained = row.worker_conversation_binding
-    const appMcpAccess = request.attachments?.length && configuration.harness.harness === 'claude' ? 'none' : 'scoped'
+    const appMcpAccess = request.attachments?.length && capabilityDescriptorsOf(configuration.harness).files === 'session_bridge' ? 'none' : 'scoped'
     const binding = WorkerConversationBindingSchema.parse({ ...(retained ?? { owner,
       harness: configuration.harness.harness, profile,
       workingDirectory: workerOperatorDirectory(await runtimeRoot(profile), owner),
@@ -110,6 +111,6 @@ export function prepareOperatorChatInput(database: SqlQuery,
       expectedNativeTurnId: request.expectedNativeTurnId ?? row.active_native_turn_id ?? undefined,
       ...(row.native_session_id && row.provider_version ? { native: { harness: row.harness,
         nativeSessionId: row.native_session_id, providerVersion: row.provider_version } } : {}),
-      fileInputs: configuration.harness.harness === 'codex' && Boolean(request.attachments?.length) })
+      fileInputs: capabilityDescriptorsOf(configuration.harness).files === 'turn_mcp' && Boolean(request.attachments?.length) })
   }
 }

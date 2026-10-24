@@ -44,7 +44,7 @@ export function useChatRetentionSettings() {
 
   async function refresh() {
     journal.reload()
-    try { await readRetentionPreference(client, generation) } catch { /* ignore: Query exposes the error; edits stay put. */ }
+    try { await readRetentionPreference(client, generation) } catch { /* Query exposes the error; edits stay put. */ }
   }
 
   async function save(pinned?: RetentionCommand) {

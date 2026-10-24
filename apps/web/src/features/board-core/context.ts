@@ -47,8 +47,6 @@ export type WorkflowBoardHosts = {
   sidePanelHost?: HTMLDivElement | null
   /** Where a shown Run puts its caption (worktree, computers, Read only): inside the Board's floating toolbar. */
   runCaptionHost?: HTMLDivElement | null
-  /** A finished Run shows the retained draft's Run action in the same toolbar slot as Stop. */
-  runActionHost?: HTMLElement | null
 }
 
 /** The editable draft's actions and the collaboration slots its fields render. */
@@ -84,9 +82,9 @@ export function useWorkflowBoard(): WorkflowBoardValue | null {
 
 /** Provides each part of an already assembled Board value (tests and small embeddings). */
 export function WorkflowBoardProvider({ value, children }: { value: WorkflowBoardValue; children?: ReactNode }) {
-  const { sidePanelHost, runCaptionHost, runActionHost, registerAuthoringActions, saveChatAgent, draftNodeAgentId, draftNodeBrowser,
+  const { sidePanelHost, runCaptionHost, registerAuthoringActions, saveChatAgent, draftNodeAgentId, draftNodeBrowser,
     moveDraftNodes, executionChatMounted, collaborationFields, ...selection } = value
-  const hosts = useMemo(() => ({ sidePanelHost, runCaptionHost, runActionHost }), [sidePanelHost, runCaptionHost, runActionHost])
+  const hosts = useMemo(() => ({ sidePanelHost, runCaptionHost }), [sidePanelHost, runCaptionHost])
   const authoring = useMemo(() => ({ registerAuthoringActions, saveChatAgent, draftNodeAgentId, draftNodeBrowser,
     moveDraftNodes, executionChatMounted, collaborationFields }), [registerAuthoringActions, saveChatAgent,
     draftNodeAgentId, draftNodeBrowser, moveDraftNodes, executionChatMounted, collaborationFields])

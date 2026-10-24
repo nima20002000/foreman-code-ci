@@ -5,12 +5,11 @@ import { http, HttpResponse, type RequestHandler } from 'msw'
 import { agentChatFixtures, SendAgentChatMessageRequestSchema, type AgentChatContext, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import type { ChatDeliveryReceipt, DeliveryTarget } from '@foreman-code/contracts'
 import { server } from '../../../mocks/server'
-import { useConversationDraftStore } from '../conversationDraftStore'
+import { useConversationDraftStore, agentChatContextKey } from '../../chat-core'
 import { agentChatFixtureFor, createAgentChatMock } from '../../../shared/mocks/agentChatHandlers'
 import { AgentChatTestSource, installChatSource } from './testSupport'
 import { AgentConversation } from './AgentConversation'
 import { LiveAgentConversation } from './LiveAgentConversation'
-import { agentChatContextKey } from './model'
 
 const clients: QueryClient[] = []
 const releases: Array<() => void> = []

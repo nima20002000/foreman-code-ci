@@ -1,3 +1,4 @@
+import { capabilityDescriptorsOf, harnessCapabilityDescriptors } from '../harnesses/index.js'
 import { nativeChatPrompt, prepareWorkerChatFrame, workerInputProof, type AcceptedChatInput, type PreparedChatInput } from './nativeChatInput.js'
 import { sessionStartConfiguration, sessionStartDirectory } from '../harnesses/sessionStart.js'
 import { definedProperties } from '../definedProperties.js'
@@ -24,7 +25,7 @@ import { readJsonContinuation } from '../runs/remote/jsonContinuation.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput,
   NativeInitialTurnInput, NativeCompactInput, NativeSteerInput, NativeResponseIdentity } from '../harnesses/port.js'
 import { normalizeResponseAvailability, type NativeResponseAvailabilityQuery } from '../harnesses/responseAvailability.js'
-import type { NativeMcpInspector } from '../harnesses/mcpDetection.js'
+import type { NativeMcpInspector } from '../harnesses/index.js'
 import { MainWorkerConversationBridge, type WorkerConversationCallbacks, type WorkerConversationChannel } from './workerBridge.js'
 import { workerExecutionConfiguration } from './workerExecutionConfiguration.js'
 import type { OperatorConfigurationVersion } from '@foreman-code/contracts'
@@ -64,6 +65,7 @@ export type WorkerChatInput =
 /** Main's existing native port targets one conversation on its selected paired worker. */
 export class WorkerConversationManager implements NativeHarnessSessionManager {
   readonly harness
+  get harnessCapabilities() { return harnessCapabilityDescriptors(this.harness) }
   private session: NativeSessionReference | undefined
   private observedSession: NativeSessionReference | undefined
   private receipt: z.infer<typeof WorkerConversationReceiptSchema> | undefined
@@ -452,7 +454,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   } }
 
   async deliverClaudeCredential(token: string, signal: AbortSignal) {
-    if (this.harness !== 'claude' || this.options.binding.owner.kind !== 'operator'
+    if (capabilityDescriptorsOf(this).applicationMcp !== 'startup_config' || this.options.binding.owner.kind !== 'operator'
       || this.options.binding.appMcpAccess !== 'scoped') conflict('This manager has no scoped Claude Operator credential.')
     return this.deliverScopedCredential({ kind: 'operator-chat-mcp', token }, signal)
   }
@@ -573,7 +575,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     this.assertSession(session)
     const fields = this.startFields(start)
     if (!fields.applicationAccess) conflict('A fresh scoped application credential is required.')
-    if (this.harness === 'claude') {
+    if (capabilityDescriptorsOf(this).applicationMcp === 'startup_config') {
       await this.deliverScopedCredential(fields.applicationAccess, signal ?? new AbortController().signal)
     } else {
       await this.open(start, 'attach', session, signal)
@@ -630,8 +632,8 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       return history
     }
     const accepted = this.receipt?.turns.find(turn => turn.correlationId === correlationId)
-    const submission = this.harness === 'claude' ? accepted?.nativeSubmission : undefined
-    const files = this.harness === 'codex' && this.options.files
+    const submission = capabilityDescriptorsOf(this).inputIdentity === 'message' ? accepted?.nativeSubmission : undefined
+    const files = capabilityDescriptorsOf(this).files === 'turn_mcp' && this.options.files
     const recoveredTurnId = files
       && accepted?.status !== 'completed' ? accepted?.nativeTurnId : undefined
     const frame = this.frame({ method: 'conversation.reconcile', session, correlationId,
@@ -653,7 +655,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     }
   }
   private async recoverPendingCallbacks(session: NativeSessionReference, signal?: AbortSignal) {
-    if (this.harness !== 'claude') return
+    if (capabilityDescriptorsOf(this).inputIdentity !== 'message') return
     const turns = this.receipt?.turns.filter(turn => turn.status !== 'completed' && turn.nativeSubmission) ?? []
     if (turns.length > 1) conflict('The active native message is ambiguous.')
     const turn = turns[0]

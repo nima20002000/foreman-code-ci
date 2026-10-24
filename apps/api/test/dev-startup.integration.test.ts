@@ -43,14 +43,14 @@ it('rejects reuse of a matching API that still trusts a different browser port',
     const browserOrigin = `http://127.0.0.1:${frontendAddress.port}`
     await new Promise<void>((resolve) => frontend.close(() => resolve()))
     const file = join(directory, 'api.env')
-    await writeFile(file, `DATABASE_URL=${connectionString}\nPORT=${address.port}\nHOST=127.0.0.1\nFOREMAN_CODE_BROWSER_ORIGIN=${browserOrigin}\nFOREMAN_CODE_WEB_PORT=${frontendAddress.port}\n`, { mode: 0o600 })
+    await writeFile(file, `DATABASE_URL=${connectionString}\nPORT=${address.port}\nHOST=127.0.0.1\nGRAPHQL_BROWSER_ORIGIN=${browserOrigin}\nGRAPHQL_WEB_PORT=${frontendAddress.port}\n`, { mode: 0o600 })
     const environment = resolveProductEnvironment(process.env)
-    for (const key of ['DATABASE_URL', 'PORT', 'HOST', 'FOREMAN_CODE_API_ENV_FILE', 'GRAPHQL_API_ENV_FILE',
-      'FOREMAN_CODE_BROWSER_ORIGIN', 'GRAPHQL_BROWSER_ORIGIN', 'FOREMAN_CODE_WEB_PORT', 'GRAPHQL_WEB_PORT']) {
+    for (const key of ['DATABASE_URL', 'PORT', 'HOST', 'GRAPHQL_API_ENV_FILE',
+      'GRAPHQL_BROWSER_ORIGIN', 'GRAPHQL_WEB_PORT']) {
       delete environment[key]
     }
     coordinator = spawn('corepack', ['pnpm', 'dev'], { cwd: root,
-      env: { ...environment, FOREMAN_CODE_API_ENV_FILE: file }, stdio: ['ignore', 'pipe', 'pipe'] })
+      env: { ...environment, GRAPHQL_API_ENV_FILE: file }, stdio: ['ignore', 'pipe', 'pipe'] })
     let output = ''
     coordinator.stdout?.on('data', (data: Buffer) => { output += data.toString() })
     coordinator.stderr?.on('data', (data: Buffer) => { output += data.toString() })
@@ -65,7 +65,7 @@ it('rejects reuse of a matching API that still trusts a different browser port',
     expect(observed).toContain(browserOrigin)
     expect(api.listening).toBe(true)
   } finally {
-    if (coordinator?.pid) { try { coordinator.kill('SIGTERM') } catch { /* Already exited. */ } }
+    if (coordinator?.pid) { try { coordinator.kill('SIGTERM') } catch { /* ignore: The coordinator may have already exited. */ } }
     await new Promise<void>((resolve) => api.close(() => resolve()))
     await database.close()
     await removeFixtureDirectory(directory)

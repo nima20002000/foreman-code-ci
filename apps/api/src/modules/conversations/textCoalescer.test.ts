@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ActivityTextOperation } from '@foreman-code/contracts/activity-text'
 import { createTextCoalescer } from './textCoalescer.js'
-import { completedNativeAssistantMessage } from './operatorText.js'
+import { completedNativeAssistantMessage } from '../harnesses/index.js'
 
 const operation = (sequence: number, text: string, overrides: Partial<ActivityTextOperation> = {}): ActivityTextOperation => ({
   identity: { scope: { kind: 'operator_chat', conversationId: 'chat:one' }, requestId: 'request-a', sessionId: 'native-session', turnId: 'turn-a', itemId: 'item-a', channel: 'assistant' },

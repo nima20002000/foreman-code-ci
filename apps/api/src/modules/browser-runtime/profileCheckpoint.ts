@@ -1,18 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { cp, mkdir, open, readFile, readdir, rename, rm, lstat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { cp, mkdir, open, readFile, readdir, rm, lstat } from 'node:fs/promises'
+import { join } from 'node:path'
 import { DomainError } from '../errors.js'
 import { browserProcessAlive, readBrowserProcessIdentity } from './processIdentity.js'
+import { writeDurableFile } from '../../shared/durableFile.js'
 
 interface CheckpointRow { directory: string; before: Record<string, unknown>; generation: number }
 interface ProfileCheckpoint { id: string; rows: CheckpointRow[]; state: 'preparing' | 'prepared' | 'restored' }
 
 async function save(path: string, value: unknown): Promise<void> {
-  const temporary = `${path}.${randomUUID()}.tmp`, handle = await open(temporary, 'wx', 0o600)
-  try { await handle.writeFile(JSON.stringify(value)); await handle.sync() } finally { await handle.close() }
-  await rename(temporary, path)
-  const parent = await open(dirname(path), 'r')
-  try { await parent.sync() } finally { await parent.close() }
+  await writeDurableFile(path, JSON.stringify(value), { createParent: false })
 }
 
 export async function syncBrowserProfileTree(path: string): Promise<void> {

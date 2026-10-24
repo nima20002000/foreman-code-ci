@@ -33,7 +33,7 @@ import { assertAccountUnused, ProviderAccountAuthenticationOperations } from './
 import { AcceptedProviderAccountBindings } from './acceptedBindings.js'
 import type { ResolvedProviderAccount, ProviderAccountResolver, ProviderAccountOperationNativePort, ProviderAccountCredentials } from './ports.js'
 import { legacyProviderAccountBinding, readProviderAccountBinding, type AccountBindingOwner } from './acceptedBindings.js'
-import type { HarnessConfiguration } from '@foreman-code/contracts'
+import type { RecordedHarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 import { sha256Hex } from '../../shared/hash.js'
 
@@ -77,7 +77,7 @@ export class ProviderAccountsService implements ProviderAccountResolver {
     this.routing = routing?.(this)
   }
 
-  async runtimeBinding(kind: AccountBindingOwner, id: string, configuration: HarnessConfiguration,
+  async runtimeBinding(kind: AccountBindingOwner, id: string, configuration: RecordedHarnessConfiguration,
     selection?: HarnessProfileSelection): Promise<AcceptedProviderAccountBinding | undefined> {
     return await readProviderAccountBinding(this.pool, kind, id)
       ?? legacyProviderAccountBinding(configuration, selection)

@@ -4,9 +4,10 @@ import { ciRepositoryCapabilities } from './repository.js'
 import { onlyCiInfrastructure } from './priority.js'
 import type { CiTestTree } from './resultCache.js'
 
-/** Main's clone resolves the exact source for admission; dispatch publishes it before a build computer needs it. */
+/** Main's clone of the workspace repository: the requested commit, an Agent's files as a commit on its base, or the
+ * default branch head; whatever GitHub lacks is pushed so build computers can fetch it. */
 export class GitCiCommits implements CiCommits {
-  private readonly published = new Map<string, Promise<void>>()
+  private readonly published = new Map<string, Promise<string>>()
 
   constructor(private readonly context: CiContext, private readonly git: GitWorktreePorts = context.platform.systemGitWorktreePorts()) {}
 
@@ -112,27 +113,32 @@ export class GitCiCommits implements CiCommits {
   async resolve(repository: string, defaultBranch: string, commit: string | undefined,
     snapshot: { baseCommit: string; commit: string; bundle: Buffer | null } | null): Promise<string> {
     const knownCommit = commit ?? snapshot?.commit
-    const signal = AbortSignal.timeout(180_000)
     if (knownCommit) {
-      if (!commit && snapshot?.bundle) {
-        const clone = await this.context.platform.ensureCommit(this.git, repository, snapshot.baseCommit, signal)
-        await this.context.platform.importAgentSnapshot(this.git, clone, { commit: snapshot.commit, bundle: snapshot.bundle }, signal)
-      } else {
-        await this.context.platform.ensureCommit(this.git, repository, knownCommit, signal)
-      }
-      return knownCommit
+      return this.publish(repository, knownCommit, async signal => {
+        if (!commit && snapshot) {
+          const clone = await this.context.platform.ensureCommit(this.git, repository, snapshot.baseCommit, signal)
+          if (snapshot.bundle) {
+            await this.context.platform.importAgentSnapshot(this.git, clone, { commit: snapshot.commit, bundle: snapshot.bundle }, signal)
+          }
+        }
+      })
     }
+    const signal = AbortSignal.timeout(180_000)
     const clone = await this.context.platform.ensureClone(this.git, repository, signal)
-    return this.context.platform.fetchRepositoryBranch(this.git, clone, repository, defaultBranch, signal)
+    const resolved = await this.context.platform.fetchRepositoryBranch(this.git, clone, repository, defaultBranch, signal)
+    return this.publish(repository, resolved)
   }
 
-  publish(repository: string, commit: string): Promise<void> {
+  private publish(repository: string, commit: string,
+    prepare?: (signal: AbortSignal) => Promise<void>): Promise<string> {
     const key = `${repository}:${commit}`
     const cached = this.published.get(key)
     if (cached) return cached
-    const publication: Promise<void> = (async () => {
+    const publication: Promise<string> = (async () => {
       const signal = AbortSignal.timeout(180_000)
+      await prepare?.(signal)
       await this.context.platform.publishCommit(this.git, repository, commit, signal)
+      return commit
     })().catch(error => {
       if (this.published.get(key) === publication) this.published.delete(key)
       throw error

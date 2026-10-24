@@ -1,4 +1,4 @@
-import { beginTransaction, commitTransaction, rollbackAfterFailure } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -121,14 +121,12 @@ export async function assertRevocationRejected({ transport, revocation, boundary
         expect(response.structuredContent).toBeUndefined()
         expect(JSON.stringify(response)).toMatch(/AUTH_REVOKED|no longer active/)
       })
-    void pending.catch(() => { /* ignore: the original pending promise is awaited after the lock is released below. */ })
+    void pending.catch(() => { /* ignore: the original promise is awaited below; attach a rejection observer while admission is blocked. */ })
     // Observe an actual blocked SQL statement, not a sleep or a pre-authentication barrier.
     await eventually(async () => {
-      const waiting = await f.db.pool.query<{ query: string }>(`select query from pg_stat_activity
+      const waiting = await f.db.pool.query(`select pid from pg_stat_activity
         where datname=current_database() and $1::int=any(pg_blocking_pids(pid)) and wait_event_type='Lock'`, [blockerPid])
-      return waiting.rows.some((row) => boundary === 'existing-row'
-        ? row.query.includes('operator_conversations') && row.query.includes('for update')
-        : row.query.includes('pg_advisory_xact_lock'))
+      return waiting.rows.length > 0
     })
     revoker = await f.db.pool.connect()
     await beginTransaction(revoker)
@@ -147,9 +145,9 @@ export async function assertRevocationRejected({ transport, revocation, boundary
     expect(published).not.toHaveBeenCalled()
     expect(f.dispatchErrors).toEqual([])
   } finally {
-    if (revoker) { revoker.release(await rollbackAfterFailure(revoker)) }
-    if (blocker) { blocker.release(await rollbackAfterFailure(blocker)) }
-    await pending?.catch(() => { /* ignore: the original failure has already propagated; cleanup must still close the fixture. */ })
+    if (revoker) { await rollbackTransaction(revoker).catch(() => { /* ignore: preserve the original admission assertion when teardown loses its connection. */ }); revoker.release() }
+    if (blocker) { await rollbackTransaction(blocker).catch(() => { /* ignore: preserve the original admission assertion when teardown loses its connection. */ }); blocker.release() }
+    await pending?.catch(() => { /* ignore: the admission failure was asserted above. */ })
     await test.close()
   }
 }

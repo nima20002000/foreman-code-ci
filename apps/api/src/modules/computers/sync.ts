@@ -1,4 +1,4 @@
-import { RetryBackoff } from '@foreman-code/contracts/server-kit'
+import { RetryBackoff } from '@foreman-code/contracts-node/server-kit'
 import { isDeepStrictEqual } from 'node:util'
 import { logIgnoredError } from '../diagnostics/index.js'
 import type pg from 'pg'

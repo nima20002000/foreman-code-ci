@@ -11,7 +11,7 @@ import { jobSpecDigests } from '@foreman-code/contracts/jobs-node'
 import { jobCancellationGrantMessage, jobCancellationClosureMessage,
   SignedJobCancellationGrantSchema, JobCancellationRecoveryReadSchema, type JobCancellationRecoveryRead } from '@foreman-code/contracts/job-cancellation-recovery'
 import { RemoteJobDispatchIntentSchema } from '@foreman-code/contracts/remote-job-execution'
-import { publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
+import { publicKeyFingerprint } from '@foreman-code/contracts-node/device-identity-node'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'

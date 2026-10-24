@@ -1,9 +1,10 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import {
   DEFAULT_HARNESS_DEFAULTS,
   AgentHarnessSchema,
   AgentEffortSchema,
   legacyEffortForHarness,
-  newAgentGraphqlTools,
+  newAgentForemanTools,
   type Agent,
   type HarnessConfiguration,
   type HarnessDefaults,
@@ -91,7 +92,7 @@ export function defaultAgentForHarness(
     name,
     role: 'Agent',
     ...(productRole ? { productRole, role: productRole === 'master' ? 'Master' : productRole === 'orchestrator' ? 'Orchestrator' : 'Worker' } : {}),
-    ...(productRole ? { graphqlTools: newAgentGraphqlTools(productRole) } : {}),
+    ...(productRole ? { [INSTALLATION_NAMES.fields.agentTools]: newAgentForemanTools(productRole) } : {}),
     harness,
     model: exact.model,
     effort: legacyEffort,

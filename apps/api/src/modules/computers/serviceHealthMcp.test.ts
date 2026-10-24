@@ -37,7 +37,7 @@ it('reads stalled background loops and an overdue Worker publication through aut
   vi.spyOn(pool, 'connect').mockImplementation(async () => ({ query, release: vi.fn() }) as unknown as pg.PoolClient)
   const access = new PostgresAccessService(pool)
   vi.spyOn(access, 'authenticate').mockImplementation(async token => token === 'reader' ? principal : denied)
-  const recordDenied = vi.fn(async () => undefined)
+  const recordDenied = vi.fn()
   const commands = { recordDenied } as unknown as PostgresCommandCoordinator
   const mainId = randomUUID()
   const computerMaintenance = new FleetMaintenanceService(pool, mainId, () => undefined, commands,
