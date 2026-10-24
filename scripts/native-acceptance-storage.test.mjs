@@ -54,7 +54,7 @@ test('native subprocesses keep configuration and credentials but write disposabl
   })
 })
 
-for (const name of ['GRAPHQL_APP_MCP_DIRECTORY']) {
+for (const name of ['FOREMAN_CODE_APP_MCP_DIRECTORY', 'GRAPHQL_APP_MCP_DIRECTORY']) {
   test(`preserves ${name} provenance while native route writes use owned storage`, async () => {
     await fixture(async source => {
       const original = join(source.HOME, 'source-mcp')

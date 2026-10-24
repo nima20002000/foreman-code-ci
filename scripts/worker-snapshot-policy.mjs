@@ -1,6 +1,3 @@
-import { verificationScripts } from '../packages/verification-runner/runtime-files.mjs'
-export { verificationScripts }
-
 export const workerEntryPoints = {
   cli: 'apps/worker/src/cli.mjs',
   worker: 'apps/worker/src/workerFactory.mjs',
@@ -8,16 +5,27 @@ export const workerEntryPoints = {
 export const rsyncWriterEntrypoint = 'apps/api/src/modules/byte-transfer/rsyncWriterCli.ts'
 export const schemaWorkerEntrypoint = 'apps/api/src/modules/harnesses/compatibility/schemaWorker.ts'
 
+export const verificationScripts = [
+  'scripts/ci-watchdog.mjs',
+  'scripts/ci-progress-reporter.mjs',
+  'scripts/ci-test-results.mjs',
+  'scripts/dense-resources.mjs',
+  'scripts/verification-runner.mjs',
+  'scripts/verify-repository.mjs',
+  'scripts/verification-reports.mjs',
+  'scripts/integration-process.mjs',
+  'scripts/integration-capabilities.mjs',
+]
+
 export const workerSnapshotFiles = [
   'apps/web/public/graphql.svg',
   'scripts/build-worker-artifact.mjs',
   'scripts/quota-helper-abi.mjs',
   'scripts/worker-artifact-files.mjs',
   'scripts/worker-snapshot-policy.mjs',
-  'scripts/foreman-mcp.mjs',
+  'scripts/graphql-mcp.mjs',
   'packages/contracts/package.json',
   'packages/contracts/src/productEnvironment.mjs',
-  'packages/contracts/src/installationNames.mjs',
   'packages/contracts/src/verificationEnvironment.mjs',
   'packages/contracts/src/integrationScheduling.mjs',
   'packages/ci-protocol/src/testResults.mjs',

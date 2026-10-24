@@ -23,7 +23,7 @@ import { AgentHarnessSchema, ApiErrorResponseSchema, RuntimeIdentitySchema, type
 import { logger } from '../../src/infrastructure/logger.js'
 import { loadConfig } from '../../src/config.js'
 import { createDatabase } from '../../src/infrastructure/database.js'
-import { createCheckpointStore } from '../../src/composition/checkpoints.js'
+import { createCheckpointStore } from '../../src/infrastructure/checkpoints.js'
 import { buildProductionApp } from '../../src/production.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { qualifyApprovedRootAllowlist } from '../../src/modules/sources/rootAttestation.js'
@@ -115,7 +115,7 @@ async function workerEnvironment(home: string) {
     CLAUDE_CONFIG_DIR: claudeProfile, XDG_CONFIG_HOME: join(home, '.config'),
     XDG_DATA_HOME: join(home, '.local/share'), XDG_CACHE_HOME: join(home, '.cache'),
     XDG_STATE_HOME: join(home, '.local/state'),
-    GRAPHQL_APP_MCP_DIRECTORY: join(home, '.local/share/graphql/mcp') }
+    FOREMAN_CODE_APP_MCP_DIRECTORY: join(home, '.local/share/graphql/mcp') }
   for (const name of ['DATABASE_URL', 'TEST_DATABASE_URL', ...APP_MCP_TOKEN_NAMES]) {
     delete environment[name]
   }
@@ -223,7 +223,7 @@ export async function pairedWorkerApplication(options: { harnesses?: readonly Ag
   let deniedClient: Client | undefined
   const previousClaudeProfile = process.env.CLAUDE_CONFIG_DIR
   const previousCodexProfile = process.env.CODEX_HOME
-  const previousMcpDirectory = process.env.GRAPHQL_APP_MCP_DIRECTORY
+  const previousMcpDirectory = process.env.FOREMAN_CODE_APP_MCP_DIRECTORY
   const mainClaudeProfile = join(root, 'main-claude-profile')
   const mainCodexProfile = join(root, 'main-codex-profile')
   let removed = false
@@ -257,8 +257,8 @@ export async function pairedWorkerApplication(options: { harnesses?: readonly Ag
       else process.env.CLAUDE_CONFIG_DIR = previousClaudeProfile
       if (previousCodexProfile === undefined) delete process.env.CODEX_HOME
       else process.env.CODEX_HOME = previousCodexProfile
-      if (previousMcpDirectory === undefined) delete process.env.GRAPHQL_APP_MCP_DIRECTORY
-      else process.env.GRAPHQL_APP_MCP_DIRECTORY = previousMcpDirectory
+      if (previousMcpDirectory === undefined) delete process.env.FOREMAN_CODE_APP_MCP_DIRECTORY
+      else process.env.FOREMAN_CODE_APP_MCP_DIRECTORY = previousMcpDirectory
       await rm(root, { recursive: true, force: true })
       removed = true
     }
@@ -272,11 +272,11 @@ export async function pairedWorkerApplication(options: { harnesses?: readonly Ag
     const browserOrigin = `http://127.0.0.1:${browserPort}`
     const endpoint = `wss://127.0.0.1:${devicePort}/device/connect`
     const applicationEnvironment: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: databaseUrl, PORT: String(port),
-      DATABASE_QUERY_TIMEOUT_MS: '10000', GRAPHQL_BROWSER_ORIGIN: browserOrigin,
-      GRAPHQL_WEB_PORT: String(browserPort),
-      GRAPHQL_LAPTOP_EXECUTION_ENABLED: '1', WORKSPACE_STORAGE_ROOT: join(root, 'main-projects'),
+      DATABASE_QUERY_TIMEOUT_MS: '10000', FOREMAN_CODE_BROWSER_ORIGIN: browserOrigin,
+      FOREMAN_CODE_WEB_PORT: String(browserPort),
+      FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: '1', WORKSPACE_STORAGE_ROOT: join(root, 'main-projects'),
       FILE_STORAGE_ROOT: join(root, 'main-files'), HARNESS_WORKSPACE_ROOT: join(root, 'main-runtime') }
-    delete applicationEnvironment.GRAPHQL_DEV_BROWSER_ORIGIN
+    delete applicationEnvironment.FOREMAN_CODE_DEV_BROWSER_ORIGIN
     delete applicationEnvironment.GRAPHQL_DEV_BROWSER_ORIGIN
     const config = loadConfig(applicationEnvironment)
     database = createDatabase(config.database)
@@ -288,7 +288,7 @@ export async function pairedWorkerApplication(options: { harnesses?: readonly Ag
     }
     process.env.CLAUDE_CONFIG_DIR = mainClaudeProfile
     process.env.CODEX_HOME = mainCodexProfile
-    process.env.GRAPHQL_APP_MCP_DIRECTORY = join(root, 'main-app-mcp')
+    process.env.FOREMAN_CODE_APP_MCP_DIRECTORY = join(root, 'main-app-mcp')
     for (const path of [config.workspaceStorageRoot!, config.fileStorageRoot!, config.harnesses.workspaceRoot]) {
       await mkdir(path, { mode: 0o700 })
     }

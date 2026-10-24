@@ -9,7 +9,7 @@ import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { pairingProof, publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
 import { describe, expect, it } from 'vitest'
 import { loadConfig } from '../src/config.js'
-import { createCheckpointStore } from '../src/composition/checkpoints.js'
+import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresDeviceAccessService } from '../src/modules/devices/access.js'
@@ -25,7 +25,7 @@ async function fixture() {
     grants: [{ actions: ManagementActionSchema.options, scope: {} }], expiresAt: new Date(Date.now() + 3_600_000) })
   const config = loadConfig({ DATABASE_URL: process.env.TEST_DATABASE_URL!, HARNESS_WORKSPACE_ROOT: join(db.directory, 'runtime'),
     CODEX_BINARY: '/unprovisioned-test-codex',
-    GRAPHQL_BROWSER_ORIGIN: origin })
+    FOREMAN_CODE_BROWSER_ORIGIN: origin })
   await db.pool.query('update local_human_principal set principal_id=$1', [owner.principal.id])
   config.workspaceStorageRoot = join(db.directory, 'workspaces')
   await mkdir(config.harnesses.workspaceRoot, { mode: 0o700 })

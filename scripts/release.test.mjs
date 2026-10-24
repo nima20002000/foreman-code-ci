@@ -84,7 +84,7 @@ function repository(t) {
 function run(script, args, cwd, main, env) {
   return new Promise(resolve => {
     const child = spawn(process.execPath, [script, ...args], { cwd, env: { ...env, FOREMAN_CODE_MAIN_URL: main.url,
-      GRAPHQL_OPERATOR_TOKEN: 'release-test-token', FOREMAN_CODE_WORKSPACE_ID: workspaceId, FOREMAN_CODE_CI_PARTITIONS: '3' } })
+      FOREMAN_CODE_OPERATOR_TOKEN: 'release-test-token', FOREMAN_CODE_WORKSPACE_ID: workspaceId, FOREMAN_CODE_CI_PARTITIONS: '3' } })
     let output = ''
     child.stdout.on('data', chunk => { output += chunk }); child.stderr.on('data', chunk => { output += chunk })
     child.on('exit', status => resolve({ status, output }))
