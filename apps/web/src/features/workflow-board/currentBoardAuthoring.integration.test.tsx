@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { type WorkflowDefinitionCurrent, WorkflowVersionCurrentSchema, CurrentWorkflowCreateInputSchema, RunStartCurrentInputSchema } from '@foreman-code/contracts/current'
+import { type WorkflowDefinitionCurrent, RepeatGraphCurrentStateSchema, WorkflowVersionCurrentSchema, CurrentWorkflowCreateInputSchema, RunStartCurrentInputSchema } from '@foreman-code/contracts/current'
 import { routeTree } from '../../app/router'
 import { server } from '../../mocks/server'
 import { currentWorkflowFixture } from '../../shared/mocks/currentWorkflow'
@@ -15,6 +15,7 @@ import { createCurrentBoardMock } from '../../shared/mocks/currentBoard'
 import { useGraphDraftStore, readEditOutbox } from '../graph'
 import { nextDraftKey, nextDraftDirty, boardDraftContextKey } from '../board-core'
 import { readBoardStart } from './startOutbox'
+import { boardStartClient } from './startClient'
 import { readBoardStop } from './stopOutbox'
 import { queryKeys } from '../../shared/api/query'
 import { readLocalHumanAccess } from '../../shared/api/settingsExperience'
@@ -79,8 +80,13 @@ afterEach(() => {
   expect(unhandledRequests, 'No unhandled Board request may bypass MSW').toEqual([])
 })
 
-async function mount(mock: Mock, href = `/workspaces/${mock.workspaceId}`) {
-  server.use(...mock.handlers)
+async function mount(mock: Mock, href = `/workspaces/${mock.workspaceId}`, hideRuns = false) {
+  server.use(...mock.handlers,
+    http.get(`*/api/workspaces/${mock.workspaceId}`, () => HttpResponse.json({ ...mock.details(), ...(hideRuns ? { runs: [] } : {}) })),
+    http.get(`*/api/management/workspaces/${mock.workspaceId}/workflows/:workflowId/runs/summaries`, ({ params }) =>
+      HttpResponse.json({ items: hideRuns ? [] : [...mock.runs.values()].reverse().filter(({ run }) => run.workflowId === params.workflowId)
+        .map(({ run }) => ({ runId: run.id, shortId: run.id, startedAt: run.createdAt,
+          status: run.executionState === 'completed' ? run.outcome : run.executionState, trigger: 'manual' })), pageInfo: { nextCursor: null } })))
   const query = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } } })
   clients.push(query)
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [href] }), defaultPendingMinMs: 0 })
@@ -149,14 +155,33 @@ async function start(mock: Mock, user: ReturnType<typeof userEvent.setup>, expec
   await waitFor(() => expect(mock.runs.size).toBe(expectedRuns))
   const run = [...mock.runs.values()].at(-1)!.run
   await waitFor(() => expect(readBoardStart(nextDraftKey(mock.workspaceId, run.workflowId))).toBeUndefined())
-  // A started Run is shown as its saved Board; the retained editor is hidden until the person returns to it.
+  // Start acknowledges the saved pins without navigating away from the draft Board.
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Reconcile Start', hidden: true })).not.toBeInTheDocument())
   return run
 }
 async function returnToDraft(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Runs' }))
   await user.click(await screen.findByRole('button', { name: 'Return to workflow' }))
   await screen.findByRole('region', { name: 'Workflow authoring' })
 }
+
+// Supply canonical execution facts through the same HTTP fixture the Board polls.
+function runningNodes(mock: Mock, runId: string) {
+  const detail = mock.runs.get(runId)!, current = mock.currents.get(runId)!
+  const version = mock.versions.get(detail.run.workflowVersionId)!
+  detail.run.executionState = 'running'
+  mock.currents.set(runId, RepeatGraphCurrentStateSchema.parse({ ...current,
+    asOfSequence: String(BigInt(current.asOfSequence) + 1n), state: { ...current.state,
+      run: { ...current.state.run, executionState: 'running' },
+      executions: version.definition.nodes.map((node, index) => ({
+        identity: { workflowNodeId: node.id, executionId: `execution-${node.id}`, agentId: nativeNode(node).agentId,
+          agentConfigurationVersionId: version.agentConfigurationVersionIds[nativeNode(node).agentId], attempt: 1, occurrence: null },
+        inputDigest: `sha256:${'1'.repeat(64)}`, previousExecutionId: null,
+        state: index ? 'queued' : 'running', resultOutcome: null,
+      })),
+    } }))
+}
+const canvasNode = (id: string) => authoring().querySelector<HTMLElement>(`.react-flow__node[data-id="${id}"]`)!
 
 describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
   it('saves the topbar worktree draft and restores its persisted selection when the Board reopens', async () => {
@@ -401,7 +426,8 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await waitFor(() => expect(mock.runs.size).toBe(1))
     const version = [...mock.versions.values()].at(-1)!
     expect([...mock.runs.values()][0]!.run.workflowVersionId).toBe(version.id)
-    await returnToDraft(user)
+    expect(await screen.findByRole('region', { name: 'Workflow authoring' })).toBeVisible()
+    expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
     expect(nextDraftDirty(useGraphDraftStore.getState().nextDrafts[key]!)).toBe(false)
     expect(within(authoring()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
   })
@@ -490,7 +516,11 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     const run = await start(mock, user)
     expect(mock.calls.slice(beforeReopen).some((call) => call.method === 'GET'
       && call.path.endsWith(`/versions/${version.id}`))).toBe(true)
-    await waitFor(() => expect(second.router.state.location.search).toMatchObject({ workflowId: id, runId: run.id, workflowVersionId: version.id, executionSemanticsVersion: 3 }))
+    expect(second.router.state.location.search).toMatchObject({ workflowId: id })
+    expect(second.router.state.location.search).not.toHaveProperty('runId')
+    expect(second.router.state.location.search).not.toHaveProperty('selectedRunId')
+    expect(authoring()).toBeVisible()
+    expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
     const requests = mock.calls.filter((call) => call.method === 'POST' && call.path.endsWith('/runs'))
     expect(requests).toHaveLength(1)
     expect(requests[0]!.body).not.toHaveProperty('draftId')
@@ -509,9 +539,9 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
     const { id, key } = await create(mock, user); stageShape(key, 'repeat-ready', mock)
     const ordinary = await save(mock, user, 1), oldRun = await start(mock, user)
-    await returnToDraft(user)
+    expect(authoring()).toBeVisible()
     mock.settle(oldRun.id)
-    await mounted.query.invalidateQueries({ queryKey: queryKeys.workspaceDetails(mock.workspaceId) })
+    await mounted.query.invalidateQueries()
     await user.click(control('Repeats'))
     const repeat = screen.getByRole('region', { name: 'Repeat settings' })
     await user.click(within(repeat).getByRole('button', { name: 'Add repeat' }))
@@ -523,8 +553,8 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await user.selectOptions(within(repeat).getByRole('combobox', { name: 'Early-exit outcome' }), 'done')
     const repeated = await save(mock, user, 2)
     expect(repeated.definition.repeat?.blocks[0]).toMatchObject({ maxOccurrences: 2, repeatOutcome: 'again', earlyExitOutcome: 'done', limitExit: { kind: 'branch_end' } })
-    const repeatRun = await start(mock, user, 2); await returnToDraft(user); mock.settle(repeatRun.id)
-    await mounted.query.invalidateQueries({ queryKey: queryKeys.workspaceDetails(mock.workspaceId) })
+    const repeatRun = await start(mock, user, 2); expect(authoring()).toBeVisible(); mock.settle(repeatRun.id)
+    await mounted.query.invalidateQueries()
     await user.click(within(repeat).getByRole('button', { name: 'Remove repeat' }))
     const removed = await save(mock, user, 3)
     expect(removed.definition).not.toHaveProperty('repeat'); expect(removed.id).not.toBe(ordinary.id)
@@ -641,6 +671,9 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
     const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
     const run = await start(mock, user), scope = mock.currents.get(run.id)!.scope
+    await user.click(screen.getByRole('button', { name: 'Runs' }))
+    await user.click(await within(await screen.findByRole('menu', { name: 'Runs' })).findByRole('menuitemradio', { name: new RegExp(run.id) }))
+    await screen.findByRole('region', { name: 'Selected Run board' })
     await user.click(screen.getByRole('button', { name: 'Activities' }))
     mock.controls.loseStopReply = true
     const stop = await screen.findByRole('button', { name: 'Stop this Run' })
@@ -666,10 +699,14 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(within(authoring()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
   }, 30_000)
   it('stages before Stop confirmation even when the Board summary misses an active Run', async () => {
-    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
+    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup()
+    let mounted = await mount(mock)
     const { key, id } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
     const run = await start(mock, user)
-    await returnToDraft(user)
+    const href = mounted.router.state.location.href
+    mounted.unmount(); mounted.query.clear()
+    mounted = await mount(mock, href, true)
+    await screen.findByRole('region', { name: 'Workflow authoring' })
     const beforeEdit = mock.calls.length
     act(() => useGraphDraftStore.getState().changeNextDraft(key, (graph) => ({ ...graph,
       nodes: graph.nodes.map((node) => ({ ...node, initialPrompt: 'Next pinned instructions' })) })))
@@ -704,5 +741,167 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await waitFor(() => expect(mock.versions.size).toBe(2))
     expect(mock.runs.size).toBe(1); expect(mock.runs.get(run.id)!.run.executionState).toBe('completed')
     expect(nativeNode([...mock.versions.values()].at(-1)!.definition.nodes[0]!).initialPrompt).toBe('Next pinned instructions')
+  }, 30_000)
+})
+
+
+describe('latest Run on the draft Board', () => {
+  it('Start keeps the draft nodes and URL while showing the new Run states and handoff lights', async () => {
+    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
+    const { key } = await create(mock, user); stageShape(key, 'sequential', mock); await save(mock, user, 1)
+    const graph = useGraphDraftStore.getState().nextDrafts[key]!.graph
+    const editor = authoring(), first = canvasNode(graph.nodes[0]!.id), second = canvasNode(graph.nodes[1]!.id)
+    const href = mounted.router.state.location.href
+    const slot = control('Start saved version').parentElement!
+    const run = await start(mock, user)
+    runningNodes(mock, run.id); await mounted.query.invalidateQueries()
+    await waitFor(() => expect(first).toHaveTextContent('Running'))
+    expect(second).toHaveTextContent('Queued')
+    expect(first.querySelector('.n-agent')).toHaveAttribute('data-state', 'running')
+    expect(authoring()).toBe(editor)
+    expect(canvasNode(graph.nodes[0]!.id)).toBe(first)
+    expect(canvasNode(graph.nodes[1]!.id)).toBe(second)
+    expect(mounted.router.state.location.href).toBe(href)
+    expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
+    expect(control('Stop').closest('[aria-label="Workflow controls"]')).toBe(slot)
+    expect(within(controls()).queryByRole('button', { name: 'Start saved version' })).not.toBeInTheDocument()
+    const current = mock.currents.get(run.id)!, sender = current.state.executions[0]!, recipient = current.state.executions[1]!
+    const digest = `sha256:${'1'.repeat(64)}`
+    mock.currents.set(run.id, RepeatGraphCurrentStateSchema.parse({ ...current,
+      asOfSequence: String(BigInt(current.asOfSequence) + 1n), state: { ...current.state,
+        executions: [{ ...sender, state: 'completed', resultOutcome: 'succeeded' }, { ...recipient, state: 'running' }],
+        results: [{ execution: sender.identity, resultDigest: digest }],
+        bindings: [{ bindingId: 'new-handoff', kind: 'predecessor', relationshipId: graph.edges[0]!.id, decisionId: null,
+          sender: sender.identity, recipient: recipient.identity, acceptedResultDigest: digest, inputDigest: digest, ordinal: 0 }],
+      } }))
+    await mounted.query.invalidateQueries()
+    const line = authoring().querySelector(`[data-testid="rf__edge-${graph.edges[0]!.id}"]`)!
+    await waitFor(() => expect(line.querySelector('.n-signal-edge-flight')).toHaveTextContent('Handoff'))
+    await waitFor(() => expect(second).toHaveTextContent('Running'))
+    expect(first).toHaveTextContent('Completed')
+    expect(line.querySelector('.n-signal-edge-flight')).toBeNull()
+  }, 30_000)
+
+  it('opens a live Run on the draft, locks authoring, then unlocks in place with final badges and Run in Stop’s slot', async () => {
+    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup()
+    const initial = await mount(mock)
+    const { key } = await create(mock, user); stageShape(key, 'sequential', mock); await save(mock, user, 1)
+    const run = await start(mock, user); runningNodes(mock, run.id)
+    const href = initial.router.state.location.href
+    initial.unmount(); initial.query.clear()
+    const mounted = await mount(mock, href)
+    await screen.findByRole('region', { name: 'Workflow authoring' })
+    const graph = useGraphDraftStore.getState().nextDrafts[key]!.graph
+    const first = canvasNode(graph.nodes[0]!.id)
+    await waitFor(() => expect(first).toHaveTextContent('Running'))
+    await waitFor(() => expect(control('Stop')).toBeEnabled())
+    const slot = control('Stop').closest('section')!, parent = slot.parentElement!, index = [...parent.children].indexOf(slot)
+    expect(mounted.router.state.location.href).toBe(href)
+    expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
+    expect(within(authoring()).getByTitle('Rename workflow')).toBeDisabled()
+    expect(within(authoring()).getByRole('button', { name: /^Worktree:/ })).toBeDisabled()
+    expect(control('Add agent')).toBeDisabled()
+    expect(control('Workflow actions')).toBeDisabled()
+    const remove = within(authoring()).getByRole('button', { name: /^Remove handoff ·/ })
+    expect(remove).toBeDisabled()
+    const before = structuredClone(graph.edges)
+    const canvas = within(screen.getByLabelText('Editable workflow graph'))
+    clickConnectionHandles(canvas.getByLabelText(`Connect ${graph.nodes[1]!.name} to another agent`),
+      canvas.getByLabelText(`Connect to ${graph.nodes[0]!.name}`))
+    expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.edges).toEqual(before)
+    await user.click(control('Workflow settings'))
+    const settings = within(await screen.findByRole('complementary', { name: 'Workflow settings' }))
+    expect(settings.getByRole('spinbutton', { name: 'Agents at once' })).toBeDisabled()
+    await user.click(settings.getByRole('button', { name: 'Close panel' }))
+    await user.click(canvas.getByRole('button', { name: `Open ${graph.nodes[0]!.name} details` }))
+    expect(await screen.findByRole('complementary', { name: 'Workflow side panel' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Back to Board' }))
+    await user.click(canvas.getByRole('button', { name: `Open ${graph.nodes[0]!.name} chat` }))
+    expect(await screen.findByRole('complementary', { name: 'Workflow side panel' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Back to Board' }))
+    // React Flow receives a real mouse drag even while semantic edits are locked.
+    const oldPosition = first.style.transform
+    await act(async () => {
+      for (const [target, type, x, y] of [[first, 'mousedown', 100, 100], [window, 'mousemove', 180, 160],
+        [window, 'mousemove', 240, 200], [window, 'mouseup', 240, 200]] as const) {
+        const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'mouseup' ? 0 : 1, clientX: x, clientY: y })
+        Object.defineProperty(event, 'view', { value: window }); target.dispatchEvent(event)
+      }
+    })
+    await waitFor(() => expect(first.style.transform).not.toBe(oldPosition))
+    expect(mock.versions.size).toBe(1)
+    const current = mock.currents.get(run.id)!
+    mock.settle(run.id)
+    mock.currents.set(run.id, RepeatGraphCurrentStateSchema.parse({ ...mock.currents.get(run.id),
+      state: { ...mock.currents.get(run.id)!.state,
+        executions: current.state.executions.map(execution => ({ ...execution, state: 'completed', resultOutcome: 'succeeded' })) } }))
+    await mounted.query.invalidateQueries()
+    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeEnabled())
+    await waitFor(() => expect(control('Start saved version')).toBeEnabled())
+    expect(control('Start saved version').closest('section')).toBe(slot)
+    expect([...parent.children].indexOf(slot)).toBe(index)
+    expect(within(controls()).queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
+    expect(control('Add agent')).toBeEnabled()
+    expect(control('Workflow actions')).toBeEnabled()
+    expect(remove).toBeEnabled()
+    expect(within(authoring()).getByRole('button', { name: /^Worktree:/ })).toBeEnabled()
+    await waitFor(() => expect(first).toHaveTextContent('Completed'))
+    expect(first.querySelector('.n-agent')).toHaveAttribute('data-state', 'completed')
+    expect(canvasNode(graph.nodes[0]!.id)).toBe(first)
+    await user.click(control('Workflow settings'))
+    expect(within(screen.getByRole('complementary', { name: 'Workflow settings' })).getByRole('spinbutton', { name: 'Agents at once' })).toBeEnabled()
+  }, 30_000)
+
+  it('keeps the latest Run on the draft until an older Run is explicitly chosen from Runs', async () => {
+    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
+    const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
+    const older = await start(mock, user)
+    mock.settle(older.id); await mounted.query.invalidateQueries()
+    await waitFor(() => expect(control('Start saved version')).toBeEnabled())
+    const latest = await start(mock, user, 2)
+    runningNodes(mock, latest.id); await mounted.query.invalidateQueries()
+    const editor = authoring(), node = useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!
+    await waitFor(() => expect(canvasNode(node.id)).toHaveTextContent('Running'))
+    await user.click(screen.getByRole('button', { name: 'Runs' }))
+    await user.click(await within(await screen.findByRole('menu', { name: 'Runs' })).findByRole('menuitemradio', { name: new RegExp(older.id) }))
+    expect(await screen.findByRole('region', { name: 'Selected Run board' })).toHaveAttribute('data-run-id', older.id)
+    expect(mounted.router.state.location.search.selectedRunId).toBe(older.id)
+    expect(await screen.findByRole('group', { name: `${node.name}, saved agent, read only` })).toBeVisible()
+    expect(editor).not.toBeVisible()
+    await returnToDraft(user)
+    expect(authoring()).toBe(editor)
+    await waitFor(() => expect(canvasNode(node.id)).toHaveTextContent('Running'))
+  }, 30_000)
+
+  it.each(['Save workflow', 'Undo', 'Redo', 'keyboard undo', 'Agent settings'])(
+    'locks %s when an external Run arrives while the draft has unsaved edits', async action => {
+    const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
+    const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
+    const previous = await start(mock, user)
+    mock.settle(previous.id); await mounted.query.invalidateQueries()
+    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeEnabled())
+    for (const name of ['First local edit', 'Second local edit']) {
+      await user.click(within(authoring()).getByTitle('Rename workflow'))
+      const field = screen.getByRole('textbox', { name: 'Workflow name' })
+      await user.clear(field); await user.type(field, `${name}{Enter}`)
+    }
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toHaveTextContent('First local edit'))
+    const request = RunStartCurrentInputSchema.parse(mock.calls.find(call => call.method === 'POST' && call.path.endsWith('/runs'))!.body)
+    const external = await boardStartClient.start({ ...request, commandId: `external-${action}` })
+    runningNodes(mock, external.run.id); await mounted.query.invalidateQueries()
+    await waitFor(() => expect(within(authoring()).getByTitle('Rename workflow')).toBeDisabled())
+    if (action === 'Agent settings') {
+      const node = useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!
+      await user.click(within(canvasNode(node.id)).getByRole('button', { name: `Open ${node.name} settings` }))
+      const panel = await screen.findByRole('complementary', { name: 'Workflow side panel' })
+      expect(within(panel).getByRole('textbox', { name: 'Name' })).toBeDisabled()
+    } else if (action === 'keyboard undo') {
+      const before = structuredClone(useGraphDraftStore.getState().nextDrafts[key]!.graph)
+      await user.click(screen.getByRole('button', { name: 'Graph', exact: true }))
+      await user.keyboard('{Control>}z{/Control}')
+      expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).toEqual(before)
+    } else expect(screen.getByRole('button', { name: action })).toBeDisabled()
+    expect(mock.versions.size).toBe(1)
   }, 30_000)
 })

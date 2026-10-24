@@ -230,7 +230,7 @@ it.each(['succeeded', 'failed', 'canceled'] as const)(
   await waitFor(() => expect(listReads).toHaveBeenCalled())
   await waitFor(() => expect(screen.getByLabelText('Active Runs')).toHaveTextContent('0'))
   expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
-  expect(snapshotReads).not.toHaveBeenCalled()
+  await waitFor(() => expect(snapshotReads).toHaveBeenCalled())
   expect(selectRun).not.toHaveBeenCalled()
 })
 
@@ -264,14 +264,17 @@ it('keeps the draft selected when a Run starts later and only lights the Running
   await waitFor(() => expect(screen.getByLabelText('Active Runs')).toHaveTextContent('1'))
   expect(await screen.findByRole('button', { name: 'Running' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Edit workflow' })).toBeInTheDocument()
-  expect(snapshotReads).not.toHaveBeenCalled()
+  await waitFor(() => expect(snapshotReads).toHaveBeenCalled())
   expect(selectRun).not.toHaveBeenCalled()
 })
 
-it('opens the live Run when the Board opens while a Run is running', async () => {
+it('keeps the draft selected when the Board opens while a Run is running', async () => {
   installSelectedHandlers()
   server.use(http.get(summariesRoute, () => runSummaries([liveSummary])))
-  await mountWithSummaries(vi.fn())
-  expect(await screen.findByRole('region', { name: 'Selected Run board' })).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: 'Edit workflow' })).not.toBeInTheDocument()
+  const selectRun = vi.fn()
+  await mountWithSummaries(selectRun)
+  expect(await screen.findByRole('button', { name: 'Running' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Edit workflow' })).toBeInTheDocument()
+  expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
+  expect(selectRun).not.toHaveBeenCalled()
 })

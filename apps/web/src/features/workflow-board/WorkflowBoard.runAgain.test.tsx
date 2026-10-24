@@ -51,8 +51,12 @@ it.each([
     workspaceId: scope.workspaceId, workflowId: scope.workflowId, workflowVersionId: fixture.after.id,
   })
   expect(fixture.mock.runs.get(scope.runId)).toEqual(original)
-  await waitFor(() => expect(screen.getByRole('region', { name: 'Selected Run board' }))
-    .toHaveAttribute('data-run-id', 'run-current-1'))
+  expect(screen.getByRole('region', { name: 'Selected Run board' })).toHaveAttribute('data-run-id', scope.runId)
+  await userEvent.click(screen.getByRole('button', { name: 'Runs' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Return to workflow' }))
+  expect(await screen.findByRole('region', { name: 'Workflow authoring' })).toBeVisible()
+  expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeEnabled())
 }, 15_000)
 
 it.each(['queued', 'running', 'waiting'] as const)('keeps Stop for a %s Run', async state => {
