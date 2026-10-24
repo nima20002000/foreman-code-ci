@@ -19,7 +19,8 @@ afterEach(() => {
 })
 
 function setup(defaults: HarnessDefaults, discoveryError: { code: string; message: string } | null = null,
-  harness: 'claude' | 'codex' = 'claude', saved: NonNullable<HarnessDefaults['claude']> = savedClaudeConfiguration) {
+  harness: 'claude' | 'codex' = 'claude', saved: NonNullable<HarnessDefaults['claude']> = savedClaudeConfiguration,
+  node?: Parameters<typeof AgentSettingsForm>[0]['node']) {
   const catalog = Object.values(defaults).map(configuration => ({
     harness: configuration.harness, defaults: configuration, defaultsRevision: 1, capability: null,
     discoveryError: configuration.harness === 'claude' ? discoveryError : null,
@@ -32,7 +33,7 @@ function setup(defaults: HarnessDefaults, discoveryError: { code: string; messag
   const agent = defaultAgentForHarness(harness, 'saved-agent', 'Main coordinator', configuration)
   const onSave = vi.fn()
   const view = render(<QueryClientProvider client={client}>
-    <AgentSettingsForm agent={agent} onClose={() => undefined} onSave={onSave} />
+    <AgentSettingsForm agent={agent} node={node} onClose={() => undefined} onSave={onSave} />
   </QueryClientProvider>)
   return { client, onSave, agent, user: userEvent.setup(), view }
 }
@@ -145,11 +146,8 @@ it('loads the Worker native Codex models when its account channel is unavailable
       { ...accountTargetInfo(workerAccountTarget), connected: false, providers: [] }] })),
     http.get('/api/management/harnesses/codex/options', nativeRead),
   )
-  const { client, agent, onSave, user, view } = setup(DEFAULT_HARNESS_DEFAULTS, null, 'codex')
-  view.rerender(<QueryClientProvider client={client}>
-    <AgentSettingsForm agent={agent} node={{ placement: { ...savedPlacementFixture, hostRef: workerAccountTarget.hostRef } }}
-      onClose={() => undefined} onSave={onSave} />
-  </QueryClientProvider>)
+  const { onSave, user } = setup(DEFAULT_HARNESS_DEFAULTS, null, 'codex', savedClaudeConfiguration,
+    { placement: { ...savedPlacementFixture, hostRef: workerAccountTarget.hostRef } })
   await waitFor(() => expect(nativeRead).toHaveBeenCalledOnce())
   await user.click(screen.getByRole('combobox', { name: 'Model' }))
   await user.click(await screen.findByRole('option', { name: 'Worker Codex' }))

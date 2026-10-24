@@ -97,7 +97,9 @@ it('shows a slow Start as progress and removes confirmation once the Run is know
 
 it('labels the Board status Stopping while an accepted Stop is cleaning up', async () => {
   setRunState(fixture, fixture.runs.after.scope, 'running', true)
-  fixture.mock.markStop(fixture.runs.after.run.id)
+  const current = fixture.mock.currents.get(fixture.runs.after.run.id)!
+  fixture.mock.currents.set(fixture.runs.after.run.id, RepeatGraphCurrentStateSchema.parse({ ...current,
+    state: { ...current.state, run: { ...current.state.run, stopRequested: true } } }))
   await mountMeasuredBoard(href())
   expect(await screen.findByText('Cleaning up…')).toBeVisible()
   const status = within(screen.getByRole('group', { name: 'Board controls' })).getByRole('status')
