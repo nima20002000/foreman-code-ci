@@ -116,17 +116,18 @@ it('closes an idle browser host without replaying historical cleanup and retains
   }
 })
 
-it('retries cleanup for a durably closed browser session whose resource cleanup is still pending', async () => {
+it.each(['resources', 'journal'] as const)('retries pending browser cleanup after a %s failure', async failure => {
   const stateDirectory = await privateFixtureDirectory('pending-browser-shutdown-')
   const journal = createBrowserRuntimeJournal(join(stateDirectory, 'browser', 'journal'))
   await journal.saveSession(closedRecord(0, true))
-  const cleanup = vi.spyOn(BrowserFileStore.prototype, 'closeSession').mockRejectedValueOnce(new Error('Files still settling'))
-    .mockResolvedValue(undefined)
+  const cleanup = vi.spyOn(BrowserFileStore.prototype, 'closeSession').mockResolvedValue(undefined)
+  if (failure === 'resources') cleanup.mockRejectedValueOnce(new Error('Files still settling'))
   const closeProfile = vi.spyOn(ManagedBrowserNativeDriver.prototype, 'closeProfile').mockResolvedValue(undefined)
   let host: Awaited<ReturnType<typeof browserHost>> | undefined
   try {
     host = await browserHost(stateDirectory)
-    await expect(host.close()).rejects.toMatchObject({ code: 'BROWSER_RUNTIME_BUSY' })
+    if (failure === 'journal') vi.spyOn(host.broker.options.journal, 'saveSession').mockRejectedValueOnce(new Error('Journal unavailable'))
+    await expect(host.close()).rejects.toThrow(failure === 'resources' ? 'Browser media or file cleanup' : 'Journal unavailable')
     expect(await journal.loadSessions()).toEqual([closedRecord(0, true)])
     await host.close()
     expect(await journal.loadSessions()).toEqual([closedRecord(0)])
@@ -135,6 +136,32 @@ it('retries cleanup for a durably closed browser session whose resource cleanup 
     await host?.close()
     cleanup.mockRestore()
     closeProfile.mockRestore()
+    await removeFixtureDirectory(stateDirectory)
+  }
+})
+
+it.each([false, true])('cleans recovered session resources when its browser process exists: %s but no tabs remain', async processExists => {
+  const stateDirectory = await privateFixtureDirectory('recovered-browser-shutdown-')
+  const journal = createBrowserRuntimeJournal(join(stateDirectory, 'browser', 'journal'))
+  const record = closedRecord(0)
+  record.session.state = 'ready'
+  await journal.saveSession(record)
+  const reconnect = vi.spyOn(ManagedBrowserNativeDriver.prototype, 'reconnectProfile').mockResolvedValue(processExists ? { generation: 1 } : null)
+  const closeProfile = vi.spyOn(ManagedBrowserNativeDriver.prototype, 'closeProfile').mockResolvedValue(undefined)
+  const cleanup = vi.spyOn(BrowserFileStore.prototype, 'closeSession').mockResolvedValue(undefined)
+  let host: Awaited<ReturnType<typeof browserHost>> | undefined
+  try {
+    host = await browserHost(stateDirectory)
+    expect(host.broker.read(record.session.id).session.state).toBe('closed')
+    await host.close()
+    expect(cleanup).toHaveBeenCalledOnce()
+    expect(await journal.loadSessions()).toEqual([expect.objectContaining({ closing: false,
+      session: expect.objectContaining({ state: 'closed' }) })])
+  } finally {
+    await host?.close()
+    reconnect.mockRestore()
+    closeProfile.mockRestore()
+    cleanup.mockRestore()
     await removeFixtureDirectory(stateDirectory)
   }
 })
