@@ -275,6 +275,7 @@ function postgresShape(cap = 3, artifacts: false | 'enabled' | 'missing' = false
       const occurrence = slot.occurrence_id ? state.occurrences.get(slot.occurrence_id)!.record.identity : null
       const reservation = workflowNativeReservation(f.scope, { nodeId: slot.workflow_node_id, occurrence }, entry.record, slot.input_digest)
       expect(values).toEqual([entry.record.id, f.scope.runId, canonicalGraphJson(reservation), canonicalGraphJson(reservation), repeatDigest(reservation)])
+      expect(q).toContain("values($1,$2,$3::jsonb,$4::text,$5,'reserved')")
       expect(state.nativeEntries.has(entry.record.id)).toBe(false)
       state.nativeEntries.set(entry.record.id, { reservation: structuredClone(reservation), reservation_json: v[3]!, reservation_digest: v[4]!, phase: 'reserved' })
       rowCount = 1
@@ -299,6 +300,8 @@ function postgresShape(cap = 3, artifacts: false | 'enabled' | 'missing' = false
       }
     }
     else if (q.startsWith('select e.id from harness_executions e')) {
+      expect(q).toContain('left join run_repeat_executions')
+      expect(q).toContain('order by e.id limit 100 for update of e')
       rows = [...state.executions.values()].filter((e) => e.record.runId === v[0] && e.record.id > v[1]!
         && (v[2] === 'run' || v[2] === 'occurrence' && state.slots.get(e.slot_id)!.occurrence_id === v[3]
           || v[2] === 'slot' && e.slot_id === v[3] && e.record.attempt <= Number(values[4])))
@@ -316,7 +319,7 @@ function postgresShape(cap = 3, artifacts: false | 'enabled' | 'missing' = false
     }
     else if (q.startsWith('select j.id,j.execution_id,j.state,j.record')) {
       // This semantic repository fixture has no approvals or reviewer jobs.
-      rows = []
+      expect(q).toContain('i.execution_id=$2 or j.execution_id=$2'); rows = []
     }
     else if (q.startsWith('select i.id,i.execution_id,i.status,i.record')) rows = []
     else if (q.startsWith('select ( exists(select 1 from worker_credential_bindings')) {
@@ -342,27 +345,8 @@ function postgresShape(cap = 3, artifacts: false | 'enabled' | 'missing' = false
     else if (q.startsWith('select p.generation::text,p.execution_identity,p.reference')) {
       expect(values).toHaveLength(1)
       expect(state.executions.has(v[0]!)).toBe(true)
+      expect(q).toContain('from execution_native_recoveries p join execution_native_closures c')
       rows = [] // No recovery receipt is seeded; a terminal enum is still not closure.
-    }
-    else if (q.startsWith('with sessions as materialized')) {
-      rows = (values[1] as string[]).flatMap(id => {
-        const e = state.executions.get(id), native = state.native.get(id)
-        if (!e || e.record.runId !== v[0] || !native) return []
-        return [{ id, record: e.record, reference: native.session, finalized: native.finalized,
-          complex: false, outstanding: false, configuration: { harness: 'codex', agent_id: e.record.agentId, pinned: true },
-          generation: '1', execution_identity: { id, runId: e.record.runId, workflowNodeId: e.record.workflowNodeId,
-            agentId: e.record.agentId, agentConfigurationVersionId: e.record.agentConfigurationVersionId, attempt: e.record.attempt },
-          expected_reference: native.session, closed_reference: native.session, closed: native.closed,
-          detached: false, detached_reference: null, closed_without_session: false, prior_unclosed: false }]
-      })
-    }
-    else if (q.startsWith('update execution_native_sessions s')) {
-      for (const item of JSON.parse(v[0]!) as Array<{ execution_id: string; reference: unknown }>) {
-        const native = state.native.get(item.execution_id)
-        if (native && canonicalGraphJson(native.session) === canonicalGraphJson(item.reference)) {
-          native.finalized = true; rows.push({ execution_id: item.execution_id })
-        }
-      }
     }
     else if (q.startsWith('update execution_native_sessions')) {
       const native = state.native.get(v[0]!)
@@ -382,9 +366,7 @@ function postgresShape(cap = 3, artifacts: false | 'enabled' | 'missing' = false
     } else if (q.startsWith('select record,reserved_successor_execution_id,delivery_id from run_control_continuations')
       || q.includes("from run_chat_commands where run_id=$1 and kind='stop'") || q.startsWith('with recursive lineage(id) as')) {
       // This semantic repository fixture has no workflow control command, continuation or Stop receipt.
-    } else if (/from execution_dispatch_intents where execution_id=\$1/.test(q)
-      || q.startsWith('select i.operation_id,i.execution_id,i.run_id,i.node_id')
-      || q.startsWith('select record from execution_native_placements where execution_id=$1')) {
+    } else if (/from execution_dispatch_intents where execution_id=\$1/.test(q) || q.startsWith('select record from execution_native_placements where execution_id=$1')) {
       // Main-local executions have no device dispatch intent or native placement.
     } else throw new Error(`Unscripted SQL: ${q}`)
     return { rows, rowCount: rowCount ?? rows.length, command: q.split(' ')[0], fields: [], oid: 0 }
@@ -679,7 +661,7 @@ describe('real repository with PostgreSQL-shaped scripted transactions (not real
     expect(db.state().nativeEntries.size).toBe(1)
     expect(db.state().nativeEntries.get(work.id)).toEqual(before)
     expect(db.store.consumeLaunchPermit(work.id)).toBe(false)
-    expect(db.state().nativeEntries.size).toBe(1)
+    expect(db.events.filter((q) => q.startsWith('insert into workflow_native_entries'))).toHaveLength(1)
   })
   it('rolls back native reservation, input slot and execution together on failed admission publication', async () => {
     const db = postgresShape(), occurrence = await db.enter()

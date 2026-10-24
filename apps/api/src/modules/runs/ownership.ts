@@ -2,8 +2,9 @@ import { beginRuntimeTiming } from '../../infrastructure/runtimeTiming.js'
 import type pg from 'pg'
 import { createDedicatedClient } from '../../infrastructure/pool.js'
 
-import { assertGraphTransaction, ExclusiveGraphConnection } from '../run-graph/connection.js'
-import type { SqlQuery, SqlTransaction } from '../../infrastructure/transaction.js'
+import { ExclusiveGraphConnection } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
+import { memoizeNativeRead } from '../run-graph/nativeBatch.js'
 import { DomainError } from '../errors.js'
 import { ignoreError } from '../diagnostics/index.js'
 
@@ -23,7 +24,6 @@ export class RunOwnership {
   private graphConnection: ExclusiveGraphConnection | undefined
   private queryClient: pg.Client | undefined
   private generation: string | undefined
-  private readonly transactionFences = new WeakMap<SqlQuery, Promise<{ ownerId: string; fence: string }>>()
 
   private constructor(private readonly rawClient: pg.Client, readonly runId: string, private readonly onLost: () => void) {}
 
@@ -40,8 +40,7 @@ export class RunOwnership {
   oneShotConnection(): ExclusiveGraphConnection {
     this.assertOwned()
     if (!this.graphConnection) {
-      const connection = new ExclusiveGraphConnection(this.rawClient, () => this.assertOwned(), new Map(),
-        sql => this.checkCommitFence(sql))
+      const connection = new ExclusiveGraphConnection(this.rawClient, () => this.assertOwned(), new Map())
       this.graphConnection = connection
       this.queryClient = new Proxy(this.rawClient, {
         get: (target, property) => {
@@ -58,29 +57,11 @@ export class RunOwnership {
     return this.graphConnection
   }
 
-  /** Sample the actual session/lock once per transaction and again after ALL commit checks.
-   * No native action can use the result before that transaction acknowledges COMMIT. */
+  /** PostgreSQL session identity and actual held lock, not a cached/echoed lease. */
   async readOneShotFence(sql: SqlQuery): Promise<{ ownerId: string; fence: string }> {
     this.assertOwned()
-    if (!('transaction' in sql) || sql.transaction !== true) return this.readHeldFence(sql)
-    assertGraphTransaction(sql)
-    let fence = this.transactionFences.get(sql)
-    if (!fence) {
-      fence = this.readHeldFence(sql)
-      this.transactionFences.set(sql, fence)
-    }
-    return { ...await fence }
-  }
-
-  private async checkCommitFence(sql: SqlTransaction): Promise<void> {
-    const captured = this.transactionFences.get(sql)
-    if (!captured) return
-    this.assertOwned()
-    const expected = await captured, current = await this.readHeldFence(sql)
-    if (current.ownerId !== expected.ownerId || current.fence !== expected.fence) {
-      throw new DomainError('RUN_OWNERSHIP_LOST', 'The current session no longer owns this Run.', 409)
-    }
-    this.transactionFences.delete(sql)
+    // Inside a native batch the session advisory lock is read once at start and once at COMMIT.
+    return memoizeNativeRead(sql, `fence:${this.runId}`, () => this.readHeldFence(sql))
   }
 
   private async readHeldFence(sql: SqlQuery): Promise<{ ownerId: string; fence: string }> {

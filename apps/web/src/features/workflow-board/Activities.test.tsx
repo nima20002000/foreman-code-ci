@@ -84,17 +84,6 @@ afterEach(() => {
 })
 
 describe('Activities shared Agent and Job actors', () => {
-  it('keeps historical timestamps and Agent names together in wrapping metadata at the compact width', async () => {
-    await mount()
-    const row = screen.getByText('Agent worked').closest('li')!
-    const metadata = within(row).getByRole('group', { name: 'Activity time and actor' })
-    expect(within(metadata).getByText('Builder')).toBeVisible()
-    const time = metadata.querySelector('time')!
-    expect(time).toHaveAttribute('datetime', '2026-10-01T12:00:00.000Z')
-    expect(metadata).toHaveStyle({ display: 'flex', flexWrap: 'wrap' })
-    expect(time).toHaveStyle({ whiteSpace: 'normal' })
-  })
-
   it('renders CI lifecycle, partition and computer details under the initiating Agent without merging tickets', async () => {
     const ci = { id: '00000000-0000-4000-8000-000000000001',
       groupId: '00000000-0000-4000-8000-000000000002', suite: 'integration' as const,

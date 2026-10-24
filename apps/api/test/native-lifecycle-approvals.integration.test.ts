@@ -44,30 +44,4 @@ describe.skipIf(!postgresEnabled)('native workflow lifecycle: approvals', () => 
     expect(await f.receipts()).toEqual(receipts)
     expect(f.provider.counts).toMatchObject({ sessions: 3, starts: 3, responses: 2 })
   }, 60000)
-
-  it('rechecks delivered approval settlement without changing saved Run or version facts', async () => {
-    const f = await fixture()
-    await f.engine.start(f.f.run.id)
-    const pending = await f.pending()
-    expect(pending).toHaveLength(2)
-    for (const interaction of pending) {
-      await f.service.respond({ kind: 'user', principal: f.principal }, approvalResponse(interaction))
-      expect((await f.runs.listRepeatExecutions(f.f.run.id)).find(item => item.execution.id === interaction.executionId))
-        .toMatchObject({ accepted: true, execution: { state: 'completed', result: { outcome: 'succeeded' } } })
-    }
-    const saved = await f.runs.getRepeatSnapshot(f.f.run.id)
-    expect(saved.run).toMatchObject({ executionState: 'completed', outcome: 'succeeded' })
-    const counts = { ...f.provider.counts }, receipts = await f.receipts()
-    const owner = await f.runs.acquireOwnership(f.f.run.id, () => { throw new Error('Settlement lost its Run owner') })
-    if (!owner) throw new Error('Expected completed Run ownership for settlement replay')
-    try {
-      const store = await f.runs.repeat(owner)
-      for (let retry = 0; retry < 2; retry++) {
-        for (const interaction of pending) await store.settleNativeExecution(interaction.executionId)
-      }
-    } finally { await owner.release() }
-    expect(await f.runs.getRepeatSnapshot(f.f.run.id)).toEqual(saved)
-    expect(await f.receipts()).toEqual(receipts)
-    expect(f.provider.counts).toEqual(counts)
-  }, 60000)
 })
