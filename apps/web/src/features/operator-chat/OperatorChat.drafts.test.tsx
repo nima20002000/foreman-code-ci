@@ -161,6 +161,31 @@ describe('Operator draft chat history', () => {
     expect(history().queryByRole('button', { name: /New conversation/ })).not.toBeInTheDocument()
   })
 
+  it('does not restore a deleted first-message chat as a local draft', async () => {
+    server.use(http.delete('/api/operator/conversations/:conversationId', ({ params }) => {
+      const id = String(params.conversationId)
+      states.delete(id)
+      return HttpResponse.json({ conversationId: id, revision: 2 })
+    }))
+    const view = renderChat()
+    fireEvent.click(screen.getByRole('button', { name: 'Open history' }))
+    await history().findByRole('button', { name: /^First conversation/ })
+    await openDraft()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), { target: { value: 'First sent message' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    await history().findByRole('button', { name: /^First sent message/ })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), { target: { value: 'Unsent followup' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Chat options: First sent message' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    await waitFor(() => expect(screen.getByText('Chat deleted.')).toBeVisible())
+    expect(history().queryByRole('button', { name: /Unsent followup/ })).not.toBeInTheDocument()
+    view.unmount()
+    renderChat()
+    await history().findByRole('button', { name: /^First conversation/ })
+    expect(history().queryByRole('button', { name: /Unsent followup/ })).not.toBeInTheDocument()
+  })
+
   it('retains a conversation whose loaded message window is empty but has earlier messages', async () => {
     const saved = states.get('conversation-one')!
     states.set('conversation-one', { ...saved, messages: [], hasEarlierMessages: true })

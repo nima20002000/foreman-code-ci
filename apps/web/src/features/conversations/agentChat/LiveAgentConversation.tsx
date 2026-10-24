@@ -93,7 +93,7 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
   const drop = useFileDrop({ disabled: !!writeReason || !attachmentDraft.canAdd, onFiles: attachmentDraft.addFiles })
   const draft = useConversationDraftStore((store) => store.drafts[chat.draftKey] ?? '')
   const { composer, sendAgain, setSendAgain, resendCommand, resendControl, resendPending,
-    commandError, commandCompaction, submit } = useAgentConversationComposer({ chat, state, sessionControls, attachments, draft })
+    commandError, commandCompaction, newPending, submit } = useAgentConversationComposer({ chat, state, sessionControls, attachments, draft })
   const stateLabel = agentChatStateLabel(state, runLabel)
   const header = <AgentChatHeader name={name} state={stateLabel}
     detail={[activity, state?.availability.message, state ? chatBackgroundWork(state.activitySnapshot)?.message : undefined]
