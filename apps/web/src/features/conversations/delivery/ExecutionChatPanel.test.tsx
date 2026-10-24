@@ -122,7 +122,7 @@ describe('exact Execution chat public surface', () => {
     fireEvent.change(input, { target: { value: 'Keep my unsent question' } })
     state.value = { ...state.value, state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } }
     await waitFor(() => expect(screen.getByTestId('agent-conversation')).toBeInTheDocument(), { timeout: 6000 })
-    expect(await screen.findByRole('textbox', { name: 'Message' })).toHaveValue('Keep my unsent question')
+    expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue('Keep my unsent question')
   }, 15_000)
 
   it('says the Run ended when a message is refused for that, instead of losing chat access', async () => {
