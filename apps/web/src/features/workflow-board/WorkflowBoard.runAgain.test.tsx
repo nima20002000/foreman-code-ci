@@ -54,7 +54,7 @@ it.each([
   // The generic Start fixture has a fixed old clock; this newly admitted Run starts after history.
   fixture.mock.runs.get('run-current-1')!.run.startedAt = new Date(Date.parse(fixture.after.createdAt) + 1000).toISOString()
   await mounted.cache.invalidateQueries()
-  expect(await screen.findByRole('region', { name: 'Workflow authoring' })).toBeVisible()
+  await waitFor(() => expect(screen.getByRole('region', { name: 'Workflow authoring' })).toBeVisible())
   expect(mounted.router.state.location.search).not.toHaveProperty('selectedRunId')
   expect(mounted.router.state.location.search).not.toHaveProperty('runId')
   expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
