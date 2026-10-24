@@ -66,6 +66,19 @@ test('Worker artifacts bundle new transitive API helpers without registering mod
   assert.equal(result.status, 0, result.stderr);
   const worker = await import(pathToFileURL(join(f.directory, 'release/src/worker.mjs')).href);
   assert.equal(worker.importedHelper(), 'bundled from the import graph');
+  await t.test('standalone installation migrates the companion launcher without checkout dependencies', async () => {
+    const { migratePinnedCompanionLauncher } = await import(pathToFileURL(join(f.directory, 'release/src/companionLauncher.mjs')).href);
+    const installation = await import(pathToFileURL(join(f.directory, 'release/src/installation.mjs')).href);
+    assert.equal(typeof installation.readInstalledRelease, 'function');
+    const root = join(f.directory, 'installed-worker');
+    await mkdir(join(root, 'current/src'), { recursive: true });
+    await writeFile(join(root, 'current/src/companion.mjs'), 'console.log(JSON.stringify(process.argv.slice(2)))\n');
+    const launcher = join(root, 'graphql-companion');
+    await writeFile(launcher, `#!/bin/sh\nexec '${process.execPath}' '${root}/versions/0.1.0-${'a'.repeat(64)}/src/companion.mjs' "$@"\n`, { mode: 0o700 });
+    await migratePinnedCompanionLauncher(root);
+    const output = execFileSync(launcher, ['status', '--state', join(root, 'state')], { cwd: root, encoding: 'utf8', timeout: 5000 });
+    assert.deepEqual(JSON.parse(output), ['status', '--state', join(root, 'state')]);
+  });
   await t.test('composes managed browser snapshots inside the installed Worker artifact', () => {
     const configuration = worker.makeCurrentWorkflowFixture('browser-skill-artifact', 'single').configurations[0];
     const instructions = 'Observe the owned browser tab before acting.';
