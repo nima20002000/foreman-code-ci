@@ -4,14 +4,19 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LocalHumanAccessSchema } from '@foreman-code/contracts/management'
-import { FilePageSchema, FileWithRevisionSchema, type FileWithRevision, type TemporaryFileScope } from '@foreman-code/contracts/files'
+import { FileWithRevisionSchema, type TemporaryFileScope } from '@foreman-code/contracts/files'
 import { server } from '../../mocks/server'
 import { settingsExperienceKeys } from '../../shared/api/settingsExperience'
 import { finishSessionChange, sessionGeneration, sessionIsSwitching } from '../../shared/api/sessionBoundary'
-import { useConversationAttachments, type ConversationAttachments } from '../attachments'
+import { type AttachmentClient, type AttachmentUploadInput, useConversationAttachments, type ConversationAttachments } from '../attachments'
 import { AppConnectionBoundary } from '../../app/AppConnectionBoundary'
 
+const transport = vi.hoisted(() => ({ upload: vi.fn<AttachmentClient['upload']>(), cancel: vi.fn<AttachmentClient['cancel']>() }))
 const navigate = vi.hoisted(() => vi.fn())
+vi.mock('../attachments/attachmentClient', async (original) => ({
+  ...await original<typeof import('../attachments/attachmentClient')>(),
+  createAttachmentHttpClient: () => transport,
+}))
 vi.mock('@tanstack/react-router', async (original) => ({
   ...await original<typeof import('@tanstack/react-router')>(),
   useNavigate: () => navigate, useLocation: () => ({ href: '/' }),
@@ -25,14 +30,13 @@ const session = LocalHumanAccessSchema.parse({ principal: {
 const scope = (conversationId: string): TemporaryFileScope => ({ kind: 'temporary',
   chat: { kind: 'operator', conversationId, ownerPrincipalId: 'owner-a', operatorId: 'operator-a' } })
 const scopes = [scope('chat-a'), scope('chat-b')]
-interface UploadMetadata { requestId: string; filename: string; mediaType: string; byteSize: number; sha256: string }
-function uploaded(input: UploadMetadata, scope: TemporaryFileScope) {
+function uploaded(input: AttachmentUploadInput) {
   const createdAt = new Date().toISOString()
   return FileWithRevisionSchema.parse({
-    file: { fileId: `file-${input.requestId}`, currentRevisionId: `revision-${input.requestId}`, scope,
+    file: { fileId: `file-${input.requestId}`, currentRevisionId: `revision-${input.requestId}`, scope: input.scope,
       state: 'ready', createdAt, retentionDurationSeconds: 3600, expiresAt: new Date(Date.parse(createdAt) + 3_600_000).toISOString() },
     revision: { fileId: `file-${input.requestId}`, revisionId: `revision-${input.requestId}`, filename: input.filename,
-      mediaType: input.mediaType, byteSize: input.byteSize, sha256: input.sha256, origin: 'upload', createdAt },
+      mediaType: input.mediaType, byteSize: input.file.size, sha256: 'a'.repeat(64), origin: 'upload', createdAt },
   })
 }
 const drafts = new Map<string, ConversationAttachments>()
@@ -44,43 +48,22 @@ function Probe({ value }: { value: TemporaryFileScope }) {
 let queryClient: QueryClient
 let failure: number | 'network' | undefined
 let release: () => void
-let pendingRequest: Request | undefined
-let uploads: UploadMetadata[]
-let cancellations: string[]
+let pendingInput: AttachmentUploadInput
 
 beforeEach(() => {
   drafts.clear(); vi.clearAllMocks(); failure = undefined
   window.localStorage.setItem('graphql.chat-instance-binding', `${identity.checkoutId}:${identity.installationId}`)
   const gate = new Promise<void>((resolve) => { release = resolve })
-  uploads = []; cancellations = []; pendingRequest = undefined
-  const staged = new Map<string, FileWithRevision>()
+  transport.upload.mockImplementation(async (input) => {
+    if (input.filename === 'uploading.md') { pendingInput = input; await gate }
+    return uploaded(input)
+  })
+  transport.cancel.mockResolvedValue(undefined)
   server.use(
     http.get('/api/local-human', () => failure === 'network' ? HttpResponse.error() : failure
       ? HttpResponse.json({ error: { code: 'SESSION_CHECK_FAILED', message: 'Unavailable' } }, { status: failure })
       : HttpResponse.json(session)),
     http.get('/api/runtime/identity', () => HttpResponse.json(identity)),
-    http.get('/api/operator/conversations/:conversationId/files', ({ params }) => HttpResponse.json(FilePageSchema.parse({
-      items: [...staged.values()].filter(({ file }) => file.scope.kind === 'temporary'
-        && file.scope.chat.conversationId === String(params.conversationId)),
-      pageInfo: { nextCursor: null },
-    }))),
-    http.post('/api/operator/conversations/:conversationId/files/uploads', async ({ request, params }) => {
-      const input = await request.json() as UploadMetadata
-      uploads.push(input)
-      const value = uploaded(input, scope(String(params.conversationId)))
-      staged.set(input.requestId, value)
-      if (input.filename === 'uploading.md') { pendingRequest = request; await gate }
-      return HttpResponse.json({ value, replayed: false })
-    }),
-    http.put('/api/operator/conversations/:conversationId/files/uploads/:requestId', ({ params }) => {
-      const value = staged.get(String(params.requestId))!
-      return HttpResponse.json({ value, replayed: false })
-    }),
-    http.delete('/api/operator/conversations/:conversationId/files/uploads/:requestId', ({ params }) => {
-      const requestId = String(params.requestId)
-      cancellations.push(requestId)
-      return HttpResponse.json({ value: staged.get(requestId), replayed: false })
-    }),
   )
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })
 })
@@ -106,7 +89,6 @@ async function mountDrafts() {
   await waitFor(() => {
     expect(drafts.get('chat-a')!.items.map((item) => item.status)).toEqual(['ready', 'uploading'])
     expect(drafts.get('chat-b')!.items[0]?.status).toBe('ready')
-    expect(pendingRequest).toBeDefined()
   })
 }
 
@@ -116,7 +98,7 @@ describe('attachment lifetime during local API failures', () => {
     const generation = sessionGeneration()
     const selections = scopes.map((value) => drafts.get(value.chat.conversationId)!.items.map(({ id, requestId, file }) => ({ id, requestId, file })))
     const mutations = queryClient.getMutationCache().getAll()
-    const signal = pendingRequest!.signal
+    const signal = pendingInput.signal
     failure = error
     await act(async () => { await queryClient.invalidateQueries({ queryKey: settingsExperienceKeys.access(), exact: true }) })
     expect(await screen.findByRole('alert', { name: 'Server connection' })).toBeInTheDocument()
@@ -134,11 +116,11 @@ describe('attachment lifetime during local API failures', () => {
       items.forEach((item, itemIndex) => expect(item.file).toBe(selections[index][itemIndex].file))
     })
     expect(drafts.get('chat-a')!.isUploading).toBe(true)
-    expect(pendingRequest!.signal).toBe(signal)
+    expect(pendingInput.signal).toBe(signal)
     release()
     await waitFor(() => expect(drafts.get('chat-a')!.readyRefs).toHaveLength(2))
-    expect(uploads).toHaveLength(3)
-    expect(cancellations).toEqual([])
+    expect(transport.upload).toHaveBeenCalledTimes(3)
+    expect(transport.cancel).not.toHaveBeenCalled()
     expect(drafts.get('chat-b')!.items[0].filename).toBe('other.md')
   })
 
@@ -146,7 +128,7 @@ describe('attachment lifetime during local API failures', () => {
     await mountDrafts()
     failure = status
     await act(async () => { await queryClient.invalidateQueries({ queryKey: settingsExperienceKeys.access(), exact: true }) })
-    await waitFor(() => expect(pendingRequest!.signal.aborted).toBe(true))
+    await waitFor(() => expect(pendingInput.signal.aborted).toBe(true))
     expect(queryClient.getMutationCache().getAll()).toEqual([])
     expect(screen.queryByTestId('chat-a')).not.toBeInTheDocument()
   })

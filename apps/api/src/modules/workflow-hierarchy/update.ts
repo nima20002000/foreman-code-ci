@@ -3,7 +3,7 @@ import { WorkflowHierarchyUpdateInputSchema } from '@foreman-code/contracts'
 import { CurrentWorkflowSavedSchema, sameWorkflowValue } from '@foreman-code/contracts/current'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { PostgresCommandCoordinator } from '../commands/index.js'
-import type { WorkflowManagementService } from '../workflows/index.js'
+import type { WorkflowManagementService } from '../workflows/management.js'
 import { requireCurrentWorkflowAccess } from '../workflows/currentWorkflowPolicy.js'
 import { readLiveManagementPrincipal } from '../access/index.js'
 import { readSavedWorkflowDefinition, readImmutableWorkflowVersion, IMMUTABLE_WORKFLOW_VERSION_COLUMNS,

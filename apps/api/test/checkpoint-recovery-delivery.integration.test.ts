@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { postgresEnabled } from './helpers/database.js'
 import { productionFixtures, response } from './helpers/approvalCheckpointProduction.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 describe.skipIf(!postgresEnabled)('BR1-003 production-composed approval/checkpoint recovery: delivery', () => {
   const fixture = productionFixtures()
@@ -17,9 +17,9 @@ describe.skipIf(!postgresEnabled)('BR1-003 production-composed approval/checkpoi
     f.provider.beforeRespond = async () => {
       const client = await f.db.pool.connect()
       try {
-        await withTransaction({ client }, transaction => transaction.query(
-          'select id from runs where id=$1 for no key update nowait', [f.f.run.id]))
-      } finally { client.release() }
+        await beginTransaction(client)
+        await client.query('select id from runs where id=$1 for no key update nowait', [f.f.run.id])
+      } finally { await rollbackTransaction(client); client.release() }
     }
     const result = await f.service.respond({ kind: 'user', principal: f.principal }, response(interaction!))
     expect(result.interaction.deliveryState).toBe('delivered')

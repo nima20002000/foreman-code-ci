@@ -1,7 +1,7 @@
 import { generateKeyPairSync, randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { afterEach, expect, it, vi } from 'vitest'
-import { publicKeyFingerprint } from '@foreman-code/contracts-node/device-identity-node'
+import { publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
 import { ProductionDeviceRuntime } from './productionRuntime.js'
 
 afterEach(() => { vi.useRealTimers() })

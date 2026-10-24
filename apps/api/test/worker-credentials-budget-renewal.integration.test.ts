@@ -2,7 +2,7 @@ import { beforeEach, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
 import { PostgresInteractionCoordinationRepository } from '../src/modules/interactions/coordination.js'
-import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { workerCredentialBudgetFixture } from './helpers/workerCredentialBudgetFixture.js'
 
 const fixture = workerCredentialBudgetFixture()
@@ -41,7 +41,7 @@ async function issueWaitingCredential() {
     observedAt: execution.createdAt,
     observedStatus: 'idle',
   })
-  credentials = new CurrentWorkerCredentialService(pool, access, 60_000)
+  credentials = new Wave25WorkerCredentialService(pool, access, 60_000)
   return credentials.issueForExecution(execution.id)
 }
 

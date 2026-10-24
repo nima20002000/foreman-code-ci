@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type pg from 'pg'
 import { canonicalJson } from '@foreman-code/contracts'
 import { NON_EXPIRING_CREDENTIAL_TIMESTAMP } from '@foreman-code/contracts/management'
@@ -38,7 +37,7 @@ export class ConversationCredentials {
       await sql.query(`insert into agent_conversation_credentials(principal_id,conversation_id,subject,workflow_version_id)
         values($1,$2,$3::jsonb,$4)`, [issued.principal.id, row.id, canonicalJson(current.subject), current.workflowVersionId])
       return { ...issued, subject: current.subject,
-        environment: { agentId, variables: { [INSTALLATION_NAMES.environment.MCP_TOKEN]: issued.token, } } }
+        environment: { agentId, variables: { FOREMAN_CODE_MCP_TOKEN: issued.token, GRAPHQL_MCP_TOKEN: issued.token } } }
     })
   }
 }

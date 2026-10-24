@@ -109,7 +109,7 @@ it.each([
 
 async function callManagedLauncher(token: string) {
   const child = spawn(process.execPath, [appLauncherPath()], {
-    env: { ...process.env, GRAPHQL_MCP_TOKEN: token, },
+    env: { ...process.env, FOREMAN_CODE_MCP_TOKEN: token, GRAPHQL_MCP_TOKEN: token },
     stdio: ['pipe', 'pipe', 'pipe'], signal: AbortSignal.timeout(5_000),
   })
   const lines = createInterface({ input: child.stdout })
@@ -132,7 +132,7 @@ it('routes Worker Operator MCP calls through the managed launcher and removes th
   const stateDirectory = await temporaryDirectory()
   roots.push(stateDirectory)
   selection.appMcpLauncher = join(stateDirectory, 'release', 'artifacts', 'graphql-mcp.mjs')
-  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', join(stateDirectory, 'managed-mcp'))
+  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', join(stateDirectory, 'managed-mcp'))
   await installAppLauncher()
   const registry = {
     scope: (owner: string) => ({ owner, root: join(stateDirectory, 'processes') }),

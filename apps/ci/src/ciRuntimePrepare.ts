@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
@@ -11,11 +10,11 @@ import { JobVerificationQuotaPoolSchema } from '@foreman-code/contracts/job-veri
 import { z } from 'zod'
 import { pruneCiRuntimeCache, readCiRuntimeCache, writeCiRuntimeCache } from './ciRuntimeCache.js'
 import { MAX_VERIFICATION_CONFIGURATION_BYTES, readProtectedRuntimeConfiguration, readProtectedRuntimeFile }
-  from '@foreman-code/contracts-node/installed-runtime-node'
+  from '@foreman-code/contracts/installed-runtime-node'
 import { closeCiRuntimeCommand, runCiRuntimeCommand } from './ciRuntimeCommands.js'
 import { pruneCiImages } from './ciRuntimeImages.js'
 import { ciPreparationBuildArgs, ciPreparationLimits, ciPreparationResourceArgs } from './ciPreparationLimits.js'
-import { sha256Hex } from '@foreman-code/contracts-node/server-kit'
+import { sha256Hex } from '@foreman-code/contracts/server-kit'
 
 const hash = (bytes: Uint8Array | string) => sha256Hex(bytes)
 const COMMIT = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u
@@ -216,7 +215,7 @@ async function prepareRuntime(context: CiContext, { repository, commit, installe
     seedReceiptPath, contextReceiptPath, qualificationSource, cache,
   }
   if (unitCodex) {
-    prepared.unitCodex = { executable: INSTALLATION_NAMES.paths.ciCodex, sourceExecutable: codex,
+    prepared.unitCodex = { executable: '/opt/graphql-ci/tools/codex', sourceExecutable: codex,
       version: unitCodex.version, binarySha256: unitCodex.sha256 }
   }
   signal?.throwIfAborted()

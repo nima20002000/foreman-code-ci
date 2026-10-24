@@ -9,7 +9,7 @@ import { buildApp } from '../src/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
-import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { insertProviderRun } from './helpers/checkpointRuntime.js'
 import { candidateFor, seedWorkflowFixture } from './helpers/workflowDatabase.js'
@@ -44,7 +44,7 @@ it.runIf(postgresEnabled)(
       await db.pool.query(`insert into harness_executions(id,run_id,workflow_node_id,agent_id,attempt,record)
         values($1,$2,$3,$4,1,$5::jsonb)`, [execution.id, f.run.id, execution.workflowNodeId,
         execution.agentId, JSON.stringify(execution)])
-      const credential = await new CurrentWorkerCredentialService(db.pool, access).issueForExecution(execution.id)
+      const credential = await new Wave25WorkerCredentialService(db.pool, access).issueForExecution(execution.id)
       const commands = new PostgresCommandCoordinator(db.pool)
       app = buildApp({ readiness: { database: { ping: async () => undefined }, checkpoints: { ping: async () => undefined } },
         appMcp: workerToolServices(db.pool, commands).appMcp(access, new PostgresAppInteractionService(db.pool, {} as never, commands)),

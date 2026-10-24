@@ -11,15 +11,15 @@ import {
 } from '@foreman-code/contracts/current'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { buildApp } from '../../src/app.js'
-import { ApprovalPostgresSaver } from '../../src/modules/runs/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../../src/modules/access/workerCredentials.js'
 import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
-import { CurrentInteractionRepository } from '../../src/modules/interactions/current/repository.js'
-import { CurrentWorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
+import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
+import { Wave25WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../../src/modules/interactions/runtimePorts.js'
 import { createWorkflowNativeCaptureChannel } from '../../src/modules/interactions/workflowNativeCapture.js'
 import { createReviewNativeCaptureChannel } from '../../src/modules/interactions/reviewNativeCapture.js'
@@ -62,10 +62,10 @@ function composeRuntime(base: Base, provider: RecoveryProvider, errors: unknown[
   const workflowCapture = createWorkflowNativeCaptureChannel(), reviewCapture = createReviewNativeCaptureChannel()
   const runs = new PostgresRunRepository(pool, workflows, locations,
     { runtimeRoot: directory, ...currentRepositoryServices({ pool }, workflowCapture.verify) })
-  const repository = new CurrentInteractionRepository(pool, new ReviewNativeProofServices(reviewCapture.verify))
+  const repository = new Wave25InteractionRepository(pool, new ReviewNativeProofServices(reviewCapture.verify))
   const budgets = new PostgresApprovalBudgetRepository(pool)
   const managers = new ExecutionScopedNativeSessionManagerResolver(() => provider.connection())
-  const credentials = new CurrentWorkerCredentialService(pool, new PostgresAccessService(pool))
+  const credentials = new Wave25WorkerCredentialService(pool, new PostgresAccessService(pool))
   const launchCredentials = providerLaunchCredentials(runs, locations, managers, credentials, () => ({
     async inspect(input) { return { harness: input.harness, providerVersion: '0.154.0',
       runnerId: input.runnerId, workingDirectory: input.workingDirectory, inspectedAt: new Date().toISOString(),
