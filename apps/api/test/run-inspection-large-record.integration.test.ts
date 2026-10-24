@@ -3,7 +3,7 @@ import pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { buildApp } from '../src/app.js'
-import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { RunManagementService } from '../src/modules/runs/management.js'
 import { randomUUID } from 'node:crypto'
 import { Buffer } from 'node:buffer'
@@ -32,22 +32,22 @@ async function rejectOversizedHistoryDuringContention(f: Awaited<ReturnType<type
     await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
       authProvider: { token: async () => f.writer.token },
     }))
-    await beginTransaction(blocker)
-    // Hold the expensive execution-input store, while Run records remain readable.
-    await blocker.query('lock table run_repeat_slots in access exclusive mode')
-    const args = requestScope(f)
-    const http = await app.inject({ method: 'GET',
-      url: `/api/management/workspaces/${args.workspaceId}/runs/${args.runId}`,
-      headers: { authorization: `Bearer ${f.writer.token}` } })
-    expect(http.statusCode, http.body).toBe(409)
-    expect(http.json()).toMatchObject({ error: { code: 'RUN_DETAIL_TOO_LARGE' } })
-    const mcp = await client.callTool({ name: 'run_get', arguments: { ...args, detail: 'full' } })
-    expect(mcp.isError).toBe(true)
-    expect(decodeMcpToolResult(mcp)).toMatchObject({ error: { code: 'RUN_DETAIL_TOO_LARGE' } })
-    expect(RunRecordDetailSchema.parse(await parity({ ...f, app }, client, f.writer.token,
-      RUN_INSPECTION_TOOLS.record, args)).run.input).toEqual(f.f.run.input)
+    await withTransaction({ client: blocker }, async transaction => {
+      // Hold the expensive execution-input store, while Run records remain readable.
+      await transaction.query('lock table run_repeat_slots in access exclusive mode')
+      const args = requestScope(f)
+      const http = await app.inject({ method: 'GET',
+        url: `/api/management/workspaces/${args.workspaceId}/runs/${args.runId}`,
+        headers: { authorization: `Bearer ${f.writer.token}` } })
+      expect(http.statusCode, http.body).toBe(409)
+      expect(http.json()).toMatchObject({ error: { code: 'RUN_DETAIL_TOO_LARGE' } })
+      const mcp = await client.callTool({ name: 'run_get', arguments: { ...args, detail: 'full' } })
+      expect(mcp.isError).toBe(true)
+      expect(decodeMcpToolResult(mcp)).toMatchObject({ error: { code: 'RUN_DETAIL_TOO_LARGE' } })
+      expect(RunRecordDetailSchema.parse(await parity({ ...f, app }, client, f.writer.token,
+        RUN_INSPECTION_TOOLS.record, args)).run.input).toEqual(f.f.run.input)
+    })
   } finally {
-    await rollbackTransaction(blocker)
     blocker.release()
     await client.close()
     await app.close()

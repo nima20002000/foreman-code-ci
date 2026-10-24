@@ -8,7 +8,7 @@ import { remoteReviewEnvironment } from './helpers/remoteReviewEnvironment.js'
 
 const execute = promisify(execFile)
 const storageKeys = ['HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME',
-  'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'FOREMAN_CODE_APP_MCP_DIRECTORY']
+  'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'GRAPHQL_APP_MCP_DIRECTORY']
 
 it('keeps native fixture writes and session discovery separate from an installed Worker', async () => {
   const directory = await privateFixtureDirectory('remote-review-environment-')
@@ -22,6 +22,7 @@ it('keeps native fixture writes and session discovery separate from an installed
       ...Object.fromEntries(storageKeys.map(key => [key, installed])),
       PATH: join(installed, 'bin'),
       GRAPHQL_APP_MCP_DIRECTORY: installed,
+      FOREMAN_CODE_APP_MCP_DIRECTORY: installed,
       NODE_OPTIONS: `--require=${join(installed, 'loader.cjs')}`,
       NODE_PATH: installed,
       DBUS_SESSION_BUS_ADDRESS: `unix:path=${installed}/bus`,
@@ -40,18 +41,20 @@ it('keeps native fixture writes and session discovery separate from an installed
       process.stdout.write(JSON.stringify({
         path: process.env.PATH,
         bus: process.env.DBUS_SESSION_BUS_ADDRESS,
-        legacyMcp: process.env.GRAPHQL_APP_MCP_DIRECTORY ?? null,
+        mcpDirectory: process.env.GRAPHQL_APP_MCP_DIRECTORY,
+        aliasMcp: process.env.FOREMAN_CODE_APP_MCP_DIRECTORY ?? null,
         nodeOptions: process.env.NODE_OPTIONS ?? null,
         nodePath: process.env.NODE_PATH ?? null,
       }))
     `], { env: environment })
     const discovery = JSON.parse(stdout) as {
-      path: string; bus: string; legacyMcp: string | null; nodeOptions: string | null; nodePath: string | null
+      path: string; bus: string; mcpDirectory: string; aliasMcp: string | null; nodeOptions: string | null; nodePath: string | null
     }
     expect(discovery.path.split(':')).not.toContain(source.PATH)
     expect(discovery.bus).not.toBe(source.DBUS_SESSION_BUS_ADDRESS)
     expect(discovery.bus).toBe(`unix:path=${environment.XDG_RUNTIME_DIR}/bus`)
-    expect(discovery.legacyMcp).toBeNull()
+    expect(discovery.mcpDirectory).toBe(join(home, 'mcp'))
+    expect(discovery.aliasMcp).toBeNull()
     expect(discovery.nodeOptions).toBeNull()
     expect(discovery.nodePath).toBeNull()
     for (const key of storageKeys) {

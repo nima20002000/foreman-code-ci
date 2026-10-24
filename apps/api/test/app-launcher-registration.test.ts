@@ -13,7 +13,7 @@ import { nativeConnection } from '../src/modules/harnesses/nativeMcpCommon.js'
 import { runLauncherProcess } from './helpers/launcherInstallationProcess.js'
 
 const directories: string[] = []
-const source = new URL('../../../scripts/graphql-mcp.mjs', import.meta.url)
+const source = new URL('../../../scripts/foreman-mcp.mjs', import.meta.url)
 afterEach(async () => {
   vi.unstubAllEnvs()
   await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true })))
@@ -24,7 +24,7 @@ async function fixture(runtimeCount = 3) {
   directories.push(directory)
   const launcher = join(directory, 'mcp/launcher.mjs')
   vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
-  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', dirname(launcher))
+  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', dirname(launcher))
   await installManagedLauncher(source, launcher)
   const runtimes = Array.from({ length: runtimeCount }, (_, index) => join(directory, `node-${index}`))
   await Promise.all(runtimes.map(runtime => copyFile(process.execPath, runtime, constants.COPYFILE_FICLONE)))

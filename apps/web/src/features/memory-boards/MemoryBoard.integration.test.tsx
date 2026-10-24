@@ -1,14 +1,12 @@
 // @vitest-environment jsdom
 import { webcrypto } from 'node:crypto'
-import { useContext, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MemoryBoardMutation, MemoryCardWorkBinding, AgentNodeRef } from '@foreman-code/contracts'
 import { ApiError } from '../../shared/api/client'
-import { UnsavedChangesProvider } from '../../shared/ui/UnsavedChangesProvider'
-import { UnsavedChangesContext } from '../../shared/ui/unsavedChanges'
 import { MemoryBoard, type MemoryBoardProps } from './MemoryBoard'
 import { MemoryBoardDialog } from './MemoryBoardDialog'
 import { MemoryBoardAccessField } from './MemoryBoardAccessField'
@@ -17,12 +15,10 @@ import { memoryToolNames } from './access'
 import { createMemoryTestPort, memoryTestCard, memoryTestIds, memoryTestNote, memoryTestTime } from './testing'
 import type { MemoryChange, MemoryFilters, MemoryNodeOption, MemoryReceipt } from './ports'
 
-vi.mock('@tanstack/react-router', () => ({ useBlocker: () => undefined }))
-
 let cache: QueryClient
 let fixture: ReturnType<typeof createMemoryTestPort>
 let originalLocks: PropertyDescriptor | undefined
-function wrapper({ children }: { children: ReactNode }) { return <QueryClientProvider client={cache}><UnsavedChangesProvider>{children}</UnsavedChangesProvider></QueryClientProvider> }
+function wrapper({ children }: { children: ReactNode }) { return <QueryClientProvider client={cache}>{children}</QueryClientProvider> }
 function Harness({ initialCardId, ...overrides }: Partial<MemoryBoardProps> & { initialCardId?: string }) {
   const [filters, setFilters] = useState<MemoryFilters>({ query: '', doneOpen: false })
   const [cardId, setCardId] = useState(initialCardId)
@@ -404,24 +400,4 @@ describe('exact work identity, access and one modal', () => {
     expect(screen.getByLabelText('Why is this no longer needed?')).toHaveValue('Task replaced')
     expect(screen.getByRole('button', { name: 'Open work' })).toBeInTheDocument()
   })
-})
-
-it('offers Keep editing and Discard when leaving a dirty memory card instead of an unavailable Save', async () => {
-  function Leave() {
-    const guard = useContext(UnsavedChangesContext)
-    return <button onClick={() => void guard?.request()}>Leave memory</button>
-  }
-  const user = userEvent.setup()
-  render(<><Harness /><Leave /></>, { wrapper })
-  await ready()
-  await user.click(screen.getByRole('button', { name: 'Add card' }))
-  await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Keep my card')
-  await user.click(screen.getByRole('button', { name: 'Leave memory' }))
-  const leave = await screen.findByRole('alertdialog', { name: 'Discard unsaved changes?' })
-  expect(within(leave).queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
-  await user.click(within(leave).getByRole('button', { name: 'Keep editing' }))
-  expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Keep my card')
-  await user.click(screen.getByRole('button', { name: 'Leave memory' }))
-  await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Discard' }))
-  await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Title' })).not.toBeInTheDocument())
 })

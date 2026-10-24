@@ -1,14 +1,15 @@
+import { installManagedLauncher } from '../src/modules/harnesses/appMcpLauncher.js'
 import { join } from 'node:path'
 import { persistentFixtureRoot } from './helpers/fixtureStorage.js'
 import { randomUUID } from 'node:crypto'
-import { copyFile, mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import * as fs from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS, withAdvancedDefaults } from '@foreman-code/contracts'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { ExecutionFactsResultSchema } from '@foreman-code/contracts/execution-authority'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import { loadOrCreateWorkerIdentity, persistWorkerPairing } from '@foreman-code/contracts/device-identity-node'
+import { loadOrCreateWorkerIdentity, persistWorkerPairing } from '@foreman-code/contracts-node/device-identity-node'
 import { createInstalledCodexQualificationReader } from '../src/modules/harnesses/installedCodexQualification.js'
 import type { InstalledCodexInspection } from '../src/modules/harnesses/installedCodexInspection.js'
 import { inspectInstalledCodex } from '../src/modules/harnesses/installedCodexInspection.js'
@@ -197,7 +198,7 @@ describe('actual Main and installed Codex qualification read capability', () => 
       const codexBinary = join(stateDirectory, 'codex')
       const appMcpLauncher = join(stateDirectory, 'graphql-mcp.mjs')
       await writeFile(codexBinary, '#!/bin/sh\nprintf "codex-cli 0.132.0\\n"\n', { mode: 0o700 })
-      await copyFile(new URL('../../../scripts/graphql-mcp.mjs', import.meta.url), appMcpLauncher)
+      await installManagedLauncher(new URL('../../../scripts/foreman-mcp.mjs', import.meta.url), appMcpLauncher)
       // Retain an explicit fixture selection instead of discovering host CLIs or a built release.
       await writeFile(join(stateDirectory, 'workflow-runtime.json'), JSON.stringify({
         schemaVersion: 1,

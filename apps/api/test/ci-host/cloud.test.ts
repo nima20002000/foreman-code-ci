@@ -360,6 +360,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     const calls = (await readFile(runner.calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
     expect(calls).toEqual(suite === 'integration' ? [['pnpm', 'test:integration', '--files', ...files]] : [
       ['pnpm', '--filter', '@foreman-code/contracts', 'build'],
+      ['pnpm', '--filter', '@foreman-code/contracts-node', 'build'],
       ['pnpm', '--filter', '@foreman-code/ci', 'build'],
       ['--', 'corepack', 'pnpm', '--dir', 'apps/api', 'exec', 'vitest', 'run',
         ...files.map(file => file.slice('apps/api/'.length))],

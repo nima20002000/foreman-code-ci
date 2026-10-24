@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
+    "./testing/verification-runtime": "./test/helpers/verificationRuntimeFixture.ts",
     "./worker/byte-transfer": { "types": "./dist/worker/byteTransfer.d.ts", "import": "./dist/worker/byteTransfer.js" },
     "./worker/ci": { "types": "./dist/worker/ci.d.ts", "import": "./dist/worker/ci.js" },
     "./worker/collaboration": { "types": "./dist/worker/collaboration.d.ts", "import": "./dist/worker/collaboration.js" },
@@ -36,6 +37,7 @@
     "@fastify/static": "10.1.6",
     "@foreman-code/ci": "workspace:*",
     "@foreman-code/contracts": "workspace:*",
+    "@foreman-code/contracts-node": "workspace:*",
     "@langchain/core": "1.2.11",
     "@langchain/langgraph": "1.4.15",
     "@langchain/langgraph-checkpoint": "1.1.5",

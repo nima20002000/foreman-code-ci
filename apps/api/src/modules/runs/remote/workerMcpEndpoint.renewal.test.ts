@@ -23,7 +23,7 @@ it('keeps renewing after a successful refresh outlives its watchdog without reco
     .mockImplementationOnce(() => firstRefresh.promise)
   const endpoint = await createWorkerMcpEndpoint({ launcher: join(root, 'launcher.mjs'),
     signal: new AbortController().signal, relay: {
-      environment: { agentId: 'agent', variables: { FOREMAN_CODE_MCP_TOKEN: token } },
+      environment: { agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: token } },
       expiresAt: new Date(Date.now() + WORKER_MCP_LEASE_RENEWAL_WINDOW_MS).toISOString(),
       request: vi.fn(async () => ({ statusCode: 200, contentType: 'application/json' as const, body: '{}' })),
       refresh,

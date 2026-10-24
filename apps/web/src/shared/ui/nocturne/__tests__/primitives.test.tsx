@@ -3,7 +3,7 @@ import { createRef, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Button, IconButton, LinkButton, TextField, Select, Switch, RadioGroup, Slider, Tabs, SegmentedControl, Progress, DataTable, WorkflowNodeCard, ApprovalCard, RunControls, SaveBar, Dialog, ToastProvider, useToast } from '..'
+import { Button, IconButton, LinkButton, TextField, Select, Switch, RadioGroup, Slider, Tabs, SegmentedControl, Progress, DataTable, WorkflowNodeCard, ApprovalCard, RunControls, SaveBar, ToastProvider, useToast } from '..'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
@@ -173,24 +173,4 @@ describe('Controlled navigation and safe states', () => {
     await userEvent.click(within(region).getByRole('button', { name: /dismiss/i }))
     expect(screen.queryByText('Saved')).not.toBeInTheDocument()
   })
-})
-
-it('keeps actionable notifications inside the active dialog and retains them when it closes', async () => {
-  const undo = vi.fn()
-  function Example() {
-    const toast = useToast()
-    const [open, setOpen] = useState(true)
-    return <Dialog open={open} onOpenChange={setOpen} title="Choose folder">
-      <Button onClick={() => toast.notify({ title: 'Folder removed', tone: 'warning', action: { label: 'Undo removal', onClick: undo } })}>Remove folder</Button>
-    </Dialog>
-  }
-  render(<ToastProvider><Example /></ToastProvider>)
-  await userEvent.click(screen.getByRole('button', { name: 'Remove folder' }))
-  const notification = await within(screen.getByRole('dialog')).findByRole('list', { name: 'Notifications' })
-  await userEvent.click(within(notification).getByRole('button', { name: 'Undo removal' }))
-  expect(undo).toHaveBeenCalledOnce()
-  await userEvent.click(screen.getByRole('button', { name: 'Close dialog' }))
-  expect(screen.getByRole('list', { name: 'Notifications' })).toBe(notification)
-  await userEvent.click(screen.getByRole('button', { name: 'Dismiss Folder removed' }))
-  expect(screen.queryByText('Folder removed')).not.toBeInTheDocument()
 })

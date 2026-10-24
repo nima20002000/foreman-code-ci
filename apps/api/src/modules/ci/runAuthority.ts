@@ -10,7 +10,7 @@ export class RunCiAuthority implements CiAuthority {
 
   async resolve(caller: ManagementPrincipal, requestedWorkspace: string | undefined, actions: ManagementAction[]) {
     const { currentOperatorAuthority, intersectGrants, requireAuthorization, workerScopesForAction } = await import('../access/index.js')
-    const { assertWave25WorkerBinding } = await import('../interactions/index.js')
+    const { assertCurrentWorkerBinding } = await import('../interactions/index.js')
     // Only reads: the binding is verified from one committed snapshot and no row lock outlives this COMMIT, so
     // CI calls never queue behind the Run owner. A CI ticket is admitted later in its own transaction.
     return retryDatabaseRead(() => withTransaction(this.pool, async (sql) => {
@@ -19,7 +19,7 @@ export class RunCiAuthority implements CiAuthority {
       let executionId: string | undefined
       let initiatingAgent: JobInitiatingAgent | undefined
       if (caller.audience === 'worker') {
-        await assertWave25WorkerBinding(sql, caller.id)
+        await assertCurrentWorkerBinding(sql, caller.id)
         const binding = (await sql.query<{ workspace_id: string; workflow_id: string; run_id: string;
           authorization_principal_id: string; execution_id: string | null }>(`select b.workspace_id,b.workflow_id,b.run_id,b.execution_id,
             r.record->>'authorizationPrincipalId' as authorization_principal_id

@@ -13,7 +13,7 @@ import { operatorState } from '../operator-chat/pr17-test-fixtures'
 import { savedClaudeConfiguration } from '../settings/claudeSettings.fixtures'
 import { clearRevisionedFormPersistence } from '../settings'
 import { installChatSource, mountChat } from './agentChat/testSupport'
-import { useConversationDraftStore } from './conversationDraftStore'
+import { useConversationDraftStore } from '../chat-core'
 
 vi.mock('../../shared/api/operatorChatStream', () => ({ subscribeOperatorChat: () => () => undefined }))
 
