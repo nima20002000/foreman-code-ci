@@ -179,6 +179,7 @@ describe('WorkspaceRouteEntry integration', () => {
     const open = within(actions).getByRole('button', { name: `Open ${title} settings` })
     await user.click(open)
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
+    mark('rail')
     expect(rail).toBeVisible()
     await user.click(within(rail).getByRole('button', { name: 'Back to Board' }))
     await waitFor(() => expect(rail).not.toBeVisible())
@@ -189,6 +190,10 @@ describe('WorkspaceRouteEntry integration', () => {
   })
 
   it('opens an unselected reloaded Claude Agent settings panel while cross-computer choices are unavailable', async () => {
+    const t0 = performance.now(); const hits = new Map<string, number>(); const mark = (l: string) => console.log(`TIMING ${l} ${Math.round(performance.now() - t0)}ms`)
+    const onReq = ({ request }: { request: Request }) => { const k = `${request.method} ${new URL(request.url).pathname}`; hits.set(k, (hits.get(k) ?? 0) + 1) }
+    server.events.on('request:start', onReq)
+    try {
     // Apply the canvas CSS so userEvent checks the same pointer access as the browser.
     render(<style>{canvasStyles}</style>)
     const fixture = getMockFixture('workspace-1')!
@@ -208,6 +213,7 @@ describe('WorkspaceRouteEntry integration', () => {
     const first = await renderWorkspace(entry)
     const user = userEvent.setup()
     await workflowBoard('Research to review')
+    mark('first-board')
     await user.click(within(screen.getByRole('banner', { name: 'Board toolbar' })).getByRole('button', { name: 'Research to review' }))
     const name = screen.getByRole('textbox', { name: 'Workflow name' })
     await user.clear(name)
@@ -215,11 +221,13 @@ describe('WorkspaceRouteEntry integration', () => {
     await user.keyboard('{Enter}')
     await user.click(screen.getByRole('button', { name: 'Save workflow' }))
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Save workflow' })).not.toBeInTheDocument())
+    mark('saved')
     first.unmount()
     first.queryClient.clear()
     act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
     await renderWorkspace(entry)
     const board = await workflowBoard('Activities persisted workflow')
+    mark('second-board')
     const node = await within(board).findByRole('button', { name: /^Main coordinator,/ })
     const title = 'Main coordinator'
     expect(node).toHaveAccessibleName(/Claude/)
@@ -231,7 +239,10 @@ describe('WorkspaceRouteEntry integration', () => {
     expect(rail).toBeVisible()
     await user.click(within(rail).getByText('More settings'))
     expect(within(rail).getByRole('textbox', { name: 'Name' })).toHaveValue(agent.name)
+    mark('more-settings')
     expect(await within(rail).findByText('Computers can’t be checked right now. Try again shortly.', {}, { timeout: 8000 })).toBeVisible()
+    mark('done')
+    } finally { server.events.removeListener('request:start', onReq); console.log('REQUESTS', JSON.stringify([...hits].sort((a, b) => b[1] - a[1]))) ; mark('end') }
   }, 15_000)
 
   it('opens the accepted new workflow while workspace details still serve the old list', async () => {
