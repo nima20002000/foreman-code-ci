@@ -207,7 +207,7 @@
 .workflow-panel-tabs > .n-button[aria-pressed='true'] { background: var(--surface-hover); color: var(--text-strong); }
 
 .n-button.board-live-run { color: var(--success); }
-.board-live-run, .board-live-run .n-button-label > span { display: inline-flex; align-items: center; gap: 6px; }
+.board-live-run > span { display: inline-flex; align-items: center; gap: 6px; }
 .board-live-run-dot {
   display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor;
   box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 60%, transparent);

@@ -6,6 +6,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
+import { Profiler } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -35,6 +36,8 @@ function readyWorkspace() {
 }
 
 const clients: QueryClient[] = []
+const probe = { react: 0, commits: 0, style: 0, styleCalls: 0 }
+const callers = new Map<string, [number, number]>()
 let restoreBrowserLocks: () => void
 async function researcherButton() {
   // Wait for the current Board before querying its canvas; initial route selection
@@ -58,6 +61,10 @@ async function renderWorkspace(initialEntry: string) {
     defaultOptions: { queries: { retry: false, staleTime: 0 } },
   })
   clients.push(queryClient)
+  const born = performance.now()
+  queryClient.getQueryCache().subscribe((event) => {
+    if (event.type === 'updated' && event.action.type === 'success') console.log(`QCACHE ${Math.round(performance.now() - born)} ${JSON.stringify(event.query.queryKey).slice(0, 90)} ${event.query.state.data === event.action.data ? 'changed' : 'same'} ${event.action.manual ? 'manual' : ''}`)
+  })
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: [initialEntry] }),
@@ -67,9 +74,9 @@ async function renderWorkspace(initialEntry: string) {
   // Load the memory route before mounting instead of racing the initial render.
   await router.load()
   const rendered = render(
-    <QueryClientProvider client={queryClient}>
+    <Profiler id="app" onRender={(_id, phase, actual) => { probe.react += actual; probe.commits++ }}><QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
-    </QueryClientProvider>,
+    </QueryClientProvider></Profiler>,
   )
 
   return { router, queryClient, ...rendered }
@@ -78,6 +85,7 @@ async function renderWorkspace(initialEntry: string) {
 describe('WorkspaceRouteEntry integration', () => {
   beforeEach(() => {
     restoreBrowserLocks = installBrowserLocks()
+    console.log(`SHEETS ${expect.getState().currentTestName?.slice(30, 80)} count ${document.styleSheets.length} rules ${[...document.styleSheets].reduce((sum, sheet) => sum + sheet.cssRules.length, 0)} top ${JSON.stringify([...document.styleSheets].map((sheet) => [sheet.cssRules.length, (sheet.ownerNode as Element | null)?.getAttribute?.('data-vite-dev-id')?.split('/').slice(-2).join('/') ?? (sheet.ownerNode as Element | null)?.tagName]).sort((a, b) => Number(b[0]) - Number(a[0])).slice(0, 12))}`)
     useGraphDraftStore.getState().clearAllDrafts(); localStorage.clear(); bindMockInstallation(); sessionStorage.clear()
     server.use(http.get('/api/management/workspaces/workspace-1', () => HttpResponse.json(readyWorkspace())))
     server.use(
@@ -189,6 +197,12 @@ describe('WorkspaceRouteEntry integration', () => {
   })
 
   it('opens an unselected reloaded Claude Agent settings panel while cross-computer choices are unavailable', async () => {
+    const realStyle = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) => { const t = performance.now(); try { return realStyle(el, pseudo) } finally { const d = performance.now() - t; probe.style += d; probe.styleCalls++; const frames = (new Error().stack ?? '').split('\n').slice(2).filter((f) => !f.includes('WorkspaceRouteEntry.test') && !f.includes('tinyspy') && !f.includes('@vitest')).slice(0, 3).map((f) => f.replace(/^.*\/(node_modules\/\.pnpm\/[^/]+\/node_modules\/)?/, '').replace(/\?[^:]*/, '').slice(0, 80)).join(' < '); const c = callers.get(frames) ?? [0, 0]; callers.set(frames, [c[0] + d, c[1] + 1]) } })
+    let t0 = performance.now(); let hits = new Map<string, number>(); const mark = (l: string) => { console.log(`TIMING ${l} ${Math.round(performance.now() - t0)}ms react ${Math.round(probe.react)}ms/${probe.commits} style ${Math.round(probe.style)}ms/${probe.styleCalls} REQ ${JSON.stringify([...hits].sort((x, y) => y[1] - x[1]))}`); console.log(`CALLERS ${l} ${JSON.stringify([...callers].sort((a, b) => b[1][0] - a[1][0]).slice(0, 6).map(([k, v]) => [Math.round(v[0]), v[1], k]))}`); callers.clear(); t0 = performance.now(); hits = new Map(); Object.assign(probe, { react: 0, commits: 0, style: 0, styleCalls: 0 }) }
+    const onReq = ({ request }: { request: Request }) => { const k = `${request.method} ${new URL(request.url).pathname.replace('/api/management/workspaces/workspace-1', '~')}`; hits.set(k, (hits.get(k) ?? 0) + 1) }
+    server.events.on('request:start', onReq)
+    try {
     // Apply the canvas CSS so userEvent checks the same pointer access as the browser.
     render(<style>{canvasStyles}</style>)
     const fixture = getMockFixture('workspace-1')!
@@ -208,30 +222,41 @@ describe('WorkspaceRouteEntry integration', () => {
     const first = await renderWorkspace(entry)
     const user = userEvent.setup()
     await workflowBoard('Research to review')
+    mark('first-board')
     await user.click(within(screen.getByRole('banner', { name: 'Board toolbar' })).getByRole('button', { name: 'Research to review' }))
     const name = screen.getByRole('textbox', { name: 'Workflow name' })
     await user.clear(name)
     await user.paste('Activities persisted workflow')
     await user.keyboard('{Enter}')
+    mark('renamed')
     await user.click(screen.getByRole('button', { name: 'Save workflow' }))
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Save workflow' })).not.toBeInTheDocument())
+    mark('saved')
     first.unmount()
     first.queryClient.clear()
     act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
     await renderWorkspace(entry)
+    mark('second-render')
     const board = await workflowBoard('Activities persisted workflow')
+    mark('second-board')
     const node = await within(board).findByRole('button', { name: /^Main coordinator,/ })
     const title = 'Main coordinator'
     expect(node).toHaveAccessibleName(/Claude/)
     expect(node).toHaveAttribute('aria-pressed', 'false')
     await user.hover(node)
+    mark('hover')
     const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
     await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
+    mark('click-open')
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
+    mark('rail')
     expect(rail).toBeVisible()
     await user.click(within(rail).getByText('More settings'))
+    mark('more-settings')
     expect(within(rail).getByRole('textbox', { name: 'Name' })).toHaveValue(agent.name)
     expect(await within(rail).findByText('Computers can’t be checked right now. Try again shortly.', {}, { timeout: 8000 })).toBeVisible()
+    mark('unavailable-note')
+    } finally { server.events.removeListener('request:start', onReq) }
   }, 15_000)
 
   it('opens the accepted new workflow while workspace details still serve the old list', async () => {

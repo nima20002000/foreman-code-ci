@@ -207,7 +207,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   </>, [direction, side.memoryOpen, directionChat.isError, directionChat.variables, directionChat.error, getSelectionToken, openDirectionChat])
   // History is rendered only by RunBoardSlot. Do not feed legacy Run pins to the
   // hidden editor, or fabricate missing version/semantics pins.
-  const inspectRun = useCallback((next: WorkspaceBoardInspection, scope?: RepeatGraphScopeCurrent) => selectInspection(next, scope ?? detailsScope), [selectInspection, detailsScope])
+  const inspectRun = useCallback((next: WorkspaceBoardInspection) => selectInspection(next, detailsScope), [selectInspection, detailsScope])
   const value = useMemo<WorkflowBoardSelection>(() => ({ workspaceId, workflowId, selectRun: chooseRun, getSelectionToken, inspection, selectInspection: inspectRun, selectedAgentId, selectDraftAgent,
     sidePanel: side.panel, selectedPanelNodeId: side.agentSelection?.nodeId, selectSidePanel: selectPanel, memoryOpen: side.memoryOpen,
     openMemoryCard: (cardId?: string) => setMemoryOpen(true, cardId),

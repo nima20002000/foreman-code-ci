@@ -199,13 +199,13 @@ describe('Board Agent chat live execution activity', () => {
     const mounted = mountChat(state)
     mounted.mock.setExecutionActivity(state.context, livePage(numberedMessages(1, 200), '200'))
     const check = await screen.findByRole('region', { name: 'Loop 1 · Working' })
-    for (const end of [250, 300]) {
-      await pollActivity(mounted, livePage(numberedMessages(end - 49, end), String(end)))
+    for (const end of [400, 600, 800]) {
+      await pollActivity(mounted, livePage(numberedMessages(end - 199, end), String(end)))
       expect(await within(check).findByText(`Activity ${end}`)).toBeVisible()
       expect(activityData(mounted.client)?.items.length).toBeLessThanOrEqual(200)
       expect(within(check).getAllByRole('listitem', { hidden: true }).length).toBeLessThanOrEqual(200)
     }
-    expect(within(check).getByText('Activity 300')).toBeVisible()
+    expect(within(check).getByText('Activity 800')).toBeVisible()
     expect(within(check).queryByText('Activity 1')).not.toBeInTheDocument()
   })
 
@@ -213,7 +213,7 @@ describe('Board Agent chat live execution activity', () => {
     const state = runState()
     const mounted = mountChat(state)
     mounted.mock.setExecutionActivity(state.context,
-      livePage(numberedMessages(751, 800), '800', { hasEarlierItems: true }))
+      livePage(numberedMessages(601, 800), '800', { hasEarlierItems: true }))
     const check = await screen.findByRole('region', { name: 'Loop 1 · Working' })
     expect(within(check).getByText('Activity 800')).toBeVisible()
 
@@ -224,36 +224,36 @@ describe('Board Agent chat live execution activity', () => {
       const cursor = new URL(request.url).searchParams.get('before')
       if (!cursor) return undefined
       before.push(cursor)
-      if (cursor === '751') return HttpResponse.json(await pending.promise)
-      if (cursor === '651') return HttpResponse.json(await abandoned.promise)
-      return HttpResponse.json({ ...livePage(numberedMessages(651, 700), '850', { hasEarlierItems: true }),
+      if (cursor === '601') return HttpResponse.json(await pending.promise)
+      if (cursor === '201') return HttpResponse.json(await abandoned.promise)
+      return HttpResponse.json({ ...livePage(numberedMessages(201, 400), '850', { hasEarlierItems: true }),
         mode: 'earlier', cursor: undefined })
     }))
     fireEvent.click(within(check).getByRole('button', { name: 'Load earlier activity' }))
-    await waitFor(() => expect(before).toEqual(['751']))
+    await waitFor(() => expect(before).toEqual(['601']))
     await pollActivity(mounted, livePage(numberedMessages(801, 850), '850'))
     await finishRead(mounted.client, () => pending.resolve({
-      ...livePage(numberedMessages(701, 750), '800', { hasEarlierItems: true }), mode: 'earlier', cursor: undefined,
+      ...livePage(numberedMessages(401, 600), '800', { hasEarlierItems: true }), mode: 'earlier', cursor: undefined,
     }))
-    expect(await within(check).findByText('Activity 701')).toBeVisible()
+    expect(await within(check).findByText('Activity 401')).toBeVisible()
     expect(within(check).queryByText('Activity 850')).not.toBeInTheDocument()
     await pollActivity(mounted, livePage(numberedMessages(851, 900), '900'))
-    expect(within(check).getByText('Activity 701')).toBeVisible()
+    expect(within(check).getByText('Activity 401')).toBeVisible()
     fireEvent.click(within(check).getByRole('button', { name: 'Load earlier activity' }))
-    expect(await within(check).findByText('Activity 651')).toBeVisible()
-    expect(before).toEqual(['751', '701'])
+    expect(await within(check).findByText('Activity 201')).toBeVisible()
+    expect(before).toEqual(['601', '401'])
     expect(within(check).getAllByRole('listitem', { hidden: true }).length).toBeLessThanOrEqual(200)
     fireEvent.click(within(check).getByRole('button', { name: 'Load earlier activity' }))
-    await waitFor(() => expect(before).toEqual(['751', '701', '651']))
+    await waitFor(() => expect(before).toEqual(['601', '401', '201']))
     fireEvent.click(within(check).getByRole('button', { name: 'Back to latest activity' }))
     expect(await within(check).findByText('Activity 900')).toBeVisible()
     await pollActivity(mounted, livePage(numberedMessages(901, 950), '950'))
     expect(await within(check).findByText('Activity 950')).toBeVisible()
     await finishRead(mounted.client, () => abandoned.resolve({
-      ...livePage(numberedMessages(601, 650), '900'), mode: 'earlier', cursor: undefined,
+      ...livePage(numberedMessages(1, 200), '900'), mode: 'earlier', cursor: undefined,
     }))
     expect(within(check).getByText('Activity 950')).toBeVisible()
-    expect(within(check).queryByText('Activity 651')).not.toBeInTheDocument()
+    expect(within(check).queryByText('Activity 201')).not.toBeInTheDocument()
     expect(within(check).queryByRole('button', { name: 'Back to latest activity' })).not.toBeInTheDocument()
     expect(activityData(mounted.client)?.items.length).toBeLessThanOrEqual(200)
   })

@@ -14,7 +14,7 @@ const ROLE_LABELS: Record<CircleOrganizationRead['schedulingRole'], string> = {
   exhausted: 'Out of credits',
 }
 
-/** One row per CircleCI organization, with unavailable credit reasons beside the affected org. */
+/** One row per CircleCI organization. Long reasons live in tooltips, repeated ones are shown once. */
 export function CircleCiSummaryCard() {
   const query = useCircleAccountsQuery()
   const selected = ComputersSettingsSearchSchema.parse(useSearch({ strict: false }))
@@ -47,23 +47,19 @@ export function CircleCiSummaryCard() {
 function AccountSummary({ role, account, selectedAccount, selectedOrg }: { role: 'Primary' | 'Second' | 'Standby'; account: CircleAccountRead | undefined; selectedAccount: string | undefined; selectedOrg: string | undefined }) {
   // Reasons repeat per organization ("org: Log in to …"); show each distinct one once.
   const reasons = [...new Set(account?.reasons.map(reason => reason.replace(/^[\w-]+: /, '').replace(/\s*\([^)]*\)/g, '')) ?? [])]
-  const suspended = account?.orgs.some(org => /suspended/i.test(org.creditsUnavailable ?? '')) === true
   return <section className="circleci-account" aria-label={`${role} CircleCI account`} tabIndex={-1} data-selected={Boolean(selectedAccount && account?.id === selectedAccount && !selectedOrg)}>
     <header><h3>{role}</h3>
       {account && account.label !== role ? <span className="circleci-account-label">{account.label}</span> : null}
-      {suspended ? <Badge tone="warning">Account suspended</Badge> : account && !account.tokenConfigured ? <Badge tone="warning">Setup needed</Badge>
+      {account && !account.tokenConfigured ? <Badge tone="warning">Setup needed</Badge>
         : account && !account.ready ? <Badge tone="warning">Needs attention</Badge> : null}
     </header>
     {account ? <>
-      {!suspended && reasons.map(reason => <p className="circleci-summary-note" key={reason}>{reason}</p>)}
+      {reasons.map(reason => <p className="circleci-summary-note" key={reason}>{reason}</p>)}
       {account.orgs.length > 0 ? <ul className="circleci-orgs" aria-label={`${role} organizations`}>
         {account.orgs.map(org => <OrganizationSummary key={`${org.circleAccountId}:${org.account}`} org={org} selected={selectedAccount === org.circleAccountId && selectedOrg === org.account} />)}
       </ul> : reasons.length ? null : <p className="circleci-summary-note">No organizations yet.</p>}
     </> : <p className="circleci-summary-note">No {role.toLowerCase()} account registered.</p>}
-    {suspended ? <>
-      <p className="circleci-summary-note">Contact CircleCI support to restore this account.</p>
-      <Button size="sm" onClick={() => askOperator(`Help investigate CircleCI account ${account!.id} (${account!.label}), which reports that it is suspended. Read its current metadata and explain the support recovery steps: `, { send: false })}>Ask Operator about suspension</Button>
-    </> : account && !account.ready || !account ? <>
+    {account && !account.ready || !account ? <>
       <p className="circleci-summary-note">Configure the token locally on Main, log in to CircleCI, and follow the CI mirror project. Keep the token out of chat.</p>
       <Button size="sm" onClick={() => askOperator(`Help set up CircleCI ${account?.id ?? role.toLowerCase()} (${account?.label ?? role})${selectedOrg && selectedAccount === account?.id ? `, organization ${selectedOrg}` : ''}. Read its current metadata and explain the local steps needed: `, { send: false })}>Set up with Operator</Button>
     </> : null}
@@ -80,7 +76,6 @@ function OrganizationSummary({ org, selected }: { org: CircleOrganizationRead; s
     <Badge tone={!org.ready || org.schedulingRole === 'exhausted' ? 'warning' : 'neutral'}>
       {org.ready ? ROLE_LABELS[org.schedulingRole] : 'Not ready'}
     </Badge>
-    {!org.credits && org.creditsUnavailable ? <p className="circleci-summary-note">{org.creditsUnavailable}</p> : null}
   </li>
 }
 
