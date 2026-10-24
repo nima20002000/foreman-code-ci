@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { StagedAgentSchema } from '../management/index.js'
+import { StagedAgentSchema, AuthoringStagedAgentSchema } from '../management/index.js'
 import { GraphIdSchema } from './graphPrimitives.js'
 import {
   CurrentJournalIdentitySchema, CurrentJournalReadInputSchema as GraphEditReadInputSchema,
@@ -7,18 +7,19 @@ import {
   CurrentJournalDiscardInputSchema as GraphEditDiscardInputSchema, CurrentJournalRunStateSchema as GraphEditRunStateSchema,
 } from './currentJournal.js'
 import { CurrentWorkflowSaveInputSchema, CurrentWorkflowSavedSchema } from './currentAuthoring.js'
+import { WorkflowDefinitionCurrentSchema } from './workflowShape.js'
 import { sameAuthoredWorkflow, sameExecutableWorkflow, sameWorkflowValue } from './meaningfulEdit.js'
 
 /** Full current-v3 payload in the EXISTING private durable edit journal. No
  * selected Run or caller-provided Stop IDs. All graph forms use this one arm. */
 export const CurrentEditStageInputSchema = CurrentWorkflowSaveInputSchema.extend({
   action: z.literal('stage_edits'), draftId: GraphIdSchema,
-  stagedAgents: z.array(StagedAgentSchema).max(1000).optional(),
+  stagedAgents: z.array(AuthoringStagedAgentSchema).max(1000).optional(),
 }).strict()
 /** Private journal publication only. Ordinary workflow_save_v3 deliberately
  * rejects these Agent mutations and server-reserved resultant pins. */
 export const CurrentEditSaveInputSchema = CurrentWorkflowSaveInputSchema.extend({
-  stagedAgents: z.array(StagedAgentSchema).max(1000).optional(),
+  stagedAgents: z.array(AuthoringStagedAgentSchema).max(1000).optional(),
   resultantAgentConfigurationVersionIds: CurrentWorkflowSaveInputSchema.shape.expectedAgentConfigurationVersionIds.optional(),
 }).strict()
 export type CurrentEditSaveInput = z.infer<typeof CurrentEditSaveInputSchema>
@@ -30,17 +31,18 @@ export const CurrentEditDraftSchema = z.object({
   id: GraphIdSchema, workspaceId: GraphIdSchema, workflowId: GraphIdSchema,
   revision: CurrentWorkflowSaveInputSchema.shape.expectedRevision,
   baseWorkflowVersionId: CurrentWorkflowSaveInputSchema.shape.expectedWorkflowVersionId,
-  graph: CurrentWorkflowSaveInputSchema.shape.graph,
+  graph: WorkflowDefinitionCurrentSchema,
   presentationOnly: z.literal(true).optional(),
   agentConfigurationVersionIds: CurrentWorkflowSaveInputSchema.shape.expectedAgentConfigurationVersionIds,
   saveCommandId: GraphIdSchema.optional(),
-  stagedAgents: CurrentEditSaveInputSchema.shape.stagedAgents,
+  stagedAgents: z.array(StagedAgentSchema).max(1000).optional(),
   resultantAgentConfigurationVersionIds: CurrentEditSaveInputSchema.shape.resultantAgentConfigurationVersionIds,
 }).strict()
 export const CurrentEditIntentSchema = z.object({
   ...CurrentJournalIdentitySchema.shape,
   kind: z.literal('current'), stagedDraft: CurrentEditDraftSchema,
-  saveInput: CurrentEditSaveInputSchema, result: CurrentWorkflowSavedSchema.optional(),
+  saveInput: CurrentEditSaveInputSchema.extend({ graph: WorkflowDefinitionCurrentSchema,
+    stagedAgents: z.array(StagedAgentSchema).max(1000).optional() }), result: CurrentWorkflowSavedSchema.optional(),
 }).strict().superRefine((value, context) => {
   const fail = (message: string) => context.addIssue({ code: 'custom', message })
   const draft = value.stagedDraft, save = value.saveInput

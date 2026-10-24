@@ -38,7 +38,6 @@ function ShellFixture({ slots, captureNavigation }: { slots?: WorkflowCollaborat
   return <>
     <nav aria-label="Board controls">
       <Button onClick={() => side.selectPanel({ kind: 'agent', nodeId: 'node-a', tab: 'settings' })}>Open Agent settings</Button>
-      <Button onClick={() => side.selectPanel({ kind: 'group_chat' })}>Open Group chat</Button>
       <Button onClick={() => { if (side.agentSelection) side.selectPanel(side.agentSelection) }}>Open selected Agent</Button>
       <Button onClick={() => side.selectPanel({ kind: 'browser' })}>Open Browser</Button>
       <Button onClick={() => side.setMemoryOpen(true)}>Memory board</Button>
@@ -99,7 +98,7 @@ describe('disabled collaboration shell through navigation and rendered controls'
     await act(async () => { await router.navigate({ to: '/settings' }) })
     expect(await screen.findByText('Outside Board')).toBeVisible()
     await act(async () => {
-      if (kind === 'panel') pending!.selectPanel({ kind: 'group_chat' })
+      if (kind === 'panel') pending!.selectPanel({ kind: 'browser' })
       if (kind === 'view') pending!.selectView('overview')
       if (kind === 'memory') pending!.setMemoryOpen(true)
     })
@@ -115,7 +114,7 @@ describe('disabled collaboration shell through navigation and rendered controls'
     expect(pending).toBeDefined()
     await act(async () => { await router.navigate({ to: '/workspaces/$workspaceId',
       params: { workspaceId: 'other-workspace' }, search: { workflowId: 'other-workflow' } }) })
-    await act(async () => pending!.selectPanel({ kind: 'group_chat' }))
+    await act(async () => pending!.selectPanel({ kind: 'browser' }))
     await waitFor(() => expect(router.state.status).toBe('idle'))
     expect(router.state.location.pathname).toBe('/workspaces/other-workspace')
     expect(router.state.location.search).toEqual({ workflowId: 'other-workflow' })
@@ -168,15 +167,15 @@ describe('disabled collaboration shell through navigation and rendered controls'
     await user.type(await screen.findByRole('textbox', { name: 'Agent settings draft' }), 'Keep this unsaved edit')
     const rail = within(screen.getByRole('complementary', { name: 'Workflow side panel' }))
     fireEvent.scroll(screen.getByRole('region', { name: 'Fixture transcript' }), { target: { scrollTop: 125 } })
-    await user.click(screen.getByRole('button', { name: 'Open Group chat' }))
-    expect(await screen.findByText('Group chat is not available yet.')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Open Browser' }))
+    expect(await screen.findByText('Browser is not available yet. No browser session has been started.')).toBeVisible()
     expect(screen.queryByRole('textbox', { name: 'Agent settings draft' })).not.toBeInTheDocument()
-    expect(router.state.location.search).toMatchObject({ boardPanel: 'group_chat', boardNodeId: 'node-a', boardAgentTab: 'settings' })
+    expect(router.state.location.search).toMatchObject({ boardPanel: 'browser', boardNodeId: 'node-a', boardAgentTab: 'settings' })
     await act(async () => { router.history.back() })
     expect(await screen.findByRole('textbox', { name: 'Agent settings draft' })).toHaveValue('Keep this unsaved edit')
     expect(screen.getByRole('region', { name: 'Fixture transcript' }).scrollTop).toBe(125)
     await act(async () => { router.history.forward() })
-    await screen.findByText('Group chat is not available yet.')
+    await screen.findByText('Browser is not available yet. No browser session has been started.')
     await user.click(screen.getByRole('button', { name: 'Open selected Agent' }))
     expect(await screen.findByRole('textbox', { name: 'Agent settings draft' })).toHaveValue('Keep this unsaved edit')
     await user.click(screen.getByRole('button', { name: /^Memory board$/ }))
@@ -193,11 +192,10 @@ describe('disabled collaboration shell through navigation and rendered controls'
     const fetch = vi.spyOn(globalThis, 'fetch'), user = userEvent.setup()
     const router = mount('/workspaces/workspace/workflows/workflow/runs/run-a/graph/version-a/3?boardPanel=agent&boardNodeId=node-a&boardExecutionId=execution-a')
     await screen.findByText(/Chat for this selected execution is not available yet/)
-    await user.click(screen.getByRole('button', { name: 'Open Group chat' }))
+    await user.click(screen.getByRole('button', { name: 'Open Browser' }))
     await waitFor(() => expect(router.state.location.search).toMatchObject({ workflowId: 'workflow',
       runId: 'run-a', workflowVersionId: 'version-a', executionSemanticsVersion: 3,
-      boardPanel: 'group_chat', boardNodeId: 'node-a', boardExecutionId: 'execution-a' }))
-    await user.click(screen.getByRole('button', { name: 'Open Browser' }))
+      boardPanel: 'browser', boardNodeId: 'node-a', boardExecutionId: 'execution-a' }))
     expect(await screen.findByText(/No browser session has been started/)).toBeVisible()
     await user.click(screen.getByRole('button', { name: /^Overview$/ }))
     await user.click(screen.getByRole('button', { name: /^Memory board$/ }))
@@ -216,7 +214,7 @@ describe('disabled collaboration shell through navigation and rendered controls'
     const path = '/workspaces/workspace/workflows/workflow/runs/run-a/graph/version-a/3'
     const router = mount(`${path}?boardPanel=agent&boardNodeId=master-node&boardExecutionId=held-execution`, {
       executionChat: value => { selected(value); return <Body name="Execution" /> },
-      groupChat: () => <Body name="Group" />, memoryBoard: () => <Body name="Memory" />,
+      browser: () => <Body name="Browser" />, memoryBoard: () => <Body name="Memory" />,
     })
     await screen.findByText('Execution body')
     expect(selected).toHaveBeenLastCalledWith(expect.objectContaining({ workspaceId: 'workspace', workflowId: 'workflow', runId: 'run-a',
@@ -230,10 +228,10 @@ describe('disabled collaboration shell through navigation and rendered controls'
     await userEvent.click(screen.getByRole('button', { name: 'Close Memory board' }))
     await screen.findByText('Execution body')
     expect(events.slice(-2)).toEqual(['close Memory', 'open Execution'])
-    await userEvent.click(screen.getByRole('button', { name: 'Open Group chat' }))
-    await screen.findByText('Group body')
+    await userEvent.click(screen.getByRole('button', { name: 'Open Browser' }))
+    await screen.findByText('Browser body')
     expect(screen.queryByText('Execution body')).not.toBeInTheDocument()
-    expect(events.slice(-2)).toEqual(['close Execution', 'open Group'])
+    expect(events.slice(-2)).toEqual(['close Execution', 'open Browser'])
     await userEvent.click(screen.getByRole('button', { name: 'Open selected Agent' }))
     await screen.findByText('Execution body')
     expect(selected).toHaveBeenLastCalledWith(expect.objectContaining({ runId: 'run-a', workflowVersionId: 'version-a', executionId: 'held-execution' }))
@@ -248,13 +246,12 @@ describe('disabled collaboration shell through navigation and rendered controls'
     const release = vi.fn(() => { events.push('release requested'); return new Promise<void>(() => undefined) })
     const router = mount('/workspaces/workspace/workflows/workflow/runs/run-a/graph/version-a/3?boardPanel=browser&boardNodeId=worker-node&boardExecutionId=execution-a', {
       browser: selection => { browser(selection); return <BrowserBody /> }, beforeBrowserHide: release,
-      groupChat: () => <p>Selected Group chat</p>,
     })
     await screen.findByText('Owned browser view')
     expect(browser).toHaveBeenLastCalledWith({ kind: 'browser', workspaceId: 'workspace', workflowId: 'workflow',
       runId: 'run-a', workflowVersionId: 'version-a', nodeId: 'worker-node', executionId: 'execution-a' })
-    await userEvent.click(screen.getByRole('button', { name: 'Open Group chat' }))
-    await screen.findByText('Selected Group chat')
+    await userEvent.click(screen.getByRole('button', { name: 'Open Agent settings' }))
+    await screen.findByRole('textbox', { name: 'Agent settings draft' })
     expect(events).toEqual(['visible', 'release requested', 'hidden'])
     expect(release).toHaveBeenCalledOnce()
     await userEvent.click(screen.getByRole('button', { name: 'Open Browser' }))
@@ -286,7 +283,7 @@ describe('disabled collaboration shell through navigation and rendered controls'
     await waitFor(() => expect(router.state.location.search).toMatchObject({ runId: 'run-a', workflowVersionId: 'version-a',
       boardNodeId: 'master-node', boardWaitingActivationId: 'waiting-a', boardAgentTab: 'chat' }))
     expect(router.state.location.search).not.toHaveProperty('boardExecutionId')
-    await userEvent.click(screen.getByRole('button', { name: 'Open Group chat' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Open Browser' }))
     await userEvent.click(screen.getByRole('button', { name: 'Memory board' }))
     await screen.findByRole('dialog', { name: 'Memory board' })
     expect(router.state.location.search).toMatchObject({ boardWaitingActivationId: 'waiting-a' })
@@ -306,22 +303,9 @@ describe('disabled collaboration shell through navigation and rendered controls'
     expect(await screen.findByText('Choose exact work')).toBeVisible()
   })
 
-  it('clears unavailable chat destination pins through URL navigation and retains the Agent panel', async () => {
-    const router = mount('/workspaces/workspace?workflowId=workflow&runId=missing-run&workflowVersionId=missing-version&executionSemanticsVersion=3&boardPanel=agent&boardNodeId=node-a&boardAgentTab=chat&boardExecutionId=missing-execution', {
-      executionChat: value => <Button onClick={() => value.onSelectRun(undefined)}>Choose chat destination</Button>,
-    })
-    await userEvent.click(await screen.findByRole('button', { name: 'Choose chat destination' }))
-    await waitFor(() => {
-      expect(router.state.location.search).toMatchObject({ workflowId: 'workflow', boardPanel: 'agent', boardNodeId: 'node-a', boardAgentTab: 'chat' })
-      for (const key of ['selectedRunId', 'runId', 'workflowVersionId', 'executionSemanticsVersion', 'boardExecutionId', 'boardWaitingActivationId']) {
-        expect(router.state.location.search).not.toHaveProperty(key)
-      }
-    })
-  })
-
-  it('opens Group chat in the floating panel without Agent tabs, while the Agent panel offers Chat, Settings, Details and Browser', async () => {
+  it('offers Chat, Settings, Details and Browser in the Agent panel', async () => {
     const user = userEvent.setup()
-    const router = mount('/workspaces/workspace?workflowId=workflow', { groupChat: () => <p>Group messages</p> })
+    const router = mount('/workspaces/workspace?workflowId=workflow')
     await user.click(await screen.findByRole('button', { name: 'Open Agent settings' }))
     const rail = within(screen.getByRole('complementary', { name: 'Workflow side panel' }))
     expect(rail.getByRole('heading', { name: 'Alpha' })).toBeVisible()
@@ -329,13 +313,7 @@ describe('disabled collaboration shell through navigation and rendered controls'
     expect(views.getAllByRole('button').map(button => button.getAttribute('aria-label') ?? button.textContent))
       .toEqual(['Chat', 'Settings', 'Details', 'Browser'])
     expect(rail.queryByRole('button', { name: 'Operator' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Open Group chat' }))
-    const panel = within(screen.getByRole('complementary', { name: 'Workflow side panel' }))
-    expect(panel.getByRole('heading', { name: 'Group chat' })).toBeVisible()
-    expect(panel.getByText('Group messages')).toBeVisible()
-    expect(panel.queryByRole('navigation', { name: 'Workflow panel view' })).not.toBeInTheDocument()
-    await user.click(panel.getByRole('button', { name: 'Close group chat' }))
-    await waitFor(() => expect(screen.queryByText('Group messages')).not.toBeInTheDocument())
+    await user.click(rail.getByRole('button', { name: 'Back to Board' }))
     expect(router.state.location.search).not.toHaveProperty('boardPanel')
   })
 
@@ -343,14 +321,14 @@ describe('disabled collaboration shell through navigation and rendered controls'
     const fetch = vi.spyOn(globalThis, 'fetch')
     const user = userEvent.setup()
     const router = mount('/workspaces/workspace?workflowId=workflow&runId=run-a&workflowVersionId=version-a&executionSemanticsVersion=3')
-    await user.click(await screen.findByRole('button', { name: 'Open Group chat' }))
-    expect(await screen.findByText('Group chat is not available yet.')).toBeVisible()
+    await user.click(await screen.findByRole('button', { name: 'Open Browser' }))
+    expect(await screen.findByText('Browser is not available yet. No browser session has been started.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: /^Overview$/ }))
     expect(screen.getByRole('main', { name: 'Board canvas' })).toHaveTextContent('Overview is not available yet.')
     await act(async () => { router.history.back() })
     await waitFor(() => expect(screen.getByRole('main', { name: 'Board canvas' })).toHaveTextContent('Editing surface'))
     expect(router.state.location.search).toMatchObject({ workflowId: 'workflow', runId: 'run-a',
-      workflowVersionId: 'version-a', executionSemanticsVersion: 3, boardPanel: 'group_chat' })
+      workflowVersionId: 'version-a', executionSemanticsVersion: 3, boardPanel: 'browser' })
     expect(fetch).not.toHaveBeenCalled()
   })
 })

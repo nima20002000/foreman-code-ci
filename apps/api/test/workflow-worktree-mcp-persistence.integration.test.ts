@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { ManagedWorkspaceCommandResultSchema } from '@foreman-code/contracts/management'
 import {
-  CurrentWorkflowCapabilitiesSchema,
+  CurrentWorkflowCapabilitiesSchema, CurrentWorkflowSaveInputSchema,
   CurrentWorkflowReadResultSchema,
   SavedManagedWorkflowCommandResultSchema,
   SavedManagedWorkflowSchema,
@@ -39,7 +39,7 @@ describe.runIf(postgresEnabled)('workflow worktrees through authenticated MCP: p
       const reloaded = await f.base.client.callTool({ name: 'workflow_get', arguments: {
         workspaceId: f.workspaceId, workflowId: input.workflowId,
       } })
-      const definition = SavedManagedWorkflowSchema.parse(decodeMcpToolResult(reloaded)).workflow
+      const definition = CurrentWorkflowSaveInputSchema.shape.graph.parse(SavedManagedWorkflowSchema.parse(decodeMcpToolResult(reloaded)).workflow)
       expect(agentWorkflowNode(definition.nodes[0]).worktree?.branchPrefix).toBe('foreman/site/review')
       const inherited = agentWorkflowNode(definition.nodes[0])
       delete inherited.placement
@@ -56,7 +56,7 @@ describe.runIf(postgresEnabled)('workflow worktrees through authenticated MCP: p
       } })
       expect(CurrentWorkflowReadResultSchema.parse(decodeMcpToolResult(historicalResponse)).version)
         .toEqual(saved.value.version)
-      const withoutDefault = structuredClone(readback)
+      const withoutDefault = CurrentWorkflowSaveInputSchema.shape.graph.parse(readback)
       delete withoutDefault.defaultWorktree
       for (const node of withoutDefault.nodes) {
         if (node.kind === 'job') continue
@@ -77,7 +77,7 @@ describe.runIf(postgresEnabled)('workflow worktrees through authenticated MCP: p
     try {
       const { saveInput } = await f.create()
       const saved = await f.save(saveInput)
-      let next = { ...saveInput, commandId: randomUUID(), graph: saved.value.version.definition,
+      let next = { ...saveInput, commandId: randomUUID(), graph: CurrentWorkflowSaveInputSchema.shape.graph.parse(saved.value.version.definition),
         expectedRevision: saved.value.revision, expectedWorkflowVersionId: saved.value.currentVersionId }
       const failures = [
         { ...next, expectedRevision: next.expectedRevision - 1 },
@@ -108,7 +108,7 @@ describe.runIf(postgresEnabled)('workflow worktrees through authenticated MCP: p
         ...next.graph, defaultWorktree: { rootBinding: f.placement.local.rootBinding!, branchPrefix: 'foreman/retained' },
       } })
       next = { ...next, commandId: randomUUID(), expectedRevision: retained.value.revision,
-        expectedWorkflowVersionId: retained.value.currentVersionId, graph: retained.value.version.definition }
+        expectedWorkflowVersionId: retained.value.currentVersionId, graph: CurrentWorkflowSaveInputSchema.shape.graph.parse(retained.value.version.definition) }
       await f.base.db.pool.query("update source_snapshots set availability='unavailable' where snapshot_id=$1",
         [f.placement.source.snapshotId])
       expect(await f.base.client.callTool({ name: 'workflow_validate_v3', arguments: {

@@ -116,9 +116,6 @@ export const memoryBoardAuthority: MemoryBoardAuthority = {
     const saved = await memoryExecution(tx, subject.execution.executionId)
     return resolveMemoryWork(tx, saved.work)
   },
-  async sourcePost() {
-    throw new DomainError('SOURCE_POST_UNAVAILABLE', 'Group chat sources are not available.', 409)
-  },
   async lifecycle(tx, agent, work, executionId) {
     const resolved = await resolveMemoryWork(tx, work)
     const saved = await memoryExecution(tx, executionId ?? resolved.currentExecutionId!)

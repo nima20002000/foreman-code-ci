@@ -90,7 +90,7 @@ export function useWorkflowManagementFixture() {
     return { app, input, url, writer, access, credential, commands, workflows, call, f, configurations, start, cancel }
   }
   type Fixture = Awaited<ReturnType<typeof fixture>>
-  const httpSave = (t: Fixture, input = t.input, token = t.writer.token) => t.app.inject({ method: 'PUT', url: t.url, headers: graphHeaders(token), payload: input })
+  const httpSave = (t: Fixture, input: object = t.input, token = t.writer.token) => t.app.inject({ method: 'PUT', url: t.url, headers: graphHeaders(token), payload: input })
   async function save(t: Fixture) {
     const result = await httpSave(t); expect(result.statusCode, result.body).toBe(200)
     return CurrentWorkflowSaveResultSchema.parse(result.json())

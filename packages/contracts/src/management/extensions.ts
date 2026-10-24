@@ -1,5 +1,6 @@
 import { optionalCommandId } from './commands.js'
 import { AgentProductRoleSchema } from '../agentIdentity.js';
+import { GraphqlToolDefaultsSchema } from '../graphqlMcpTools.js';
 import { z } from "zod";
 import { DeviceProvisioningHostReferenceSchema } from "../deviceResources.js";
 import { WorkflowVersionCurrentSchema } from "../current/workflowSchemas.js";
@@ -27,7 +28,7 @@ export const AgentCreateInputSchema = z.object({
   configuration: Configuration.optional(),
   harnessProfileSelection: AgentSchema.shape.harnessProfileSelection,
   prompt: AgentSchema.shape.prompt, assignedSkills: AgentSchema.shape.assignedSkills,
-  graphqlTools: AgentSchema.shape.graphqlTools,
+  graphqlTools: GraphqlToolDefaultsSchema.optional(),
   nativeTools: AgentSchema.shape.nativeTools,
 }).strict();
 export const AgentUpdateInputSchema = z.object({
@@ -40,7 +41,7 @@ export const AgentUpdateInputSchema = z.object({
   configuration: Configuration.optional(),
   harnessProfileSelection: AgentSchema.shape.harnessProfileSelection,
   prompt: AgentSchema.shape.prompt, assignedSkills: AgentSchema.shape.assignedSkills,
-  graphqlTools: AgentSchema.shape.graphqlTools,
+  graphqlTools: GraphqlToolDefaultsSchema.optional(),
   nativeTools: AgentSchema.shape.nativeTools,
 }).strict().refine((value) => [value.name, value.description, value.role, value.productRole, value.configuration,
   value.prompt, value.assignedSkills, value.graphqlTools, value.nativeTools, value.harnessProfileSelection].some((item) => item !== undefined), "At least one editable field is required");

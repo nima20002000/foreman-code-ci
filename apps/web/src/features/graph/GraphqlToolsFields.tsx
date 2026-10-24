@@ -1,8 +1,8 @@
 import { MemoryBoardAccessField } from '../memory-boards'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import {
-  COLLABORATION_AGENT_TOOLS, GRAPHQL_AGENT_TOOLS, GraphqlAgentToolSchema, graphqlRoleTools, effectiveGraphqlTools, memoryBoardTools,
-  type GraphqlAgentTool, type GraphqlToolOverride, type WorkflowAgentProductRole,
+  COLLABORATION_AGENT_TOOLS, GRAPHQL_AGENT_TOOLS, GraphqlAgentToolSchema, graphqlRoleTools, effectiveGraphqlTools, memoryBoardTools, activeGraphqlTools, activeGraphqlToolOverride,
+  type GraphqlAgentTool, type GraphqlToolOverride, type RecordedGraphqlToolOverride, type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 
 import { Checkbox, SegmentedControl } from '../../shared/ui/nocturne'
@@ -17,11 +17,11 @@ function normalizeToolOverride(override: GraphqlToolOverride | undefined): Graph
 }
 
 /** The Agent's default Foreman Code MCP tools, and this workflow node's change to them. */
-export function GraphqlToolsFields({ role, defaults, override, onChange, executionReadOnly = false, readOnly = false, hideMemory = false }: {
+export function GraphqlToolsFields({ role, defaults: recordedDefaults, override: recordedOverride, onChange, executionReadOnly = false, readOnly = false, hideMemory = false }: {
   /** Workflow Agent roles only; Operator tools are never enabled per Agent. */
   role: WorkflowAgentProductRole
-  defaults: readonly GraphqlAgentTool[] | undefined
-  override: GraphqlToolOverride | undefined
+  defaults: readonly string[] | undefined
+  override: RecordedGraphqlToolOverride | undefined
   executionReadOnly?: boolean
   readOnly?: boolean
   /** Memory access is edited elsewhere in the same form. */
@@ -29,6 +29,7 @@ export function GraphqlToolsFields({ role, defaults, override, onChange, executi
   /** Missing defaults retain the legacy enabled set until explicitly edited. */
   onChange(defaults: GraphqlAgentTool[] | undefined, override: GraphqlToolOverride | undefined): void
 }) {
+  const defaults = recordedDefaults && activeGraphqlTools(recordedDefaults), override = activeGraphqlToolOverride(recordedOverride)
   const sharedFields = useCollaborationUISlots()
   const fields = useBoardAuthoring()?.collaborationFields ?? sharedFields
   const memoryTools: GraphqlAgentTool[] = memoryBoardTools('write')

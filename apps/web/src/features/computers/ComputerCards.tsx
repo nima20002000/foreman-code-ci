@@ -90,7 +90,7 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
             onMaintain={tasks => start.mutate(tasks.map(task => ({ task, targets: [card.target] })))}
             starting={start.isPending && [start.variables ?? []].flat().some(input => !input.targets || input.targets.some(target => sameDeviceProvisioningTarget(target, card.target)))}
             maintaining={start.isPending || start.unresolved}
-            buildPosition={ranksKnown ? builders.indexOf(card) + 1 : undefined} buildCount={builders.length} editable={Boolean(only)}
+            buildPosition={ranksKnown ? builders.indexOf(card) + 1 : undefined} buildCount={builders.length} editableName={!only}
             onOpen={onSelectComputer ? () => onSelectComputer(card.target.hostRef.kind === 'device' ? card.target.hostRef.deviceId : 'main') : undefined} />
         </li>
       })}
@@ -109,15 +109,14 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
 
 type Task = ComputerMaintenanceStartInput['task']
 function ComputerCard({ card, observed, fresh, namePending, activityComplete, connections, maintenance, workerPublication, workerReadiness, maintenanceError,
-  onRetryMaintenance, onMaintain, starting, maintaining, buildPosition, buildCount, onOpen, editable = false }: {
+  onRetryMaintenance, onMaintain, starting, maintaining, buildPosition, buildCount, onOpen, editableName }: {
   card: Card; observed: ComputerActivity | undefined; fresh: boolean; namePending: boolean; connections: ComputerConnections | undefined
   activityComplete: boolean; maintenanceError: boolean; onRetryMaintenance(): void
   maintenance: MaintenanceStatus | null | undefined; onMaintain(tasks: Task[]): void; starting: boolean; maintaining: boolean
   workerPublication: WorkerReleasePublication | undefined
   workerReadiness: WorkerBundleReadiness | undefined
+  editableName: boolean
   buildPosition: number | undefined; buildCount: number; onOpen: (() => void) | undefined
-  /** On the computer's own settings page its settings are edited there, not through the Operator. */
-  editable?: boolean
 }) {
   const name = observed?.name ?? computerDisplayName(card.target.hostRef)
   // A read that fails once and recovers on the next poll is a link blip, not something to show.
@@ -136,7 +135,7 @@ function ComputerCard({ card, observed, fresh, namePending, activityComplete, co
     <header className="computer-card-header">
       <Monitor size={20} aria-hidden="true" />
       {/* Until saved names load, a placeholder instead of a raw ID that then swaps to the real name. */}
-      {!observed && namePending ? <Skeleton width="7rem" height="1.1rem" /> : <ComputerName name={name} target={card.target} />}
+      {!observed && namePending ? <Skeleton width="7rem" height="1.1rem" /> : editableName ? <ComputerName name={name} target={card.target} /> : <h3>{name}</h3>}
       <Badge tone={online ? 'success' : 'neutral'} dot>{presenceLabel(observed, fresh)}</Badge>
       {card.build?.preference.buildEnabled ? <Badge>CI</Badge> : null}
       {onOpen ? <IconButton label={`Open ${name}`} variant="ghost" size="sm" onClick={onOpen}><ChevronRight size={16} /></IconButton> : null}
@@ -176,7 +175,7 @@ function ComputerCard({ card, observed, fresh, namePending, activityComplete, co
       {maintenance?.system.rebootRequired ? <Badge tone="warning">Restart needed</Badge> : null}
       <RestartButton status={maintenance} busy={maintaining || maintenanceError} onRestart={() => onMaintain([{ kind: 'restart' }])}
         agents={observed?.agents.length ?? 0} jobs={observed?.jobs.length ?? 0} activityComplete={Boolean(observed) && fresh && activityComplete} />
-      {editable ? null : <Button size="sm" variant="ghost" onClick={() => askOperator(`On ${name}: `, { send: false })}>Ask Operator to change…</Button>}
+      <Button size="sm" variant="ghost" onClick={() => askOperator(`On ${name}: `, { send: false })}>Ask Operator to change…</Button>
       <Button size="sm" disabled={maintaining || maintenanceError || !maintenance || updateState === 'running' || updateTasks.length === 0}
         title={updateTasks.length === 0 && maintenance ? 'Nothing to update' : undefined}
         onClick={() => onMaintain(updateTasks)}>Update</Button>

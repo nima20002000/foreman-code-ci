@@ -1,4 +1,4 @@
-import { GRAPHQL_OPERATOR_TOOLS } from '../graphqlMcpTools.js'
+import { GRAPHQL_OPERATOR_TOOLS, GraphqlToolDefaultsSchema } from '../graphqlMcpTools.js'
 import { AgentProductRoleSchema } from '../agentIdentity.js'
 import { OperationalFailureSchema } from '../operationalFailures.js'
 import { NativeInteractionSupportSchema } from '../nativeInteractionSupport.js'
@@ -7,7 +7,7 @@ import { RunStartCurrentInputSchema } from '../current/startRequest.js'
 import { InteractionActivityProjectionSchema } from '../interaction-activity.js'
 import { z } from "zod";
 import { WorkflowDefinitionCurrentSchema} from "../current/workflowSchemas.js";
-import { AgentActiveTimeoutMsSchema, CurrentWorkflowNodeSchema, CurrentWorkflowRelationshipSchema } from "../current/workflowShape.js";
+import { AgentActiveTimeoutMsSchema, AuthoringCurrentWorkflowNodeSchema, CurrentWorkflowRelationshipSchema } from "../current/workflowShape.js";
 
 export * from "./extensions.js";
 export * from "./harnessSettings.js";
@@ -26,7 +26,7 @@ export * from '../providerAccounts.js'
 import {
   AgentSchema,
   AgentHarnessSchema,
-  AgentDefaultsSchema,
+  AgentDefaultsSchema, RecordedAgentDefaultsSchema,
   CodexHarnessConfigurationSchema,
   HarnessQualificationSchema,
   HarnessConfigurationSchema,
@@ -264,7 +264,7 @@ const AgentAddOperationSchema = z.object({
   configuration: ManagementHarnessConfigurationSchema.optional(),
   prompt: AgentSchema.shape.prompt,
   assignedSkills: AgentSchema.shape.assignedSkills,
-  graphqlTools: AgentSchema.shape.graphqlTools,
+  graphqlTools: GraphqlToolDefaultsSchema.optional(),
   nativeTools: AgentSchema.shape.nativeTools,
   description: z.string().max(10_000).optional(),
   role: z.string().trim().min(1).max(200).optional(),
@@ -289,7 +289,7 @@ const AgentConfigureOperationSchema = z.object({
   harnessProfileSelection: AgentSchema.shape.harnessProfileSelection,
   prompt: AgentSchema.shape.prompt,
   assignedSkills: AgentSchema.shape.assignedSkills,
-  graphqlTools: AgentSchema.shape.graphqlTools,
+  graphqlTools: GraphqlToolDefaultsSchema.optional(),
   nativeTools: AgentSchema.shape.nativeTools,
   description: z.string().max(10_000).nullable().optional(),
   role: z.string().trim().min(1).max(200).nullable().optional(),
@@ -328,7 +328,7 @@ const RequiredAgentCountOperationSchema = z.object({
 }).strict();
 
 const NodeReplaceOperationSchema = z.object({
-  type: z.literal("node.replace"), node: CurrentWorkflowNodeSchema,
+  type: z.literal("node.replace"), node: AuthoringCurrentWorkflowNodeSchema,
 }).strict();
 const NodeOrderOperationSchema = z.object({
   type: z.literal("nodes.reorder"), nodeIds: z.array(IdSchema).max(10_000),
@@ -403,6 +403,9 @@ export const GraphDraftOperationSchema = z.discriminatedUnion("type", [
 ]);
 
 export const StagedAgentSchema = z.object({ agent: AgentSchema, baseRevision: ExpectedRevisionSchema.nullable() }).strict();
+export const AuthoringStagedAgentSchema = StagedAgentSchema.extend({
+  agent: AgentSchema.extend({ graphqlTools: GraphqlToolDefaultsSchema.optional() }),
+});
 const GraphDraftRecordFields = {
   id: IdSchema,
   workspaceId: IdSchema,
@@ -473,7 +476,7 @@ export const HarnessDefaultsUpdateResultSchema = z.object({
 }).strict();
 
 export const ManagedAgentDefaultsSchema = z.object({
-  value: AgentDefaultsSchema, revision: ExpectedRevisionSchema, versionId: IdSchema.nullable(),
+  value: RecordedAgentDefaultsSchema, revision: ExpectedRevisionSchema, versionId: IdSchema.nullable(),
 }).strict();
 export const ManagedWorkflowDefaultsSchema = z.object({
   value: WorkflowDefaultsSchema, revision: ExpectedRevisionSchema, versionId: IdSchema.nullable(),
@@ -594,7 +597,7 @@ export const OperatorToolNameSchema = z.enum([
   "agent_chat_ensure_conversation", "conversation_file_upload", "conversation_file_finalize",
   "conversation_file_cancel", "conversation_files_list", "conversation_file_read",
   "agent_chat_read", "agent_chat_send", "agent_chat_interrupt", "agent_chat_cancel_queued", "agent_chat_cancel_all_queued",
-  "workflow_chat_read", "workflow_chat_post", "workflow_chat_deliveries_read", "workflow_chat_delivery_cancel", "agent_chat_respond",
+  "agent_chat_respond",
   "workspace_defaults_get",
   'general_settings_get', 'general_settings_update', 'circle_credit_allowance_get', 'circle_credit_allowance_update',
   'circle_accounts_list', 'circle_account_add', 'circle_account_remove',
