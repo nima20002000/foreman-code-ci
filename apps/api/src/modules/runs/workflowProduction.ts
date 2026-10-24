@@ -40,7 +40,7 @@ export function createCurrentNativeProductionFactory(options: {
       assertStopReady: assertOpen,
       stop: async (stopContext: CurrentStopContext) => {
         assertOpen()
-        return stopCurrentWorkflow(context.primaryPool, context.runs, context.engine, stopContext)
+        return stopCurrentWorkflow(context.primaryPool, context.engine, stopContext)
       },
       // A queued/running Run and its accepted facts remain intact. The existing
       // engine reconciler retries eligible work; this sink cannot terminalize it.

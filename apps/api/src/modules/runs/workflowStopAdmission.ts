@@ -9,7 +9,6 @@ import { readPublicRunStateLocked } from '../run-graph/publicRunState.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import type { CurrentStopContext, CurrentStopReceipt } from './currentProduction.js'
 import type { LangGraphWorkflowEngine } from './engine.js'
-import type { PostgresRunRepository } from './postgres.js'
 import { openWorkflowLifecycleLocked, requestWorkflowStopLocked } from './repeatLifecycle.js'
 import { sameRepeatValue } from './repeatResolution.js'
 import { assertWorkflowRunSettlementLocked } from './workflowRepositoryServices.js'
@@ -113,10 +112,10 @@ export async function admitWorkflowStopIntent(pool: pg.Pool, supplied: CurrentSt
  * lifetimes, then a new owner transaction verifies positive settlement. Unknown
  * COMMIT/closure/ownership throws without writing B's successful receipt. Exact
  * retry reads the same intent and continues cleanup, never submits a new Stop. */
-export async function stopCurrentWorkflow(pool: pg.Pool, runs: PostgresRunRepository,
+export async function stopCurrentWorkflow(pool: pg.Pool,
   engine: LangGraphWorkflowEngine, context: CurrentStopContext): Promise<CurrentStopReceipt> {
   try {
-    return await completeWorkflowStop(pool, runs, engine, context)
+    return await completeWorkflowStop(pool, engine, context)
   } catch (error) {
     if (error instanceof DomainError) throw error
     const failure = new DomainError('WORKFLOW_STOP_SETTLEMENT_PENDING',
@@ -126,11 +125,11 @@ export async function stopCurrentWorkflow(pool: pg.Pool, runs: PostgresRunReposi
   }
 }
 
-async function completeWorkflowStop(pool: pg.Pool, runs: PostgresRunRepository,
+async function completeWorkflowStop(pool: pg.Pool,
   engine: LangGraphWorkflowEngine, context: CurrentStopContext): Promise<CurrentStopReceipt> {
   const intent = await admitWorkflowStopIntent(pool, context)
   if (!await engine.cancel(intent.runId)) return uncertain()
-  const owner = await runs.acquireOwnership(intent.runId, () => undefined)
+  const owner = await engine.acquireStopOwner(intent.runId)
   if (!owner) return uncertain('WORKFLOW_STOP_OWNER_UNCERTAIN')
   try {
     await owner.oneShotConnection().transaction(async (sql) => {

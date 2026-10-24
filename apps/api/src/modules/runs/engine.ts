@@ -393,7 +393,7 @@ export class LangGraphWorkflowEngine {
       const active = this.activeTasks.get(runId)
       const resumed = this.resumeTasks.get(runId)
       await Promise.allSettled([physical, ...(active ? [active] : []), ...(resumed ? [resumed] : [])])
-      const owner = await this.runs.acquireOwnership(runId, () => undefined)
+      const owner = await this.acquireStopOwner(runId)
       if (!owner) return false
       try {
         await this.cleanupOwned(owner)
@@ -403,6 +403,19 @@ export class LangGraphWorkflowEngine {
     })().finally(() => { if (this.cleanupTasks.get(runId) === task) this.cleanupTasks.delete(runId) })
     this.cleanupTasks.set(runId, task)
     return task
+  }
+
+  /** Stop joins this engine's own drive or resume of the Run (for example a reconciliation
+   * sweep that began beside the Stop) instead of failing while it holds the owner. Any
+   * other holder, such as another process, still leaves the Run fenced. */
+  async acquireStopOwner(runId: string): Promise<RunOwnership | undefined> {
+    for (;;) {
+      const owner = await this.runs.acquireOwnership(runId, () => undefined)
+      if (owner) return owner
+      const local = this.resumeTasks.get(runId) ?? this.activeTasks.get(runId)
+      if (!local) return undefined
+      await local.catch(() => { /* ignore: that task's caller receives its failure; Stop only waits for its owner release. */ })
+    }
   }
 
   /** Bounded current recovery. Never reset an existing checkpoint to initial state. */
