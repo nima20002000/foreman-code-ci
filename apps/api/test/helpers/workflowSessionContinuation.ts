@@ -8,7 +8,7 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { CanonicalRunGraphCurrentSchema, CANONICAL_RUN_GRAPH_MCP_TOOLS, WorkActivationInputSchema,
   makeCurrentWorkflowFixture, parseWorkHandoffResult } from '@foreman-code/contracts/current'
 import { buildApp } from '../../src/app.js'
-import { ApprovalPostgresSaver } from '../../src/modules/runs/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { DomainError } from '../../src/modules/errors.js'

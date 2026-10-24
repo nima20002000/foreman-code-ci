@@ -7,7 +7,7 @@ import { JobVerificationProfileSchema, JobVerificationProfileSaveSchema }
   from '@foreman-code/contracts/job-verification-runtime'
 import { SourceRootBindInputSchema, SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import { SourceManifestSchema } from '@foreman-code/contracts/source-materialization'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import type { JobSql } from './environment.js'
 
 export const CiPreparationRecordSchema = z.object({

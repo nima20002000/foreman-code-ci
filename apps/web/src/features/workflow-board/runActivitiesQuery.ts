@@ -1,5 +1,5 @@
 import type { ActivitySnapshotV1 } from '@foreman-code/contracts/activity'
-import { reconcileActivitySnapshot } from '../chat-core'
+import { reconcileActivitySnapshot } from '../conversations/agentChat/activityMerge'
 import { RepeatGraphScopeCurrentSchema, RunActivitiesPageSchema, RUN_ACTIVITIES_RETAINED,
   type RunActivitiesPage, type RunActivityPublic } from '@foreman-code/contracts/current'
 import { apiClient, ApiError, type RequestOptions } from '../../shared/api/client'

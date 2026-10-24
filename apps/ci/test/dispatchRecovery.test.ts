@@ -1,7 +1,7 @@
 import { CiRunRecordSchema } from '@foreman-code/contracts'
 import { expect, expectTypeOf, it, vi } from 'vitest'
 import type { SqlQuery } from '../src/environment.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { cancelAssignedCiTicket } from '../src/assignedCancellation.js'
 import { dispatchCloudTicket, expireCloudDispatch } from '../src/cloudDispatch.js'
 import type { HostCiComputer, HostCiEndpoint } from '../src/service.js'

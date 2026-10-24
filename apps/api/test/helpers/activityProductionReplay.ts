@@ -52,7 +52,7 @@ export class ActivityProductionReplay {
           const thread: Thread = { id: `${this.threadIdPrefix}-${++this.counter}`, turns: original ? structuredClone(original.turns) : [],
             settings: this.settings(params), ephemeral: params.ephemeral === true }
           this.threads.set(thread.id, thread); bind(thread)
-          const token = _environment?.GRAPHQL_MCP_TOKEN ?? _environment?.GRAPHQL_MCP_TOKEN
+          const token = _environment?.FOREMAN_CODE_MCP_TOKEN ?? _environment?.GRAPHQL_MCP_TOKEN
           if (token) this.appTokens.set(thread.id, token)
           return threadResponse(thread, params)
         }

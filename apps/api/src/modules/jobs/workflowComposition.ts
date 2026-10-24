@@ -9,7 +9,7 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import { requireAuthorization } from '../access/policy.js'
 import { beforeGraphCommit } from '../run-graph/connection.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import type { RunOwnership } from '../runs/index.js'
+import type { RunOwnership } from '../runs/ownership.js'
 import { DomainError } from '../errors.js'
 import type { WorkflowJobLockedPort, WorkflowJobDriver } from './workflowRuntimePorts.js'
 import type { WorkflowJobPreparation } from './workflowPreparation.js'

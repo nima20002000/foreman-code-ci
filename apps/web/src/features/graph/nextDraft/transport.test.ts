@@ -4,13 +4,13 @@ import { ApiClient } from '../../../shared/api/client'
 import { createNextDraftApi } from './transport'
 import { createCurrentBoardMock } from '../../../shared/mocks/currentBoard'
 import { CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/current'
-import { currentWorkflowFixture as makeCurrentFixture } from '../../../shared/mocks/currentWorkflow'
+import { currentWorkflowFixture as makeWave25Fixture } from '../../../shared/mocks/currentWorkflow'
 import type { DraftRequest } from '../../board-core'
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 describe('workflow HTTP client boundary', () => {
   function harness() {
-    const saved = makeCurrentFixture('transport')
+    const saved = makeWave25Fixture('transport')
     const mock = createCurrentBoardMock({ workspaceId: saved.scope.workspaceId, initialWorkflow: saved.version.definition,
       agents: saved.configurations.map((c) => ({ id: c.agentId, name: c.agentId, productRole: c.productRole, configurationVersionId: c.id,
         harness: c.harness.harness, harnessConfiguration: c.harness, prompt: c.prompt, assignedSkills: c.assignedSkills })) })
@@ -94,7 +94,7 @@ describe('workflow HTTP client boundary', () => {
       saved.scope.workflowId, 'definition', 'agents', saved.scope.workflowId, 'definition'])
   })
   it('starts the saved V3 version through local HTTP and rejects mismatched admission', async () => {
-    const saved = makeCurrentFixture('web-start')
+    const saved = makeWave25Fixture('web-start')
     const input = { workspaceId: saved.scope.workspaceId, workflowId: saved.scope.workflowId,
       workflowVersionId: saved.scope.workflowVersionId, executionSemanticsVersion: 3 as const,
       expectedWorkflowRevision: 1, expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
@@ -114,7 +114,7 @@ describe('workflow HTTP client boundary', () => {
     await expect(api.start(input)).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
   })
   it('requests bounded Run pages by cursor and rejects an out-of-scope list row', async () => {
-    const saved = makeCurrentFixture('web-pages')
+    const saved = makeWave25Fixture('web-pages')
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => response({ items: [saved.run], pageInfo: { nextCursor: 'run-next' } }))
     const api = createNextDraftApi(new ApiClient({ fetch }))
     const first = await api.runs(saved.scope.workspaceId, saved.scope.workflowId)

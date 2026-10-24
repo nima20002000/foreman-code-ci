@@ -222,6 +222,10 @@ it.each([
           expect(manager).toBe(f.manager)
           const token = readProductEnvironment(environment.variables, 'MCP_TOKEN')!
           const variables = { ...environment.variables }
+          if (serverName === 'foreman-code') {
+            variables.FOREMAN_CODE_MCP_TOKEN = token
+            delete variables.GRAPHQL_MCP_TOKEN
+          }
           const scoped = { ...start, configuration, environment: { ...environment, variables } }
           const delegate = await access.authenticate(token)
           expect(delegate.id).not.toBe(owner.principal.id)

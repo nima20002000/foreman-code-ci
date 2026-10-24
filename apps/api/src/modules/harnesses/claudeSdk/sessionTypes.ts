@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 /** Public Claude session manager contracts and the internal state shapes its modules share. */
 import type { CompactionState, ContextSnapshot, SessionPreferences, AgentHarness, ExecutionResult, NativeHarnessEvent,
   NativeSessionReference } from '@foreman-code/contracts'
@@ -34,7 +33,7 @@ export interface ClaudeSessionQualification {
 }
 /** Stable client identity permits read-only recovery; it is not a native receipt before observation. */
 export function claudePromptUuid(correlationId: string): string {
-  const bytes = sha256Digest(JSON.stringify([INSTALLATION_NAMES.protocol.claudeMessage, correlationId])).subarray(0, 16)
+  const bytes = sha256Digest(JSON.stringify(['graphql-claude-message-v2', correlationId])).subarray(0, 16)
   bytes[6] = (bytes[6]! & 0x0f) | 0x50
   bytes[8] = (bytes[8]! & 0x3f) | 0x80
   const hex = bytes.toString('hex')

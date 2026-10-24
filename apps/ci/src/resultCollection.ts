@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import type { CiHostReply, CiHostRun, CiRunRecord } from '@foreman-code/contracts'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import type { CiContext } from './environment.js'
 import type { HostCiComputer, HostCiEndpoint } from './service.js'
 import { serializeCiJson } from './text.js'

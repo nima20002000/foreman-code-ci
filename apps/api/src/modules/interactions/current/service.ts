@@ -3,13 +3,13 @@ import { withInteractionDeliveryReconciliation, withOriginalInteractionDeliveryC
 import { randomUUID } from 'node:crypto'
 import { withInteractionResponse, type DurableInteraction, type InteractionResponseValue } from '@foreman-code/contracts'
 import { requireAuthorization } from '../../access/policy.js'
-import type { NativeResponseJournal } from '../../harnesses/index.js'
+import type { NativeResponseJournal } from '../../harnesses/recovery/responseJournal.js'
 import type { InteractionNativeRuntime } from '../runtimePorts.js'
 import type { InteractionResponder } from '../responder.js'
 import type { GraphResumeClaim } from '../deliveryPostgres.js'
 import { INTERACTION_DELIVERY_LEASE_MS, matchingDeliveryEvidence, selectedInteractionResponse,
   type InteractionDeliveryClaim, type NativeDeliveryOutcome } from '../delivery.js'
-import type { CurrentInteractionRepository } from './repository.js'
+import type { Wave25InteractionRepository } from './repository.js'
 import { fail } from './context.js'
 import { holdResumeClaims } from './resume.js'
 import { SingleWriterSessionManager } from '../sessionWriter.js'
@@ -22,7 +22,7 @@ import { assertInteractionResponseActive, type InteractionResponseOptions } from
  * receipt is not a qualified implementation. */
 export type AtomicApprovalResumeConsumer = (claim: GraphResumeClaim) => Promise<void>
 export interface ApprovalRuntimeDependencies {
-  repository: CurrentInteractionRepository
+  repository: Wave25InteractionRepository
   nativeRuntime: InteractionNativeRuntime
   journal?: NativeResponseJournal
   atomicResume?: AtomicApprovalResumeConsumer
