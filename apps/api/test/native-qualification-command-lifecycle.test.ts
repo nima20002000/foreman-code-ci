@@ -36,7 +36,9 @@ it.skipIf(process.platform !== 'linux')('keeps qualification commands inside one
     lifetime.abort(new Error('Native qualification test finished.'))
     try {
       await writeFile(join(f.directory, 'release-diagnostics'), '')
-      await checking.catch(() => undefined)
+      await checking.catch(() => {
+        // ignore: The rejection was asserted above; cleanup also waits for an aborted qualification.
+      })
     } finally {
       assert.equal(await registry.closeOwner(owner), true)
       await rm(f.directory, { recursive: true, force: true })
