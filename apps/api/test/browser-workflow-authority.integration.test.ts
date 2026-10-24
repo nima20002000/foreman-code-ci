@@ -183,7 +183,7 @@ it.each([false, true])('reconciles stopped preparation without provisioning a pr
         throw new DomainError('BROWSER_COMPUTER_OFFLINE', 'The preparation reply was lost.', 503)
       },
       list: () => opened ? [session] : [],
-      read: () => ({ session, control }),
+      read: () => ({ session, control, tabs: [] }),
     }, input)
   })
   const release = vi.fn(async (input: { sessionId: string }) => ({ sessionId: input.sessionId, state: 'closed' as const, reason: null }))

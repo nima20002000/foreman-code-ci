@@ -182,7 +182,6 @@ export class BrowserProfileService {
     const target = computers.find(value => value.id === input.computerId)
     if (!target) throw new DomainError('NOT_FOUND', 'The selected computer is unavailable.', 404)
     const installationId = await this.host.installation(input.computerId)
-    const sourceInstallation = before.publishedRevision > 0 ? await this.host.installation(before.sourceComputerId) : undefined
     return this.command(principal, 'browser_profile_create', { ...input, intent: 'add_existing' }, [input.computerId],
       ['catalog', `profile:${input.profileId}`], async tx => {
         const profile = await requireBrowserProfile(tx, input.profileId)
@@ -191,12 +190,12 @@ export class BrowserProfileService {
         if (profile.distribution === 'local_only' && input.computerId !== profile.sourceComputerId) {
           throw new DomainError('PROFILE_LOCAL_ONLY', 'This profile is local only. Change its distribution explicitly before adding another computer.', 409)
         }
-        return this.addReplicaLocked(tx, profile, input.computerId, installationId, sourceInstallation, target.online, input.commandId)
+        return this.addReplicaLocked(tx, profile, input.computerId, installationId, target.online, input.commandId)
       })
   }
 
   private async addReplicaLocked(tx: BrowserProfileTransaction, profile: BrowserProfile, computerId: string,
-    installationId: string, sourceInstallation: string | undefined, online: boolean, commandId?: string) {
+    installationId: string, online: boolean, commandId?: string) {
     const facts = await tx.replicaFacts(profile.id, computerId)
     const previous = await tx.replica(profile.id, computerId)
     if (previous && replicaReady(profile, computerId, facts, previous)) return { state: 'ready' as const, replica: previous }
@@ -211,6 +210,7 @@ export class BrowserProfileService {
       await tx.putProfile({ profile: { ...profile, revision }, deleted: false })
       return { state: 'queued' as const, replica }
     }
+    const sourceInstallation = await this.host.installation(profile.sourceComputerId)
     const current = await tx.publishedManifest(profile.id)
     const manifest = current?.sourceComputerId === profile.sourceComputerId ? current : null
     const jobId = this.id(), timestamp = this.now(), state = online ? 'queued' as const : 'offline' as const
@@ -222,7 +222,7 @@ export class BrowserProfileService {
         state, exclusion: null, reason: online ? manifest ? null : 'Waiting for first source snapshot.' : 'Computer offline.', updatedAt: timestamp }] }
     await tx.putJob(job)
     await tx.putJobInstallation(jobId, computerId, installationId)
-    await tx.putJobInstallation(jobId, profile.sourceComputerId, sourceInstallation!)
+    await tx.putJobInstallation(jobId, profile.sourceComputerId, sourceInstallation)
     await tx.putIntent({ id: `${jobId}:target:${profile.id}:${computerId}`, profileId: profile.id,
       computerId, operation: 'sync', revision, installationId, state: 'queued', reason: manifest ? null : 'Waiting for first source snapshot.' })
     const queued = { ...replica, desiredSnapshot: manifest?.snapshot ?? null, transfer: state,
@@ -238,7 +238,6 @@ export class BrowserProfileService {
     const timeoutMs = options.timeoutMs ?? 120_000, deadline = Date.now() + timeoutMs
     const before = await this.repository.read(tx => requireBrowserProfile(tx, profileId))
     const installationId = await this.host.installation(computerId)
-    const sourceInstallation = before.publishedRevision > 0 ? await this.host.installation(before.sourceComputerId) : undefined
     await options.assertCurrent?.()
     await this.repository.transaction(['catalog', `profile:${profileId}`], async tx => {
       const profile = await requireBrowserProfile(tx, profileId)
@@ -252,7 +251,7 @@ export class BrowserProfileService {
       if (profile.distribution === 'local_only' && computerId !== profile.sourceComputerId) {
         throw new DomainError('PROFILE_LOCAL_ONLY', 'The selected browser profile is local to another computer.', 409)
       }
-      await this.addReplicaLocked(tx, profile, computerId, installationId, sourceInstallation, true)
+      await this.addReplicaLocked(tx, profile, computerId, installationId, true)
     })
     for (const listener of this.workListeners) listener()
     for (;;) {

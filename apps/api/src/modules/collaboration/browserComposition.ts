@@ -109,9 +109,10 @@ export function createProductionBrowser(options: BrowserCompositionOptions) {
       }
       const run = input.subject.kind !== 'conversation'
       // A Run wins its profile: chat browsers on it close first.
-      if (run && input.browser.profileId) await chat.yieldToRun(input.browser.profileId, input.computerId)
+      if (details.active && run && input.browser.profileId) await chat.yieldToRun(input.browser.profileId, input.computerId)
       const profileId = input.browser.profileId
-      if (input.browser.enabled && profileId) {
+      // Settled subjects only reconcile existing ownership on the host; they cannot provision a profile.
+      if (details.active && input.browser.enabled && profileId) {
         await profiles.service.prepareReplica(profileId, input.computerId, {
           assertCurrent: () => authority.assertCurrent(input.subject, { computerId: input.computerId, profileId }),
         })
