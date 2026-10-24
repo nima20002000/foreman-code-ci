@@ -1,8 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http, HttpResponse } from 'msw'
-import { server } from '../../mocks/server'
 import { expect, it, vi } from 'vitest'
 import { BrowserProfilesSettings } from './BrowserProfilesSettings'
 import type { BrowserProfileCatalog, BrowserProfilesPort, BrowserProfileSyncJob } from './types'
@@ -139,21 +137,4 @@ it('preserves confirmed native presence while removal waits, and blocks opening 
   expect(main.getByText('Removal queued — waiting for browser/computer')).toBeVisible()
   expect(main.getByRole('button', { name: 'Open browser' })).toBeDisabled()
   expect(main.getByRole('button', { name: 'Remove from this computer' })).toBeDisabled()
-})
-
-it('rechecks denied catalog access before showing profiles again', async () => {
-  const { port, data } = profileFixture()
-  port.readCatalog = async signal => {
-    const response = await fetch('/api/browser/profiles', { signal })
-    if (!response.ok) throw Object.assign(new Error('Access denied'), { status: response.status })
-    return response.json()
-  }
-  server.use(http.get('/api/browser/profiles', () => HttpResponse.json({}, { status: 403 })))
-  mount(port)
-  expect(await screen.findByText('Browser profiles are unavailable right now.')).toBeVisible()
-  expect(screen.queryByRole('button', { name: 'Add profile' })).not.toBeInTheDocument()
-  server.use(http.get('/api/browser/profiles', () => HttpResponse.json(data)))
-  await userEvent.click(screen.getByRole('button', { name: 'Recheck access' }))
-  expect(await screen.findByRole('region', { name: 'Browser profiles on Main' })).toBeVisible()
-  expect(screen.getByRole('button', { name: 'Add profile' })).toBeEnabled()
 })

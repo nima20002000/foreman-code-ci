@@ -22,6 +22,17 @@ describe('Chat delivery controls', () => {
     expect(submit).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps a selected steering mode recoverable after its active turn finishes', () => {
+    const change = vi.fn()
+    const props = { intent: 'steer' as const, onIntentChange: change, onSubmit: vi.fn() }
+    const view = render(<ChatDeliveryActions {...props} presentation={{ state: 'active', capabilities, nativeTurnId: 'turn-a' }} />)
+    view.rerender(<ChatDeliveryActions {...props} presentation={{ state: 'idle', capabilities }} />)
+    fireEvent.change(screen.getByLabelText('Delivery action'), { target: { value: 'auto' } })
+    expect(change).toHaveBeenCalledWith('auto')
+    view.rerender(<ChatDeliveryActions {...props} intent="auto" presentation={{ state: 'idle', capabilities }} />)
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled()
+  })
+
   it('uses qualified steering for auto but queues files or a mode change', () => {
     const selected = { state: 'active' as const, capabilities, nativeTurnId: 'turn-a' }
     expect(deliveryAction(selected, 'auto').label).toBe('Steer now')
