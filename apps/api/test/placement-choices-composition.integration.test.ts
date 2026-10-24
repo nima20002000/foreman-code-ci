@@ -9,7 +9,7 @@ import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflo
   makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { buildProductionApp } from '../src/production.js'
 import { loadConfig } from '../src/config.js'
-import { createCheckpointStore } from '../src/composition/checkpoints.js'
+import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { ProductionPlacementChoiceDiscovery } from '../src/modules/placement/choiceDiscovery.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'

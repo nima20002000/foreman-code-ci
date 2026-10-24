@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { Agent } from '@foreman-code/contracts'
 import { DEFAULT_WORKFLOW_EXECUTION_POLICY, sameWorkflowValue, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import {
@@ -228,7 +227,7 @@ export function removeMasterHierarchy(edit: NextDraftEdit): NextDraftEdit {
 
 /** New Agents are private staged configurations until the existing Save transaction publishes them. */
 export function stageHierarchyAgent(edit: NextDraftEdit, agent: Agent, nodeId: string, parentNodeId?: string,
-  fields: Pick<Exclude<WorkflowDefinitionCurrent['nodes'][number], { kind: 'job' }>, 'initialPrompt' | typeof INSTALLATION_NAMES.fields.agentTools | 'placement' | 'worktree'> = {}): NextDraftEdit {
+  fields: Pick<Exclude<WorkflowDefinitionCurrent['nodes'][number], { kind: 'job' }>, 'initialPrompt' | 'graphqlTools' | 'placement' | 'worktree'> = {}): NextDraftEdit {
   if (!agent.productRole || agent.configurationVersionId) {
     throw new Error('Create a new board Agent with an explicit role.')
   }

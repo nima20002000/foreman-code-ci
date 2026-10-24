@@ -45,7 +45,7 @@ describe('native MCP settings reads', () => {
     expect(replacement(current, managedChange('graphql', false, endpoint), { preset: 'graphql', endpoint })).toBeUndefined()
     expect(() => replacement({ ...current, user: { 'foreman-code': { ...installed, url: 'https://other.test/mcp' } } },
       managedChange('graphql', false, endpoint), { preset: 'graphql', endpoint })).toThrow('matching user-owned preset')
-    const legacy = nativeConnection({ transport: 'remote', url: 'http://127.0.0.1:3012/mcp', bearerTokenEnvironmentVariable: 'GRAPHQL_MCP_TOKEN' })
+    const legacy = nativeConnection({ transport: 'remote', url: 'http://127.0.0.1:3012/mcp', bearerTokenEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN' })
     expect(replacement({ ...current, user: { 'foreman-code': legacy }, effective: { 'foreman-code': legacy } },
       add, { preset: 'graphql', endpoint })).toEqual(installed)
     expect(managedStatus(current, 'graphql', 'http://127.0.0.1:4567/mcp')).toBe('installed')

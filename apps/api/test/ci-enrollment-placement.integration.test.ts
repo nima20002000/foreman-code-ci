@@ -14,7 +14,7 @@ import { postgresEnabled } from './helpers/database.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
 import { verificationFixture } from './helpers/jobVerificationFixture.js'
 import { ciEnrollmentFixture } from './ci-enrollment.test-support.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 describe.skipIf(!postgresEnabled)('automatic CI enrollment: placement', () => {
   const fixture = ciEnrollmentFixture()
@@ -84,19 +84,19 @@ describe.skipIf(!postgresEnabled)('automatic CI enrollment: placement', () => {
       f.computers[0]!.connected = false
       const persisted = await jobs.getDefinition(f.owner.principal, f.workspaceId, definition.id)
       expect(persisted).toEqual(definition)
+      await beginTransaction(sql)
       const identity = { executionId: randomUUID(), attemptId: randomUUID(), operationId: randomUUID() }
-      await withTransaction({ client: sql }, async transaction => {
-        const result = await placement.claim(transaction, f.owner.principal, persisted, identity)
-        expect(result.spec).toEqual(candidates[1]!.spec)
-        expect(result.compatibleTargetCount).toBe(1)
-        return result
-      })
+      const claim = await placement.claim(sql, f.owner.principal, persisted, identity)
+      expect(claim.spec).toEqual(candidates[1]!.spec)
+      expect(claim.compatibleTargetCount).toBe(1)
+      await commitTransaction(sql)
       expect((await f.db.pool.query('select spec,limits from job_computer_selections where execution_id=$1',
         [identity.executionId])).rows[0]).toEqual({ spec: candidates[1]!.spec,
         limits: first.profile.schemaVersion === 2 ? first.profile.spec.resources.limits : first.profile.limits })
       expect(await jobs.getDefinitionVersion(f.owner.principal, f.workspaceId, definition.id, definition.versionId))
         .toEqual(definition)
     } finally {
+      await rollbackTransaction(sql)
       sql.release()
       await f.close()
     }

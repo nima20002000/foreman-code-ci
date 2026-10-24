@@ -23,7 +23,7 @@ it.each(['explicit env file', 'default .env'])('isolates real API startup from %
   await writeFile(envFile, `LOG_FILE=${log}\nOPENAI_API_KEY=ambient-provider-sentinel\n`)
   const { testEnvironment } = await import('../../../scripts/test-resources.mjs')
   const environment = testEnvironment({ PATH: process.env.PATH,
-    ...(selector === 'explicit env file' ? { GRAPHQL_API_ENV_FILE: envFile } : {}) }, {
+    ...(selector === 'explicit env file' ? { FOREMAN_CODE_API_ENV_FILE: envFile } : {}) }, {
     directory: state, token: resources.environment.FOREMAN_CODE_TEST_OWNER!,
     name: new URL(resources.environment.TEST_DATABASE_URL!).pathname.slice(1),
     databaseUrl: resources.environment.TEST_DATABASE_URL!,

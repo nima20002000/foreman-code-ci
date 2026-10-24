@@ -5,7 +5,7 @@ import { AgentConfigurationVersionSchema, canonicalJson } from '@foreman-code/co
 import { PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { conversationFeatureContext } from '../src/modules/conversations/conversationFeatureSubject.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { workerCredentialBudgetFixture } from './helpers/workerCredentialBudgetFixture.js'
 
@@ -30,7 +30,7 @@ for (const lockedRow of ['run', 'execution', 'principal', 'binding'] as const) {
     await pool.query('update runs set worker_credentials_closed_at=now() where id=$1', [execution.runId])
     const sweepPool = new pg.Pool({ connectionString,
       options: `-c search_path=${schema} -c statement_timeout=500` })
-    const reconciler = new CurrentWorkerCredentialService(sweepPool, new PostgresAccessService(sweepPool))
+    const reconciler = new Wave25WorkerCredentialService(sweepPool, new PostgresAccessService(sweepPool))
     const revoked = async () => (await pool.query(`select p.revoked_at is not null as principal_revoked,
       b.revoked_at is not null as binding_revoked from management_principals p
       join worker_credential_bindings b on b.principal_id=p.id where p.id=$1`, [issued.principalId])).rows[0]

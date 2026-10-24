@@ -1,4 +1,4 @@
-import { RetryBackoff } from '@foreman-code/contracts-node/server-kit'
+import { RetryBackoff } from '@foreman-code/contracts/server-kit'
 import type pg from 'pg'
 import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import { PostgresSourceReservations, type SourceReservation } from './reservations.js'
