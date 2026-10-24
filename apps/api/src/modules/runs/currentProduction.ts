@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import type { BaseCheckpointSaver } from '../../infrastructure/langgraph.js'
-import type { InteractionService } from '../interactions/service.js'
+import type { InteractionService } from '../interactions/index.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { WorkflowRunCurrent } from '@foreman-code/contracts/current'
 import type { RepeatStartPublication } from './repeatStartAdmission.js'
@@ -9,7 +9,7 @@ import type { LangGraphWorkflowEngine } from './engine.js'
 import type { PostgresRunRepository } from './postgres.js'
 import type { PostgresWorkflowRepository } from '../workflows/index.js'
 import type { WorkspaceLocationService } from '../workspaces/index.js'
-import type { ApprovalExecutionCoordinator } from '../interactions/execution.js'
+import type { ApprovalExecutionCoordinator } from '../interactions/index.js'
 import type { PostgresCommandCoordinator } from '../commands/index.js'
 
 export interface CurrentRuntimeAvailability { runtimeAdmission: boolean; stopAvailable: boolean }

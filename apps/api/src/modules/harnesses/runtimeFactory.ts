@@ -1,12 +1,13 @@
+import { retiredHarnessError } from './retiredHarness.js'
 import type { AcceptedProviderAccountBinding, ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { isDeepStrictEqual } from 'node:util'
-import { HarnessConfigurationSchema } from '@foreman-code/contracts'
+import { RecordedHarnessConfigurationSchema } from '@foreman-code/contracts'
 import { captureOriginalCodexSession, type OriginalCodexSession } from './originalCodexSession.js'
 import { createAdmittedNativeManager } from './admittedManager.js'
 import type { ClaudeOwnedVersionObservation } from './claudeSdk/currentPin.js'
 import { createAdmittedClaudeManager } from './claudeSdk/admittedManager.js'
 import { allocateClaudeNativeHarness, type ClaudeNativeAllocation, type ClaudeNativeAllocationResult } from './claudeSdk/composition.js'
-import type { HarnessConfiguration, NativeSessionReference } from '@foreman-code/contracts'
+import type { RecordedHarnessConfiguration, NativeSessionReference } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import { HarnessInstanceRegistry, localHarnessDrivers, type ConfiguredHarnessInstance } from './instanceRegistry.js'
 import type { HarnessInstallationRegistry, RegistryHarnessSelection } from './installationRegistry.js'
@@ -24,11 +25,10 @@ import type { NativeMcpInspector } from './mcpDetection.js'
 import type { NativeHarnessSessionManager, NativeSessionStart } from './port.js'
 import type { NativeProcessRecovery } from './recovery/processRegistry.js'
 import type { NativeResponseJournal } from './recovery/responseJournal.js'
-import type { ProviderAccountResolver, ResolvedProviderAccount } from '../provider-accounts/service.js'
+import type { ProviderAccountResolver, ResolvedProviderAccount } from '../provider-accounts/index.js'
 import { pinnedCodexAccountEnvironment, resolveRuntimeProviderAccount } from './providerAccountRuntime.js'
 import { ignoreError } from '../diagnostics/index.js'
 import { hostEnvironment } from '../../shared/process.js'
-import { retiredHarnessError } from './retiredHarness.js'
 
 export type HarnessRuntimeRole = 'workflow' | 'operator' | 'agent-chat' | 'diagnostics' | 'qualification'
 interface AllocationContext {
@@ -90,7 +90,7 @@ export class NativeHarnessFactories {
     installations?: HarnessInstallationRegistry
     installationDiscovery?: typeof discoverLauncher
     selectDefault?: (harness: 'codex') => RegistryHarnessSelection
-    selectConfiguration?: (configuration: HarnessConfiguration) => RegistryHarnessSelection
+    selectConfiguration?: (configuration: RecordedHarnessConfiguration) => RegistryHarnessSelection
     selectAccount?: (binding: ProviderAccountBinding) => RegistryHarnessSelection
     auxiliaryRecovery?: (role: 'diagnostics' | 'qualification') => NativeProcessRecovery
     admitRecovery?: (recovery: NativeProcessRecovery) => void | Promise<void>
@@ -114,7 +114,7 @@ export class NativeHarnessFactories {
     }
   }
 
-  async cacheIdentity(harness: 'codex', directory: string, configuration?: HarnessConfiguration,
+  async cacheIdentity(harness: 'codex', directory: string, configuration?: RecordedHarnessConfiguration,
     accountBinding?: ProviderAccountBinding) {
     await this.config.refreshInstallations?.()
     if (accountBinding && !this.config.selectAccount) throw new DomainError(
@@ -242,7 +242,7 @@ export class NativeHarnessFactories {
     let result: NativeHarnessAllocationResult
     if (input.harness === 'codex') {
       const rawConfiguration = input.configured?.configuration ?? input.selection?.instance.configuration
-      const configuration = rawConfiguration ? HarnessConfigurationSchema.parse(rawConfiguration) : undefined
+      const configuration = rawConfiguration ? RecordedHarnessConfigurationSchema.parse(rawConfiguration) : undefined
       const account = pinnedCodexAccountEnvironment(this.config.accounts,
         configuration?.harness === 'codex' ? configuration.accountId : undefined,
         input.accountRecovery ?? (auxiliary ? undefined : recovery), input.accountSourceRecovery, input.accountBinding)
@@ -380,7 +380,7 @@ export class NativeHarnessFactories {
       'HARNESS_INSTALLATION_CHANGED', 'The selected launcher, interpreter or native payload changed after admission.', 409)
   }
 
-  async qualifyConfiguration(configuration: HarnessConfiguration, workingDirectory: string, signal?: AbortSignal) {
+  async qualifyConfiguration(configuration: RecordedHarnessConfiguration, workingDirectory: string, signal?: AbortSignal) {
     if (configuration.harness === 'opencode') throw retiredHarnessError()
     await this.config.refreshInstallations?.(signal)
     if (configuration.harness === 'claude') throw new DomainError('CLAUDE_NATIVE_QUALIFICATION_UNAVAILABLE',

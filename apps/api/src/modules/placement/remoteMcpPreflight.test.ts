@@ -56,7 +56,7 @@ it('rejects a different execution directory before remote inspection', async () 
 
 it.each([
   ['graphql', 'GRAPHQL_MCP_TOKEN'],
-  ['foreman-code', 'FOREMAN_CODE_MCP_TOKEN'],
+  ['foreman-code', 'GRAPHQL_MCP_TOKEN'],
 ] as const)('accepts supported remote %s identity and %s credential without changing placement', async (serverName, tokenName) => {
   const f = fixture()
   f.detection.serverName = serverName

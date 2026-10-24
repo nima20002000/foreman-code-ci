@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { execFileSync, spawnSync, spawn } from 'node:child_process';
 import { access, mkdir, readFile, readlink, rmdir, statfs, writeFile, unlink } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
@@ -16,7 +17,7 @@ export async function probeExecutableScratch(directory) {
 export function imageToolPath(tool) {
   const installedPostgres = tool.kind === 'postgresql'
     && tool.executable === '/usr/lib/postgresql/17/bin/postgres';
-  if ((!tool.executable?.startsWith('/opt/graphql-ci/tools/') && !installedPostgres)
+  if ((!tool.executable?.startsWith(INSTALLATION_NAMES.paths.ciTools) && !installedPostgres)
     || tool.executable.includes('..')) {
     throw new Error('Image-owned qualification tool path required.');
   }

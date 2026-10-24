@@ -12,15 +12,15 @@ import { randomUUID } from 'node:crypto'
 import { vi } from 'vitest'
 import { AgentConfigurationVersionSchema, DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
-import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../../src/modules/runs/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../../src/modules/interactions/runtimePorts.js'
-import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
-import { Wave25WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
+import { CurrentInteractionRepository } from '../../src/modules/interactions/current/repository.js'
+import { CurrentWorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
 import { registerApprovalCheckpointResume } from '../../src/modules/runs/approvalCheckpointRegistration.js'
 import { continuationValidator } from '../../src/modules/runs/continuation.js'
 import { LangGraphWorkflowEngine } from '../../src/modules/runs/engine.js'
@@ -42,7 +42,7 @@ export async function codexWorkflowRuntime(kind: 'questions' | 'form') {
   const journal = new NativeResponseJournal(join(provider.directory, 'response-journal'))
   try {
     await provider.json('mcp.json', { name: 'foreman-code', enabled: true, required: true,
-      transport: { type: 'streamable_http', url: providerAppEndpoint, bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } })
+      transport: { type: 'streamable_http', url: providerAppEndpoint, bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } })
     await provider.json('workflow-input.json', kind === 'questions'
       ? { method: 'item/tool/requestUserInput', params: { itemId: 'question-tool', isBlocking: true,
         questions: [{ id: 'answer', header: 'Answer', question: 'What should happen next?',
@@ -79,8 +79,8 @@ export async function codexWorkflowRuntime(kind: 'questions' | 'form') {
     const reviewCapture = createReviewNativeCaptureChannel()
     const runs = new PostgresRunRepository(db.pool, workflows, locations,
       { runtimeRoot: db.directory, ...createWorkflowRepositoryServices(workflowCapture.verify) })
-    const repository = new Wave25InteractionRepository(db.pool, new ReviewNativeProofServices(reviewCapture.verify)), budgets = new PostgresApprovalBudgetRepository(db.pool)
-    const credentials = new Wave25WorkerCredentialService(db.pool, access)
+    const repository = new CurrentInteractionRepository(db.pool, new ReviewNativeProofServices(reviewCapture.verify)), budgets = new PostgresApprovalBudgetRepository(db.pool)
+    const credentials = new CurrentWorkerCredentialService(db.pool, access)
     const launchCredentials = providerLaunchCredentials(runs, locations, managers, credentials,
       manager => {
         if (!(manager instanceof CodexAppServerSessionManager)) throw new Error('Expected the Codex workflow manager')

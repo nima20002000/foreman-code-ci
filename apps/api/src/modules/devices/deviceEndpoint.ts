@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { negotiateDeviceExtensions, parseExtensionDescriptors } from '@foreman-code/contracts/device-application'
 import { DeviceApplicationChannel, deviceNegotiationHash, extensionDescriptors, type DeviceApplicationRequestOptions, type DeviceExtensionRegistration } from './deviceApplicationChannel.js'
 import type { DevicePrincipal, MainIdentityProofRequest, MainSignedIdentityProof } from '@foreman-code/contracts/device-identity'
@@ -91,7 +92,7 @@ export class DeviceEndpoint {
         principal = await withDeviceDeadline(physicalAuthentication, abort.signal, this.options.handshakeMs ?? 10_000)
       } catch (error) { throw authorizationFailure(error) }
       if (this.closed || this.admissionStopped || abort.signal.aborted) throw new DeviceConnectionError('transport')
-      if (principal.audience !== 'graphql-worker' || principal.mainId !== this.options.mainId) throw new DeviceConnectionError('wrong-main')
+      if (principal.audience !== INSTALLATION_NAMES.protocol.workerAudience || principal.mainId !== this.options.mainId) throw new DeviceConnectionError('wrong-main')
       if (principal.authorizationRevision <= (this.revoked.get(principal.deviceId) ?? 0)) throw new DeviceConnectionError('revoked')
       this.tickets.add(principal)
       return principal
@@ -115,7 +116,7 @@ export class DeviceEndpoint {
     let session: { epoch: string; authorizationRevision: number; socket: DeviceSocket; abort: AbortController; binding?: DeviceSessionBinding; ready?: true; presence?: DevicePresence } | undefined
     try {
       if (this.closed || this.admissionStopped || principal.mainId !== this.options.mainId
-        || principal.audience !== 'graphql-worker') throw new DeviceConnectionError('authentication')
+        || principal.audience !== INSTALLATION_NAMES.protocol.workerAudience) throw new DeviceConnectionError('authentication')
       if (!this.tickets.has(principal)) throw new DeviceConnectionError('authentication')
       if (principal.authorizationRevision <= (this.revoked.get(principal.deviceId) ?? 0)) throw new DeviceConnectionError('revoked')
       const previous = this.sessions.get(principal.deviceId)
@@ -148,7 +149,7 @@ export class DeviceEndpoint {
       if (!current()) throw new DeviceConnectionError('transport')
       let extensions
       try { extensions = negotiateDeviceExtensions(extensionDescriptors(this.options.extensions ?? []), parseExtensionDescriptors(hello.extensions ?? [])) } catch { throw new DeviceConnectionError('malformed-frame') }
-      const proofRequest: MainIdentityProofRequest = { audience: 'graphql-worker-main-v1', ...binding, nonce: hello.nonce as string, connectionGeneration: Number(hello.connectionGeneration), connectionEpoch: hello.connectionEpoch as string, mainConnectionEpoch: epoch, protocolVersion: DEVICE_PROTOCOL_VERSION, workerApplicationVersion: hello.appVersion as string, negotiationHash: deviceNegotiationHash(extensions) }
+      const proofRequest: MainIdentityProofRequest = { audience: INSTALLATION_NAMES.protocol.mainAudience, ...binding, nonce: hello.nonce as string, connectionGeneration: Number(hello.connectionGeneration), connectionEpoch: hello.connectionEpoch as string, mainConnectionEpoch: epoch, protocolVersion: DEVICE_PROTOCOL_VERSION, workerApplicationVersion: hello.appVersion as string, negotiationHash: deviceNegotiationHash(extensions) }
       const mainIdentityProof = await withDeviceDeadline(this.track(this.options.signMainIdentityProof(proofRequest)), abort.signal, this.options.handshakeMs ?? 10_000)
       if (!current()) throw new DeviceConnectionError('transport')
       const welcome: DeviceWelcome = { ...binding, type: 'welcome', protocolVersion: DEVICE_PROTOCOL_VERSION, appVersion: this.options.appVersion, mainIdentityProof, capabilities: { heartbeat: true, dispatch: extensions.some((item) => ['execution-v1', 'job-v1'].includes(item.namespace) && item.mainCanRequest), transfer: extensions.some((item) => item.namespace === 'byte-transfer-v1' && (item.mainCanRequest || item.workerCanRequest)), extensions } }

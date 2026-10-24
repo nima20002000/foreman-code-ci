@@ -32,7 +32,7 @@ export type WorkflowBoardSelection = {
   selectSidePanel?(selection: BoardSidePanel): void
   memoryOpen?: boolean
   /** Opens the workflow's memory board on one card, as the Kanban's cards do. */
-  openMemoryCard?(cardId?: string): void
+  openMemoryCard?(cardId: string): void
   canvasVisible?: boolean
   teamNodeId?: string
   selectTeam?(nodeId?: string): void

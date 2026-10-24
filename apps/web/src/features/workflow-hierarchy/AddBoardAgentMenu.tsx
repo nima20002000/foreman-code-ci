@@ -1,4 +1,5 @@
-import { agentTemplateForRole, newAgentGraphqlTools, type Agent, type AgentDefaults,
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
+import { agentTemplateForRole, newAgentForemanTools, type Agent, type AgentDefaults,
   type WorkflowAgentProductRole } from '@foreman-code/contracts'
 import { ActionMenu } from '../../shared/ui/nocturne'
 import { useAgentDefaultsQuery, useManagedHarnessCatalogQuery } from '../../shared/api/query'
@@ -32,7 +33,7 @@ function newBoardAgent(edit: NextDraftEdit, defaults: AgentDefaults, role: Workf
     same ? `${label} ${same + 1}` : label, template.harness, role),
   ...(template.nativeTools && !switched ? { nativeTools: structuredClone(template.nativeTools) } : {}),
   ...(template.harnessProfileSelection && !switched ? { harnessProfileSelection: structuredClone(template.harnessProfileSelection) } : {}),
-  graphqlTools: [...(template.graphqlTools ?? newAgentGraphqlTools(role))] }
+  [INSTALLATION_NAMES.fields.agentTools]: [...(template[INSTALLATION_NAMES.fields.agentTools] ?? newAgentForemanTools(role))] }
 }
 
 /** The Board's plus: one click on a role stages a new Agent; Save creates it. */

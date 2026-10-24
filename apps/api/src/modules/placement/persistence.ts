@@ -2,7 +2,7 @@ import { DispatchIntentSchema, type AcceptedNodePlacement, type DispatchIntent, 
 import { canonicalGraphJson, sameWorkflowValue } from '@foreman-code/contracts/current'
 import { assertGraphTransaction, beforeGraphCommit } from '../run-graph/index.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import type { RunOwnership } from '../runs/ownership.js'
+import type { RunOwnership } from '../runs/index.js'
 import { DomainError } from '../errors.js'
 import type { PlacementCommitFence } from './admission.js'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'

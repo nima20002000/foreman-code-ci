@@ -1,7 +1,7 @@
 import type { AgentHarness } from '@foreman-code/contracts'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '../../shared/ui/nocturne'
-import { ChatNotice } from '../conversations/ChatNotice'
+import { ChatNotice } from '../chat-core'
 import { getExecutionReadiness } from './executionReadiness'
 import { useHarnessSessionEpoch } from '../../shared/api/harnessSettings'
 import { sessionIsSwitching } from '../../shared/api/sessionBoundary'

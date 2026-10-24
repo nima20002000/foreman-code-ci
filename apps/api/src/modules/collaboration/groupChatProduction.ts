@@ -1,7 +1,8 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { readChatPrincipal, readConversationCredential } from '../access/index.js'
 import type pg from 'pg'
-import { isReadOnlyHarnessConfiguration, AgentConfigurationVersionSchema, AgentSubjectSchema, HarnessExecutionSchema, effectiveGraphqlTools } from '@foreman-code/contracts'
+import { isReadOnlyHarnessConfiguration, AgentConfigurationVersionSchema, AgentSubjectSchema, HarnessExecutionSchema, effectiveForemanTools } from '@foreman-code/contracts'
 import { requireChatAuthorization } from './chatAuthorization.js'
 import { readLiveManagementPrincipal } from '../access/index.js'
 import { readConsultationCredentialSubject } from '../access/index.js'
@@ -54,8 +55,8 @@ export function productionChatAccess(pool: pg.Pool): SharedChatAccess {
       const node = version.definition.nodes.find(candidate => candidate.id === row.node_id)
       if (action === 'agent_chat:cancel') throw new DomainError('ACCESS_DENIED', 'Agents cannot cancel Group deliveries.', 403)
       const tool = action === 'agent_chat:read' ? 'workflow_chat_read' : 'workflow_chat_post'
-      const enabled = effectiveGraphqlTools(agent.productRole, configuration.graphqlTools,
-        node?.kind === 'job' ? undefined : node?.graphqlTools, Boolean(node && 'interval' in node && node.interval), ['workflow_chat_read', 'workflow_chat_post'])
+      const enabled = effectiveForemanTools(agent.productRole, configuration[INSTALLATION_NAMES.fields.agentTools],
+        node?.kind === 'job' ? undefined : node?.[INSTALLATION_NAMES.fields.agentTools], Boolean(node && 'interval' in node && node.interval), ['workflow_chat_read', 'workflow_chat_post'])
       const readOnly = isReadOnlyHarnessConfiguration(configuration.harness)
       if (!enabled.includes(tool) || readOnly && action !== 'agent_chat:read') {
         throw new DomainError('ACCESS_DENIED', 'This Agent cannot use the requested Group chat operation.', 403)
