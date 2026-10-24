@@ -47,6 +47,14 @@ afterEach(() => {
 })
 
 describe('Run activity list summary freshness', () => {
+  it('uses the Runs history outcome labels for successful and canceled activity history', async () => {
+    const canceled = { ...completedRun, id: 'run-canceled-history', outcome: 'canceled', result: { outcome: 'canceled', output: {} } }
+    server.use(http.get(listRoute, () => HttpResponse.json({ items: [completedRun, canceled], pageInfo: { nextCursor: null } })))
+    mount()
+    expect(await screen.findByRole('button', { name: `Open Run ${completedRun.id} · completed · succeeded` })).toHaveTextContent('Succeeded')
+    expect(screen.getByRole('button', { name: 'Open Run run-canceled-history · completed · canceled' })).toHaveTextContent('Canceled')
+  })
+
   it('reads the initial page for a completed summary after six pages evict the newest page', async () => {
     const cursors: Array<string | null> = []
     let arrived = false
