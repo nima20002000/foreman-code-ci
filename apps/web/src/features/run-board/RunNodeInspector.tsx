@@ -93,7 +93,7 @@ export function RunNodeInspector({ selection, snapshot, nodeId, executionId, onI
         {listed.length ? <ol className="run-node-attempts">{listed.map(execution => <li key={execution.executionId}>
           <button type="button" className="run-node-attempt" aria-pressed={selectedExecutionId === execution.executionId}
             aria-label={`Attempt ${execution.attempt} · ${execution.executionId}`} title={execution.executionId}
-            onClick={() => board ? board.selectInspection({ runNodeId: node.id,
+            onClick={() => board && board.authoringActive !== true ? board.selectInspection({ runNodeId: node.id,
               runExchangeKey: runInspectionKey({ executionId: execution.executionId, occurrenceId: execution.occurrence?.occurrenceId }) })
               : onInspect(node.id, execution.executionId)}>
             <span>Attempt {execution.attempt}</span>

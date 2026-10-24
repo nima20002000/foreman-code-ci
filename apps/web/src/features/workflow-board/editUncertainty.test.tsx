@@ -48,12 +48,12 @@ describe('Meaningful edit versus layout and uncertain Stop-and-save', () => {
     const user = userEvent.setup()
     await waitFor(() => expect(useGraphDraftStore.getState().nextDrafts[key]).toBeDefined())
     await user.click(await screen.findByRole('button', { name: 'Return to workflow' }))
-    const authoring = await screen.findByRole('region', { name: 'Workflow authoring' })
-    await waitFor(() => expect(within(authoring).getByTitle('Rename workflow')).toBeDisabled())
-    expect(within(authoring).getByRole('button', { name: 'Add agent' })).toBeDisabled()
+    const toolbar = await screen.findByRole('banner', { name: 'Board toolbar' })
+    await waitFor(() => expect(within(toolbar).getByTitle('Rename workflow')).toBeDisabled())
+    expect(within(toolbar).getByRole('button', { name: 'Add agent' })).toBeDisabled()
     setRunState(fixture, scope, 'completed')
     await act(async () => { await cache.invalidateQueries() })
-    await waitFor(() => expect(within(authoring).getByTitle('Rename workflow')).toBeEnabled())
+    await waitFor(() => expect(within(toolbar).getByTitle('Rename workflow')).toBeEnabled())
     const initial = useGraphDraftStore.getState().nextDrafts[key]!
     const versionCount = fixture.mock.versions.size, runCount = fixture.mock.runs.size
     const initialVersion = initial.context.draft.baseWorkflowVersionId

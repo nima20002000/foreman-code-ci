@@ -57,7 +57,7 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
           && exchange.executionId === (next.kind === 'agent' ? next.executionId : undefined)
         // Closing or changing the panel clears its filters; Details carries the exact history selection.
         delete selected.runNodeId; delete selected.runRelationshipId; delete selected.runExchangeKey
-        if (next.kind === 'agent' && next.tab === 'details') {
+        if (next.kind === 'agent' && next.tab === 'details' && (selected.runId || selected.selectedRunId)) {
           selected.runNodeId = next.nodeId
           selected.runExchangeKey = runInspectionKey({ executionId: next.executionId,
             ...(sameExecution ? { occurrenceId: exchange.occurrenceId } : {}) })
