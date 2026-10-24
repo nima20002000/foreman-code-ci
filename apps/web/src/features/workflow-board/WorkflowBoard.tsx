@@ -8,7 +8,7 @@ import type { ExecutionRef, WorkflowRunSummary } from '@foreman-code/contracts'
 import type { BoardSidePanel, RepeatGraphScopeCurrent, WorkspaceBoardInspection } from '@foreman-code/contracts/current'
 import { Alert, Button, Icon, IconButton } from '../../shared/ui/nocturne'
 import { WorkspaceExecutionLocationSettings } from '../settings'
-import { BoardRunOverlay, useBoardRunSnapshot, RunBoardSlot, useRunBoardShown } from '../run-board'
+import { BoardRunOverlay, RunBoardSlot, useRunBoardShown } from '../run-board'
 import { useRunSummaries, useSelectedRun, useSelectedRunSnapshot, isRunAccessError } from '../runs-selector'
 import { BoardNavigationControls } from './BoardNavigationControls'
 import {
@@ -132,13 +132,9 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const boardRunLive = !!boardRunId && (boardRunId === liveRunId || (boardRunId === startedRunId && startedLive))
   const boardRun = useMemo(() => boardRunId ? { workspaceId, workflowId, runId: boardRunId, live: boardRunLive } : undefined,
     [workspaceId, workflowId, boardRunId, boardRunLive])
-  const boardRunRead = useBoardRunSnapshot(boardRun, current && side.view === 'graph' && !side.memoryOpen)
-  const boardSnapshot = !boardRunRead.isError && boardRunRead.data?.snapshot
-  const boardVersionId = boardSnapshot && boardSnapshot.kind === 'available' && boardSnapshot.runId === boardRunId
-    ? boardSnapshot.workflowVersionId : undefined
   const boardRunControls = useMemo(() => boardRunId ? <SelectedRunControls key={boardRunId} visible={!side.memoryOpen}
-    scope={{ workspaceId, workflowId, runId: boardRunId, ...(boardVersionId ? { workflowVersionId: boardVersionId } : {}) }} runActionRef={setRunActionHost} /> : undefined,
-  [boardRunId, boardVersionId, side.memoryOpen, workspaceId, workflowId])
+    scope={{ workspaceId, workflowId, runId: boardRunId }} runActionRef={setRunActionHost} /> : undefined,
+  [boardRunId, side.memoryOpen, workspaceId, workflowId])
   // History is rendered only by RunBoardSlot. Do not feed legacy Run pins to the
   // hidden editor, or fabricate missing version/semantics pins.
   const value = useMemo<WorkflowBoardSelection>(() => ({ workspaceId, workflowId, selectRun: chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent,
@@ -225,7 +221,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
       {boardToolbar}
       <div className="workflow-collaboration-canvas" hidden={side.view !== 'graph'} inert={side.view !== 'graph'}>
       <RunBoardSlot selection={boardSelection} shown={shownBoard}>
-        <BoardRunOverlay run={boardRun} read={boardRunRead} visible={current && side.view === 'graph' && !side.memoryOpen}>
+        <BoardRunOverlay run={boardRun} visible={current && side.view === 'graph' && !side.memoryOpen}>
         <div className="workflow-board-authoring" onClickCapture={authoringEvent} onKeyDownCapture={authoringEvent} onSubmitCapture={authoringEvent}>
           {children}
           {current && locationOpen ? <WorkspaceExecutionLocationSettings workspaceId={workspaceId} presentation="dialog"

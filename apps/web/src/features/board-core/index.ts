@@ -19,5 +19,5 @@ export { agentNodeFacts, agentSettingRows, edgeBend, relationshipLines, useFloat
 export type { EdgeSignal, FloatingCurve } from './signalEdge'
 export type { AgentGraphNode, GraphMapperOptions, GraphNode, GraphProjection, JobGraphNode } from './types'
 export { activeWorkflowGraph, activeWorkflowNode } from './nextDraft/activeToolSettings'
-export { RunLiveNodes, RunLivePulses, RunLiveCi } from './runOverlay'
+export { RunLiveNodes, RunLivePulses } from './runOverlay'
 export type { RunLiveNodeView, RunLivePulse } from './runOverlay'
