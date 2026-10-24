@@ -213,8 +213,10 @@ describe('WorkspaceRouteEntry integration', () => {
     await user.clear(name)
     await user.paste('Activities persisted workflow')
     await user.keyboard('{Enter}')
-    await user.click(screen.getByRole('button', { name: 'Save workflow' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Save workflow' })).not.toBeInTheDocument())
+    // Query Save inside the Board toolbar: a whole-screen ByRole name scan on every poll costs seconds under load.
+    const toolbar = () => within(screen.getByRole('banner', { name: 'Board toolbar' }))
+    await user.click(toolbar().getByRole('button', { name: 'Save workflow' }))
+    await waitFor(() => expect(toolbar().queryByRole('button', { name: 'Save workflow' })).not.toBeInTheDocument())
     first.unmount()
     first.queryClient.clear()
     act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
@@ -225,7 +227,10 @@ describe('WorkspaceRouteEntry integration', () => {
     expect(node).toHaveAccessibleName(/Claude/)
     expect(node).toHaveAttribute('aria-pressed', 'false')
     await user.hover(node)
-    const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
+    // Each ByRole query in the deep canvas walks every ancestor through jsdom's uncached getComputedStyle
+    // (about 0.5 s alone, several seconds under load); find the group by its label and keep ByRole for the button.
+    const actions = within(screen.getByLabelText('Editable workflow graph')).getByLabelText(`${title} actions`)
+    expect(actions).toHaveAttribute('role', 'group')
     await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
     expect(rail).toBeVisible()
