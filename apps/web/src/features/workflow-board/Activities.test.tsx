@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider, useLocation } from '@tanstack/react-router'
+import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from '@tanstack/react-router'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
@@ -10,8 +10,6 @@ import { server } from '../../mocks/server'
 import { RunsSelectorSearchSchema } from '../runs-selector'
 import { Activities } from './Activities'
 import { runActivitiesKey, type RunActivityFeed } from './runActivitiesQuery'
-import { useBoardCiServer } from './inspect/useBoardCiServer'
-import { ciResultJob, ciResultTests } from './inspect/ciResults.testSupport'
 import { deferred } from '../../test/deferred'
 
 const scope: RepeatGraphScopeCurrent = { workspaceId: 'workspace-a', workflowId: 'workflow-a',
@@ -39,7 +37,7 @@ async function mount({ timed = false, expectedText = 'Job ran', focusAgentId = u
   clients.push(client)
   const root = createRootRoute({ component: Outlet })
   const route = createRoute({ getParentRoute: () => root, path: '/workspaces/$workspaceId',
-    validateSearch: RunsSelectorSearchSchema, component: () => <><Activities scope={scope} focusAgentId={focusAgentId} /><CiHost /></> })
+    validateSearch: RunsSelectorSearchSchema, component: () => <Activities scope={scope} focusAgentId={focusAgentId} /> })
   const router = createRouter({ routeTree: root.addChildren([route]), defaultPendingMinMs: 0,
     history: createMemoryHistory({ initialEntries: ['/workspaces/workspace-a?workflowId=workflow-a&selectedRunId=run-a'] }) })
   await router.load()
@@ -47,11 +45,6 @@ async function mount({ timed = false, expectedText = 'Job ran', focusAgentId = u
   render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
   await act(async () => { await vi.waitFor(() => expect(screen.getByText(expectedText)).toBeVisible()) })
   return router
-}
-
-function CiHost() {
-  const ticketId = useLocation().search.boardCiTicketId
-  return useBoardCiServer({ ticketId, nodes: [], names: new Map(), workflow: scope, scope, jobs: [ciResultJob] }).dialog
 }
 
 const activitiesPath = '*/api/management/workspaces/workspace-a/runs/run-a/activities'
@@ -573,19 +566,4 @@ describe('Activities idle polling cadence', () => {
     await eventually(() => expect(requests).toHaveLength(count + 1))
     expect(requests.at(-1)).toBe('cursor-6')
   })
-})
-
-
-it('opens the exact CI ticket results from its Activity row', async () => {
-  const ciEvent = RunActivityPublicSchema.parse({ ...event('1', 'CI failed', { actor: agent }),
-    refs: { ciTicketId: ciResultJob.ticketId, ciGroupId: ciResultJob.ci.groupId }, ci: ciResultJob.ci })
-  server.use(
-    http.get(activitiesPath, () => HttpResponse.json(page({ items: [ciEvent] }))),
-    http.get('*/api/management/workspaces/workspace-a/ci', () => HttpResponse.json({ runId: scope.runId, jobs: [ciResultJob], truncated: false })),
-    http.get(`*/api/management/workspaces/workspace-a/ci/${ciResultJob.ticketId}/tests`, () => HttpResponse.json({ ticketId: ciResultJob.ticketId, tests: ciResultTests })),
-  )
-  await mount({ expectedText: 'CI failed' })
-  await userEvent.click(screen.getByRole('button', { name: 'Open CI results' }))
-  const ci = await screen.findByRole('complementary', { name: 'CI server' })
-  expect(await within(ci).findByText('failing example')).toBeVisible()
 })

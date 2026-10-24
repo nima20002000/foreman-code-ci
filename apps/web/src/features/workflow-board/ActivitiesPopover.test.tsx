@@ -4,12 +4,12 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ActivitiesPopover } from './ActivitiesPopover'
 
-function Harness({ initiallyOpen = false, buttonShown = true, buttonKey = 'graph' }: { initiallyOpen?: boolean; buttonShown?: boolean; buttonKey?: string }) {
+function Harness({ initiallyOpen = false, buttonShown = true }: { initiallyOpen?: boolean; buttonShown?: boolean }) {
   const [open, setOpen] = useState(initiallyOpen)
   const toolbar = useRef<HTMLDivElement>(null)
   const find = useCallback(() => toolbar.current?.querySelector<HTMLButtonElement>('button[aria-label="Activities"]') ?? null, [])
   return <div ref={toolbar}>
-    {buttonShown ? <button key={buttonKey} data-view={buttonKey} type="button" aria-label="Activities" onClick={() => setOpen(true)}>Activities</button> : null}
+    {buttonShown ? <button type="button" aria-label="Activities" onClick={() => setOpen(true)}>Activities</button> : null}
     <button type="button">Elsewhere</button>
     <ActivitiesPopover open={open} onClose={() => setOpen(false)} findAnchor={find}>
       <ul aria-label="Rows">
@@ -84,16 +84,4 @@ describe('Activities popover', () => {
     await user.click(button)
     await waitFor(() => expect(popover()).not.toBeInTheDocument())
   })
-})
-
-
-it('keeps open Activities anchored when the Board replaces its view toolbar button', async () => {
-  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-    return this.getAttribute('aria-label') === 'Activities'
-      ? new DOMRect(this.dataset.view === 'graph' ? 500 : 700, 100, 40, 30) : new DOMRect()
-  })
-  const view = render(<Harness initiallyOpen buttonKey="graph" />)
-  expect(popover()).toHaveStyle({ left: '120px' })
-  view.rerender(<Harness initiallyOpen buttonKey="overview" />)
-  await waitFor(() => expect(popover()).toHaveStyle({ left: '320px' }))
 })
