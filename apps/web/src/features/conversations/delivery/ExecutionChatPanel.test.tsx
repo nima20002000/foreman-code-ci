@@ -5,10 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { ChatSendRequestSchema, ChatStopRequestSchema, type ChatDeliveryReceipt, type ChatSendRequest,
   type ChatStopRequest, type EngineChatMessage, type EngineChatReadback } from '@foreman-code/contracts'
+import { agentChatFixtures } from '@foreman-code/contracts/agent-chat'
+import { agentChatFixtureFor, createAgentChatMock } from '../../../shared/mocks/agentChatHandlers'
+import { AgentConversation } from '../agentChat/AgentConversation'
 import { server } from '../../../mocks/server'
 import { ApiError } from '../../../shared/api/client'
 import type { ConversationAttachments } from '../../attachments'
-import { useConversationDraftStore } from '../../chat-core'
+import { useConversationDraftStore } from '../conversationDraftStore'
 import { ExecutionChatPanel } from './ExecutionChatPanel'
 import type { ExecutionChatNotice, ExecutionChatSource, ExecutionChatTarget } from './executionChatSource'
 
@@ -89,6 +92,37 @@ describe('exact Execution chat public surface', () => {
     state.value = { ...state.value, state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } }
     expect(await screen.findByText('Agent chat follow-up', undefined, { timeout: 6000 })).toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
+  }, 15_000)
+
+  it.each(['completed', 'canceled'] as const)('keeps %s retained input history while offering the finished execution follow-up', async status => {
+    const receipt: ChatDeliveryReceipt = { id: 'settled-receipt', commandId: 'settled-command', target,
+      requestedIntent: 'next_turn', appliedIntent: 'next_turn', state: status, createdAt: date, updatedAt: date }
+    const state = endpoints({ ...structuredClone(initial), state: 'idle',
+      capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false }, receipts: [receipt] })
+    state.inputs = [{ commandId: receipt.commandId, receiptId: receipt.id, target, origin: 'direct', content: 'Retained request',
+      truncated: false, bodyCursor: null, attachments: [], intent: 'next_turn', createdAt: date }]
+    mount(new NativeSource(), { followUp: <p>Agent chat follow-up</p> })
+    expect(await screen.findByText('Retained request')).toBeVisible()
+    expect(await screen.findByText('Agent chat follow-up')).toBeInTheDocument()
+  })
+
+  it('preserves an unsent message when the execution completes into its Agent follow-up', async () => {
+    const state = endpoints()
+    const context = { ...target.agent, runId: target.execution.runId }
+    const followUp = agentChatFixtureFor(agentChatFixtures.idleAfterCompletion, context)
+    if (!followUp.conversation || followUp.conversation.origin.kind !== 'run_execution') throw new Error('Expected Run conversation')
+    followUp.conversation.origin.executionId = target.execution.executionId
+    const mock = createAgentChatMock(followUp)
+    server.use(...mock.handlers, http.get('*/api/workspaces/:workspaceId/agent-chat/workflows/:workflowId/runs/:runId/nodes/:workflowNodeId', () =>
+      HttpResponse.json({ kind: 'selected', selection: { ...context, executionId: target.execution.executionId },
+        key: { ...context, executionId: target.execution.executionId, conversationId: followUp.conversation!.id }, state: followUp })))
+    mount(new NativeSource(), { followUp: <AgentConversation context={context} name="Ava"
+      selection={{ ...context, executionId: target.execution.executionId }} /> })
+    const input = await screen.findByRole('textbox', { name: 'Message' })
+    fireEvent.change(input, { target: { value: 'Keep my unsent question' } })
+    state.value = { ...state.value, state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } }
+    await waitFor(() => expect(screen.getByTestId('agent-conversation')).toBeInTheDocument(), { timeout: 6000 })
+    expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue('Keep my unsent question')
   }, 15_000)
 
   it('says the Run ended when a message is refused for that, instead of losing chat access', async () => {

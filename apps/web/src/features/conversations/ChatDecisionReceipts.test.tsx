@@ -2,7 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import type { ActivitySnapshotV1, InteractionSummary } from '@foreman-code/contracts'
-import { ChatDecisionReceipts } from '../chat-core'
+import { ChatDecisionReceipts } from './ChatDecisionReceipts'
 
 afterEach(cleanup)
 

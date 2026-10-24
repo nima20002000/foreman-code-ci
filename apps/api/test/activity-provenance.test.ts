@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import type pg from 'pg'
 import { PostgresOperatorActivityRepository, type ActivityMutationFence } from '../src/modules/conversations/operatorActivityRepository.js'
-import type { OperatorActivityChange } from '../src/modules/harnesses/index.js'
+import type { OperatorActivityChange } from '../src/modules/conversations/operatorActivity.js'
 
 function fixture(initialSource: ActivityMutationFence['source'] = { connectionId: 'original', transportSequence: 2, nativeSequence: '7' }) {
   let record: OperatorActivityChange = { id: 'tool', requestId: 'request', kind: 'tool', title: 'Tool', status: 'running', output: 'transport' }

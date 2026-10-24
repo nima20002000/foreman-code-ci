@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { completedNativeAssistantMessage, nativeAssistantText } from '../src/modules/harnesses/index.js'
+import { completedNativeAssistantMessage, nativeAssistantText } from '../src/modules/conversations/operatorText.js'
 
 describe('operator thinking presentation', () => {
   it('keeps provider reasoning summaries separate from assistant response text', () => {
