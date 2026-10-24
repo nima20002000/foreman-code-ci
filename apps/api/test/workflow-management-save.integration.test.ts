@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
-  CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema, CurrentWorkflowReadResultSchema,
+  CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, CurrentWorkflowReadResultSchema,
 } from '@foreman-code/contracts/current'
 import { graphRpcValue, graphHeaders } from './graph-composition-fixture.js'
 import { postgresEnabled } from './helpers/database.js'
@@ -19,7 +19,7 @@ describe.skipIf(!postgresEnabled)('Authenticated workflow management save', () =
     const conflict = await httpSave(t, { ...t.input, graph: { ...t.input.graph, name: 'different input' } })
     expect(conflict.statusCode).toBe(409); expect(conflict.json()).toMatchObject({ error: { code: 'COMMAND_ID_CONFLICT' } })
     const next = { ...t.input, commandId: randomUUID(), expectedRevision: first.value.revision,
-      expectedWorkflowVersionId: first.value.currentVersionId, graph: CurrentWorkflowSaveInputSchema.shape.graph.parse({ ...first.value.version.definition, name: 'Next exact immutable version' }) }
+      expectedWorkflowVersionId: first.value.currentVersionId, graph: { ...first.value.version.definition, name: 'Next exact immutable version' } }
     const second = CurrentWorkflowSaveResultSchema.parse((await httpSave(t, next)).json())
     expect(second.value.currentVersionId).not.toBe(first.value.currentVersionId)
     const historical = await t.app.inject({ method: 'GET', url: `${t.url}?workflowVersionId=${first.value.currentVersionId}`, headers: graphHeaders(t.writer.token) })
@@ -65,7 +65,7 @@ describe.skipIf(!postgresEnabled)('Authenticated workflow management save', () =
     const t = await fixture(), first = await save(t)
     const candidates = ['First writer', 'Second writer'].map((name) => ({ ...t.input, commandId: randomUUID(),
       expectedRevision: first.value.revision, expectedWorkflowVersionId: first.value.currentVersionId,
-      graph: CurrentWorkflowSaveInputSchema.shape.graph.parse({ ...first.value.version.definition, name }) }))
+      graph: { ...first.value.version.definition, name } }))
     const replies = await Promise.all(candidates.map((input) => httpSave(t, input)))
     expect(replies.map((reply) => reply.statusCode).sort()).toEqual([200, 409])
     const winnerIndex = replies.findIndex((reply) => reply.statusCode === 200)

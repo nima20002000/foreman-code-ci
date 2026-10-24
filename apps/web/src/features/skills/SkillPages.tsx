@@ -1,7 +1,7 @@
 import { errorMessage } from '../../shared/errorMessage'
 import { useId, useRef, useState } from 'react'
 import { useArchiveSkillMutation, useSkillQuery, useSkillUsageQuery, useSkillVersionsQuery, useUpdateSkillUsersMutation } from './skillsApi'
-import { Alert, Badge, Button, ConfirmDialog, Dialog, EmptyState, ErrorState, Icon, LinkButton, LoadingState } from '../../shared/ui/nocturne'
+import { Alert, Badge, Button, ConfirmDialog, Dialog, EmptyState, ErrorState, Icon, LoadingState } from '../../shared/ui/nocturne'
 import { ProtectedAccessError } from '../../shared/ui/ProtectedAccessError'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { SkillEditor, SkillTextPreview, type SavedSkill } from './SkillEditor'
@@ -13,15 +13,13 @@ import './skills.css'
 export function NewSkillPage({ workspaceId, onSaved, onCancel }: { workspaceId?: string | undefined; onSaved(result: SavedSkill): void; onCancel(): void }) {
   const { workspaces, options } = useWorkspaceNames()
   const accessError = useProtectedAccessError(workspaces)
-  const editorAvailable = !accessError && workspaces.isSuccess && options.length > 0
   return <section className="settings-editor-page skill-page" aria-label="New skill">
     <header className="settings-experience-heading"><h1>New skill</h1></header>
-    {accessError ? <ProtectedAccessError error={accessError} onRetry={() => void workspaces.refetch()} />
+    {accessError ? <ProtectedAccessError error={accessError} />
       : workspaces.isPending ? <LoadingState label="Loading workspaces…" />
         : workspaces.isError ? <ErrorState title="Workspaces could not be loaded" description={workspaces.error.message} onRetry={() => void workspaces.refetch()} />
-          : options.length === 0 ? <EmptyState icon="folder" title="No workspace available" action={<LinkButton href="/workspaces">Create or choose a workspace</LinkButton>} />
+          : options.length === 0 ? <EmptyState icon="folder" title="No workspace available" />
             : <SkillEditor workspaceOptions={options} initialWorkspace={workspaceId} onSaved={(result) => onSaved(result)} onCancel={onCancel} />}
-    {!editorAvailable ? <Button onClick={onCancel}>Cancel</Button> : null}
   </section>
 }
 

@@ -33,8 +33,6 @@ describe('WorkspaceDirectory', () => {
         .getByRole('link', { name: 'Website' }),
     ).toBeVisible()
     expect(screen.getByRole('button', { name: 'Open actions for Website' })).toBeVisible()
-    await userEvent.setup().click(screen.getByRole('button', { name: 'New workspace' }))
-    expect(screen.getByRole('dialog', { name: 'New workspace' })).toBeVisible()
   })
 
   it('shows an actionable empty state after every card is removed', async () => {
@@ -45,9 +43,9 @@ describe('WorkspaceDirectory', () => {
     await user.click(screen.getByRole('button', { name: 'Remove workspace' }))
     await user.click(screen.getByRole('button', { name: 'Remove' }))
 
-    const empty = within(await screen.findByTestId('workspace-directory-empty'))
-    await user.click(empty.getByRole('button', { name: 'New workspace' }))
-    expect(screen.getByRole('dialog', { name: 'New workspace' })).toBeVisible()
+    expect(await screen.findByTestId('workspace-directory-empty')).toHaveTextContent(
+      'Use New workspace in the navigation',
+    )
   })
 
   it('renames a workspace from its three-dot actions', async () => {

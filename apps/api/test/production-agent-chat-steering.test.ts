@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { loadConfig } from '../src/config.js'
-import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
+import { createCheckpointStore } from '../src/composition/checkpoints.js'
 import { createDatabase } from '../src/infrastructure/database.js'
 import type { AgentChatManagerFactory } from '../src/modules/conversations/agentChat.js'
 import type { AgentConversationRow } from '../src/modules/conversations/agentChatRepository.js'

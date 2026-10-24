@@ -4,7 +4,7 @@ import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
 import type { NativeManagerResolutionContext } from '../interactions/runtimePorts.js'
 import type { createProductionRemoteWorkflow } from '../placement/index.js'
-import type { ProviderAccountsService } from '../provider-accounts/service.js'
+import type { ProviderAccountsService } from '../provider-accounts/index.js'
 
 /** The saved workflow version and node an execution runs, if the Run owns that execution. */
 export async function readExecutionWorkflowNode(pool: Pick<pg.Pool, 'query'>, executionId: string, runId: string) {

@@ -15,15 +15,15 @@ export function JobNodePanel({ workspaceId, definitionId, definitionRevision, de
   const definition = useQuery({ queryKey: ['jobs', workspaceId, 'definition', definitionId, definitionVersionId], queryFn: ({ signal }) => jobsClient.definitionVersion(workspaceId, definitionId,definitionVersionId, { signal }), enabled: !workflowExecution, retry: jobReadRetry })
   const blocked = useBlockingReadError(definition)
   if (workflowExecution) return <JobRunResult reference={workflowExecution} definitionVersionId={definitionVersionId} />
-  if (definition.error && (blocked || !definition.data)) return <Alert title="Job unavailable" tone="danger" action={<Button size="sm" disabled={definition.isFetching} onClick={() => void definition.refetch()}>Retry saved job</Button>}>{jobError(definition.error)}</Alert>
+  if (definition.error && (blocked || !definition.data)) return <Alert title="Job unavailable" tone="danger">{jobError(definition.error)}</Alert>
   if (!definition.data) return <p role="status">Loading saved job node…</p>
   if (definition.data.revision !== definitionRevision) return <Alert title="Saved job revision unavailable" tone="warning">This node pins revision {definitionRevision}, but its saved version was returned as revision {definition.data.revision}. No substitute command is shown for this saved node.</Alert>
-  return <Card><CardBody>{definition.error ? <p role="alert">Job refresh failed. Showing the last successful read. <Button size="sm" disabled={definition.isFetching} onClick={() => void definition.refetch()}>Retry saved job</Button></p> : null}<h3 className="job-wrap">{definition.data.name}</h3><p>Noninteractive job · saved definition revision {definitionRevision}.</p><JobSpecFacts spec={definition.data.spec} /></CardBody></Card>
+  return <Card><CardBody>{definition.error ? <p role="alert">Job refresh failed. Showing the last successful read.</p> : null}<h3 className="job-wrap">{definition.data.name}</h3><p>Noninteractive job · saved definition revision {definitionRevision}.</p><JobSpecFacts spec={definition.data.spec} /></CardBody></Card>
 }
 
 export function JobNodePicker({ workspaceId, onChoose }: { workspaceId: string; onChoose: (definition: JobDefinitionRecord) => void }) {
   const definitions = useJobDefinitions(workspaceId)
-  return <section className="job-node-picker" aria-label="Choose a saved job for this node"><h3>Saved job</h3>{Boolean(definitions.error) && <Alert title="Jobs unavailable" tone="danger" action={<Button size="sm" disabled={definitions.isFetching} onClick={() => void definitions.refetch()}>Retry jobs</Button>}>{jobError(definitions.error)}</Alert>}
+  return <section className="job-node-picker" aria-label="Choose a saved job for this node"><h3>Saved job</h3>{Boolean(definitions.error) && <Alert title="Jobs unavailable" tone="danger">{jobError(definitions.error)}</Alert>}
     {definitions.isPending && <p role="status">Loading saved jobs…</p>}
     {definitions.data?.map(definition => <Button className="job-wrap" key={definition.id} onClick={() => onChoose(definition)}>{definition.name} · revision {definition.revision}</Button>)}
     {definitions.data?.length === 0 && <p>No saved jobs yet. Ask an agent to create a job, then add it here.</p>}

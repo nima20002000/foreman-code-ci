@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import { COMPUTER_SYNC_NAMESPACE, SyncChannelRequestSchema } from '@foreman-code/contracts/computer-accounts'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import type { DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
+import type { DeviceExtensionRegistration } from '../devices/index.js'
 import { DomainError } from '../errors.js'
 import type { SyncthingComputer } from './syncthingComputer.js'
 

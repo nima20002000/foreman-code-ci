@@ -1,5 +1,5 @@
 import { afterAll, beforeAll } from 'vitest'
-import { CurrentWorkflowCreateInputSchema, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { migratedDatabase } from './migratedDatabase.js'
 
@@ -28,6 +28,5 @@ export function initialSave(graph: WorkflowDefinitionCurrent, configurations: Re
   void version
   void createdAt
   void updatedAt
-  return CurrentWorkflowCreateInputSchema.shape.initialSave.unwrap().parse({
-    graph: definition, expectedAgentConfigurationVersionIds: configurations })
+  return { graph: definition, expectedAgentConfigurationVersionIds: configurations }
 }

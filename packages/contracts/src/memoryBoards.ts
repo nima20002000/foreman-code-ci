@@ -28,12 +28,14 @@ export const MemoryCardSchema = z.object({
   reason: z.string().trim().max(1000).nullable(),
   assignee: AgentNodeRefSchema.nullable(),
   linkedNodes: z.array(AgentNodeRefSchema),
+  sourcePostId: IdSchema.optional(),
   revision: z.number().int().nonnegative(),
   createdAt: TimestampSchema, updatedAt: TimestampSchema,
 }).strict().superRefine(refineCardState);
 export const MemoryNoteSchema = z.object({
   id: IdSchema, boardId: IdSchema, text: z.string().trim().min(1).max(4000),
   rank: z.number().int().nonnegative(), archived: z.boolean(),
+  sourcePostId: IdSchema.optional(),
   revision: z.number().int().nonnegative(), updatedAt: TimestampSchema,
 }).strict();
 export const MemoryBoardSchema = z.object({
@@ -77,13 +79,14 @@ const MemoryCardEditableFields = {
 };
 export const MemoryBoardMutationSchema = z.discriminatedUnion('kind', [
   CommandOptionsSchema.extend({ kind: z.literal('card_create'), boardId: IdSchema,
-    card: z.object(MemoryCardEditableFields).strict().superRefine(refineCardState),
+    card: z.object(MemoryCardEditableFields).strict().superRefine(refineCardState), sourcePostId: IdSchema.optional(),
     workSelections: z.array(MemoryCardWorkSelectionSchema).max(32).optional() }).strict(),
   CommandOptionsSchema.extend({ kind: z.literal('card_update'), boardId: IdSchema,
     cardId: IdSchema, patch: z.object(MemoryCardEditableFields).partial().strict(),
     workSelections: z.array(MemoryCardWorkSelectionSchema).max(32).optional() }).strict(),
   CommandOptionsSchema.extend({ kind: z.literal('note_create'), boardId: IdSchema,
-    text: z.string().trim().min(1).max(4000), rank: z.number().int().nonnegative().optional() }).strict(),
+    text: z.string().trim().min(1).max(4000), rank: z.number().int().nonnegative().optional(),
+    sourcePostId: IdSchema.optional() }).strict(),
   CommandOptionsSchema.extend({ kind: z.literal('note_update'), boardId: IdSchema,
     noteId: IdSchema, patch: z.object({ text: z.string().trim().min(1).max(4000).optional(),
       rank: z.number().int().nonnegative().optional() }).strict() }).strict(),
@@ -194,6 +197,7 @@ export type MemoryBoardMutationReceipt = z.infer<typeof MemoryBoardMutationRecei
 export const MemoryBoardMutationContextSchema = z.object({
   board: MemoryBoardSchema, mutation: MemoryBoardMutationSchema,
   currentCard: MemoryCardSchema.optional(), currentNote: MemoryNoteSchema.optional(),
+  sourcePost: z.object({ id: IdSchema, workspaceId: IdSchema, workflowId: IdSchema }).strict().optional(),
   selectedWork: z.array(z.object({ work: LogicalWorkRefSchema, node: AgentNodeRefSchema }).strict()).optional(),
 }).strict().superRefine((input, context) => {
   const { board, mutation } = input;
@@ -201,6 +205,11 @@ export const MemoryBoardMutationContextSchema = z.object({
   const scoped = (node: AgentNodeRef) => node.workspaceId === board.scope.workspaceId
     && (board.scope.kind !== 'workflow' || node.workflowId === board.scope.workflowId);
   if (board.id !== mutation.boardId) fail('Mutation board does not match the selected board.');
+  if ('sourcePostId' in mutation && mutation.sourcePostId) {
+    const post = input.sourcePost;
+    if (!post || post.id !== mutation.sourcePostId || post.workspaceId !== board.scope.workspaceId
+      || board.scope.kind === 'workflow' && post.workflowId !== board.scope.workflowId) fail('Source post must be visible in the same board scope.');
+  }
   let card: z.infer<typeof MemoryCardSchema> | undefined;
   if (mutation.kind === 'card_create') {
     if (mutation.card.assignee && !scoped(mutation.card.assignee) || mutation.card.linkedNodes.some((node) => !scoped(node))) fail('Card links must share the board scope.');

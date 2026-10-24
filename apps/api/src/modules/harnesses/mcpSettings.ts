@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 import type { DeviceManagedMcp } from './deviceManagedMcp.js'
 import { randomUUID } from 'node:crypto'
@@ -22,7 +23,7 @@ import { retiredHarnessError } from './retiredHarness.js'
 
 type Harness = 'codex'
 type RecordedMcpHarness = Harness | 'claude' | 'opencode'
-type McpList = ReturnType<typeof publicMcpList> & { presets?: { graphql: ReturnType<typeof managedStatus>; linear: Exclude<ReturnType<typeof managedStatus>, 'legacy'> } | undefined }
+type McpList = ReturnType<typeof publicMcpList> & { presets?: { [INSTALLATION_NAMES.mcp.server]: ReturnType<typeof managedStatus>; linear: Exclude<ReturnType<typeof managedStatus>, 'legacy'> } | undefined }
 async function fileStamp(file: string): Promise<string | null> {
   try { const info = await stat(file); return info.isFile() ? `${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}` : null }
   catch (error) {
@@ -145,7 +146,7 @@ export class HarnessMcpSettingsService {
         const snapshot = await this.adapters[harness].read(signal)
         const list = publicMcpList(snapshot)
         const result = { ...list, ...(this.operatorEndpoint ? { presets: {
-          graphql: managedStatus(snapshot, 'graphql', this.operatorEndpoint),
+          [INSTALLATION_NAMES.mcp.server]: managedStatus(snapshot, INSTALLATION_NAMES.mcp.server, this.operatorEndpoint),
           linear: managedStatus(snapshot, 'linear', this.operatorEndpoint) as Exclude<ReturnType<typeof managedStatus>, 'legacy'>,
         } } : {}) }
         // Without a readable config file there is no change signal, so the read is not reused.

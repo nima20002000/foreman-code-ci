@@ -1,7 +1,7 @@
-import { HarnessQualificationSchema, type HarnessConfiguration, type HarnessQualification } from '@foreman-code/contracts'
+import { HarnessQualificationSchema, type RecordedHarnessConfiguration, type HarnessQualification } from '@foreman-code/contracts'
 
 /** A projection of the qualified native transport, not an alternate execution runtime. */
-export function nativeQualification(configuration: HarnessConfiguration, version: string): HarnessQualification {
+export function nativeQualification(configuration: RecordedHarnessConfiguration, version: string): HarnessQualification {
   const codex = configuration.harness === 'codex'
   return HarnessQualificationSchema.parse({
     harness: configuration.harness, version,

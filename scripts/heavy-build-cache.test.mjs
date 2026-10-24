@@ -17,13 +17,15 @@ function fixture(t) {
   mkdirSync(join(root, 'packages/contracts/src'), { recursive: true })
   copyFileSync(new URL('../packages/contracts/src/productEnvironment.mjs', import.meta.url),
     join(root, 'packages/contracts/src/productEnvironment.mjs'))
+  copyFileSync(new URL('../packages/contracts/src/installationNames.mjs', import.meta.url),
+    join(root, 'packages/contracts/src/installationNames.mjs'))
   mkdirSync(join(root, 'packages/contracts/node_modules/typescript'), { recursive: true })
   writeFileSync(join(root, 'packages/contracts/node_modules/typescript/index.js'), 'module.exports = {}')
   writeFileSync(join(root, 'package.json'), '{"type":"module"}')
   writeFileSync(join(root, '.gitignore'), 'node_modules/\n.logs/\ndist/\n')
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
     !key.startsWith('GIT_') && !/^(?:GRAPHQL|FOREMAN_CODE)_HEAVY_/.test(key)))
-  Object.assign(env, { FOREMAN_CODE_HEAVY_BASE_TMPDIR: parent, GIT_CONFIG_GLOBAL: '/dev/null',
+  Object.assign(env, { GRAPHQL_HEAVY_BASE_TMPDIR: parent, GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_CONFIG_NOSYSTEM: '1', FOREMAN_CODE_VERIFICATION_ROOT: '' })
   delete env.CI_HOST_RUNNER
   delete env.FOREMAN_CODE_CI_CONTRACTS_CACHE

@@ -25,6 +25,7 @@ vi.mock('node:fs/promises', async importOriginal => {
   }
 })
 vi.mock('../../../scripts/local-production-runtime.mjs', () => ({
+  copyVerificationRuntime: vi.fn(async () => undefined),
   deployProductionApi: async (run: (command: string, args: string[]) => Promise<void>, destination: string) => {
     await run('corepack', ['pnpm', 'install', '--frozen-lockfile'])
     await run('corepack', ['pnpm', '--filter', '@foreman-code/api', 'deploy', '--prod', destination])

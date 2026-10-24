@@ -1,8 +1,9 @@
 import { setImmediate } from 'node:timers/promises'
 import type pg from 'pg'
-import type { HarnessConfiguration } from '@foreman-code/contracts'
+import { HarnessConfigurationSchema, type RecordedHarnessConfiguration } from '@foreman-code/contracts'
 
-export async function qualifyConfiguration(configuration: HarnessConfiguration) {
+export async function qualifyConfiguration(recorded: RecordedHarnessConfiguration) {
+  const configuration = HarnessConfigurationSchema.parse(recorded)
   return { harness: configuration.harness, version: 'fixture', authenticated: true, ready: true,
     structuredEvents: true, supportsResume: true, supportsCancellation: true, supportsWorkingDirectory: true,
     supportsStartupPrompt: true, supportedNativeTools: [], supportedSettings: [], unsupportedCapabilities: [] }

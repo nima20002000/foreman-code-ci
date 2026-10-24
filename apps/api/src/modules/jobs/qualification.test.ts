@@ -308,7 +308,7 @@ describe('qualification metadata and measured observation verification (no nativ
     const request = candidate()
     const probe = { toolchain: { node: 'v26.5.1', pnpm: '11.27.0', corepack: '0.34.6', git: 'git version 2.45.0', flock: 'flock from util-linux 2.39.3' },
       rootfsWriteError: 'EROFS', sourceWrite: true, proc: true, pidNamespace: 'pid:[300]', networkNamespace: 'net:[301]', interfaces: ['lo'],
-      memoryMax: '67108864', swapMax: '0', pidsMax: '64', cpuRatio: 1, detachedChild: true, environment: ['CI', 'FOREMAN_CODE_JOB_INPUT_MANIFEST', 'GRAPHQL_JOB_INPUT_MANIFEST', 'HOME', 'LANG', 'PATH',...Object.keys(JOB_GIT_ENVIRONMENT)].sort(),gitCommon:'/graphql-job-git',gitRead:true,gitConfigWriteError:'EROFS',gitIndexWriteError:'EROFS',gitHeadWriteError:'EROFS',gitObjectWriteError:'EROFS',schedulerWrite:true, inputRead: true, inputWriteError: 'EROFS', capabilities: '0000000000000000', noNewPrivileges: '1' }
+      memoryMax: '67108864', swapMax: '0', pidsMax: '64', cpuRatio: 1, detachedChild: true, environment: ['CI', 'GRAPHQL_JOB_INPUT_MANIFEST', 'HOME', 'LANG', 'PATH',...Object.keys(JOB_GIT_ENVIRONMENT)].sort(),gitCommon:'/graphql-job-git',gitRead:true,gitConfigWriteError:'EROFS',gitIndexWriteError:'EROFS',gitHeadWriteError:'EROFS',gitObjectWriteError:'EROFS',schedulerWrite:true, inputRead: true, inputWriteError: 'EROFS', capabilities: '0000000000000000', noNewPrivileges: '1' }
     const host = { hostPidNamespace: 'pid:[100]', hostNetworkNamespace: 'net:[101]' }
     expect(() => validateIsolationMeasurement(probe, request, host)).not.toThrow()
     for (const weaker of [{ pidNamespace: undefined }, { pidNamespace: host.hostPidNamespace }, { networkNamespace: host.hostNetworkNamespace },
@@ -344,13 +344,7 @@ async function podmanProbeFixture() {
   const retained = JSON.parse(await readFile(
     new URL('../../../test/fixtures/podman-qualification-probe.json', import.meta.url), 'utf8',
   )) as { containerId: string; probe: Record<string, unknown> }
-  const observed = {
-    ...retained,
-    probe: {
-      ...retained.probe,
-      environment: [...retained.probe.environment as string[], 'FOREMAN_CODE_JOB_INPUT_MANIFEST'].sort(),
-    },
-  }
+  const observed = retained
   const original=candidate(),request=JobQualificationCandidateSchema.parse({...original,backingBytes:34359738368,
     fingerprint:{...original.fingerprint,limits:{cpuLimit:4,memoryBytes:6442450944,pidsLimit:256,diskBytes:34359738368}}})
   const host={hostPidNamespace:'pid:[1]',hostNetworkNamespace:'net:[2]',containerId:observed.containerId,containerHostname:observed.containerId.slice(0,12)}

@@ -1,4 +1,5 @@
-import type { ProviderAccountResolver } from '../provider-accounts/service.js'
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
+import type { ProviderAccountResolver } from '../provider-accounts/index.js'
 import { assertWorkerProviderAccountBinding } from '../provider-accounts/index.js'
 import { managedProviderEnvironment, resolveRuntimeProviderAccount } from '../harnesses/providerAccountRuntime.js'
 import { randomUUID } from 'node:crypto'
@@ -137,7 +138,7 @@ export async function allocateInstalledWorkerClaude(input: {
   const nativeServers = { ...(appAccess === 'none' ? Object.fromEntries(Object.entries(compiled.mcpServers)
     .filter(([name]) => !isSupportedAppMcpServerName(name))) : compiled.mcpServers),
   ...(mcp && configured?.type === 'http' ? { [serverName]: { ...configured, url: mcp.endpoint } } : {}),
-  ...(fileServer ? { 'graphql-files': fileServer.server } : {}) }
+  ...(fileServer ? { [INSTALLATION_NAMES.mcp.files]: fileServer.server } : {}) }
   const sdkOptions: Record<string, unknown> = { ...compiled,
     mcpServers: nativeServers,
     includePartialMessages: true, ...callbacks }

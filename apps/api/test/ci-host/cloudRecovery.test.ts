@@ -67,17 +67,22 @@ it.each(['primary recovers', 'CircleCI refuses credits'])('rejects standby start
   cloud.setCircleStandby(standby)
   await standby.recordCreditRefusal('alpha')
   const actual = await vi.importActual<typeof fs>('node:fs/promises')
-  vi.mocked(fs.writeFile).mockImplementation(async (path, data, options) => {
-    await actual.writeFile(path, data, options)
-    if (typeof data !== 'string' || !data.startsWith('{')) return
-    const saved = JSON.parse(data) as { runId?: string; dispatch?: { uncertain?: boolean } }
-    if (saved.runId !== runId || !saved.dispatch?.uncertain) return
-    if (boundary === 'primary recovers') {
-      now = Date.parse('2026-11-01T00:05:00Z')
-      expect(await standby.admitStart('alpha', 'default', 'site-ci', 'probe')).toBe(true)
-      await standby.recordCreditAcceptance('alpha', 'default', 'probe')
+  vi.mocked(fs.open).mockImplementation(async (path, flags, mode) => {
+    const file = await actual.open(path, flags, mode)
+    const write = file.writeFile.bind(file)
+    file.writeFile = async (data, options) => {
+      await write(data, options)
+      if (typeof data !== 'string' || !data.startsWith('{')) return
+      const saved = JSON.parse(data) as { runId?: string; dispatch?: { uncertain?: boolean } }
+      if (saved.runId !== runId || !saved.dispatch?.uncertain) return
+      if (boundary === 'primary recovers') {
+        now = Date.parse('2026-11-01T00:05:00Z')
+        expect(await standby.admitStart('alpha', 'default', 'site-ci', 'probe')).toBe(true)
+        await standby.recordCreditAcceptance('alpha', 'default', 'probe')
+      }
+      else await standby.recordCreditRefusal('delta', 'reserve')
     }
-    else await standby.recordCreditRefusal('delta', 'reserve')
+    return file
   })
   try {
     expect(await cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
@@ -87,7 +92,7 @@ it.each(['primary recovers', 'CircleCI refuses credits'])('rejects standby start
     expect(await cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1000 }))
       .toMatchObject({ run: { state: 'failed' }, text: expect.stringMatching(reason) })
   } finally {
-    vi.mocked(fs.writeFile).mockImplementation(actual.writeFile)
+    vi.mocked(fs.open).mockImplementation(actual.open)
     await cloud.waitForMirrorCleanup('octo/site', 'octo/site-ci')
   }
 })
@@ -114,7 +119,7 @@ it.each(['run', 'configuration failure'])('rejects conflicting saved login owner
 
 vi.mock('node:fs/promises', async original => {
   const actual = await original<typeof import('node:fs/promises')>()
-  return { ...actual, writeFile: vi.fn(actual.writeFile) }
+  return { ...actual, open: vi.fn(actual.open) }
 })
 
 const readRequest = (runId: string) => ({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 })
@@ -357,20 +362,25 @@ it('preserves readable provider ownership during an interrupted metadata replace
   await f.cloud.handle(readRequest(runId))
   f.advance(4000)
   f.github.steps = [{ number: 1, name: 'Tests', status: 'in_progress', conclusion: null }]
-  const { writeFile: write } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+  const actual = await vi.importActual<typeof fs>('node:fs/promises')
   let entered!: () => void
   const paused = new Promise<void>(resolve => { entered = resolve })
   let release!: () => void
   const gate = new Promise<void>(resolve => { release = resolve })
-  const interrupted = vi.mocked(fs.writeFile).mockImplementation(async (path, data, options) => {
-    if (!String(path).includes('meta.json')) return write(path, data, options)
-    await write(path, '{', options)
-    entered()
-    await gate
-    throw new Error('Interrupted write')
+  const interrupted = vi.mocked(fs.open).mockImplementation(async (path, flags, mode) => {
+    const file = await actual.open(path, flags, mode)
+    if (!String(path).includes('meta.json')) return file
+    const write = file.writeFile.bind(file)
+    file.writeFile = async (_data, options) => {
+      await write('{', options)
+      entered()
+      await gate
+      throw new Error('Interrupted write')
+    }
+    return file
   })
   const updating = f.cloud.handle(readRequest(runId))
-  const failed = expect(updating).rejects.toThrow('Interrupted write')
+  const failed = Promise.allSettled([updating])
   let retry: Promise<void> | undefined
   try {
     await paused
@@ -378,9 +388,11 @@ it('preserves readable provider ownership during an interrupted metadata replace
     retry = expect(f.reopen().handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
       commit: f.commit, suite: 'integration', scope: 'full' })).resolves.toMatchObject({ run: { state: 'running' } })
   } finally {
-    interrupted.mockImplementation(write)
+    interrupted.mockImplementation(actual.open)
     release()
-    await Promise.all([failed, retry])
+    const [result] = await failed
+    expect(result).toMatchObject({ status: 'rejected', reason: new Error('Interrupted write') })
+    await retry
   }
   await f.reopen().handle({ operation: 'cancel', runId })
   expect(f.github.canceled).toContain('8')

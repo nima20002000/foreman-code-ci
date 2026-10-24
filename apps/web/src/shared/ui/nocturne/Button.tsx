@@ -7,25 +7,16 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: 'sm' | 'md' | 'lg'
   loading?: boolean
   loadingLabel?: string
-  /** Longest action label, reserved across state changes. */
-  widthLabel?: string
   leading?: ReactNode
   trailing?: ReactNode
 }
 
-export function Button({ variant = 'secondary', size = 'md', loading = false, loadingLabel, widthLabel,
+export function Button({ variant = 'secondary', size = 'md', loading = false, loadingLabel,
   leading, trailing, className, children, disabled, type = 'button', ...props }: ButtonProps) {
   return <button {...props} type={type} disabled={disabled || loading} aria-busy={loading || undefined}
     className={cx('n-button', `n-button--${variant}`, `n-button--${size}`, className)}>
-    {leading || loadingLabel ? <span className="n-button-leading">
-      <span aria-hidden={loading || undefined} style={{ visibility: loading ? 'hidden' : undefined }}>{leading}</span>
-      <span className="n-spinner" aria-hidden="true" style={{ visibility: loading ? undefined : 'hidden' }} />
-    </span> : loading ? <span className="n-spinner n-button-spinner" aria-hidden="true" /> : null}
-    <span className="n-button-label" style={{ opacity: loading && !loadingLabel && !leading ? 0 : undefined }}>
-      <span aria-hidden={loading && Boolean(loadingLabel) || undefined} style={{ visibility: loading && loadingLabel ? 'hidden' : undefined }}>{children}</span>
-      {loadingLabel ? <span aria-hidden={!loading} style={{ visibility: loading ? undefined : 'hidden' }}>{loadingLabel}</span> : null}
-      {widthLabel ? <span aria-hidden="true" style={{ visibility: 'hidden' }}>{widthLabel}</span> : null}
-    </span>{trailing}
+    {loading ? <span className="n-spinner" aria-hidden="true" /> : leading}
+    <span>{loading && loadingLabel ? loadingLabel : children}</span>{trailing}
   </button>
 }
 

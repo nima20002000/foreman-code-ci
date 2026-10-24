@@ -6,8 +6,7 @@ import { agentChatFixtures, type AgentChatContext, type AgentChatState, type Sen
 import { accountBinding, observedAccount } from '../../provider-accounts/providerAccounts.fixtures'
 import { server } from '../../../mocks/server'
 import { agentChatFixtureFor, createAgentChatMock } from '../../../shared/mocks/agentChatHandlers'
-import { getConversationDraft, useConversationDraftStore } from '../conversationDraftStore'
-import { agentChatContextKey } from './model'
+import { getConversationDraft, useConversationDraftStore, agentChatContextKey } from '../../chat-core'
 import { agentChatStateKey } from './useAgentChat'
 import { AgentChatTestSource, approvalState, installChatSource, mountChat } from './testSupport'
 

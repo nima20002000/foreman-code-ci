@@ -2,7 +2,7 @@ import { InfoHint } from '../../../shared/ui/InfoHint'
 import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import './inspection.css'
 import '../dock/boardDock.css'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Handle, NodeResizer, Position, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
 import type { CiRunJob, CiTestStatus } from '@foreman-code/contracts'
 import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
@@ -138,7 +138,6 @@ export function CiServerDialog({ open, onOpenChange, scope, workflow, jobs, name
     </header>
     <div className="ci-server-window-body">{error ? <Alert tone="warning" title="CI jobs could not be read.">
       {jobs.length ? 'The list shows the last jobs read.' : 'Reading CI needs the CI read grants for this workspace.'}</Alert> : null}
-    {selected && scope ? <CiJobCancellation key={selected.ticketId} scope={scope} job={selected} /> : null}
     <Tabs label="CI server" value={tab} onValueChange={(value) => setTab(value as Tab)} keepMounted={false} items={[
       { value: 'jobs', label: 'Jobs', badge: jobs.length, content: loading ? <Spinner label="Loading CI jobs" />
         : <CiJobsTable jobs={jobs} agent={agent} selectedId={selected?.ticketId} truncated={truncated} onShow={show} run={Boolean(scope)} /> },
@@ -150,35 +149,6 @@ export function CiServerDialog({ open, onOpenChange, scope, workflow, jobs, name
         content: <WorkflowJobs key={JSON.stringify(workflow)} {...workflow} /> }] : []),
     ]} /></div>
   </aside>
-}
-
-function CiJobCancellation({ scope, job }: { scope: RepeatGraphScopeCurrent; job: CiRunJob }) {
-  const client = useQueryClient()
-  const [commandId] = useState(() => crypto.randomUUID())
-  const cancel = useMutation({ mutationFn: () => runCiApi.cancel({ workspaceId: scope.workspaceId, ticketId: job.ticketId, commandId }),
-    retry: false, onSuccess: () => client.invalidateQueries({ queryKey: runInspectionQueryKey(scope) }) })
-  const result = cancel.data
-  const readback = useQuery({
-    queryKey: [...runInspectionQueryKey(scope), 'ci-cancellation', job.ticketId, commandId],
-    queryFn: ({ signal }) => runCiApi.get({ workspaceId: scope.workspaceId, ticketId: job.ticketId }, { signal }),
-    enabled: Boolean(result && !result.detached && (isActiveCiJob({ ...job, ci: result.run }) || result.run.executorCleanupPending)),
-    refetchInterval: query => {
-      const run = query.state.data?.run
-      return !run || isActiveCiJob({ ...job, ci: run }) || run.executorCleanupPending ? 1500 : false
-    },
-  })
-  const run = readback.data?.run ?? result?.run
-  return <div className="ci-server-job">
-    {isActiveCiJob(job) && !result ? <Button size="sm" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
-      {cancel.isPending ? 'Canceling…' : 'Cancel CI job'}</Button> : null}
-    {cancel.isError ? <Alert tone="warning" title="Cancellation could not be confirmed.">{cancel.error.message} Retry uses the same request.</Alert> : null}
-    {result && run ? <p role="status">{result.detached ? 'Detached from this CI group. Other requesters still use it.'
-      : run.state === 'canceled' && !run.executorCleanupPending ? 'Cancellation confirmed.'
-      : isActiveCiJob({ ...job, ci: run }) || run.executorCleanupPending
-        ? 'Cancellation requested. Waiting for the executor to stop.' : `Job already ${run.state}.`}</p> : null}
-    {readback.isError ? <Alert tone="warning" title="Cancellation status could not be refreshed.">
-      <Button size="sm" onClick={() => void readback.refetch()}>Retry cancellation status</Button></Alert> : null}
-  </div>
 }
 
 export function CiJobsTable({ jobs, agent, selectedId, truncated, onShow, run }: { jobs: readonly CiRunJob[]; agent(job: CiRunJob): string
@@ -291,9 +261,9 @@ function CiJobLog({ scope, job }: { scope: RepeatGraphScopeCurrent; job: CiRunJo
     {!started ? <p className="ci-server-note">The job has not started; its log appears once a computer takes it.</p>
       : query.isPending ? <Spinner label="Loading log" />
       : (denied || query.isError) && !log ? <Alert tone="warning" title="The log is unavailable right now.">
-        The computer that ran this job may be offline. <Button size="sm" onClick={() => void query.refetch()}>Retry log</Button></Alert>
+        The computer that ran this job may be offline.</Alert>
       : <pre className="ci-log" tabIndex={0} aria-label="Log tail">{log?.text || 'The log is empty.'}</pre>}
     {query.isError && log ? <Alert tone="warning" title="The log could not be refreshed.">
-      Showing the last log read. <Button size="sm" onClick={() => void query.refetch()}>Retry log</Button></Alert> : null}
+      Showing the last log read.</Alert> : null}
   </div>
 }
