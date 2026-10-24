@@ -58,6 +58,7 @@ async function fixture() {
   const remote: BrowserRemote = { prepare: async () => ({ kind: 'ready', session,
     control: { sessionId: session.id, state: 'agent', epoch: 0, controllingViewerId: null, reason: null } }),
     release, ready: async () => true,
+    status: async computerId => ({ computerId, ready: true, phase: 'ready', reason: null }),
     profiles: { endpoint: async () => { throw new Error('Unexpected profile operation') } },
     sessions: { invoke: async () => { throw new Error('Unexpected browser request') } },
     media: () => { throw new Error('Unexpected media') } }

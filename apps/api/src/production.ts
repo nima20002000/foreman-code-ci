@@ -1626,7 +1626,6 @@ function createOperatorServices({ base, callbacks, started, runtimeState, transp
         if (!started.jobRuntime) throw new DomainError('PLACEMENT_CHOICES_UNAVAILABLE', 'Computer choices are not initialized.', 503)
         const runtime = started.jobRuntime
         return { roots: runtime.policies, sources: runtime.sources, profiles: hostSettings, registry: harnessRegistry,
-          harnessInstances,
           ensureProfileReady: profile => harnessInstances.ensureReady(profile),
           ensureComputerReady: async host => {
             workerExecution.requireEnabled(host)

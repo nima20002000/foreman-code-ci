@@ -106,7 +106,7 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
   const error=failure instanceof Error?failure.message:'Chat could not refresh. Your selection has been kept.'
   const retry=<button type="button" onClick={()=>void query.refetch()} disabled={query.isFetching && !query.isRefetching}>Retry</button>
   const chooseExecution=selection.runId&&selection.workflowVersionId&&(selection.executionId||selection.waitingActivationId)?<button type="button"
-    onClick={()=>onSelectRun({runId:selection.runId!,workflowVersionId:selection.workflowVersionId!})}>Choose another execution</button>:null
+    onClick={()=>onSelectRun({runId:selection.runId!,workflowVersionId:selection.workflowVersionId!})}>Other attempts</button>:null
   const chooseDestination=<button type="button" onClick={()=>setDestinationScope(currentScope)}>Choose chat destination</button>
   if(destinationScope===currentScope) return <ChatDestinationPicker selection={selection}
     onSelectRun={run=>{setDestinationScope(undefined);onSelectRun(run)}} onCancel={()=>setDestinationScope(undefined)}/>
@@ -130,7 +130,7 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
     if(!pinned||!client) return <p role="status">Opening the selected Run target…</p>
     const View=views.ExecutionChat
     return <>{status}<p className="workflow-panel-hint" data-testid="agent-chat-scope">{resolved.target.kind==='workflow_execution'
-      ?`Run · attempt ${resolved.target.execution.attempt}`:'Run · coordinator'} {chooseExecution}</p><View key={canonicalJson(resolved.target)} selection={selection} resolved={resolved}
+      ?`Attempt ${resolved.target.execution.attempt}`:'Coordinator'}{chooseExecution ? <> · {chooseExecution}</> : null}</p><View key={canonicalJson(resolved.target)} selection={selection} resolved={resolved}
       client={client} queryKey={executionChatReadKey(resolved.target)} onSelectTarget={onSelectTarget} onSelectRun={onSelectRun}/></>
   }
   if(first.kind==='outside_run') {

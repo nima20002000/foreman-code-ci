@@ -1,7 +1,7 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { resolveBrowserTarget } from './browserTargets.js'
 import type pg from 'pg'
-import { canonicalJson, BrowserSessionSchema, type AgentSubject } from '@foreman-code/contracts'
+import { canonicalJson, BrowserSessionSchema, type BrowserRuntimeStatus, type AgentSubject } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
@@ -30,6 +30,7 @@ export interface BrowserRemote {
   sessions: BrowserSessionTransport<ManagementPrincipal>
   media(binding: BrowserInstallationBinding): BrowserMediaSource<ManagementPrincipal>
   ready(computerId: string): Promise<boolean>
+  status(computerId: string): Promise<BrowserRuntimeStatus>
   prepare: BrowserLifecyclePort['prepare']
   release: BrowserLifecyclePort['release']
 }
@@ -162,7 +163,8 @@ export function createProductionBrowser(options: BrowserCompositionOptions) {
       mainId = id
       await runtime.start()
       router = createBrowserSessionRouter({ localComputerId: id, local: localProxy, pairing, locations,
-        transport: remote.sessions, authority, computers: async principal => (await computers(principal)).map(computer => computer.id),
+        transport: remote.sessions, authority, runtimeStatus: computerId => computerId === id ? Promise.resolve(runtime.status()) : remote.status(computerId),
+        computers: async principal => (await computers(principal)).map(computer => computer.id),
         subjectComputer: async (_principal, subject: AgentSubject) => (await authority.details(subject)).computerId,
         media: binding => binding.computerId === id ? localBrowserMediaSource(localService()) : remote.media(binding) })
       profiles.start()
