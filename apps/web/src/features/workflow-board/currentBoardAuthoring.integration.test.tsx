@@ -1086,9 +1086,11 @@ describe('latest Run inspection on the retained Board', () => {
     await waitFor(() => expect(canvasNode(job.id)).toHaveTextContent('Running'))
     const jobButton = within(canvasNode(job.id)).getByRole('button', { name: /Build, job/ })
     // D3 drag needs the browser window on pointer events; JSDOM defaults MouseEvent.view to null.
-    fireEvent.mouseDown(jobButton, { view: window, button: 0, buttons: 1 })
-    fireEvent.mouseUp(jobButton, { view: window, button: 0, buttons: 0 })
-    fireEvent.click(jobButton, { view: window })
+    for (const type of ['mousedown', 'mouseup', 'click']) {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'mousedown' ? 1 : 0 })
+      Object.defineProperty(event, 'view', { value: window })
+      fireEvent(jobButton, event)
+    }
     await user.click(await screen.findByRole('button', { name: 'Attempt 1 · job-node-execution' }))
     expect(await screen.findByRole('region', { name: 'Job logs' })).toBeVisible()
     expect(await screen.findByRole('region', { name: 'Job artifacts' })).toBeVisible()
