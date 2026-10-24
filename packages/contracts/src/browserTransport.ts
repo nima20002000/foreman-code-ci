@@ -14,7 +14,8 @@ export const BrowserLifecyclePrepareSchema = z.object({ subject: AgentSubjectSch
   computerId: IdSchema, commandId: IdSchema }).strict();
 export const BrowserLifecycleReleaseSchema = z.object({ sessionId: IdSchema, subject: AgentSubjectSchema,
   commandId: IdSchema, reason: z.enum(['terminal', 'stop', 'conversation_closed', 'runtime_update']) }).strict();
-export { BrowserRuntimeStatusSchema } from './browserSessions.js';
+export const BrowserRuntimeStatusSchema = z.object({ computerId: IdSchema, ready: z.boolean(),
+  phase: z.string(), reason: z.string().nullable(), runtimeVersion: z.string().optional() }).strict();
 export const BrowserPreparedBindingSchema = z.object({ subject: AgentSubjectSchema, browser: NodeBrowserSettingsSchema,
   computerId: IdSchema, readOnly: z.boolean(), availability: z.enum(['ready', 'profile_missing', 'computer_offline',
     'runtime_missing', 'sign_in_required', 'resource_pressure', 'profile_busy']) }).strict();
