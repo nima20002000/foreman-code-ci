@@ -45,6 +45,7 @@ import { registerResourceTelemetrySelectorRoutes } from './resourceTelemetrySele
 import { registerRunGraphRoutes } from './runGraph.js'
 import { registerSourceRoutes } from './sources.js'
 import { registerUserInteractions } from './userInteractions.js'
+import { registerWorkflowChatRoutes } from './workflowChat.js'
 import { registerWorkflowExecutionChatRoutes } from './workflowExecutionChat.js'
 import { registerWorkflowHierarchyRoutes } from './workflowHierarchy.js'
 import { registerWorkflowKanbanRoutes } from './workflowKanban.js'
@@ -109,6 +110,10 @@ export function registerApiRoutes(app: FastifyInstance, services: ApiRouteServic
   if (operator && services.mcpDetection) {
     const { service } = services.mcpDetection, locations = operator.services.locations
     group('mcp-detection', () => registerMcpDetectionRoute(app, locations, service, operator.services.harnessSettings?.mcp))
+  }
+  if (operatorServices?.workflowChat) {
+    const workflowChat = operatorServices.workflowChat
+    group('workflow-chat', () => registerWorkflowChatRoutes(app, workflowChat))
   }
   if (operatorServices?.agentChat) {
     const agentChat = operatorServices.agentChat

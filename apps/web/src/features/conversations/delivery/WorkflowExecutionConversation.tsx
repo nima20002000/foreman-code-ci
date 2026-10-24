@@ -1,3 +1,6 @@
+import type { ReactNode } from 'react'
+import { Paperclip } from 'lucide-react'
+import { IconButton, Tooltip } from '../../../shared/ui/nocturne'
 import { AgentConversation } from '../agentChat/AgentConversation'
 import type { WorkflowExecutionChatViewProps } from '../../workflow-hierarchy'
 import { ExecutionChatPanel } from './ExecutionChatPanel'
@@ -7,13 +10,20 @@ export function WorkflowExecutionConversation(props: WorkflowExecutionChatViewPr
   return <SelectedConversation key={JSON.stringify(props.resolved.target)} {...props} />
 }
 
-function SelectedConversation({ resolved }: WorkflowExecutionChatViewProps) {
+function SelectedConversation({ resolved, onSelectTarget }: WorkflowExecutionChatViewProps) {
   const target = resolved.target
   // A finished execution continues in its Agent chat right here, so the owner can always message the Agent.
-  const followUp = target.kind === 'workflow_execution' ? <AgentConversation
+  const followUp = target.kind === 'workflow_execution' ? (retainedInputs: ReactNode) => <AgentConversation retainedInputs={retainedInputs}
     context={{ ...target.agent, runId: target.execution.runId }} name={resolved.agent.displayName}
     selection={{ workspaceId: target.agent.workspaceId, workflowId: target.agent.workflowId,
       workflowNodeId: target.agent.workflowNodeId, runId: target.execution.runId, executionId: target.execution.executionId }} /> : undefined
   return <ExecutionChatPanel visible target={target} name={resolved.agent.displayName} source={productionExecutionChatSource}
-    followUp={followUp} />
+    attachmentControl={<Tooltip content={target.kind === 'workflow_execution'
+      ? 'Files can be attached after this execution finishes.' : 'Files can be attached in a separate Agent conversation.'}>
+      <IconButton label="Attach files" size="sm" variant="ghost" disabled><Paperclip size={18} aria-hidden="true" /></IconButton>
+    </Tooltip>}
+    followUp={followUp} onOpenContinuation={receipt => {
+      if (receipt.continuationExecution) onSelectTarget({ kind: 'workflow_execution', agent: target.agent,
+        execution: receipt.continuationExecution }, receipt.continuationExecution.workflowVersionId)
+    }} />
 }

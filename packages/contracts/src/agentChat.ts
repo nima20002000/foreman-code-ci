@@ -1,5 +1,5 @@
 import { ChatDeliveryIntentSchema, DeliveryTargetSchema, ChatDeliveryReceiptSchema, ChatControlReceiptSchema, ChatDeliveryInputReadSchema, ChatDeliveryInputPageSchema } from './chatDelivery.js';
-import { EngineChatReadbackSchema } from './engineChat.js';
+import { EngineChatReadbackSchema } from './workflowChat.js';
 import { NativeSourceMessageSchema } from './messages.js';
 import { NativeInteractionResponseAvailabilitySchema } from './interaction-activity.js';
 import { ChatMessageContentSchema, refineChatPrompt } from './chatInput.js';

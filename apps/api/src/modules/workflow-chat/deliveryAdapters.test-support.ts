@@ -13,6 +13,7 @@ import { registerAgentChatRoutes } from '../../routes/agentChat.js'
 import { registerOperatorChatRoutes } from '../../routes/operatorChat.js'
 import { createAgentChatTools } from '../../mcp/operator/tools/agentChat.js'
 import { createOperatorControlTools, createOperatorDeliveryTools } from '../../mcp/operator/tools/operatorControls.js'
+import { workflowChatTools } from '../../mcp/operator/tools/workflowChat.js'
 import { registerToolDefinition, toolAvailable } from '../../mcp/operator/definition.js'
 import { invokeOperatorTool } from '../../mcp/operator/invoke.js'
 import type { OperatorServices } from '../../mcp/operator/types.js'
@@ -35,8 +36,8 @@ export async function deliveryAdaptersFixture(options: { beforeOwnerAdoption?: b
   const endpoints = options.executionKind || options.beforeOwnerAdoption
     ? fixture.createServices() : { agent: fixture.agent, operator: fixture.operator }
   if (endpoints.agent !== fixture.agent) {
-    endpoints.agent.createDeliveryOwner(fixture.feature.repository)
-    endpoints.operator.createDeliveryOwner(fixture.feature.repository)
+    endpoints.agent.createDeliveryOwner(fixture.feature.repository.deliveries)
+    endpoints.operator.createDeliveryOwner(fixture.feature.repository.deliveries)
   }
   let router = fixture.feature.router, dispatchAttempts = 0
   const execution = options.executionKind ? retainedExecutionFixture(fixture, options.executionKind, retainedOwnerState) : undefined
@@ -80,7 +81,8 @@ export async function deliveryAdaptersFixture(options: { beforeOwnerAdoption?: b
   registerOperatorHttpSecurity(app, fixture.access)
   registerAgentChatRoutes(app, endpoints.agent)
   registerOperatorChatRoutes(app, endpoints.operator)
-  const definitions = [...createAgentChatTools(router), ...createOperatorControlTools(router), ...createOperatorDeliveryTools(router)]
+  const definitions = [...createAgentChatTools(router), ...createOperatorControlTools(router), ...createOperatorDeliveryTools(router),
+    ...workflowChatTools(fixture.feature.service)]
   const sessions = new Set<() => Promise<void>>()
   app.addHook('preClose', async () => { await Promise.all([...sessions].map(close => close())) })
   app.post('/mcp', { onRequest: async request => {

@@ -13,11 +13,12 @@ describe.skipIf(!postgresEnabled)('Agent chat prepared steer after Main restart'
       await f.feature.router.send(f.owner, { target: selected, commandId: 'active', content: 'Keep working', intent: 'next_turn' })
       await vi.waitFor(async () => expect((await f.agentRepository.turn(selected.conversationId, 'active'))?.delivery).toBe('accepted'))
       const original = (await f.agentRepository.get(selected.conversationId))!
-      const owner = f.agent.createDeliveryOwner(f.feature.repository)
-      vi.spyOn(owner, 'deliver').mockRejectedValueOnce(new Error('Native owner is temporarily unavailable'))
-      const receipt = await f.feature.router.send(f.owner, { target: selected, commandId: 'prepared-steer',
-        content: 'Include recovery', intent: 'steer' })
-      expect((await f.feature.repository.byReceipt(receipt.id))?.ownerAdmission).toBe('prepared')
+      const prepared = await f.feature.service.post(f.owner, { ...f.scope, commandId: 'prepared-steer',
+        body: '@Agent include recovery', cardIds: [],
+        mentions: [{ workflowNodeId: selected.agent.workflowNodeId, start: 0, end: 6 }],
+        deliveries: [{ workflowNodeId: selected.agent.workflowNodeId, target: selected, intent: 'steer' }] })
+      const receipt = prepared.receipts[0]!
+      expect((await f.feature.repository.deliveries.byReceipt(receipt.id))?.ownerAdmission).toBe('prepared')
       await f.restart()
       // Exercise the pending drain before startup recovery has attached any local runtime.
       await f.feature.router.drainPrepared()
